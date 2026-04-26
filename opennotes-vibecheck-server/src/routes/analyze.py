@@ -40,7 +40,7 @@ from uuid import UUID, uuid4
 import httpx
 from fastapi import APIRouter, Request, Response
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
@@ -267,6 +267,9 @@ async def _lookup_cache(conn: Any, normalized_url: str) -> dict[str, Any] | None
     return dict(row)
 
 
+_CACHE_PREVIEW_FALLBACK = "Analysis complete."
+
+
 def _derive_cache_preview(sidebar_payload: dict[str, Any]) -> str:
     """Derive preview_description from a cached SidebarPayload dict.
 
@@ -275,13 +278,35 @@ def _derive_cache_preview(sidebar_payload: dict[str, Any]) -> str:
     `page_title` field feeds the fallback branch; first-utterance text
     isn't queried (the cache-hit path never extracted utterances on this
     submit), so the function tolerates None for that field.
+
+    TASK-1485.06 P1.3: tolerate stale or malformed `vibecheck_analyses`
+    rows from older code versions. SidebarPayload schemas have evolved
+    over the lifetime of the cache (new fields, renamed fields, removed
+    fields); rolling out this PR lights up validation for cache rows
+    written by prior code. A failing model_validate must not 500 the
+    POST /api/analyze hot path — instead degrade to a generic preview
+    so the cached row still serves its primary purpose.
     """
-    payload = SidebarPayload.model_validate(sidebar_payload)
+    try:
+        payload = SidebarPayload.model_validate(sidebar_payload)
+    except (ValidationError, ValueError, TypeError) as exc:
+        logger.warning(
+            "cached SidebarPayload failed validation, using fallback preview: %s",
+            exc,
+        )
+        return _CACHE_PREVIEW_FALLBACK
     ctx = DerivationContext(
         page_title=payload.page_title,
         first_utterance_text=None,
     )
-    return derive_preview_description(payload, ctx)
+    try:
+        return derive_preview_description(payload, ctx)
+    except Exception as exc:  # defensive: never 500 the cache-hit path
+        logger.warning(
+            "derive_preview_description failed on cached payload: %s",
+            exc,
+        )
+        return _CACHE_PREVIEW_FALLBACK
 
 
 async def _insert_cached_done_job(

@@ -20,7 +20,6 @@ from testcontainers.postgres import PostgresContainer
 
 from src.jobs.recent_query import (
     _has_secret_query_param,
-    _is_blocked_host,
     _is_blocked_url,
     _passes_partial_threshold,
     list_recent,
@@ -122,17 +121,14 @@ class TestSecretQueryParamFilter:
         assert _has_secret_query_param("") is False
 
 
-class TestBlockedHostFilter:
-    @pytest.mark.parametrize("host", ["localhost", "127.0.0.1", "::1", "10.0.0.1", "192.168.1.1", "172.16.5.5"])
-    def test_blocks_loopback_and_private_ranges(self, host: str) -> None:
-        assert _is_blocked_host(host) is True
-
-    @pytest.mark.parametrize("host", ["example.com", "blog.example.com", "8.8.8.8", "1.1.1.1"])
-    def test_allows_public_hosts(self, host: str) -> None:
-        assert _is_blocked_host(host) is False
-
-
 class TestBlockedUrlFilter:
+    """Privacy filter exercised via the full SSRF guard composition.
+
+    These tests run with the autouse `_stub_dns` from tests/conftest.py
+    that returns 8.8.8.8 for any hostname, so non-blocked hosts like
+    `example.com` resolve as "public" and pass the SSRF guard.
+    """
+
     def test_localhost_blocked(self) -> None:
         assert _is_blocked_url("https://localhost/page") is True
 
@@ -162,6 +158,59 @@ class TestBlockedUrlFilter:
 
     def test_invalid_url_blocked(self) -> None:
         assert _is_blocked_url("not a url") is True
+
+    # ---- TASK-1485.06 P1.2 — bypasses Codex empirically verified
+    # against the original ipaddress-only `_is_blocked_host`. ----
+
+    def test_trailing_dot_localhost_blocked(self) -> None:
+        # IDNA normalization in validate_public_http_url strips the dot.
+        assert _is_blocked_url("http://localhost./") is True
+
+    def test_internal_suffix_blocked(self) -> None:
+        # `.internal` blocklist via SSRF guard (e.g. AWS / GCE metadata).
+        assert _is_blocked_url("https://service.internal/path") is True
+
+    def test_local_suffix_blocked(self) -> None:
+        # `.local` blocklist (mDNS / Bonjour).
+        assert _is_blocked_url("https://printer.local/jobs") is True
+
+    def test_metadata_host_blocked(self) -> None:
+        # GCE metadata host explicitly in SSRF blocklist.
+        assert _is_blocked_url("http://metadata.google.internal/") is True
+
+    def test_ipv4_mapped_ipv6_loopback_blocked(self) -> None:
+        # `::ffff:127.0.0.1` is loopback per ipaddress.is_loopback.
+        assert _is_blocked_url("http://[::ffff:127.0.0.1]/") is True
+
+    def test_link_local_ipv6_blocked(self) -> None:
+        # fe80::/10 is link-local — rejected by SSRF guard.
+        assert _is_blocked_url("http://[fe80::1]/") is True
+
+    def test_unspecified_address_blocked(self) -> None:
+        assert _is_blocked_url("http://0.0.0.0/") is True
+
+    def test_multicast_ipv4_blocked(self) -> None:
+        assert _is_blocked_url("http://224.0.0.1/") is True
+
+    def test_reserved_ipv4_blocked(self) -> None:
+        assert _is_blocked_url("http://240.0.0.1/") is True
+
+    def test_malformed_port_does_not_raise(self) -> None:
+        # Without the `.port` try/except (TASK-1485.06 P1.2), a DB row
+        # with a malformed port would 500 the gallery. We block instead.
+        assert _is_blocked_url("https://example.com:abc/x") is True
+
+    def test_non_http_scheme_blocked(self) -> None:
+        assert _is_blocked_url("ftp://example.com/file") is True
+        assert _is_blocked_url("file:///etc/passwd") is True
+        assert _is_blocked_url("javascript:alert(1)") is True
+
+    @pytest.mark.parametrize(
+        "param",
+        ["password", "auth", "sig", "signature", "API_KEY"],
+    )
+    def test_additional_secret_query_params_blocked(self, param: str) -> None:
+        assert _is_blocked_url(f"https://example.com/x?{param}=v") is True
 
 
 class TestPartialThreshold:
@@ -209,8 +258,15 @@ class TestPartialThreshold:
 # ---------------------------------------------------------------------------
 
 
-@pytest.fixture(autouse=True)
+@pytest.fixture
 def _restore_real_dns(monkeypatch: pytest.MonkeyPatch) -> None:
+    """DB-backed tests need real DNS for testcontainers Postgres.
+
+    Pure-function privacy tests deliberately keep the suite-wide stub
+    (`tests/conftest.py::_stub_dns` returns 8.8.8.8 for any host) so
+    `example.com` etc. resolve as "public" and pass the SSRF guard
+    without requiring CI internet access.
+    """
     monkeypatch.setattr(socket, "getaddrinfo", _REAL_GETADDRINFO)
 
 
@@ -221,7 +277,10 @@ def _postgres_container() -> Any:
 
 
 @pytest.fixture
-async def db_pool(_postgres_container: PostgresContainer) -> AsyncIterator[Any]:
+async def db_pool(
+    _postgres_container: PostgresContainer,
+    _restore_real_dns: None,
+) -> AsyncIterator[Any]:
     raw = _postgres_container.get_connection_url()
     dsn = raw.replace("postgresql+psycopg2://", "postgresql://")
     pool = await asyncpg.create_pool(dsn, min_size=1, max_size=8)
@@ -496,3 +555,119 @@ class TestListRecentPrivacyFilters:
         result = await list_recent(db_pool, limit=1, signer=_StubSigner())
         assert len(result) == 1
         assert result[0].source_url == good
+
+    async def test_many_blocked_rows_do_not_displace_eligible(
+        self, db_pool: Any
+    ) -> None:
+        """TASK-1485.06 P2.1: large privacy-rejection batches must not
+        prevent the gallery from filling when eligible rows exist.
+
+        Uses example.com paths only so both real and stubbed DNS resolve
+        the host as public — privacy filtering must come exclusively
+        from the per-row predicate (secret query string here).
+        """
+        # 6 newer rows blocked by ?token=, 3 older eligible rows.
+        for i in range(6):
+            bad = f"https://example.com/blocked-{i}?token=x"
+            await _seed_job(
+                db_pool,
+                url=bad,
+                finished_at=datetime.now(UTC) - timedelta(seconds=i),
+            )
+            await _seed_scrape(db_pool, url=bad)
+        for i in range(3):
+            good = f"https://example.com/good-{i}"
+            await _seed_job(
+                db_pool,
+                url=good,
+                finished_at=datetime.now(UTC) - timedelta(seconds=10 + i),
+            )
+            await _seed_scrape(db_pool, url=good)
+
+        result = await list_recent(db_pool, limit=5, signer=_StubSigner())
+        assert len(result) == 3
+        for card in result:
+            assert "/good-" in card.source_url
+            assert "?token=" not in card.source_url
+
+
+class TestListRecentDedupAfterFilter:
+    """TASK-1485.06 P1.1: a newer privacy-rejected duplicate must NOT
+    hide an older qualifying duplicate of the same normalized_url."""
+
+    async def test_newer_secret_query_does_not_hide_older_clean(
+        self, db_pool: Any
+    ) -> None:
+        # Both jobs share the same normalized_url
+        # ("https://example.com/dedup-secret") because the scrape cache's
+        # normalize_url drops `?utm_*` but keeps `?token=`. Two distinct
+        # URLs that normalize to the same key still go to the same scrape
+        # row. We seed only one scrape row matching the shared key.
+        url = "https://example.com/dedup-secret"
+        # Older: clean URL, qualifying.
+        old = await _seed_job(
+            db_pool,
+            url=url,
+            finished_at=datetime.now(UTC) - timedelta(hours=1),
+        )
+        await _seed_scrape(db_pool, url=url)
+        # Newer: same normalized URL but source_url carries a secret param.
+        # Manually upsert with same normalized_url + dirty source_url.
+        async with db_pool.acquire() as conn:
+            new = await conn.fetchval(
+                """
+                INSERT INTO vibecheck_jobs
+                    (url, normalized_url, host, status, sections,
+                     finished_at, preview_description)
+                VALUES ($1, $2, 'example.com', 'done', $3::jsonb, $4, $5)
+                RETURNING job_id
+                """,
+                f"{url}?token=secret",
+                url,
+                json.dumps(_full_sections()),
+                datetime.now(UTC),
+                "newer secret-bearing job",
+            )
+
+        result = await list_recent(db_pool, limit=5, signer=_StubSigner())
+        # The newer job is privacy-rejected (its source_url has ?token=).
+        # Without dedup-after-filter, the gallery would drop this URL
+        # entirely (newer hides older). With the fix, the older clean
+        # job represents this URL.
+        assert len(result) == 1
+        assert result[0].job_id == old
+        assert result[0].job_id != new
+        assert "?token=" not in result[0].source_url
+
+    async def test_newer_sub_threshold_partial_does_not_hide_older_done(
+        self, db_pool: Any
+    ) -> None:
+        # SQL filters out the newer sub-threshold partial entirely (the
+        # 90% rule lives in the WHERE clause), so dedup never sees it.
+        # The older done job survives and represents this URL.
+        url = "https://example.com/dedup-partial"
+        old = await _seed_job(
+            db_pool,
+            url=url,
+            status="done",
+            finished_at=datetime.now(UTC) - timedelta(hours=1),
+        )
+        await _seed_scrape(db_pool, url=url)
+        # Newer partial that fails the 90% rule.
+        async with db_pool.acquire() as conn:
+            await conn.execute(
+                """
+                INSERT INTO vibecheck_jobs
+                    (url, normalized_url, host, status, sections,
+                     finished_at, preview_description)
+                VALUES ($1, $1, 'example.com', 'partial', $2::jsonb, $3, $4)
+                """,
+                url,
+                json.dumps(_partial_sections(done=5, total=10)),
+                datetime.now(UTC),
+                "low-completion partial",
+            )
+
+        result = await list_recent(db_pool, limit=5, signer=_StubSigner())
+        assert len(result) == 1
+        assert result[0].job_id == old

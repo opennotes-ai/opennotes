@@ -1,27 +1,43 @@
 """Data access for the "Recently vibe checked" gallery (TASK-1485.03).
 
 Joins `vibecheck_jobs` x `vibecheck_scrapes` keyed by `normalized_url`,
-applies privacy defaults BEFORE dedup/limit so excluded rows can never
-displace eligible ones, dedups to the most recent qualifying job per URL,
-filters partials below the 90% completion threshold, signs screenshot
-URLs, and returns up to `limit` `RecentAnalysis` rows.
+applies privacy defaults, dedups to the most recent surviving job per URL,
+signs screenshot URLs, and returns up to `limit` `RecentAnalysis` rows.
+
+The 90% completion rule for partial jobs is enforced in SQL so the
+candidate set the route sees never includes sub-threshold partials. This
+removes the displacement hazard where a newer <90% partial would shadow
+an older qualifying done job for the same URL (TASK-1485.06 P1.1).
+
+Privacy filters run in Python AFTER fetch but BEFORE dedup. Dedup picks
+the newest row that survived all filters, so a newer privacy-rejected
+duplicate cannot hide an older qualifying duplicate of the same
+normalized URL (TASK-1485.06 P1.1).
+
+Privacy filtering composes the repo-wide SSRF guard
+`src/utils/url_security.py::validate_public_http_url` (TASK-1485.06 P1.2)
+plus query-string secret detection and explicit-port rejection. The SSRF
+guard handles IDNA, trailing-dot normalization, IP literals, blocked
+suffixes (.internal/.local), and DNS resolution to non-private IPs. Pure
+local checks (literals, suffixes, blocklist, query-string secrets) need
+no DNS; non-literal hosts incur one getaddrinfo per row at refresh time
+(60s TTL cache amortizes this in the route layer).
 
 90%-rule arithmetic uses raw `vibecheck_jobs.sections` JSONB key counts
 (integer math: total > 0 AND done * 10 >= total * 9). Going through
 `SectionSlug` would silently drop unknown / future keys and skew the ratio.
 
-Privacy defaults applied here are the always-on baseline. The configurable
-host denylist (TASK-1486) layers on top later — those filters live in this
-same function so the denylist sees the same shaped rows.
+The configurable host denylist (TASK-1486) layers on top later — those
+filters live in this same function so the denylist sees the same shaped rows.
 """
 from __future__ import annotations
 
-import ipaddress
 import json
 from typing import Any, Protocol
 from urllib.parse import parse_qs, urlsplit
 
 from src.analyses.schemas import RecentAnalysis
+from src.utils.url_security import InvalidURL, validate_public_http_url
 
 _SECRET_QUERY_PARAM_KEYS = frozenset(
     {
@@ -40,48 +56,56 @@ _SECRET_QUERY_PARAM_KEYS = frozenset(
 
 _SAFE_PORTS = frozenset({80, 443})
 
-_LOOPBACK_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
+_DEFAULT_OVERFETCH_MULTIPLIER = 8
 
-_DEFAULT_OVERFETCH_MULTIPLIER = 4
-
-# Single-window: dedup on normalized_url (CTE), then status filter, then
-# expired-scrape filter (LEFT JOIN + IS NOT NULL), then ORDER BY DESC + LIMIT.
-# DISTINCT ON inside the CTE picks the most recent row per normalized_url
-# directly so the post-filter limit is reachable whenever enough qualifying
-# rows exist (LIMIT * 4 over-fetch is a defense-in-depth for partial-90%
-# rule and privacy filter rejections, not a correctness requirement).
+# 90% rule lives in SQL so DISTINCT-ON-equivalent dedup is never offered
+# a sub-threshold partial as the "newest" row for a normalized_url. The
+# subqueries against jsonb_each over `sections` are bounded (the dict is
+# tiny — one entry per SectionSlug) so the cost is negligible.
+#
+# We deliberately do NOT push the privacy filter into SQL (the SSRF guard's
+# IDNA + DNS-resolution checks don't translate cleanly), so the over-fetch
+# multiplier handles the privacy rejection rate. The Python layer then
+# dedups by normalized_url AFTER privacy filtering, picking the newest
+# survivor per URL — which prevents a newer privacy-rejected duplicate
+# from hiding an older qualifying one.
 _RECENT_SQL = """
-WITH dedup AS (
-    SELECT DISTINCT ON (j.normalized_url)
-        j.job_id,
-        j.normalized_url,
-        j.url AS source_url,
-        j.finished_at,
-        j.preview_description,
-        j.sections,
-        j.status
-    FROM vibecheck_jobs j
-    WHERE j.status IN ('done', 'partial')
-      AND j.finished_at IS NOT NULL
-      AND j.preview_description IS NOT NULL
-    ORDER BY j.normalized_url, j.finished_at DESC
-)
 SELECT
-    d.job_id,
-    d.normalized_url,
-    d.source_url,
-    d.finished_at,
-    d.preview_description,
-    d.sections,
-    d.status,
+    j.job_id,
+    j.normalized_url,
+    j.url AS source_url,
+    j.finished_at,
+    j.preview_description,
+    j.sections,
+    j.status,
     s.page_title,
     s.screenshot_storage_key
-FROM dedup d
+FROM vibecheck_jobs j
 INNER JOIN vibecheck_scrapes s
-    ON s.normalized_url = d.normalized_url
-WHERE s.screenshot_storage_key IS NOT NULL
+    ON s.normalized_url = j.normalized_url
+WHERE j.status IN ('done', 'partial')
+  AND j.finished_at IS NOT NULL
+  AND j.preview_description IS NOT NULL
+  AND s.screenshot_storage_key IS NOT NULL
   AND s.expires_at > now()
-ORDER BY d.finished_at DESC
+  AND (
+    j.status = 'done'
+    OR (
+      j.status = 'partial'
+      AND jsonb_typeof(j.sections) = 'object'
+      AND (SELECT COUNT(*) FROM jsonb_each(j.sections)) > 0
+      AND (
+        SELECT COUNT(*) FILTER (
+          WHERE jsonb_typeof(value) = 'object'
+          AND value->>'state' = 'done'
+        ) * 10
+        FROM jsonb_each(j.sections)
+      ) >= (
+        SELECT COUNT(*) FROM jsonb_each(j.sections)
+      ) * 9
+    )
+  )
+ORDER BY j.finished_at DESC
 LIMIT $1
 """
 
@@ -100,29 +124,17 @@ def _has_secret_query_param(query: str) -> bool:
     return any(key.lower() in _SECRET_QUERY_PARAM_KEYS for key in parsed)
 
 
-def _is_blocked_host(host: str) -> bool:
-    """Reject loopback, private IPv4/IPv6 ranges, and IDNA noise."""
-    if not host:
-        return True
-    bare = host.lower()
-    # Strip any IPv6 brackets so ipaddress can parse.
-    if bare.startswith("[") and bare.endswith("]"):
-        bare = bare[1:-1]
-    if bare in _LOOPBACK_HOSTS:
-        return True
-    try:
-        ip = ipaddress.ip_address(bare)
-    except ValueError:
-        return False
-    return ip.is_private or ip.is_loopback or ip.is_link_local
-
-
-def _is_blocked_url(raw_url: str) -> bool:
+def _is_blocked_url(raw_url: str) -> bool:  # noqa: PLR0911
     """Apply the always-on privacy defaults.
 
-    Excludes URLs whose query string contains common secret-shaped params,
-    URLs with an explicit non-80/443 port, and URLs whose host is in the
-    loopback or private range. Caller treats True as "exclude from gallery".
+    Composes the repo-wide SSRF guard `validate_public_http_url`
+    (handles scheme/host/IDNA/IP-literal/suffix/private-resolving IP)
+    with three gallery-specific checks the SSRF guard does not do:
+    secret-shaped query params, explicit non-80/443 ports, and userinfo.
+
+    Returns True (block) on any malformed URL — including malformed ports
+    that would otherwise raise ValueError from `urlsplit().port` and
+    propagate to the caller as a 500 (TASK-1485.06 P1.2).
     """
     try:
         parts = urlsplit(raw_url)
@@ -132,14 +144,30 @@ def _is_blocked_url(raw_url: str) -> bool:
         return True
     if _has_secret_query_param(parts.query):
         return True
-    host = parts.hostname or ""
-    if _is_blocked_host(host):
+    # Userinfo defense-in-depth — `user:pass@host` leaks creds in card UI.
+    netloc_host_part = parts.netloc.split("/", 1)[0]
+    if "@" in netloc_host_part:
         return True
-    explicit_port = parts.port
+    # Explicit non-safe port. `.port` raises ValueError on malformed input
+    # (e.g. `https://host:abc/x`); without this guard a single bad DB row
+    # would 500 the entire gallery (TASK-1485.06 P1.2).
+    try:
+        explicit_port = parts.port
+    except ValueError:
+        return True
     if explicit_port is not None and explicit_port not in _SAFE_PORTS:
         return True
-    # Defense-in-depth — userinfo (`user:pass@host`) is not allowed.
-    return "@" in parts.netloc.split("/", 1)[0]
+    # Repo-wide SSRF guard: scheme allowlist, IDNA + trailing-dot, IP
+    # literals (catches IPv4 octal/decimal/compressed via getaddrinfo),
+    # blocked suffixes (.internal/.local), DNS resolution to non-private
+    # IP. Bypasses Codex empirically verified before this change:
+    # localhost., 127.1, 0177.0.0.1, 2130706433, [::ffff:127.0.0.1],
+    # [fe80::1%25en0] — all now rejected.
+    try:
+        validate_public_http_url(raw_url)
+    except InvalidURL:
+        return True
+    return False
 
 
 def _passes_partial_threshold(sections_raw: Any, status: str) -> bool:
@@ -177,10 +205,23 @@ async def list_recent(
 ) -> list[RecentAnalysis]:
     """Return up to `limit` qualifying RecentAnalysis rows for the gallery.
 
-    Privacy filters apply BEFORE the limit cutoff so excluded rows cannot
-    displace eligible ones. The SQL pulls `limit * 4` candidate rows so
-    Python-side rejections (partial-below-90%, privacy filter) still leave
-    enough survivors to fill the gallery in the typical case.
+    SQL emits rows ordered by finished_at DESC. The route iterates and
+    keeps the FIRST surviving row per normalized_url after applying
+    privacy + signer filters; this is dedup-after-filter, so a newer
+    privacy-rejected row cannot hide an older qualifying row of the
+    same normalized URL (TASK-1485.06 P1.1).
+
+    The 90% threshold is enforced in SQL, so `_passes_partial_threshold`
+    here is defensive only — it costs nothing on rows that already
+    passed the SQL filter and prevents a future SQL-bug regression
+    from leaking sub-threshold partials into the gallery.
+
+    Over-fetch (`limit * 8`) gives the privacy filter headroom to drop
+    rejection candidates without underfilling. A pathological deny rate
+    would still underfill, but that's preferable to either (a) doing N
+    DNS lookups per filter pass and growing super-linearly with rejection
+    rate, or (b) re-querying when underfilled (re-query lacks pagination
+    state and would return the same rows).
     """
     if limit <= 0:
         return []
@@ -189,8 +230,15 @@ async def list_recent(
         rows = await conn.fetch(_RECENT_SQL, overfetch)
 
     out: list[RecentAnalysis] = []
+    seen_normalized: set[str] = set()
     for row in rows:
+        normalized = row["normalized_url"]
+        if normalized in seen_normalized:
+            # A newer surviving row already represents this URL.
+            continue
         if _is_blocked_url(row["source_url"]):
+            # Don't claim the dedup slot — older qualifying duplicate may
+            # still be in the candidate set.
             continue
         if not _passes_partial_threshold(row["sections"], row["status"]):
             continue
@@ -207,6 +255,7 @@ async def list_recent(
                 completed_at=row["finished_at"],
             )
         )
+        seen_normalized.add(normalized)
         if len(out) >= limit:
             break
     return out
