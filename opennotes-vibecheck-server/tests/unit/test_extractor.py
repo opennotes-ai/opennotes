@@ -20,12 +20,22 @@ from datetime import UTC, datetime
 from typing import Any, cast
 
 import pytest
+from pydantic_ai.exceptions import ModelHTTPError, UnexpectedModelBehavior
 from pydantic_ai.messages import ImageUrl
 
 from src.analyses.schemas import PageKind
 from src.cache.scrape_cache import CachedScrape, SupabaseScrapeCache
 from src.config import Settings
-from src.firecrawl_client import FirecrawlClient, ScrapeMetadata, ScrapeResult
+from src.firecrawl_client import (
+    FirecrawlClient,
+    FirecrawlError,
+    ScrapeMetadata,
+    ScrapeResult,
+)
+from src.utterances.errors import (
+    TransientExtractionError,
+    UtteranceExtractionError,
+)
 from src.utterances.extractor import (
     EXTRACTOR_SYSTEM_PROMPT,
     ExtractorDeps,
@@ -760,3 +770,276 @@ async def test_extract_utterances_media_empty_when_no_html(
     assert post_utterance.mentioned_images == []
     assert post_utterance.mentioned_urls == []
     assert post_utterance.mentioned_videos == []
+
+
+# ---------------------------------------------------------------------------
+# Phase B (TASK-1474.23.03.03) — classifier wiring at agent.run + Firecrawl
+# scrape, plus the `vibecheck.extract_utterances` Logfire span. The span body
+# is exercised via a recording stub patched onto `extractor.logfire.span`,
+# since logfire isn't configured in the test process.
+# ---------------------------------------------------------------------------
+
+
+def _stub_agent_raising(
+    monkeypatch: pytest.MonkeyPatch, exc: BaseException
+) -> None:
+    """Replace `build_agent` with a fake whose `run` raises `exc`."""
+
+    class _RaisingAgent:
+        def tool(self, func: Any = None, /, **_kwargs: Any) -> Any:
+            if func is None:
+
+                def _wrap(f: Any) -> Any:
+                    return f
+
+                return _wrap
+            return func
+
+        async def run(self, *_args: Any, **_kwargs: Any) -> Any:
+            raise exc
+
+    monkeypatch.setattr(
+        "src.utterances.extractor.build_agent",
+        lambda settings, output_type=None, system_prompt=None, name=None: _RaisingAgent(),
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status_code", [429, 503, 504])
+async def test_extract_utterances_classifies_vertex_retriable_as_transient(
+    monkeypatch: pytest.MonkeyPatch, settings: Settings, status_code: int
+) -> None:
+    """`agent.run` raising `ModelHTTPError(429|503|504)` must surface as a
+    `TransientExtractionError(provider="vertex")` so the orchestrator can
+    redeliver. Non-transient surfaces would have been wrapped as a terminal
+    `UtteranceExtractionError`.
+    """
+    client = _FakeFirecrawlClient(result=_scrape())
+    cache = _FakeScrapeCache()
+    _stub_agent_raising(
+        monkeypatch,
+        ModelHTTPError(status_code=status_code, model_name="gemini-2.5-pro", body=None),
+    )
+
+    with pytest.raises(TransientExtractionError) as exc_info:
+        await _call(TARGET_URL, client, cache, settings)
+
+    assert exc_info.value.provider == "vertex"
+    assert exc_info.value.status_code == status_code
+
+
+@pytest.mark.asyncio
+async def test_extract_utterances_classifies_unexpected_model_behavior_with_inner_504(
+    monkeypatch: pytest.MonkeyPatch, settings: Settings
+) -> None:
+    """`UnexpectedModelBehavior` wrapping a 504 must unwrap to transient.
+
+    pydantic-ai surfaces tool-loop or schema-mismatch retries as
+    `UnexpectedModelBehavior(__cause__=ModelHTTPError)`; the classifier walks
+    the cause chain and the wire-up must respect that.
+    """
+    client = _FakeFirecrawlClient(result=_scrape())
+    cache = _FakeScrapeCache()
+    inner = ModelHTTPError(status_code=504, model_name="gemini-2.5-pro", body=None)
+    outer = UnexpectedModelBehavior("tool retry exhausted")
+    outer.__cause__ = inner
+    _stub_agent_raising(monkeypatch, outer)
+
+    with pytest.raises(TransientExtractionError) as exc_info:
+        await _call(TARGET_URL, client, cache, settings)
+
+    assert exc_info.value.provider == "vertex"
+    assert exc_info.value.status_code == 504
+    assert exc_info.value.status == "DEADLINE_EXCEEDED"
+
+
+@pytest.mark.asyncio
+async def test_extract_utterances_treats_parse_failure_as_terminal(
+    monkeypatch: pytest.MonkeyPatch, settings: Settings
+) -> None:
+    """A non-HTTP, non-network exception (e.g. ValueError) must NOT be
+    classified as transient — it surfaces as `UtteranceExtractionError` so
+    the orchestrator marks the job EXTRACTION_FAILED without retrying.
+    """
+    client = _FakeFirecrawlClient(result=_scrape())
+    cache = _FakeScrapeCache()
+    _stub_agent_raising(monkeypatch, ValueError("schema validation failed"))
+
+    with pytest.raises(UtteranceExtractionError):
+        await _call(TARGET_URL, client, cache, settings)
+
+
+@pytest.mark.asyncio
+async def test_extract_utterances_classifies_firecrawl_503_as_transient(
+    monkeypatch: pytest.MonkeyPatch, settings: Settings
+) -> None:
+    """`client.scrape` raising `FirecrawlError(503)` must surface as a
+    `TransientExtractionError(provider="firecrawl")` — the upstream scraper
+    is allowed to redeliver.
+    """
+    raising = _FakeFirecrawlClient()
+
+    async def boom(*_args: Any, **_kwargs: Any) -> Any:
+        raise FirecrawlError("upstream unavailable", status_code=503)
+
+    raising.scrape = boom  # pyright: ignore[reportAttributeAccessIssue]
+    cache = _FakeScrapeCache()
+    _stub_agent(monkeypatch, _payload())
+
+    with pytest.raises(TransientExtractionError) as exc_info:
+        await _call(TARGET_URL, raising, cache, settings)
+
+    assert exc_info.value.provider == "firecrawl"
+    assert exc_info.value.status_code == 503
+
+
+@pytest.mark.asyncio
+async def test_extract_utterances_classifies_firecrawl_404_as_terminal(
+    monkeypatch: pytest.MonkeyPatch, settings: Settings
+) -> None:
+    """A non-retriable FirecrawlError (404) must surface as the terminal
+    `UtteranceExtractionError`, not transient.
+    """
+    raising = _FakeFirecrawlClient()
+
+    async def boom(*_args: Any, **_kwargs: Any) -> Any:
+        raise FirecrawlError("page not found", status_code=404)
+
+    raising.scrape = boom  # pyright: ignore[reportAttributeAccessIssue]
+    cache = _FakeScrapeCache()
+    _stub_agent(monkeypatch, _payload())
+
+    with pytest.raises(UtteranceExtractionError):
+        await _call(TARGET_URL, raising, cache, settings)
+
+
+@pytest.mark.asyncio
+async def test_extract_utterances_wraps_body_in_logfire_span(
+    monkeypatch: pytest.MonkeyPatch, settings: Settings
+) -> None:
+    """The whole `extract_utterances` body must run inside a single
+    `vibecheck.extract_utterances` span carrying the `url` attribute. We
+    patch `logfire.span` at the extractor module to a recording stub so we
+    can assert the span name + initial attrs without depending on Logfire
+    being configured in tests.
+    """
+    from src.utterances import extractor as extractor_mod
+
+    recorded: dict[str, Any] = {"name": None, "attrs": {}, "set_attrs": {}}
+
+    class _RecordingSpan:
+        def __enter__(self) -> _RecordingSpan:
+            return self
+
+        def __exit__(self, *_args: Any) -> None:
+            return None
+
+        def set_attribute(self, key: str, value: Any) -> None:
+            recorded["set_attrs"][key] = value
+
+    def _fake_span(name: str, **attrs: Any) -> _RecordingSpan:
+        recorded["name"] = name
+        recorded["attrs"] = dict(attrs)
+        return _RecordingSpan()
+
+    monkeypatch.setattr(extractor_mod.logfire, "span", _fake_span)
+
+    client = _FakeFirecrawlClient(result=_scrape())
+    cache = _FakeScrapeCache()
+    _stub_agent(monkeypatch, _payload())
+
+    await _call(TARGET_URL, client, cache, settings)
+
+    assert recorded["name"] == "vibecheck.extract_utterances"
+    assert recorded["attrs"].get("url") == TARGET_URL
+
+
+@pytest.mark.asyncio
+async def test_extract_utterances_sets_upstream_attrs_on_vertex_transient(
+    monkeypatch: pytest.MonkeyPatch, settings: Settings
+) -> None:
+    """When the agent run raises a retriable Vertex error, the span gains
+    both the neutral `upstream_*` attrs AND the legacy `vertex_*` attrs for
+    backward-compat with saved Logfire searches.
+    """
+    from src.utterances import extractor as extractor_mod
+
+    set_attrs: dict[str, Any] = {}
+
+    class _RecordingSpan:
+        def __enter__(self) -> _RecordingSpan:
+            return self
+
+        def __exit__(self, *_args: Any) -> None:
+            return None
+
+        def set_attribute(self, key: str, value: Any) -> None:
+            set_attrs[key] = value
+
+    def _fake_span(_name: str, **_attrs: Any) -> _RecordingSpan:
+        return _RecordingSpan()
+
+    monkeypatch.setattr(extractor_mod.logfire, "span", _fake_span)
+
+    client = _FakeFirecrawlClient(result=_scrape())
+    cache = _FakeScrapeCache()
+    _stub_agent_raising(
+        monkeypatch,
+        ModelHTTPError(status_code=503, model_name="gemini-2.5-pro", body=None),
+    )
+
+    with pytest.raises(TransientExtractionError):
+        await _call(TARGET_URL, client, cache, settings)
+
+    assert set_attrs.get("upstream_provider") == "vertex"
+    assert set_attrs.get("upstream_status_code") == 503
+    assert set_attrs.get("upstream_status") == "UNAVAILABLE"
+    # Vertex-arm legacy compat — saved Logfire searches keyed on these.
+    assert set_attrs.get("vertex_status_code") == 503
+    assert set_attrs.get("vertex_status") == "UNAVAILABLE"
+
+
+@pytest.mark.asyncio
+async def test_extract_utterances_sets_upstream_attrs_on_firecrawl_transient(
+    monkeypatch: pytest.MonkeyPatch, settings: Settings
+) -> None:
+    """A transient Firecrawl error must set `upstream_provider="firecrawl"`
+    on the span — and must NOT leak the Vertex-arm legacy `vertex_*` attrs
+    onto a non-Vertex provider.
+    """
+    from src.utterances import extractor as extractor_mod
+
+    set_attrs: dict[str, Any] = {}
+
+    class _RecordingSpan:
+        def __enter__(self) -> _RecordingSpan:
+            return self
+
+        def __exit__(self, *_args: Any) -> None:
+            return None
+
+        def set_attribute(self, key: str, value: Any) -> None:
+            set_attrs[key] = value
+
+    def _fake_span(_name: str, **_attrs: Any) -> _RecordingSpan:
+        return _RecordingSpan()
+
+    monkeypatch.setattr(extractor_mod.logfire, "span", _fake_span)
+
+    raising = _FakeFirecrawlClient()
+
+    async def boom(*_args: Any, **_kwargs: Any) -> Any:
+        raise FirecrawlError("upstream unavailable", status_code=503)
+
+    raising.scrape = boom  # pyright: ignore[reportAttributeAccessIssue]
+    cache = _FakeScrapeCache()
+    _stub_agent(monkeypatch, _payload())
+
+    with pytest.raises(TransientExtractionError):
+        await _call(TARGET_URL, raising, cache, settings)
+
+    assert set_attrs.get("upstream_provider") == "firecrawl"
+    assert set_attrs.get("upstream_status_code") == 503
+    # Vertex-only legacy attrs must not be set on non-Vertex transient.
+    assert "vertex_status_code" not in set_attrs
+    assert "vertex_status" not in set_attrs
