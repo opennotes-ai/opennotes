@@ -349,9 +349,17 @@ async def _increment_extract_transient_attempts(
             job_id,
         )
         return None
-    except Exception as exc:
-        logger.warning(
-            "extract_transient_attempts increment failed for job %s: %s",
+    except (asyncpg.PostgresConnectionError, asyncpg.InterfaceError) as exc:
+        # Connection-class transients (pool exhaustion, peer reset, idle
+        # disconnect): the increment didn't land but the failure mode IS
+        # transient by definition. Fall through to plain TransientError so
+        # Cloud Tasks redelivers — the next attempt's increment will catch
+        # up. Logic bugs (SQL syntax, programming errors) bubble to the
+        # outer except as TerminalError(EXTRACTION_FAILED) so they don't
+        # silently disable the backstop forever.
+        logger.exception(
+            "extract_transient_attempts increment hit DB connection error "
+            "for job %s: %s",
             job_id,
             exc,
         )

@@ -157,7 +157,11 @@ async def extract_utterances(
         _register_tools(agent)
         deps = ExtractorDeps(scrape=scrape, scrape_cache=scrape_cache)
 
-        model_name = settings.VERTEXAI_MODEL
+        # Strip the `google-vertex:` prefix `build_agent` strips before
+        # constructing GoogleModel so the span attr matches the
+        # ModelHTTPError.model_name that pydantic-ai surfaces from the
+        # provider — keeps Logfire saved searches consistent.
+        model_name = settings.VERTEXAI_MODEL.removeprefix("google-vertex:")
         try:
             result = await agent.run(markdown, deps=deps)  # pyright: ignore[reportArgumentType]
         except Exception as exc:

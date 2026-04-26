@@ -700,11 +700,18 @@ async def test_run_pipeline_falls_back_to_transient_when_increment_db_fails(
     monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """If the increment SQL itself fails (DB down, connection blip), the
-    helper returns None and the orchestrator classifies as TransientError
-    rather than terminal. Best-effort: prefer redelivery > silent loss.
-    AC#4 for TASK-1474.23.03.04.
+    """If the increment SQL hits a connection-class transient (asyncpg
+    InterfaceError / PostgresConnectionError), the helper returns None
+    and the orchestrator classifies as TransientError rather than terminal.
+    Best-effort: prefer redelivery > silent loss. AC#4 for TASK-1474.23.03.04.
+
+    Programming bugs (RuntimeError, SQL syntax errors) are NOT swallowed —
+    those bubble up to the outer except as TerminalError(EXTRACTION_FAILED)
+    so a regression that breaks the increment SQL doesn't silently
+    disable the backstop forever. See test_run_pipeline_unexpected_increment_error_terminates.
     """
+    import asyncpg
+
     from src.jobs import orchestrator
     from src.utterances.errors import TransientExtractionError
 
@@ -722,7 +729,7 @@ async def test_run_pipeline_falls_back_to_transient_when_increment_db_fails(
 
     class _DbDownConn:
         async def fetchval(self, sql: str, *args: Any) -> int:
-            raise RuntimeError("connection refused")
+            raise asyncpg.InterfaceError("connection lost")
 
     pool = FakePool(_DbDownConn())
     caplog.set_level(logging.WARNING, logger="src.jobs.orchestrator")
@@ -734,6 +741,46 @@ async def test_run_pipeline_falls_back_to_transient_when_increment_db_fails(
 
     # Warning surfaced so operators see the failure (AC#4 visibility).
     assert any(
-        "extract_transient_attempts increment failed" in r.message
+        "extract_transient_attempts increment hit DB connection error" in r.message
         for r in caplog.records
     ), [r.message for r in caplog.records]
+
+
+@pytest.mark.asyncio
+async def test_run_pipeline_unexpected_increment_error_is_not_swallowed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An unexpected exception during increment (programming bug, SQL syntax)
+    must NOT be silently swallowed by the helper. The narrow exception
+    handling lets the raw exception bubble out of `_increment_extract_transient_attempts`
+    so the outer handler `run_job` can mark the row failed (instead of
+    silently disabling the backstop forever, which is what a broad
+    except Exception would do).
+    """
+    from src.jobs import orchestrator
+    from src.utterances.errors import TransientExtractionError
+
+    _stub_extract_arm_only(monkeypatch)
+
+    async def raise_transient(*args, **kwargs):
+        raise TransientExtractionError(
+            provider="vertex",
+            status_code=504,
+            status="DEADLINE_EXCEEDED",
+            fallback_message="Vertex 504",
+        )
+
+    monkeypatch.setattr(orchestrator, "extract_utterances", raise_transient)
+
+    class _BuggyConn:
+        async def fetchval(self, sql: str, *args: Any) -> int:
+            raise RuntimeError("simulated SQL syntax error")
+
+    pool = FakePool(_BuggyConn())
+
+    # The RuntimeError bubbles out — NOT swallowed as None. This is the
+    # exact behavior the broad except Exception would have hidden.
+    with pytest.raises(RuntimeError, match="simulated SQL syntax error"):
+        await orchestrator._run_pipeline(
+            pool, uuid4(), uuid4(), "https://example.com", MagicMock()
+        )

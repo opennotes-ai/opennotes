@@ -22,7 +22,11 @@ from src.utterances.errors import (
 )
 
 
-@pytest.mark.parametrize("status_code", [429, 503, 504])
+@pytest.mark.parametrize(
+    "status_code",
+    [429, 500, 503, 504],
+    ids=["429-rate-limit", "500-internal", "503-unavailable", "504-deadline"],
+)
 def test_classify_direct_model_http_error_returns_transient(status_code: int) -> None:
     exc = ModelHTTPError(status_code=status_code, model_name="gemini-2.5-pro", body=None)
     result = classify_pydantic_ai_error(exc, model_name="gemini-2.5-pro")
@@ -66,14 +70,39 @@ def test_classify_httpx_transport_error_returns_transient() -> None:
     assert isinstance(result, TransientExtractionError)
 
 
-def test_classify_firecrawl_503_returns_transient() -> None:
+@pytest.mark.parametrize(
+    "status_code",
+    [429, 500, 502, 503, 504],
+    ids=["429-rate-limit", "500-internal", "502-bad-gateway", "503-unavailable", "504-deadline"],
+)
+def test_classify_firecrawl_retriable_status_returns_transient(status_code: int) -> None:
     from src.firecrawl_client import FirecrawlError
 
-    exc = FirecrawlError("upstream unavailable", status_code=503)
+    exc = FirecrawlError("upstream unavailable", status_code=status_code)
     result = classify_firecrawl_error(exc)
     assert isinstance(result, TransientExtractionError)
     assert result.provider == "firecrawl"
-    assert result.status_code == 503
+    assert result.status_code == status_code
+
+
+def test_classify_firecrawl_retryable_http_status_error_returns_transient() -> None:
+    """The private _RetryableHTTPStatusError that escapes tenacity must
+    classify as transient — pins the dead-by-coverage branch in errors.py.
+    """
+    from src.firecrawl_client import _RetryableHTTPStatusError
+
+    exc = _RetryableHTTPStatusError(503, "upstream temporarily unavailable")
+    result = classify_firecrawl_error(exc)
+    assert isinstance(result, TransientExtractionError)
+    assert result.provider == "firecrawl"
+
+
+def test_classify_firecrawl_httpx_timeout_returns_transient() -> None:
+    """Mirrors the Vertex-arm httpx.ReadTimeout test for the Firecrawl arm."""
+    exc = httpx.ReadTimeout("upstream read timeout")
+    result = classify_firecrawl_error(exc)
+    assert isinstance(result, TransientExtractionError)
+    assert result.provider == "firecrawl"
 
 
 def test_classify_firecrawl_404_returns_none() -> None:

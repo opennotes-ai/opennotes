@@ -79,6 +79,14 @@ CREATE TABLE vibecheck_jobs (
 );
 """
 
+# NOTE: the production schema (src/cache/schema.sql:77-92) carries three
+# CHECK constraints (vibecheck_jobs_status_check, vibecheck_jobs_error_code_check,
+# vibecheck_jobs_terminal_finished_at) that are intentionally OMITTED here.
+# Several tests insert rows in shapes the production constraints would reject
+# (e.g. status='failed' with finished_at=NULL for retry-flow assertions);
+# tightening the test DDL to match production needs each of those tests to
+# stop bypassing the invariant first. Tracked as TASK-1474.23.03.10.
+
 
 @pytest.fixture(autouse=True)
 def _stub_dns(monkeypatch: pytest.MonkeyPatch) -> None:

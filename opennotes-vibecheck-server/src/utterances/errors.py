@@ -29,9 +29,13 @@ from pydantic_ai.exceptions import ModelHTTPError
 
 from src.firecrawl_client import FirecrawlError, _RetryableHTTPStatusError
 
-# Vertex AI / Gemini retriable status codes
-# (DEADLINE_EXCEEDED, UNAVAILABLE, RESOURCE_EXHAUSTED).
-_VERTEX_RETRIABLE_STATUSES: Final[frozenset[int]] = frozenset({429, 503, 504})
+# Vertex AI / Gemini retriable status codes (RESOURCE_EXHAUSTED 429,
+# INTERNAL 500, UNAVAILABLE 503, DEADLINE_EXCEEDED 504). Google's retry
+# guidance lists 500 alongside 503/504 as transient — kept symmetric with
+# the Firecrawl set so a Vertex 500 doesn't silently terminate the job.
+_VERTEX_RETRIABLE_STATUSES: Final[frozenset[int]] = frozenset(
+    {429, 500, 503, 504}
+)
 
 # Firecrawl retriable HTTP statuses (rate-limit + 5xx).
 _FIRECRAWL_RETRIABLE_STATUSES: Final[frozenset[int]] = frozenset(
@@ -102,6 +106,7 @@ def _find_inner_model_http_error(exc: BaseException) -> ModelHTTPError | None:
 def _vertex_status_name(status_code: int) -> str:
     return {
         429: "RESOURCE_EXHAUSTED",
+        500: "INTERNAL",
         503: "UNAVAILABLE",
         504: "DEADLINE_EXCEEDED",
     }.get(status_code, f"HTTP_{status_code}")
