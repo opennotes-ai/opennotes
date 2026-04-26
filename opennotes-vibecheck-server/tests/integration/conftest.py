@@ -91,7 +91,8 @@ CREATE TABLE IF NOT EXISTS vibecheck_jobs (
     finished_at TIMESTAMPTZ,
     test_fail_slug TEXT,
     safety_recommendation JSONB,
-    last_stage TEXT
+    last_stage TEXT,
+    preview_description TEXT
 );
 
 CREATE INDEX IF NOT EXISTS vibecheck_jobs_normalized_url_idx

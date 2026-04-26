@@ -66,7 +66,23 @@ CREATE TABLE vibecheck_jobs (
     finished_at TIMESTAMPTZ,
     test_fail_slug TEXT,
     safety_recommendation JSONB,
-    last_stage TEXT
+    last_stage TEXT,
+    preview_description TEXT
+);
+
+CREATE TABLE vibecheck_job_utterances (
+    utterance_pk UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    job_id UUID NOT NULL REFERENCES vibecheck_jobs(job_id) ON DELETE CASCADE,
+    utterance_id TEXT,
+    kind TEXT NOT NULL,
+    text TEXT NOT NULL,
+    author TEXT,
+    timestamp_at TIMESTAMPTZ,
+    parent_id TEXT,
+    position INT NOT NULL DEFAULT 0,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    page_title TEXT,
+    page_kind TEXT
 );
 """
 
@@ -98,6 +114,7 @@ async def db_pool(_postgres_container) -> Any:
     async with pool.acquire() as conn:
         # Fresh schema per test keeps behavior checks independent.
         await conn.execute(
+            "DROP TABLE IF EXISTS vibecheck_job_utterances CASCADE; "
             "DROP TABLE IF EXISTS vibecheck_analyses CASCADE; "
             "DROP TABLE IF EXISTS vibecheck_jobs CASCADE;"
         )
@@ -828,6 +845,85 @@ async def test_maybe_finalize_job_upserts_cache_when_all_slots_done(db_pool) -> 
             f"sentinel {sentinel!r} appeared "
             f"{serialized.count(sentinel)} times — expected exactly 1"
         )
+
+
+async def test_maybe_finalize_job_writes_preview_description(db_pool) -> None:
+    """TASK-1485.02: finalize derives preview_description and persists it
+    in the same UPDATE that marks the job done."""
+    task_attempt = uuid4()
+    url = "https://example.com/with-preview"
+    job_id = await _insert_job(db_pool, task_attempt, url=url)
+    await _seed_slots(db_pool, job_id, task_attempt, _ALL_SLUGS)
+
+    finalized = await maybe_finalize_job(
+        db_pool, job_id, expected_task_attempt=task_attempt
+    )
+
+    assert finalized is True
+    async with db_pool.acquire() as conn:
+        preview = await conn.fetchval(
+            "SELECT preview_description FROM vibecheck_jobs WHERE job_id = $1",
+            job_id,
+        )
+    assert preview is not None
+    assert isinstance(preview, str)
+    assert len(preview) > 0
+    assert len(preview) <= 140
+
+
+async def test_maybe_finalize_job_preview_uses_first_utterance_fallback(db_pool) -> None:
+    """When no analysis signals carry a usable string, the first utterance
+    text feeds the fallback branch. The LATERAL join in _LOAD_SQL must
+    populate first_utterance_text from vibecheck_job_utterances."""
+    task_attempt = uuid4()
+    url = "https://example.com/utterance-fallback"
+    job_id = await _insert_job(db_pool, task_attempt, url=url)
+    sentinel = "Sentinel utterance text for preview fallback"
+    async with db_pool.acquire() as conn:
+        await conn.execute(
+            """
+            INSERT INTO vibecheck_job_utterances (job_id, kind, text, position)
+            VALUES ($1, 'post', $2, 0)
+            """,
+            job_id,
+            sentinel,
+        )
+    payloads = _minimal_slot_payloads()
+    # Wipe analysis signals so derive_preview_description falls through to ctx.
+    payloads[SectionSlug.SAFETY_MODERATION] = {"harmful_content_matches": []}
+    payloads[SectionSlug.TONE_DYNAMICS_FLASHPOINT] = {"flashpoint_matches": []}
+    payloads[SectionSlug.FACTS_CLAIMS_DEDUP] = {
+        "claims_report": {
+            "deduped_claims": [],
+            "total_claims": 0,
+            "total_unique": 0,
+        }
+    }
+    payloads[SectionSlug.OPINIONS_SENTIMENTS_SENTIMENT] = {
+        "sentiment_stats": {
+            "per_utterance": [],
+            "positive_pct": 0.0,
+            "negative_pct": 0.0,
+            "neutral_pct": 0.0,
+            "mean_valence": 0.0,
+        }
+    }
+    for slug in _ALL_SLUGS:
+        slot = _done_slot(payloads[slug])
+        await write_slot(db_pool, job_id, task_attempt, slug, slot)
+
+    finalized = await maybe_finalize_job(
+        db_pool, job_id, expected_task_attempt=task_attempt
+    )
+
+    assert finalized is True
+    async with db_pool.acquire() as conn:
+        preview = await conn.fetchval(
+            "SELECT preview_description FROM vibecheck_jobs WHERE job_id = $1",
+            job_id,
+        )
+    assert preview is not None
+    assert sentinel in preview
 
 
 async def test_maybe_finalize_job_is_idempotent_on_repeat_call(db_pool) -> None:

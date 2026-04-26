@@ -65,6 +65,10 @@ from src.analyses.tone._scd_schemas import SCDReport
 from src.cache.scrape_cache import canonical_cache_key
 from src.config import get_settings
 from src.jobs.enqueue import enqueue_job, enqueue_section_retry
+from src.jobs.preview_description import (
+    DerivationContext,
+    derive_preview_description,
+)
 from src.jobs.slots import retry_claim_slot
 from src.monitoring import get_logger
 from src.monitoring_metrics import CACHE_HITS, SINGLE_FLIGHT_LOCK_WAITS
@@ -260,6 +264,23 @@ async def _lookup_cache(conn: Any, normalized_url: str) -> dict[str, Any] | None
     return dict(row)
 
 
+def _derive_cache_preview(sidebar_payload: dict[str, Any]) -> str:
+    """Derive preview_description from a cached SidebarPayload dict.
+
+    Cache-hit rows bypass `jobs/finalize.py` entirely (TASK-1485.02 AC#6),
+    so the preview must be computed inline here. The cached payload's own
+    `page_title` field feeds the fallback branch; first-utterance text
+    isn't queried (the cache-hit path never extracted utterances on this
+    submit), so the function tolerates None for that field.
+    """
+    payload = SidebarPayload.model_validate(sidebar_payload)
+    ctx = DerivationContext(
+        page_title=payload.page_title,
+        first_utterance_text=None,
+    )
+    return derive_preview_description(payload, ctx)
+
+
 async def _insert_cached_done_job(
     conn: Any,
     *,
@@ -276,13 +297,21 @@ async def _insert_cached_done_job(
     the contended cache-hit branch without producing duplicate cached
     done-job rows. The second INSERT hits ON CONFLICT DO NOTHING and the
     caller re-fetches the surviving row by normalized_url.
+
+    `preview_description` (TASK-1485.02) is derived inline from the cached
+    payload so cache-hit rows surface in the gallery alongside fresh
+    finalized rows. Without this, cache-hits would land with NULL preview
+    and the dedup-by-newest order could prefer them over fresh rows that
+    do carry preview text.
     """
+    preview_description = _derive_cache_preview(sidebar_payload)
     job_id = await conn.fetchval(
         """
         INSERT INTO vibecheck_jobs (
-            url, normalized_url, host, status, sidebar_payload, cached, finished_at
+            url, normalized_url, host, status, sidebar_payload,
+            preview_description, cached, finished_at
         )
-        VALUES ($1, $2, $3, 'done', $4::jsonb, true, now())
+        VALUES ($1, $2, $3, 'done', $4::jsonb, $5, true, now())
         ON CONFLICT (normalized_url)
             WHERE status = 'done' AND cached = true
             DO NOTHING
@@ -292,6 +321,7 @@ async def _insert_cached_done_job(
         normalized_url,
         host,
         json.dumps(sidebar_payload),
+        preview_description,
     )
     if job_id is None:
         # Concurrent submitter beat us to the insert. Re-fetch the
