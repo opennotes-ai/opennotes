@@ -232,6 +232,26 @@ CREATE UNIQUE INDEX IF NOT EXISTS
     vibecheck_scrapes_normalized_url_tier_idx
     ON vibecheck_scrapes (normalized_url, tier);
 
+-- TASK-1488.18: persist Firecrawl's resolved post-redirect URL
+-- (`metadata.source_url`) so cache reads rehydrate `metadata.source_url`
+-- from the actual resolved host, not the input URL. Without this,
+-- `_revalidate_final_url` on a poisoned cache replay sees the input URL
+-- as both the lookup key and the resolved URL — the SSRF re-check is
+-- silently bypassed. Nullable + no default so legacy rows hydrate via
+-- the row's `url` fallback in `_row_to_cached_scrape`.
+ALTER TABLE vibecheck_scrapes
+    ADD COLUMN IF NOT EXISTS final_url TEXT;
+
+-- TASK-1488.18: tombstone marker so `evict()` can fence concurrent
+-- `put()` calls that started before the evict but commit after. On
+-- evict, the row is deleted and a tombstone row is upserted with
+-- `evicted_at = now()` and `expires_at` in the past. `put()` checks
+-- this column before its own upsert and aborts when a recent eviction
+-- is observed. Tombstones are filtered out of `get()` by the existing
+-- `expires_at > now()` predicate so callers never see them.
+ALTER TABLE vibecheck_scrapes
+    ADD COLUMN IF NOT EXISTS evicted_at TIMESTAMPTZ;
+
 -- =========================================================================
 -- vibecheck_job_utterances (per-job utterance cache)
 -- =========================================================================

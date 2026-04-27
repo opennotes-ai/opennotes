@@ -88,9 +88,18 @@ def canonical_cache_key(raw_url: str) -> str:
 _TABLE_NAME = "vibecheck_scrapes"
 _SIGNED_URL_TTL_SECONDS = 15 * 60
 
+# TASK-1488.18: how long after `evict()` the tombstone fence rejects
+# fresh `put()` calls. The fence is best-effort defense-in-depth; any
+# put that started its upload before the evict and lands its upsert
+# inside this window is recognized via the row's `evicted_at` and
+# aborted. 30 seconds covers the worst-case Firecrawl + screenshot
+# upload latency the orchestrator observes in practice.
+_EVICT_FENCE_SECONDS = 30
+
 _SELECTED_COLUMNS = (
-    "normalized_url, tier, url, host, page_kind, page_title, markdown, html, "
-    "screenshot_storage_key, scraped_at, expires_at"
+    "normalized_url, tier, url, final_url, host, page_kind, page_title, "
+    "markdown, html, screenshot_storage_key, scraped_at, expires_at, "
+    "evicted_at"
 )
 
 
@@ -194,6 +203,19 @@ class SupabaseScrapeCache:
 
         TASK-1488.01: each tier has its own row; on_conflict targets the
         composite UNIQUE so re-puts within a tier still upsert in place.
+
+        TASK-1488.18:
+        - `final_url` persists Firecrawl's resolved post-redirect URL
+          (`scrape.metadata.source_url` if present, else the input url)
+          so cache reads rehydrate `metadata.source_url` to the resolved
+          host on a replay. Without this, `_revalidate_final_url` on a
+          poisoned redirect retry sees the input URL as both the lookup
+          key and the resolved URL and silently skips the SSRF re-check.
+        - Pre-upsert fence: read the row's `evicted_at`. If a recent
+          `evict()` set the tombstone within the fence window, abort
+          the put + cleanup the just-uploaded blob. Residual race
+          window between this read and the subsequent upsert is small
+          (~ms vs the original ~seconds Firecrawl upload).
         """
         norm = normalize_url(url)
         host = urlparse(norm).netloc
@@ -202,13 +224,34 @@ class SupabaseScrapeCache:
             url=norm, scrape=scrape, screenshot_bytes=screenshot_bytes
         )
 
+        if self._evict_fence_active(norm, tier):
+            logger.warning(
+                "scrape cache put aborted by evict fence for %s (tier=%s)",
+                norm,
+                tier,
+            )
+            if storage_key is not None:
+                self._cleanup_orphan_blob(storage_key)
+            return CachedScrape(
+                markdown=scrape.markdown,
+                html=scrape.html,
+                raw_html=scrape.raw_html,
+                screenshot=scrape.screenshot,
+                links=scrape.links,
+                metadata=scrape.metadata,
+                warning=scrape.warning,
+                storage_key=None,
+            )
+
         now = datetime.now(UTC)
         expires = now + timedelta(hours=self._ttl_hours)
         metadata = scrape.metadata or ScrapeMetadata()
+        final_url = metadata.source_url or url
         row = {
             "normalized_url": norm,
             "tier": tier,
             "url": url,
+            "final_url": final_url,
             "host": host,
             "page_kind": "other",
             "page_title": metadata.title,
@@ -217,6 +260,9 @@ class SupabaseScrapeCache:
             "screenshot_storage_key": storage_key,
             "scraped_at": now.isoformat(),
             "expires_at": expires.isoformat(),
+            # Clear any tombstone marker on a successful put so future
+            # fence checks don't false-positive against this fresh row.
+            "evicted_at": None,
         }
         try:
             self._client.table(_TABLE_NAME).upsert(
@@ -243,6 +289,46 @@ class SupabaseScrapeCache:
             storage_key=storage_key,
         )
 
+    def _evict_fence_active(
+        self, norm: str, tier: ScrapeTier
+    ) -> bool:
+        """Read `evicted_at` for `(norm, tier)` and return True iff a
+        recent `evict()` tombstoned the slot within `_EVICT_FENCE_SECONDS`.
+
+        Bypasses the TTL filter (`expires_at > now()`) used by `get()`
+        because tombstones intentionally have an `expires_at` in the past
+        — the TTL filter would hide them from this fence check.
+        """
+        try:
+            resp = (
+                self._client.table(_TABLE_NAME)
+                .select("evicted_at")
+                .eq("normalized_url", norm)
+                .eq("tier", tier)
+                .maybe_single()
+                .execute()
+            )
+        except Exception as exc:
+            logger.warning(
+                "scrape cache evict-fence read failed for %s (tier=%s): %s",
+                norm,
+                tier,
+                exc,
+            )
+            return False
+        data = getattr(resp, "data", None) if resp is not None else None
+        if not isinstance(data, dict):
+            return False
+        evicted_at_raw = data.get("evicted_at")
+        if not isinstance(evicted_at_raw, str) or not evicted_at_raw:
+            return False
+        try:
+            evicted_at = datetime.fromisoformat(evicted_at_raw)
+        except ValueError:
+            return False
+        threshold = datetime.now(UTC) - timedelta(seconds=_EVICT_FENCE_SECONDS)
+        return evicted_at > threshold
+
     async def evict(self, url: str, *, tier: ScrapeTier | None = None) -> None:
         """Discard the cached scrape row(s) + screenshot blob(s) for a URL.
 
@@ -253,9 +339,18 @@ class SupabaseScrapeCache:
         ladder retry path may want to drop just the failure-flagged
         Tier 1 row.
 
-        Best-effort: any leg (lookup, delete, blob remove) may fail; we
-        log and continue so a partial cleanup still progresses the caller
-        toward the TerminalError path. pg_cron sweeps anything we miss.
+        TASK-1488.18: after the delete, write a tombstone row per affected
+        tier with `evicted_at = now()` and `expires_at` in the past. The
+        tombstone fences a concurrent `put()` that started before this
+        evict but commits after — `put()`'s pre-upsert fence check reads
+        `evicted_at` and aborts when a recent eviction is observed.
+        Tombstones are filtered out of `get()` by the existing
+        `expires_at > now()` predicate so callers never see them.
+
+        Best-effort: any leg (lookup, delete, tombstone, blob remove) may
+        fail; we log and continue so a partial cleanup still progresses
+        the caller toward the TerminalError path. pg_cron sweeps anything
+        we miss.
         """
         norm = normalize_url(url)
         storage_keys: list[str] = []
@@ -302,8 +397,55 @@ class SupabaseScrapeCache:
                 exc,
             )
 
+        self._write_evict_tombstones(norm, tier)
+
         for key in storage_keys:
             self._cleanup_orphan_blob(key)
+
+    def _write_evict_tombstones(
+        self, norm: str, tier: ScrapeTier | None
+    ) -> None:
+        """Upsert tombstone rows for the evicted tier(s).
+
+        A tombstone row holds `evicted_at = now()` and `expires_at` in
+        the past, with NULL scrape data + NULL `screenshot_storage_key`.
+        It serves only to be read by `put()`'s pre-upsert fence check;
+        it is never returned from `get()` (the TTL filter excludes it).
+        """
+        now = datetime.now(UTC)
+        expires_past = now - timedelta(hours=1)
+        host = urlparse(norm).netloc
+        tiers: tuple[ScrapeTier, ...] = (
+            (tier,) if tier is not None else ("scrape", "interact")
+        )
+        for t in tiers:
+            tombstone = {
+                "normalized_url": norm,
+                "tier": t,
+                "url": norm,
+                "final_url": None,
+                "host": host,
+                "page_kind": "other",
+                "page_title": None,
+                "markdown": None,
+                "html": None,
+                "screenshot_storage_key": None,
+                "scraped_at": now.isoformat(),
+                "expires_at": expires_past.isoformat(),
+                "evicted_at": now.isoformat(),
+            }
+            try:
+                self._client.table(_TABLE_NAME).upsert(
+                    tombstone, on_conflict="normalized_url,tier"
+                ).execute()
+            except Exception as exc:
+                logger.warning(
+                    "scrape cache evict tombstone write failed for %s "
+                    "(tier=%s): %s",
+                    norm,
+                    t,
+                    exc,
+                )
 
     async def signed_screenshot_url(self, scrape: ScrapeResult) -> str | None:
         """Mint a fresh 15-minute signed URL for a cached screenshot.
@@ -373,9 +515,21 @@ async def _fetch_bytes(url: str) -> bytes | None:
 
 
 def _row_to_cached_scrape(row: dict[str, Any]) -> CachedScrape:
+    # TASK-1488.18: rehydrate metadata.source_url from Firecrawl's resolved
+    # post-redirect URL when persisted, falling back to the input url for
+    # legacy rows that pre-date the final_url column. Without this,
+    # `_revalidate_final_url` on a poisoned cache replay sees the input
+    # URL as both lookup key and resolved URL and silently bypasses the
+    # SSRF re-check.
+    final_url_raw = row.get("final_url")
+    source_url = (
+        final_url_raw
+        if isinstance(final_url_raw, str) and final_url_raw
+        else row.get("url")
+    )
     metadata = ScrapeMetadata(
         title=row.get("page_title"),
-        source_url=row.get("url"),
+        source_url=source_url,
     )
     storage_key = row.get("screenshot_storage_key")
     return CachedScrape(

@@ -48,10 +48,15 @@ class _FakeTableQuery:
     def __init__(
         self,
         store: dict[tuple[str, str], dict[str, Any]],
-        upsert_error: Exception | None = None,
+        client: _FakeSupabaseClient,
     ) -> None:
         self._store = store
-        self._upsert_error = upsert_error
+        # Read-through to the client so `next_upsert_error` is only consumed
+        # when the op turns out to be an upsert. A bare `select` (e.g. the
+        # TASK-1488.18 evict-fence read in `put()`) must NOT pop the flag,
+        # otherwise tests that arm an upsert-failure error never see it
+        # raised on the actual upsert that follows.
+        self._client = client
         self._op: str | None = None
         self._eqs: dict[str, Any] = {}
         self._gt_col: str | None = None
@@ -104,8 +109,10 @@ class _FakeTableQuery:
             return _FakeResponse(None)
         if self._op == "upsert":
             assert self._upsert_row is not None
-            if self._upsert_error is not None:
-                raise self._upsert_error
+            err = self._client.next_upsert_error
+            self._client.next_upsert_error = None
+            if err is not None:
+                raise err
             tier = self._upsert_row.get("tier", "scrape")
             key = (self._upsert_row["normalized_url"], tier)
             self._store[key] = dict(self._upsert_row)
@@ -139,9 +146,7 @@ class _FakeSupabaseClient:
 
     def table(self, name: str) -> _FakeTableQuery:
         self.tables_called.append(name)
-        err = self.next_upsert_error
-        self.next_upsert_error = None
-        return _FakeTableQuery(self._rows, upsert_error=err)
+        return _FakeTableQuery(self._rows, client=self)
 
 
 class _StoreView:
@@ -858,7 +863,10 @@ class TestTierAwareCache:
     async def test_evict_with_tier_removes_only_that_tier(self) -> None:
         """`evict(url, tier='scrape')` leaves the interact-tier row intact.
 
-        Asserts on row state, not on which delete chain executed.
+        Asserts on the visible cache state via `get()`. After TASK-1488.18
+        the evicted slot keeps a tombstone row (`evicted_at` set,
+        `expires_at` in the past) — the TTL filter excludes it from
+        `get()` so the caller-visible behavior is unchanged.
         """
         fake = _FakeSupabaseClient()
         cache, _ = _make_cache(fake)
@@ -872,10 +880,15 @@ class TestTierAwareCache:
         await cache.evict("https://example.com/a", tier="scrape")
 
         norm = normalize_url("https://example.com/a")
-        rows = list(fake._rows.values())  # pyright: ignore[reportPrivateUsage]
-        assert len(rows) == 1
-        assert rows[0]["normalized_url"] == norm
-        assert rows[0]["tier"] == "interact"
+        scrape_row = fake._rows[(norm, "scrape")]  # pyright: ignore[reportPrivateUsage]
+        # Scrape slot is tombstoned (TASK-1488.18 fence): markdown nulled,
+        # evicted_at set, expires_at in the past.
+        assert scrape_row["markdown"] is None
+        assert scrape_row["evicted_at"] is not None
+        # Interact slot is untouched.
+        interact_row = fake._rows[(norm, "interact")]  # pyright: ignore[reportPrivateUsage]
+        assert interact_row["markdown"] == "i"
+        assert interact_row.get("evicted_at") is None
         assert await cache.get("https://example.com/a", tier="scrape") is None
         assert await cache.get("https://example.com/a", tier="interact") is not None
 
@@ -884,6 +897,10 @@ class TestTierAwareCache:
         """`evict(url)` with no tier kwarg drops every cached tier row for
         the URL — the redirect-revalidation path needs to flush both
         tiers in one shot rather than poisoning only Tier 1.
+
+        Both slots are tombstoned (TASK-1488.18 fence) but the TTL filter
+        excludes tombstones from `get()`, so caller-visible behavior is
+        identical to a hard delete.
         """
         fake = _FakeSupabaseClient()
         cache, _ = _make_cache(fake)
@@ -896,7 +913,12 @@ class TestTierAwareCache:
 
         await cache.evict("https://example.com/a")
 
-        assert fake._rows == {}  # pyright: ignore[reportPrivateUsage]
+        norm = normalize_url("https://example.com/a")
+        for tier in ("scrape", "interact"):
+            row = fake._rows[(norm, tier)]  # pyright: ignore[reportPrivateUsage]
+            assert row["markdown"] is None
+            assert row["screenshot_storage_key"] is None
+            assert row["evicted_at"] is not None
         assert await cache.get("https://example.com/a", tier="scrape") is None
         assert await cache.get("https://example.com/a", tier="interact") is None
 
@@ -914,3 +936,177 @@ class TestTierAwareCache:
         assert len(rows) == 1
         assert rows[0]["tier"] == "scrape"
         assert rows[0]["markdown"] == "legacy"
+
+
+# TASK-1488.18 — evict-tombstone fence + final_url rehydration
+
+
+class TestEvictFenceAndFinalUrl:
+    @pytest.mark.asyncio
+    async def test_put_after_recent_evict_aborts(self) -> None:
+        """A recent `evict()` writes a tombstone; the next `put()` reads
+        `evicted_at`, recognizes the fence is active, and aborts (no
+        upsert lands). The just-uploaded screenshot blob is cleaned up
+        so it doesn't orphan in the bucket.
+        """
+        fake = _FakeSupabaseClient()
+        cache, store = _make_cache(fake)
+        norm = normalize_url("https://example.com/poisoned")
+
+        # Seed a fresh tombstone the way `evict(tier=None)` would.
+        now_iso = datetime.now(UTC).isoformat()
+        past_iso = (datetime.now(UTC) - timedelta(hours=1)).isoformat()
+        fake._rows[(norm, "scrape")] = {  # pyright: ignore[reportPrivateUsage]
+            "normalized_url": norm,
+            "tier": "scrape",
+            "url": norm,
+            "final_url": None,
+            "host": "example.com",
+            "page_kind": "other",
+            "page_title": None,
+            "markdown": None,
+            "html": None,
+            "screenshot_storage_key": None,
+            "scraped_at": now_iso,
+            "expires_at": past_iso,
+            "evicted_at": now_iso,
+        }
+
+        result = await cache.put(
+            "https://example.com/poisoned",
+            _make_scrape(markdown="raced", screenshot=None),
+            screenshot_bytes=b"pngbytes",
+        )
+
+        # Put aborted: result has no storage_key.
+        assert result.storage_key is None
+        # Tombstone row is unchanged: still NULL markdown, evicted_at set.
+        row = fake._rows[(norm, "scrape")]  # pyright: ignore[reportPrivateUsage]
+        assert row["markdown"] is None
+        assert row["evicted_at"] is not None
+        # Just-uploaded blob was cleaned up.
+        assert len(store.delete_calls) == 1
+
+    @pytest.mark.asyncio
+    async def test_put_after_old_evict_proceeds(self) -> None:
+        """An evict that fired LONG ago (outside the fence window) must
+        not block fresh puts forever. The fence releases on a stale
+        `evicted_at`.
+        """
+        fake = _FakeSupabaseClient()
+        cache, _ = _make_cache(fake)
+        norm = normalize_url("https://example.com/long-ago-evicted")
+
+        # evicted_at older than the 30s fence window → fence released.
+        old_iso = (datetime.now(UTC) - timedelta(minutes=5)).isoformat()
+        past_iso = (datetime.now(UTC) - timedelta(hours=1)).isoformat()
+        now_iso = datetime.now(UTC).isoformat()
+        fake._rows[(norm, "scrape")] = {  # pyright: ignore[reportPrivateUsage]
+            "normalized_url": norm,
+            "tier": "scrape",
+            "url": norm,
+            "final_url": None,
+            "host": "example.com",
+            "page_kind": "other",
+            "page_title": None,
+            "markdown": None,
+            "html": None,
+            "screenshot_storage_key": None,
+            "scraped_at": now_iso,
+            "expires_at": past_iso,
+            "evicted_at": old_iso,
+        }
+
+        await cache.put(
+            "https://example.com/long-ago-evicted",
+            _make_scrape(markdown="fresh"),
+        )
+
+        row = fake._rows[(norm, "scrape")]  # pyright: ignore[reportPrivateUsage]
+        assert row["markdown"] == "fresh"
+        # Successful put clears the tombstone marker.
+        assert row["evicted_at"] is None
+
+    @pytest.mark.asyncio
+    async def test_get_rehydrates_metadata_source_url_from_final_url(
+        self,
+    ) -> None:
+        """`get()` returns `metadata.source_url` populated from the row's
+        `final_url` (Firecrawl's resolved post-redirect URL), not from
+        the input URL. Without this, `_revalidate_final_url` on a
+        replayed poisoned row sees the input URL as the resolved URL
+        and silently skips the SSRF re-check.
+        """
+        fake = _FakeSupabaseClient()
+        cache, _ = _make_cache(fake)
+
+        # Firecrawl returned a resolved URL different from the input.
+        scrape = ScrapeResult(
+            markdown="body",
+            metadata=ScrapeMetadata(
+                title="Resolved",
+                source_url="https://final.example/resolved",
+            ),
+        )
+        await cache.put(
+            "https://input.example/in", scrape, tier="scrape"
+        )
+
+        cached = await cache.get("https://input.example/in", tier="scrape")
+        assert cached is not None
+        assert cached.metadata is not None
+        assert cached.metadata.source_url == "https://final.example/resolved"
+
+    @pytest.mark.asyncio
+    async def test_get_falls_back_to_input_url_when_final_url_null(
+        self,
+    ) -> None:
+        """Legacy rows (pre-TASK-1488.18) have `final_url=NULL`.
+        `_row_to_cached_scrape` falls back to the row's `url` so existing
+        rows still hydrate cleanly.
+        """
+        fake = _FakeSupabaseClient()
+        cache, _ = _make_cache(fake)
+        norm = normalize_url("https://legacy.example/bare")
+        now_iso = datetime.now(UTC).isoformat()
+        fresh_iso = (datetime.now(UTC) + timedelta(hours=1)).isoformat()
+
+        fake._rows[(norm, "scrape")] = {  # pyright: ignore[reportPrivateUsage]
+            "normalized_url": norm,
+            "tier": "scrape",
+            "url": "https://legacy.example/bare",
+            "final_url": None,
+            "host": "legacy.example",
+            "page_kind": "other",
+            "page_title": "Legacy",
+            "markdown": "legacy body",
+            "html": None,
+            "screenshot_storage_key": None,
+            "scraped_at": now_iso,
+            "expires_at": fresh_iso,
+            "evicted_at": None,
+        }
+
+        cached = await cache.get("https://legacy.example/bare", tier="scrape")
+        assert cached is not None
+        assert cached.metadata is not None
+        assert cached.metadata.source_url == "https://legacy.example/bare"
+
+    @pytest.mark.asyncio
+    async def test_evict_writes_tombstone_with_evicted_at(self) -> None:
+        """`evict()` leaves a tombstone row with `evicted_at` set so a
+        concurrent put can recognize the fence on its pre-upsert read.
+        """
+        fake = _FakeSupabaseClient()
+        cache, _ = _make_cache(fake)
+        await cache.put(
+            "https://example.com/x", _make_scrape(markdown="hi"), tier="scrape"
+        )
+
+        await cache.evict("https://example.com/x", tier="scrape")
+
+        norm = normalize_url("https://example.com/x")
+        row = fake._rows[(norm, "scrape")]  # pyright: ignore[reportPrivateUsage]
+        assert row["evicted_at"] is not None
+        # Tombstone is filtered from get() by the TTL predicate.
+        assert await cache.get("https://example.com/x", tier="scrape") is None
