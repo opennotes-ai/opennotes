@@ -556,17 +556,9 @@ def _build_firecrawl_tier1_client(settings: Settings) -> FirecrawlClient:
 # — extending the action list would let the ladder masquerade as a richer
 # interaction tier (login flows, scroll, click), which is out of scope for
 # 1488.05 and would risk crossing ToS lines on auth-walled sites.
-_TIER2_DEFAULT_ACTIONS: list[dict[str, Any]] = [
+_TIER2_DEFAULT_ACTIONS: tuple[dict[str, Any], ...] = (
     {"type": "wait", "milliseconds": 3000},
-]
-
-
-def _quality_to_reason(quality: ScrapeQuality) -> str:
-    """Map a `ScrapeQuality` to a stable short reason string for log/error
-    messages. The lowercase `StrEnum` values are already log-friendly; this
-    indirection keeps a single source of truth in case we ever rename them.
-    """
-    return quality.value
+)
 
 
 async def _cache_put_or_keyless(
@@ -778,7 +770,7 @@ async def _run_tier2(
     try:
         fresh = await interact_client.interact(
             url,
-            actions=_TIER2_DEFAULT_ACTIONS,
+            actions=list(_TIER2_DEFAULT_ACTIONS),
             formats=["markdown", "html", "screenshot@fullPage"],
             only_main_content=True,
         )
@@ -811,7 +803,7 @@ async def _run_tier2(
         )
     return _Tier2Outcome(
         cached=None,
-        tier2_reason=_quality_to_reason(quality),
+        tier2_reason=quality.value,
         final_classification=quality.value,
     )
 
