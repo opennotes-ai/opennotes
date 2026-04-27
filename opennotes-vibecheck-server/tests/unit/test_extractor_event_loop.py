@@ -7,19 +7,22 @@ take longer than the `/_healthz` liveness probe budget (period=10s,
 timeout=3s, failureThreshold=3 -> 30s) and trip a SIGKILL — the silent-death
 pattern documented in TASK-1474.23.
 
-These tests assert the loop ticks repeatedly while the parse runs by spawning
-a concurrent `await asyncio.sleep(...)` ticker. With the sync parses the
-ticker count is ~1; with `asyncio.to_thread` wrapping it advances dozens of
-times, proving the parse is no longer event-loop-blocking.
+These tests assert the loop ticks repeatedly while a synthetic blocking
+sentinel runs at the post-agent call sites. With sync calls running directly
+on the loop the ticker count is ~1; with `asyncio.to_thread` wrapping it
+advances dozens of times, proving the sentinel is no longer event-loop-
+blocking.
 
-The full-stack path through `extract_utterances` exercises the two post-
-agent call sites (`_sanitize_html` at extractor.py:180 and `attribute_media`
-at extractor.py:181). The fake Gemini agent resolves immediately so the only
-wall-time cost in the run is the two BeautifulSoup parses.
+Approach (TASK-1474.23.03.17): we monkeypatch `_sanitize_html` and
+`attribute_media` with a `time.sleep(0.5)` sentinel rather than feeding a
+~2 MB BS4 fixture through the real parsers. The to_thread wrap is what we're
+proving routes work off-loop; the sentinel discriminates that contract in
+~1s instead of ~120s while still failing if the wraps are reverted.
 """
 from __future__ import annotations
 
 import asyncio
+import time
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any, cast
@@ -38,30 +41,7 @@ from src.utterances.extractor import extract_utterances
 from src.utterances.schema import Utterance, UtterancesPayload
 
 TARGET_URL = "https://example.com/big-article"
-
-
-def _build_large_html(num_blocks: int = 6000) -> str:
-    """Build a synthetic >300 KB HTML page with many tags + anchors + images.
-
-    The size + tag density together push pure-Python `html.parser` into a
-    multi-hundred-millisecond parse under CPython, enough to swamp a 50ms
-    ticker tick if the parse runs on the event loop. Each block contains a
-    paragraph, an anchor and an image so `attribute_media`'s per-tag
-    ancestor walk is exercised, not just the initial parse.
-    """
-    parts: list[str] = ["<html><body>"]
-    for i in range(num_blocks):
-        parts.append(
-            f"<div class='block block-{i}'>"
-            f"<p>Block {i} body text with some words to parse and process. "
-            f"Lorem ipsum dolor sit amet consectetur adipiscing elit "
-            f"sed do eiusmod tempor incididunt ut labore et dolore magna.</p>"
-            f"<a href='https://example.com/link-{i}'>link {i}</a> "
-            f"<img src='https://example.com/img-{i}.png' alt='image {i}'>"
-            f"</div>"
-        )
-    parts.append("</body></html>")
-    return "".join(parts)
+SENTINEL_BLOCK_SECONDS = 0.5
 
 
 class _FakeFirecrawlClient:
@@ -138,21 +118,19 @@ class _FakeAgent:
 async def test_extract_utterances_does_not_block_event_loop_on_large_html(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A >300 KB HTML parse must not starve a concurrent 50ms ticker.
+    """A blocking post-agent sync call must not starve a concurrent ticker.
 
-    With sync `_sanitize_html` + `attribute_media` calls running directly on
-    the loop, the ticker count would be ~1 because the loop is blocked for
-    the full parse duration. After wrapping with `asyncio.to_thread`, the
-    parses run on a worker thread and the loop continues advancing — the
-    ticker should hit at least 5 ticks before the extract returns.
+    Synthetic sentinel approach: we monkeypatch `_sanitize_html` and
+    `attribute_media` with `time.sleep(SENTINEL_BLOCK_SECONDS)` to simulate a
+    long-running sync parse. With direct sync calls on the loop the ticker
+    count would be ~1; the `asyncio.to_thread` wraps in
+    `extract_utterances` route the sentinel off-loop and the ticker advances
+    while it sleeps.
     """
-    big_html = _build_large_html()
-    assert len(big_html) > 300_000, "fixture must exceed 300 KB"
-
-    post_text = "Block 0 body text with some words to parse and process."
+    post_text = "Tiny post body."
     fresh = ScrapeResult(
         markdown=f"# Post\n\n{post_text}",
-        html=big_html,
+        html="<html><body><p>tiny</p></body></html>",
         metadata=ScrapeMetadata(source_url=TARGET_URL),
     )
     client = _FakeFirecrawlClient(result=fresh)
@@ -169,6 +147,20 @@ async def test_extract_utterances_does_not_block_event_loop_on_large_html(
     monkeypatch.setattr(
         "src.utterances.extractor.build_agent",
         lambda settings, output_type=None, system_prompt=None, name=None: fake_agent,
+    )
+
+    def _blocking_sanitize(html: str) -> str:
+        time.sleep(SENTINEL_BLOCK_SECONDS)
+        return html
+
+    def _blocking_attribute_media(html: str, utterances: Any) -> None:
+        time.sleep(SENTINEL_BLOCK_SECONDS)
+
+    monkeypatch.setattr(
+        "src.utterances.extractor._sanitize_html", _blocking_sanitize
+    )
+    monkeypatch.setattr(
+        "src.utterances.extractor.attribute_media", _blocking_attribute_media
     )
 
     tick_count = 0
@@ -195,10 +187,27 @@ async def test_extract_utterances_does_not_block_event_loop_on_large_html(
 
     assert tick_count >= 5, (
         f"event loop ticker advanced only {tick_count} times during a "
-        f"{len(big_html)}-byte HTML parse — sync BeautifulSoup parse is "
-        "blocking the event loop. Wrap _sanitize_html and attribute_media "
-        "in asyncio.to_thread (TASK-1474.23.04)."
+        f"{SENTINEL_BLOCK_SECONDS * 2}s synthetic blocking parse — sync "
+        "call site is blocking the event loop. Wrap _sanitize_html and "
+        "attribute_media in asyncio.to_thread (TASK-1474.23.04)."
     )
+
+
+def _build_large_html(num_blocks: int = 6000) -> str:
+    """Build a synthetic >300 KB HTML page with many tags + anchors + images."""
+    parts: list[str] = ["<html><body>"]
+    for i in range(num_blocks):
+        parts.append(
+            f"<div class='block block-{i}'>"
+            f"<p>Block {i} body text with some words to parse and process. "
+            f"Lorem ipsum dolor sit amet consectetur adipiscing elit "
+            f"sed do eiusmod tempor incididunt ut labore et dolore magna.</p>"
+            f"<a href='https://example.com/link-{i}'>link {i}</a> "
+            f"<img src='https://example.com/img-{i}.png' alt='image {i}'>"
+            f"</div>"
+        )
+    parts.append("</body></html>")
+    return "".join(parts)
 
 
 @pytest.mark.asyncio
