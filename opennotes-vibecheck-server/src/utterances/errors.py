@@ -165,13 +165,6 @@ def _scan_for_model_http_error(
     return first
 
 
-def _find_inner_model_http_error(exc: BaseException) -> ModelHTTPError | None:
-    """Back-compat wrapper: walk the full cause/context BFS chain and
-    pick a ModelHTTPError per `_scan_for_model_http_error` semantics.
-    """
-    return _scan_for_model_http_error(_walk_cause_chain(exc))
-
-
 def _vertex_status_name(status_code: int) -> str:
     return {
         429: "RESOURCE_EXHAUSTED",

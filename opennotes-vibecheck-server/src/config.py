@@ -96,7 +96,7 @@ class Settings(BaseSettings):
     # the extractor (TASK-1474.23.04) don't saturate the default ~5-6 worker
     # pool. Override via VIBECHECK_CONTAINER_CONCURRENCY when the Cloud Run
     # revision uses a different concurrency setting.
-    CONTAINER_CONCURRENCY: int = 80
+    VIBECHECK_CONTAINER_CONCURRENCY: int = 80
 
     @field_validator("VIBECHECK_RECENT_ANALYSES_CACHE_TTL_SECONDS")
     @classmethod

@@ -114,7 +114,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # the extractor (TASK-1474.23.04) does not saturate at ~5-6 workers under
     # Cloud Run's containerConcurrency=80. See `_resolve_thread_pool_workers`
     # for the sizing rationale (TASK-1474.23.03.24).
-    thread_pool_workers = _resolve_thread_pool_workers(settings.CONTAINER_CONCURRENCY)
+    thread_pool_workers = _resolve_thread_pool_workers(
+        settings.VIBECHECK_CONTAINER_CONCURRENCY
+    )
     executor = ThreadPoolExecutor(
         max_workers=thread_pool_workers,
         thread_name_prefix="vibecheck-default",
@@ -125,51 +127,52 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         "vibecheck default ThreadPoolExecutor sized for Cloud Run concurrency "
         "(workers=%s, container_concurrency=%s)",
         thread_pool_workers,
-        settings.CONTAINER_CONCURRENCY,
+        settings.VIBECHECK_CONTAINER_CONCURRENCY,
     )
-    cache_key = (
-        settings.VIBECHECK_SUPABASE_SERVICE_ROLE_KEY
-        or settings.VIBECHECK_SUPABASE_ANON_KEY
-    )
-    if settings.VIBECHECK_SUPABASE_URL and cache_key:
-        # The analysis cache writes through vibecheck_analyses, which is RLS-
-        # locked to service_role (src/cache/schema.sql). Prefer the
-        # service-role key; fall back to anon so dev envs without the
-        # lockdown applied keep working.
-        client = _build_supabase_client(settings.VIBECHECK_SUPABASE_URL, cache_key)
-        _apply_schema(client)
-        app.state.cache = SupabaseCache(client, ttl_hours=settings.CACHE_TTL_HOURS)
-        logger.info("vibecheck supabase cache initialized (ttl=%sh)", settings.CACHE_TTL_HOURS)
-    else:
-        app.state.cache = None
-        logger.warning("vibecheck supabase cache disabled: missing VIBECHECK_SUPABASE_* env")
-
-    # asyncpg pool for the analyze pipeline. Routes raise 503 with
-    # error_code="internal" when this is missing, so a deploy without the
-    # right Supabase credentials is loud rather than silently broken.
-    if settings.VIBECHECK_SUPABASE_URL and settings.VIBECHECK_SUPABASE_DB_PASSWORD:
-        try:
-            app.state.db_pool = await _create_db_pool(
-                supabase_url=settings.VIBECHECK_SUPABASE_URL,
-                db_password=settings.VIBECHECK_SUPABASE_DB_PASSWORD,
-                host=settings.VIBECHECK_DATABASE_HOST or _DEFAULT_POOLER_HOST,
-                port=settings.VIBECHECK_DATABASE_PORT or _DEFAULT_POOLER_PORT,
-            )
-            logger.info(
-                "vibecheck db pool initialized (host=%s port=%s)",
-                settings.VIBECHECK_DATABASE_HOST or _DEFAULT_POOLER_HOST,
-                settings.VIBECHECK_DATABASE_PORT or _DEFAULT_POOLER_PORT,
-            )
-        except Exception as exc:
-            logger.error("vibecheck db pool initialization failed: %s", exc)
-            raise
-    else:
-        app.state.db_pool = None
-        logger.warning(
-            "vibecheck db pool disabled: missing VIBECHECK_SUPABASE_URL / VIBECHECK_SUPABASE_DB_PASSWORD"
-        )
 
     try:
+        cache_key = (
+            settings.VIBECHECK_SUPABASE_SERVICE_ROLE_KEY
+            or settings.VIBECHECK_SUPABASE_ANON_KEY
+        )
+        if settings.VIBECHECK_SUPABASE_URL and cache_key:
+            # The analysis cache writes through vibecheck_analyses, which is RLS-
+            # locked to service_role (src/cache/schema.sql). Prefer the
+            # service-role key; fall back to anon so dev envs without the
+            # lockdown applied keep working.
+            client = _build_supabase_client(settings.VIBECHECK_SUPABASE_URL, cache_key)
+            _apply_schema(client)
+            app.state.cache = SupabaseCache(client, ttl_hours=settings.CACHE_TTL_HOURS)
+            logger.info("vibecheck supabase cache initialized (ttl=%sh)", settings.CACHE_TTL_HOURS)
+        else:
+            app.state.cache = None
+            logger.warning("vibecheck supabase cache disabled: missing VIBECHECK_SUPABASE_* env")
+
+        # asyncpg pool for the analyze pipeline. Routes raise 503 with
+        # error_code="internal" when this is missing, so a deploy without the
+        # right Supabase credentials is loud rather than silently broken.
+        if settings.VIBECHECK_SUPABASE_URL and settings.VIBECHECK_SUPABASE_DB_PASSWORD:
+            try:
+                app.state.db_pool = await _create_db_pool(
+                    supabase_url=settings.VIBECHECK_SUPABASE_URL,
+                    db_password=settings.VIBECHECK_SUPABASE_DB_PASSWORD,
+                    host=settings.VIBECHECK_DATABASE_HOST or _DEFAULT_POOLER_HOST,
+                    port=settings.VIBECHECK_DATABASE_PORT or _DEFAULT_POOLER_PORT,
+                )
+                logger.info(
+                    "vibecheck db pool initialized (host=%s port=%s)",
+                    settings.VIBECHECK_DATABASE_HOST or _DEFAULT_POOLER_HOST,
+                    settings.VIBECHECK_DATABASE_PORT or _DEFAULT_POOLER_PORT,
+                )
+            except Exception as exc:
+                logger.error("vibecheck db pool initialization failed: %s", exc)
+                raise
+        else:
+            app.state.db_pool = None
+            logger.warning(
+                "vibecheck db pool disabled: missing VIBECHECK_SUPABASE_URL / VIBECHECK_SUPABASE_DB_PASSWORD"
+            )
+
         yield
     finally:
         pool = getattr(app.state, "db_pool", None)
