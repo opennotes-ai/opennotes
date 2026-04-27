@@ -12,6 +12,14 @@ const ARCHIVE_HEADERS = {
   "content-security-policy": ARCHIVE_CSP,
 };
 
+function injectFontFallback(html: string): string {
+  const style = `<style>html,body{font-family:'IBM Plex Sans Condensed',system-ui,sans-serif;}</style>`;
+  if (html.includes("</head>")) {
+    return html.replace("</head>", `${style}</head>`);
+  }
+  return style + html;
+}
+
 function isHttpUrl(candidate: string): boolean {
   try {
     const parsed = new URL(candidate);
@@ -64,7 +72,8 @@ export async function GET(event: APIEvent): Promise<Response> {
     });
   }
 
-  return new Response(await response.text(), {
+  const upstreamHtml = await response.text();
+  return new Response(injectFontFallback(upstreamHtml), {
     status: 200,
     headers: ARCHIVE_HEADERS,
   });

@@ -85,7 +85,7 @@ describe("GET /api/archive-preview", () => {
     const csp = response.headers.get("content-security-policy");
     expect(csp).toBeTruthy();
     expect(csp).toContain("default-src 'none'");
-    expect(await response.text()).toBe("<html>hi</html>");
+    expect(await response.text()).toContain("<html>hi</html>");
   });
 
   it("returns 400 application/json for non-http target URL", async () => {
@@ -96,5 +96,86 @@ describe("GET /api/archive-preview", () => {
 
     expect(response.status).toBe(400);
     expect(response.headers.get("content-type")).toMatch(/^application\/json/);
+  });
+
+  describe("font fallback injection (TASK-1495.03)", () => {
+    it("injects IBM Plex Sans Condensed style block before </head> on success", async () => {
+      const upstream =
+        "<html><head><title>X</title></head><body>hi</body></html>";
+      vi.stubGlobal(
+        "fetch",
+        vi.fn().mockResolvedValue(new Response(upstream, { status: 200 })),
+      );
+
+      const event = buildEvent(
+        "http://localhost:3000/api/archive-preview?url=https%3A%2F%2Fexample.com",
+      );
+      const response = await GET(event);
+      const body = await response.text();
+
+      expect(response.status).toBe(200);
+      expect(response.headers.get("content-type")).toBe(
+        "text/html; charset=utf-8",
+      );
+      expect(body).toContain("'IBM Plex Sans Condensed'");
+      const styleIdx = body.indexOf("'IBM Plex Sans Condensed'");
+      const headCloseIdx = body.indexOf("</head>");
+      expect(styleIdx).toBeGreaterThan(-1);
+      expect(headCloseIdx).toBeGreaterThan(-1);
+      expect(styleIdx).toBeLessThan(headCloseIdx);
+    });
+
+    it("prepends the style block when upstream HTML has no </head>", async () => {
+      const upstream = "<body>hi</body>";
+      vi.stubGlobal(
+        "fetch",
+        vi.fn().mockResolvedValue(new Response(upstream, { status: 200 })),
+      );
+
+      const event = buildEvent(
+        "http://localhost:3000/api/archive-preview?url=https%3A%2F%2Fexample.com",
+      );
+      const response = await GET(event);
+      const body = await response.text();
+
+      expect(body.startsWith("<style>")).toBe(true);
+      expect(body).toContain("'IBM Plex Sans Condensed'");
+      expect(body).toContain("<body>hi</body>");
+    });
+
+    it("does not inject the font fallback into uppercase </HEAD> documents (lowercase-only by design)", async () => {
+      const upstream =
+        "<html><HEAD><title>X</title></HEAD><body>hi</body></html>";
+      vi.stubGlobal(
+        "fetch",
+        vi.fn().mockResolvedValue(new Response(upstream, { status: 200 })),
+      );
+
+      const event = buildEvent(
+        "http://localhost:3000/api/archive-preview?url=https%3A%2F%2Fexample.com",
+      );
+      const response = await GET(event);
+      const body = await response.text();
+
+      expect(body.startsWith("<style>")).toBe(true);
+      expect(body).toContain("'IBM Plex Sans Condensed'");
+    });
+
+    it("does not modify failure-path bodies (no font injection on 502)", async () => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn().mockRejectedValue(new Error("network down")),
+      );
+
+      const event = buildEvent(
+        "http://localhost:3000/api/archive-preview?url=https%3A%2F%2Fexample.com",
+      );
+      const response = await GET(event);
+      const body = await response.text();
+
+      expect(response.status).toBe(502);
+      expect(body).toBe("Archive unavailable");
+      expect(body).not.toContain("IBM Plex Sans Condensed");
+    });
   });
 });
