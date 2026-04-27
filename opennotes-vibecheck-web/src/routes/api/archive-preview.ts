@@ -14,6 +14,7 @@ const ARCHIVE_HEADERS = {
   "content-type": "text/html; charset=utf-8",
   "cache-control": "no-store, private",
   "content-security-policy": ARCHIVE_CSP,
+  "referrer-policy": "no-referrer",
 };
 
 function injectFontFallback(html: string): string {

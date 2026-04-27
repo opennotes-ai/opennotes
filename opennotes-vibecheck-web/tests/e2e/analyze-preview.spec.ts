@@ -369,14 +369,22 @@ test("manual preview mode clicks switch visible previews without breaking width 
   await page.getByRole("button", { name: "Archived" }).click();
   await expect(page.locator('[data-testid="page-frame-archived-iframe"]')).toBeVisible();
 
+  // Clicking Original on a blocked fixture lands in the deciding state
+  // (countdown will eventually auto-switch back to Archived). The Original
+  // iframe is still mounted but `inert` + opacity-0 — assert against the
+  // visible interstitial rather than the hidden iframe.
   await page.getByRole("button", { name: "Original" }).click();
-  await expect(page.locator('[data-testid="page-frame-iframe"]')).toBeVisible();
+  await expect(page.locator('[data-testid="page-frame-deciding"]')).toBeVisible();
 
-  const regularWidth = await previewWidth(page);
+  // Width-preset assertion uses the section, not a possibly-hidden iframe.
+  const sectionWidth = async () => {
+    const box = await page.locator('[aria-label="Page preview"]').boundingBox();
+    if (!box) throw new Error("preview section has no box");
+    return box.width;
+  };
+  const regularWidth = await sectionWidth();
   await page.getByRole("button", { name: "Large" }).click();
-  await expect
-    .poll(async () => previewWidth(page))
-    .toBeGreaterThan(regularWidth + 40);
+  await expect.poll(async () => sectionWidth()).toBeGreaterThan(regularWidth + 40);
 });
 
 test("archive 502 onError fires; auto-switch lands on Screenshot (AC #6 e2e)", async ({

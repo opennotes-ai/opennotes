@@ -14,7 +14,7 @@ export interface PageFrameProps {
 }
 
 const IFRAME_LOAD_TIMEOUT_MS = 20_000;
-const ARCHIVE_LOAD_TIMEOUT_MS = 3_000;
+const ARCHIVE_LOAD_TIMEOUT_MS = 8_000;
 const FALLBACK_COUNTDOWN_MS = 15_000;
 
 export default function PageFrame(props: PageFrameProps) {
