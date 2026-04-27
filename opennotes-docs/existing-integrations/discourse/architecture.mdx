@@ -18,7 +18,7 @@ plugin/
   lib/opennotes/
     client.rb                      # HTTP client — auth, retries, identity headers
     post_mapper.rb                 # Discourse Post → OpenNotes request payload
-    user_mapper.rb                 # Discourse User → adapter identity headers
+    user_mapper.rb                 # Discourse User → X-Adapter-* identity headers
     action_executor.rb             # Hide/unhide/annotate post side-effects
     status_mapper.rb               # OpenNotes state → Discourse display status
     community_server_resolver.rb   # Resolves community server UUID from server

@@ -44,7 +44,7 @@ describe('Bot Channel Welcome Flow Integration', () => {
 
     mockRole = {
       id: 'role-123',
-      name: 'OpenNotes',
+      name: 'Open Notes',
     };
 
     mockBotMember = {
@@ -56,7 +56,7 @@ describe('Bot Channel Welcome Flow Integration', () => {
 
     const mockBotUser = {
       id: 'bot-user-123',
-      username: 'OpenNotes',
+      username: 'Open Notes',
       bot: true,
     };
 
@@ -101,7 +101,7 @@ describe('Bot Channel Welcome Flow Integration', () => {
     mockGuildConfigService = {
       get: jest.fn<(...args: any[]) => Promise<any>>()
         .mockResolvedValueOnce('open-notes')
-        .mockResolvedValueOnce('OpenNotes'),
+        .mockResolvedValueOnce('Open Notes'),
     };
   });
 
@@ -188,7 +188,7 @@ describe('Bot Channel Welcome Flow Integration', () => {
       mockGuildConfigService.get.mockReset();
       mockGuildConfigService.get
         .mockResolvedValueOnce('open-notes')
-        .mockResolvedValueOnce('OpenNotes');
+        .mockResolvedValueOnce('Open Notes');
 
       const result = await botChannelService.ensureChannelExists(
         mockGuild,

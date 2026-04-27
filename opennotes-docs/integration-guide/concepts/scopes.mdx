@@ -23,12 +23,12 @@ Every endpoint that requires a specific scope calls `require_scope_or_admin(user
 ## All available scopes
 
 <Tabs>
-  <Tab title="Adapter scopes">
+  <Tab title="Integration scopes">
     These are the scopes an external integration typically uses:
 
     | Scope | What it unlocks |
     |---|---|
-    | `platform:adapter` | Enables `X-Adapter-*` header identity; required for all adapter operations |
+    | `platform:adapter` | Enables `X-Adapter-*` header identity; required for all integration operations |
     | `requests:read` | `GET /api/public/v1/requests`, `GET /api/public/v1/requests/{id}` |
     | `requests:write` | `POST /api/public/v1/requests`, `PATCH /api/public/v1/requests/{id}` |
     | `notes:read` | `GET /api/public/v1/notes`, `GET /api/public/v1/notes/{id}` |

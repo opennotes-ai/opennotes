@@ -114,7 +114,7 @@ describe('GuildOnboardingService', () => {
 
     const mockBotUser = {
       id: 'bot-user-123',
-      username: 'OpenNotes',
+      username: 'Open Notes',
       bot: true,
     };
 
@@ -679,7 +679,7 @@ describe('GuildOnboardingService', () => {
 
       mockBotUser = {
         id: 'bot-user-123',
-        username: 'OpenNotes',
+        username: 'Open Notes',
         bot: true,
       };
 
@@ -951,7 +951,7 @@ describe('GuildOnboardingService', () => {
 
       mockBotUser = {
         id: 'bot-user-123',
-        username: 'OpenNotes',
+        username: 'Open Notes',
         bot: true,
       };
 
