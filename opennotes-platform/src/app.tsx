@@ -1,9 +1,9 @@
 import "./app.css";
-import { Router } from "@solidjs/router";
+import { A, Router } from "@solidjs/router";
 import { FileRoutes } from "@solidjs/start/router";
 import { ErrorBoundary, Suspense } from "solid-js";
 import { MetaProvider, Title } from "@solidjs/meta";
-import { Button } from "@opennotes/ui/components/ui/button";
+import { Button, buttonVariants } from "@opennotes/ui/components/ui/button";
 import { NavBar } from "@opennotes/ui/components/nav-bar";
 import ModeToggle from "@opennotes/ui/components/mode-toggle";
 
@@ -26,9 +26,12 @@ export default function App() {
             actions={
               <>
                 <ModeToggle />
-                <Button as="a" href="/login" variant="default" size="sm">
+                <A
+                  href="/login"
+                  class={buttonVariants({ variant: "default", size: "sm" })}
+                >
                   Sign In
-                </Button>
+                </A>
               </>
             }
           />

@@ -1,5 +1,5 @@
-import { createAsync, query } from "@solidjs/router";
-import { Button } from "@opennotes/ui/components/ui/button";
+import { A, query } from "@solidjs/router";
+import { Button, buttonVariants } from "@opennotes/ui/components/ui/button";
 import { MarketingHero } from "@opennotes/ui/components/marketing-hero";
 import { StepsList } from "@opennotes/ui/components/steps-list";
 import { AudienceCard } from "@opennotes/ui/components/audience-card";
@@ -16,8 +16,6 @@ export const route = {
 };
 
 export default function HomePage() {
-  createAsync(() => checkLandingRedirect());
-
   return (
     <main>
       <MarketingHero
@@ -32,12 +30,15 @@ export default function HomePage() {
         body="Open Notes combines AI classification with community review. Wire it into your platform so flagged content enters a bridging-based review loop, and consensus decisions flow back as moderation actions."
         actions={
           <>
-            <Button as="a" href="/register" variant="default" size="lg">
+            <Button as={A} href="/register" variant="default" size="lg">
               Get started
             </Button>
-            <Button as="a" href="https://docs.opennotes.ai" variant="link" size="lg">
+            <a
+              href="https://docs.opennotes.ai"
+              class={buttonVariants({ variant: "link", size: "lg" })}
+            >
               Read the docs →
-            </Button>
+            </a>
           </>
         }
       />
@@ -129,10 +130,10 @@ export default function HomePage() {
             </p>
           </div>
           <div class="flex gap-3">
-            <Button as="a" href="/register" variant="default" size="lg">
+            <Button as={A} href="/register" variant="default" size="lg">
               Sign Up
             </Button>
-            <Button as="a" href="/login" variant="ghost" size="lg">
+            <Button as={A} href="/login" variant="ghost" size="lg">
               Sign In
             </Button>
           </div>
