@@ -221,8 +221,18 @@ class _RetryableHTTPStatusError(Exception):
 class FirecrawlClient:
     """Thin async wrapper over the Firecrawl v2 HTTP API.
 
-    Used by the utterance extractor (/v2/extract) and by the screenshot pipeline
-    (/v2/scrape). Retries 429/5xx with exponential backoff (1s -> 2s -> 4s).
+    Surfaces three endpoints used by vibecheck:
+
+    - ``extract()`` → /v2/extract (async, polled): structured-output utterance
+      extraction.
+    - ``scrape()`` → /v2/scrape: cheap fetch + render for the Tier 1 ladder.
+    - ``interact()`` → /v2/scrape with a scripted ``actions`` array (there is
+      no separate /v2/interact endpoint; TASK-1488.08): Tier 2 fallback for
+      sites that gate content behind anti-bot walls or consent banners.
+
+    Retries 429/5xx with exponential backoff (1s -> 2s -> 4s). 4xx bodies
+    matching a documented refusal marker are surfaced as
+    :class:`FirecrawlBlocked` so callers can fast-escalate the ladder.
     """
 
     def __init__(
@@ -281,6 +291,11 @@ class FirecrawlClient:
         async for attempt in self._retrying():
             with attempt:
                 return await _send()
+        # Defensive — `reraise=True` on `_retrying()` means the loop only
+        # exits via either `return` (success) or a re-raised exception. This
+        # `raise` is unreachable in practice but pacifies the type checker
+        # (the function is annotated to return `dict[str, Any]`) and acts as
+        # a belt-and-suspenders fallback if tenacity's contract changes.
         raise FirecrawlError(f"firecrawl {path} exhausted retries")
 
     @staticmethod
@@ -365,7 +380,7 @@ class FirecrawlClient:
     ) -> ScrapeResult:
         """Call Firecrawl /v2/scrape and return a typed `ScrapeResult`.
 
-        `formats` accepts values like ["markdown", "screenshot", "screenshot@fullPage"].
+        `formats` accepts values like ["markdown", "html", "screenshot", "screenshot@fullPage"].
         `only_main_content=True` strips nav/footer/aside from the markdown,
         which gives much cleaner content for downstream parsing.
 

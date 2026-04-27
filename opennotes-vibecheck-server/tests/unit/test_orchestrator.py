@@ -1016,6 +1016,93 @@ async def test_scrape_step_blocked_then_blocked_raises_unsupported_site() -> Non
     assert exc_info.value.error_code is ErrorCode.UNSUPPORTED_SITE
 
 
+# TASK-1488.13 — UNSUPPORTED_SITE raise sites carry detail["error_host"]
+# so `_mark_failed` can populate `vibecheck_jobs.error_host` and the FE
+# can render host-specific copy ("We can't analyze {host} yet").
+
+
+async def test_scrape_step_both_tiers_blocked_populates_error_host() -> None:
+    """Both-tiers-failed raise (orchestrator.py: fresh Tier 1 → Tier 2 →
+    UNSUPPORTED_SITE) carries `detail['error_host']` with the URL hostname.
+    """
+    url = "https://hardblocked.example/post"
+    cache = _FakeScrapeCache()
+
+    def _blocked_t1() -> ScrapeResult:
+        raise FirecrawlBlocked("scrape refused: 403")
+
+    def _blocked_t2() -> ScrapeResult:
+        raise FirecrawlBlocked("interact refused: 403")
+
+    scrape_client = _FakeFirecrawlClient(scrape_result=_blocked_t1)
+    interact_client = _FakeFirecrawlClient(interact_result=_blocked_t2)
+
+    with pytest.raises(TerminalError) as exc_info:
+        await _call_scrape_step(url, scrape_client, interact_client, cache)
+
+    assert exc_info.value.error_code is ErrorCode.UNSUPPORTED_SITE
+    assert exc_info.value.detail.get("error_host") == "hardblocked.example"
+
+
+async def test_scrape_step_cached_t1_interstitial_t2_failed_populates_error_host() -> None:
+    """Cached-Tier-1-INTERSTITIAL → Tier 2 fail raise site also carries
+    `detail['error_host']` so the FE renders host-specific copy on
+    cached-then-still-blocked retries.
+    """
+    url = "https://cachedblock.example/post"
+    cache = _FakeScrapeCache()
+    cache.store[(url, "scrape")] = CachedScrape(
+        markdown="Just a moment... checking",
+        html="<title>Just a moment...</title>",
+        metadata=ScrapeMetadata(status_code=200, source_url=url),
+        storage_key="t1-interstitial-key",
+    )
+    scrape_client = _FakeFirecrawlClient(
+        scrape_result=lambda: (_ for _ in ()).throw(
+            AssertionError("scrape must not be called on Tier 1 cache hit")
+        )
+    )
+    interact_client = _FakeFirecrawlClient(
+        interact_result=_interstitial_scrape_result()
+    )
+
+    with pytest.raises(TerminalError) as exc_info:
+        await _call_scrape_step(url, scrape_client, interact_client, cache)
+
+    assert exc_info.value.error_code is ErrorCode.UNSUPPORTED_SITE
+    assert exc_info.value.detail.get("error_host") == "cachedblock.example"
+
+
+async def test_scrape_step_forced_t2_failed_populates_error_host() -> None:
+    """`force_tier='interact'` (the post-Gemini once-only escalation) raise
+    site also carries `detail['error_host']` when Tier 2 fails.
+    """
+    from src.jobs import orchestrator
+
+    url = "https://forced.example/post"
+    cache = _FakeScrapeCache()
+    scrape_client = _FakeFirecrawlClient(
+        scrape_result=lambda: (_ for _ in ()).throw(
+            AssertionError("scrape must not run when force_tier='interact'")
+        )
+    )
+    interact_client = _FakeFirecrawlClient(
+        interact_result=_interstitial_scrape_result()
+    )
+
+    with pytest.raises(TerminalError) as exc_info:
+        await orchestrator._scrape_step(
+            url,
+            cast(FirecrawlClient, cast(object, scrape_client)),
+            cast(FirecrawlClient, cast(object, interact_client)),
+            cast(SupabaseScrapeCache, cast(object, cache)),
+            force_tier="interact",
+        )
+
+    assert exc_info.value.error_code is ErrorCode.UNSUPPORTED_SITE
+    assert exc_info.value.detail.get("error_host") == "forced.example"
+
+
 # AC#4 — cache reader honors tier preference (Tier 1 hit short-circuits).
 
 

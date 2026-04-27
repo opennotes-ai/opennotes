@@ -137,6 +137,7 @@ CREATE TABLE IF NOT EXISTS vibecheck_scrapes (
     tier TEXT NOT NULL DEFAULT 'scrape'
         CHECK (tier IN ('scrape', 'interact')),
     url TEXT NOT NULL,
+    final_url TEXT,
     host TEXT NOT NULL,
     page_kind TEXT NOT NULL DEFAULT 'other',
     page_title TEXT,
@@ -145,6 +146,7 @@ CREATE TABLE IF NOT EXISTS vibecheck_scrapes (
     screenshot_storage_key TEXT,
     scraped_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     expires_at TIMESTAMPTZ NOT NULL DEFAULT (now() + INTERVAL '72 hours'),
+    evicted_at TIMESTAMPTZ,
     CONSTRAINT vibecheck_scrapes_page_kind_check
         CHECK (page_kind IN (
             'blog_post', 'forum_thread', 'hierarchical_thread',

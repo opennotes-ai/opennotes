@@ -23,6 +23,7 @@ import asyncio
 import json
 import os
 import sys
+import tempfile
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -105,7 +106,7 @@ URL_CASES: list[tuple[str, str, str]] = [
         "expected: success via /interact",
     ),
     (
-        "cf_blog",
+        "g2_review",
         "https://www.g2.com/products/notion/reviews",
         "expected: success via /interact (Cloudflare-protected)",
     ),
@@ -220,9 +221,15 @@ def _format_summary(results: list[CaseResult]) -> str:
 
 async def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--only", help="comma-separated subset: linkedin,reddit,cf_blog,normal")
+    parser.add_argument(
+        "--only",
+        help="comma-separated subset: linkedin,reddit,g2_review,normal,normal_alt",
+    )
     parser.add_argument("--budget", type=int, default=20, help="max firecrawl calls")
-    parser.add_argument("--out", default="/tmp/ladder-e2e.json")
+    parser.add_argument(
+        "--out",
+        default=str(Path(tempfile.gettempdir()) / "ladder-e2e.json"),
+    )
     args = parser.parse_args()
 
     api_key = os.environ.get("FIRECRAWL_API_KEY", "").strip()

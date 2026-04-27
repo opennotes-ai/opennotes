@@ -81,8 +81,27 @@ SELECT
     s.page_title,
     s.screenshot_storage_key
 FROM vibecheck_jobs j
-INNER JOIN vibecheck_scrapes s
-    ON s.normalized_url = j.normalized_url
+INNER JOIN (
+    -- TASK-1488.16: when both tier='scrape' and tier='interact' rows
+    -- exist for the same normalized_url, the gallery must surface the
+    -- interact-tier asset (Tier 2 success) rather than the cached
+    -- interstitial that triggered the escalation. DISTINCT ON over
+    -- the tier-priority ordering picks one viable row per URL,
+    -- preferring 'interact' over 'scrape'. Filtering on viable rows
+    -- (`screenshot_storage_key IS NOT NULL`, `expires_at > now()`)
+    -- inside the subquery keeps an unviable interact row from
+    -- shadowing a viable scrape row.
+    SELECT DISTINCT ON (normalized_url)
+        normalized_url,
+        page_title,
+        screenshot_storage_key,
+        expires_at
+    FROM vibecheck_scrapes
+    WHERE screenshot_storage_key IS NOT NULL
+      AND expires_at > now()
+    ORDER BY normalized_url,
+             CASE WHEN tier = 'interact' THEN 0 ELSE 1 END
+) s ON s.normalized_url = j.normalized_url
 WHERE j.status IN ('done', 'partial')
   AND j.finished_at IS NOT NULL
   AND j.preview_description IS NOT NULL
