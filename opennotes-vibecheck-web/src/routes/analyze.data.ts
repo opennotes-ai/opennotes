@@ -127,29 +127,10 @@ export async function resolveAnalyzeRedirect(formData: FormData): Promise<never>
     );
   } else {
     const decision = checkAnalyzeRateLimit(evt.request.headers);
-    if (decision.outcome === "unattributable") {
+    if (!decision.allowed) {
       console.warn(
         JSON.stringify({
-          event: "vibecheck.rate_limit.unattributable",
-          route: "resolveAnalyzeRedirect",
-          xff_present: evt.request.headers.has("x-forwarded-for"),
-          xff_entry_count: (evt.request.headers.get("x-forwarded-for") ?? "")
-            .split(",")
-            .filter((p) => p.trim() !== "").length,
-        }),
-      );
-    } else if (decision.outcome === "shed") {
-      console.warn(
-        JSON.stringify({
-          event: "vibecheck.rate_limit.shed",
-          route: "resolveAnalyzeRedirect",
-          ip_hash_prefix: decision.ipHashPrefix,
-        }),
-      );
-    } else if (decision.outcome === "denied") {
-      console.warn(
-        JSON.stringify({
-          event: "vibecheck.rate_limit.denied",
+          event: `vibecheck.rate_limit.${decision.outcome}`,
           route: "resolveAnalyzeRedirect",
           ip_hash_prefix: decision.ipHashPrefix,
           retry_after_sec: decision.retryAfterSec,
@@ -158,8 +139,6 @@ export async function resolveAnalyzeRedirect(formData: FormData): Promise<never>
             .filter((p) => p.trim() !== "").length,
         }),
       );
-    }
-    if (!decision.allowed) {
       const qs = redirectParams({
         pending_error: "rate_limited",
         url: rawUrl,

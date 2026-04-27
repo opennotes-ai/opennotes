@@ -136,16 +136,20 @@ describe("checkAnalyzeRateLimit (per-IP window)", () => {
     }
   });
 
-  it("unattributable requests (missing or single-entry XFF) are NOT coalesced into a shared bucket", () => {
+  it("unattributable requests share a tight global bucket so XFF-stripping cannot bypass the limit", () => {
+    process.env.VIBECHECK_RATE_LIMIT_UNATTRIBUTABLE_PER_HOUR = "5";
     const noXff = new Headers();
     const singleEntry = new Headers({ "x-forwarded-for": "203.0.113.10" });
-    for (let i = 0; i < 50; i++) {
+    for (let i = 0; i < 5; i++) {
       const a = checkAnalyzeRateLimit(noXff);
-      const b = checkAnalyzeRateLimit(singleEntry);
-      expect(a.allowed, `noXff request ${i + 1} should pass-through`).toBe(true);
-      expect(a.outcome).toBe("unattributable");
-      expect(b.outcome).toBe("unattributable");
+      expect(a.allowed, `noXff request ${i + 1}/5 should pass`).toBe(true);
+      expect(a.outcome).toBe("allowed");
     }
+    const denied = checkAnalyzeRateLimit(singleEntry);
+    expect(denied.allowed).toBe(false);
+    expect(denied.outcome).toBe("denied_unattributable");
+    expect(denied.retryAfterSec).toBeGreaterThan(0);
+    delete process.env.VIBECHECK_RATE_LIMIT_UNATTRIBUTABLE_PER_HOUR;
   });
 
   it("resets the bucket once the window elapses", () => {
@@ -170,7 +174,7 @@ describe("checkAnalyzeRateLimit (per-IP window)", () => {
     expect(b.ipHashPrefix).not.toBe(a.ipHashPrefix);
   });
 
-  it("MAX_BUCKETS overflow sheds new arrivals (allowed but with outcome=shed)", () => {
+  it("MAX_BUCKETS overflow fails closed for new IPs so a unique-IP flood cannot bypass enforcement", () => {
     process.env.VIBECHECK_RATE_LIMIT_PER_HOUR = "10";
     const start = 1_700_000_000_000;
     for (let i = 0; i < 10_000; i++) {
@@ -178,7 +182,20 @@ describe("checkAnalyzeRateLimit (per-IP window)", () => {
       checkAnalyzeRateLimit(xffHeaders(ip), start);
     }
     const overflow = checkAnalyzeRateLimit(xffHeaders("198.51.100.99"), start);
-    expect(overflow.allowed).toBe(true);
-    expect(overflow.outcome).toBe("shed");
+    expect(overflow.allowed).toBe(false);
+    expect(overflow.outcome).toBe("denied_capacity");
+    expect(overflow.retryAfterSec).toBeGreaterThan(0);
+  });
+
+  it("when capacity is full, IPs that already have a bucket continue to be tracked normally", () => {
+    process.env.VIBECHECK_RATE_LIMIT_PER_HOUR = "10";
+    const start = 1_700_000_000_000;
+    const established = xffHeaders("198.51.100.99");
+    expect(checkAnalyzeRateLimit(established, start).outcome).toBe("allowed");
+    for (let i = 0; i < 10_000; i++) {
+      const ip = `203.0.${(i >> 8) & 0xff}.${i & 0xff}`;
+      checkAnalyzeRateLimit(xffHeaders(ip), start);
+    }
+    expect(checkAnalyzeRateLimit(established, start).outcome).toBe("allowed");
   });
 });

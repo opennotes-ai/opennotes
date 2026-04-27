@@ -1,10 +1,18 @@
 "use server";
 
+// IMPORTANT: bucket state is process-local. With Cloud Run scale-out
+// (max_instances=10), an attacker can multiply the per-IP budget by the
+// number of warm instances. This is a documented v1 limitation; promote
+// to a shared backend (Redis/Memorystore) before relying on this as the
+// stable abuse control. See follow-up TASK-1483.12.
+
 import { createHash, createHmac } from "node:crypto";
 
 const WINDOW_MS = 60 * 60 * 1000;
 const DEFAULT_LIMIT = 30;
+const DEFAULT_UNATTRIBUTABLE_LIMIT = 60;
 const MAX_BUCKETS = 10_000;
+const UNATTRIBUTABLE_KEY = "<unattributable>";
 
 interface Bucket {
   count: number;
@@ -13,7 +21,12 @@ interface Bucket {
 
 const buckets = new Map<string, Bucket>();
 
-export type RateLimitOutcome = "allowed" | "denied" | "unattributable" | "disabled" | "shed";
+export type RateLimitOutcome =
+  | "allowed"
+  | "denied"
+  | "denied_unattributable"
+  | "denied_capacity"
+  | "disabled";
 
 export interface RateLimitDecision {
   allowed: boolean;
@@ -57,6 +70,13 @@ function getLimit(): number {
   return Number.isFinite(n) && n > 0 ? n : DEFAULT_LIMIT;
 }
 
+function getUnattributableLimit(): number {
+  const raw = process.env.VIBECHECK_RATE_LIMIT_UNATTRIBUTABLE_PER_HOUR;
+  if (!raw) return DEFAULT_UNATTRIBUTABLE_LIMIT;
+  const n = Number.parseInt(raw, 10);
+  return Number.isFinite(n) && n >= 0 ? n : DEFAULT_UNATTRIBUTABLE_LIMIT;
+}
+
 function evictExpired(now: number): number {
   let removed = 0;
   for (const [k, b] of buckets) {
@@ -75,6 +95,37 @@ function hashIp(ip: string | null): string {
   return createHash("sha256").update(subject).digest("hex").slice(0, 12);
 }
 
+function consume(
+  key: string,
+  limit: number,
+  now: number,
+): { allowed: boolean; retryAfterSec: number; capacityFull: boolean } {
+  const bucket = buckets.get(key);
+  if (!bucket || now - bucket.windowStart >= WINDOW_MS) {
+    if (buckets.size >= MAX_BUCKETS) {
+      evictExpired(now);
+      if (buckets.size >= MAX_BUCKETS && !buckets.has(key)) {
+        // Fail-closed: cannot allocate a new bucket without losing
+        // enforcement on existing ones. Better to deny one request than
+        // let a unique-IP attacker fill the map and bypass the limiter
+        // for every subsequent address.
+        return { allowed: false, retryAfterSec: 60, capacityFull: true };
+      }
+    }
+    buckets.set(key, { count: 1, windowStart: now });
+    return { allowed: true, retryAfterSec: 0, capacityFull: false };
+  }
+  if (bucket.count < limit) {
+    bucket.count += 1;
+    return { allowed: true, retryAfterSec: 0, capacityFull: false };
+  }
+  const retryAfterSec = Math.max(
+    1,
+    Math.ceil((WINDOW_MS - (now - bucket.windowStart)) / 1000),
+  );
+  return { allowed: false, retryAfterSec, capacityFull: false };
+}
+
 export function checkAnalyzeRateLimit(
   headers: Headers,
   now: number = Date.now(),
@@ -82,32 +133,56 @@ export function checkAnalyzeRateLimit(
   const ip = extractClientIp(headers);
   const ipHashPrefix = hashIp(ip);
   if (disableExplicit()) {
-    return { allowed: true, retryAfterSec: 0, ip, ipHashPrefix, outcome: "disabled" };
+    return {
+      allowed: true,
+      retryAfterSec: 0,
+      ip,
+      ipHashPrefix,
+      outcome: "disabled",
+    };
   }
   if (ip === null) {
-    return { allowed: true, retryAfterSec: 0, ip, ipHashPrefix, outcome: "unattributable" };
-  }
-  const limit = getLimit();
-  const bucket = buckets.get(ip);
-  if (!bucket || now - bucket.windowStart >= WINDOW_MS) {
-    if (buckets.size >= MAX_BUCKETS) {
-      evictExpired(now);
-      if (buckets.size >= MAX_BUCKETS) {
-        return { allowed: true, retryAfterSec: 0, ip, ipHashPrefix, outcome: "shed" };
-      }
+    // All unattributable traffic shares one tight global bucket so a
+    // header-stripping proxy or topology regression cannot bypass the
+    // per-user limit by simply removing X-Forwarded-For.
+    const unattributableLimit = getUnattributableLimit();
+    const result = consume(UNATTRIBUTABLE_KEY, unattributableLimit, now);
+    if (result.allowed) {
+      return {
+        allowed: true,
+        retryAfterSec: 0,
+        ip,
+        ipHashPrefix,
+        outcome: "allowed",
+      };
     }
-    buckets.set(ip, { count: 1, windowStart: now });
-    return { allowed: true, retryAfterSec: 0, ip, ipHashPrefix, outcome: "allowed" };
+    return {
+      allowed: false,
+      retryAfterSec: result.retryAfterSec,
+      ip,
+      ipHashPrefix,
+      outcome: result.capacityFull
+        ? "denied_capacity"
+        : "denied_unattributable",
+    };
   }
-  if (bucket.count < limit) {
-    bucket.count += 1;
-    return { allowed: true, retryAfterSec: 0, ip, ipHashPrefix, outcome: "allowed" };
+  const result = consume(ip, getLimit(), now);
+  if (result.allowed) {
+    return {
+      allowed: true,
+      retryAfterSec: 0,
+      ip,
+      ipHashPrefix,
+      outcome: "allowed",
+    };
   }
-  const retryAfterSec = Math.max(
-    1,
-    Math.ceil((WINDOW_MS - (now - bucket.windowStart)) / 1000),
-  );
-  return { allowed: false, retryAfterSec, ip, ipHashPrefix, outcome: "denied" };
+  return {
+    allowed: false,
+    retryAfterSec: result.retryAfterSec,
+    ip,
+    ipHashPrefix,
+    outcome: result.capacityFull ? "denied_capacity" : "denied",
+  };
 }
 
 export function _resetRateLimitForTesting(): void {

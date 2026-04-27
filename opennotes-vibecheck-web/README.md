@@ -62,12 +62,17 @@ Submissions are rate-limited per real client IP at the web tier — extracted fr
 
 Configuration:
 - `VIBECHECK_RATE_LIMIT_PER_HOUR` — per-IP budget (default 30).
+- `VIBECHECK_RATE_LIMIT_UNATTRIBUTABLE_PER_HOUR` — global shared budget for traffic whose client IP cannot be extracted from `X-Forwarded-For` (default 60). All such requests share one bucket so an XFF-stripping proxy or topology regression cannot bypass per-user enforcement.
 - `VIBECHECK_RATE_LIMIT_DISABLED=1` — explicit kill-switch for local dev / tests. The limiter is **on by default in every environment**, including dev — set the kill-switch in your local `.env` if you don't want it. There is no implicit `NODE_ENV`-based opt-out.
 - `VIBECHECK_LOG_HASH_SALT` — optional HMAC salt for the IP hash prefix that appears in denial logs. When unset, denial logs use a plain SHA-256 prefix (treat as identifying information for log handling); when set, the prefix is HMAC-SHA-256, suitable for log-deduplication without leaking the source IP.
 
-Failure modes:
-- A request whose `X-Forwarded-For` cannot be parsed (single-entry XFF, missing XFF, internal probe) is treated as **unattributable** and passes through with a `vibecheck.rate_limit.unattributable` warn log. Unattributable requests are NOT coalesced into a shared bucket.
-- If the in-memory bucket map fills up (>10k unique IPs in one window), new arrivals are **shed** (allowed with a `vibecheck.rate_limit.shed` warn log) rather than denied.
+Failure modes (all surfaced as the user-facing `pending_error=rate_limited` redirect):
+- `denied` — per-IP budget exhausted.
+- `denied_unattributable` — global unattributable bucket exhausted (XFF stripped or single-entry).
+- `denied_capacity` — bucket map at MAX_BUCKETS (10k) and eviction freed nothing; the limiter fails closed for new IPs to prevent unique-IP-flood bypass.
+
+Known limitations (TASK-1483.12 follow-up):
+- Bucket state is process-local. With Cloud Run scale-out (`max_instances=10`), an attacker can multiply the per-IP budget by the number of warm instances. Promote to a shared backend (Redis/Memorystore) before relying on this as the stable abuse control.
 
 ### Versioning policy
 
