@@ -178,4 +178,69 @@ describe("<JobFailureCard />", () => {
     const home = await screen.findByTestId("job-failure-home");
     expect(home.getAttribute("href")).toBe("/");
   });
+
+  // TASK-1488.19 — curated per-code detail line replaces raw error_message
+  // rendering. Backend `error_message` (e.g. firecrawl_blocked / 403 /
+  // /v2/scrape vendor envelopes) must never reach the customer-facing UI.
+
+  describe("curated detail line", () => {
+    const expected: Array<[ErrorCode | null, string]> = [
+      [
+        "invalid_url",
+        "Check the URL is correctly formed and try again.",
+      ],
+      ["unsafe_url", "Web Risk flagged this URL as unsafe."],
+      ["unsupported_site", "This site blocks automated readers."],
+      [
+        "upstream_error",
+        "Try again in a moment — the page wasn't reachable.",
+      ],
+      [
+        "extraction_failed",
+        "We couldn't pull readable content from that page.",
+      ],
+      ["section_failure", "Some analysis sections couldn't complete."],
+      [
+        "timeout",
+        "Try again in a moment — the analysis didn't finish in time.",
+      ],
+      ["rate_limited", "Too many recent requests. Try again shortly."],
+      [
+        "internal",
+        "Something went wrong. Please try again or contact support.",
+      ],
+      [
+        null,
+        "Something went wrong. Please try again or contact support.",
+      ],
+    ];
+
+    for (const [code, text] of expected) {
+      it(`renders curated detail '${text}' for errorCode=${String(code)}`, async () => {
+        renderCard({
+          url: URL,
+          errorCode: code as ErrorCode | null,
+        });
+        const detail = await screen.findByTestId("job-failure-detail");
+        expect(detail.textContent).toBe(text);
+      });
+    }
+
+    it("does not render any vendor-leak strings (firecrawl, /v2/, 403, tier 1:)", async () => {
+      // Anti-leak regression for TASK-1488.19. Even if `errorMessage` were
+      // accidentally re-introduced as a prop, the component no longer
+      // accepts it, so the raw vendor envelope cannot reach the DOM.
+      renderCard({
+        url: URL,
+        errorCode: "unsupported_site",
+        errorHost: "linkedin.com",
+      });
+      const card = await screen.findByTestId("job-failure-card");
+      const text = card.textContent ?? "";
+      expect(text).not.toContain("firecrawl");
+      expect(text).not.toContain("/v2/");
+      expect(text).not.toContain("403");
+      expect(text).not.toContain("tier 1:");
+    });
+  });
 });

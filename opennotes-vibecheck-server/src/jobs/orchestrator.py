@@ -145,7 +145,10 @@ class TerminalError(Exception):
     Two payload fields, by intent:
     - `error_detail`: free-form prose summary intended for log surfacing
       and the (TEXT) `vibecheck_jobs.error_message` column. Stable for
-      operators reading logs; NOT a stable test surface.
+      operators reading logs; NOT a stable test surface. **Never
+      rendered to end users** — the FE renders curated per-code copy
+      via `JobFailureCard` (TASK-1488.19) so internal vendor strings
+      don't leak through this column into customer-facing UI.
     - `detail`: optional structured fields. Currently a test-only
       payload — not persisted (no JSONB column on `vibecheck_jobs`) and
       not surfaced as Logfire span attributes by the `run_job` catch

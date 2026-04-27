@@ -159,7 +159,6 @@ export default function AnalyzePage() {
           url: s.url ?? pendingUrl(),
           errorCode: (s.error_code ?? null) as ErrorCode | null,
           errorHost: s.error_host ?? null,
-          errorMessage: s.error_message ?? null,
           webRiskFindings: s.sidebar_payload?.web_risk?.findings ?? [],
         };
       }
@@ -168,7 +167,6 @@ export default function AnalyzePage() {
           url: jobUrl(),
           errorCode: "internal" as ErrorCode,
           errorHost: null,
-          errorMessage: null as string | null,
           webRiskFindings: [],
         };
       }
@@ -397,7 +395,6 @@ export default function AnalyzePage() {
                   url={f.url ?? ""}
                   errorCode={f.errorCode}
                   errorHost={f.errorHost}
-                  errorMessage={f.errorMessage}
                   webRiskFindings={f.webRiskFindings}
                 />
               );

@@ -10,7 +10,6 @@ type WebRiskFinding = components["schemas"]["WebRiskFinding"];
 export interface JobFailureCardProps {
   url: string;
   errorCode: ErrorCode | null;
-  errorMessage?: string | null;
   errorHost?: string | null;
   webRiskFindings?: WebRiskFinding[];
   onTryAgain?: () => void;
@@ -42,12 +41,45 @@ function copyFor(
   }
 }
 
+// TASK-1488.19: curated per-code detail strings rendered as the second
+// line below `copyFor()`. Replaces the previous behavior of rendering
+// the BE's `error_message` prose, which leaked vendor implementation
+// details (e.g. raw Firecrawl 403 envelopes) into customer-facing UI.
+// Decision recorded in the task: friendly-replace at the FE for every
+// `ErrorCode`. Backend `error_message` stays populated for ops/log
+// correlation but is no longer threaded into this component.
+function detailFor(code: ErrorCode | null): string {
+  switch (code) {
+    case "invalid_url":
+      return "Check the URL is correctly formed and try again.";
+    case "unsafe_url":
+      return "Web Risk flagged this URL as unsafe.";
+    case "unsupported_site":
+      return "This site blocks automated readers.";
+    case "upstream_error":
+      return "Try again in a moment — the page wasn't reachable.";
+    case "extraction_failed":
+      return "We couldn't pull readable content from that page.";
+    case "section_failure":
+      return "Some analysis sections couldn't complete.";
+    case "timeout":
+      return "Try again in a moment — the analysis didn't finish in time.";
+    case "rate_limited":
+      return "Too many recent requests. Try again shortly.";
+    case "internal":
+    case null:
+    default:
+      return "Something went wrong. Please try again or contact support.";
+  }
+}
+
 function threatLabel(threat: WebRiskFinding["threat_types"][number]): string {
   return threat.replaceAll("_", " ").toLowerCase();
 }
 
 export default function JobFailureCard(props: JobFailureCardProps): JSX.Element {
   const copy = () => copyFor(props.errorCode, props.errorHost);
+  const detail = () => detailFor(props.errorCode);
   const webRiskFindings = (): WebRiskFinding[] => props.webRiskFindings ?? [];
 
   return (
@@ -99,13 +131,9 @@ export default function JobFailureCard(props: JobFailureCardProps): JSX.Element 
         </ul>
       </Show>
 
-      <Show when={props.errorMessage}>
-        {(msg) => (
-          <p class="text-xs text-muted-foreground" data-testid="job-failure-detail">
-            {msg()}
-          </p>
-        )}
-      </Show>
+      <p class="text-xs text-muted-foreground" data-testid="job-failure-detail">
+        {detail()}
+      </p>
 
       <div class="flex flex-wrap items-center gap-3">
         <form
