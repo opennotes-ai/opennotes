@@ -409,45 +409,12 @@ class RecordingFirecrawlClient:
 
 
 # ---------------------------------------------------------------------------
-# OIDC + ASGI client wiring.
+# ASGI client wiring.
+#
+# `install_oidc_mock` and `oidc_headers` are consumed from the root
+# `tests/conftest.py` (TASK-1474.23.03.14 consolidation). Pytest discovers
+# fixtures up the conftest tree automatically, so no re-export is needed.
 # ---------------------------------------------------------------------------
-
-
-_DEFAULT_OIDC_AUDIENCE = "https://vibecheck.test"
-_DEFAULT_OIDC_EMAIL = (
-    "vibecheck-tasks@open-notes-core.iam.gserviceaccount.com"
-)
-
-
-@pytest.fixture
-def oidc_headers() -> dict[str, str]:
-    return {"Authorization": "Bearer integration.test.token"}
-
-
-@pytest.fixture
-def install_oidc_mock(monkeypatch: pytest.MonkeyPatch):
-    """Install a happy-path OIDC verifier and matching settings."""
-    from unittest.mock import MagicMock
-
-    from src.auth import cloud_tasks_oidc
-    from src.config import get_settings
-
-    get_settings.cache_clear()
-    monkeypatch.setenv("VIBECHECK_SERVER_URL", _DEFAULT_OIDC_AUDIENCE)
-    monkeypatch.setenv("VIBECHECK_TASKS_ENQUEUER_SA", _DEFAULT_OIDC_EMAIL)
-    get_settings.cache_clear()
-
-    mock = MagicMock(
-        return_value={
-            "iss": "https://accounts.google.com",
-            "aud": _DEFAULT_OIDC_AUDIENCE,
-            "email": _DEFAULT_OIDC_EMAIL,
-            "email_verified": True,
-        }
-    )
-    monkeypatch.setattr(cloud_tasks_oidc, "_verify_oauth2_token", mock)
-    yield mock
-    get_settings.cache_clear()
 
 
 @pytest.fixture
