@@ -36,9 +36,9 @@ export function MarketingHero(props: MarketingHeroProps): JSX.Element {
         <p class="mt-6 max-w-[70ch] text-lg text-muted-foreground leading-relaxed">
           {local.body}
         </p>
-        <Show when={local.actions}>
-          <div class="mt-10 flex flex-wrap items-center gap-4">{local.actions}</div>
-        </Show>
+        <div class="mt-10 flex flex-wrap items-center gap-4">
+          {local.actions}
+        </div>
       </div>
     </section>
   );

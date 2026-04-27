@@ -1,5 +1,5 @@
 import type { JSX } from "solid-js";
-import { For, Show, splitProps } from "solid-js";
+import { For, splitProps } from "solid-js";
 import { cn } from "../utils";
 
 export type Step = {
@@ -40,9 +40,7 @@ export function StepsList(props: StepsListProps): JSX.Element {
               <div class="text-muted-foreground leading-relaxed max-w-[70ch]">
                 {step.body}
               </div>
-              <Show when={step.detail}>
-                <div class="mt-3">{step.detail}</div>
-              </Show>
+              <div class="mt-3 empty:hidden">{step.detail}</div>
             </div>
           </li>
         )}

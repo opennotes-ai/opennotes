@@ -30,8 +30,9 @@ describe("<StepsList /> source contract", () => {
     expect(stepsSource).toContain("columns()");
   });
 
-  it("conditionally renders detail via Show", () => {
-    expect(stepsSource).toContain("Show when={step.detail}");
+  it("renders detail in a stable wrapper that hides when empty", () => {
+    expect(stepsSource).toContain("empty:hidden");
+    expect(stepsSource).toContain("{step.detail}");
   });
 
   it("uses token color classes only (no inline hex)", () => {

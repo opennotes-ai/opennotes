@@ -48,8 +48,9 @@ describe("<AudienceCard /> source contract", () => {
     expect(cardSource).toContain("focus-visible:ring");
   });
 
-  it("renders eyebrow icon conditionally via Show", () => {
-    expect(cardSource).toContain("Show when={local.icon}");
+  it("renders eyebrow icon in a stable wrapper that hides when empty", () => {
+    expect(cardSource).toContain("empty:hidden");
+    expect(cardSource).toContain("{local.icon}");
   });
 });
 

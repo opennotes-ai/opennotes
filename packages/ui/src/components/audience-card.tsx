@@ -1,5 +1,5 @@
 import type { JSX } from "solid-js";
-import { Show, splitProps } from "solid-js";
+import { splitProps } from "solid-js";
 import { cn } from "../utils";
 import {
   Card,
@@ -41,9 +41,7 @@ export function AudienceCard(props: AudienceCardProps): JSX.Element {
       <Card class="h-full transition-colors hover:border-foreground/30">
         <CardHeader>
           <div class="flex items-center gap-2 text-xs uppercase tracking-[0.18em] text-muted-foreground">
-            <Show when={local.icon}>
-              <span class="inline-flex items-center">{local.icon}</span>
-            </Show>
+            <span class="inline-flex items-center empty:hidden">{local.icon}</span>
             <span>{local.eyebrow}</span>
           </div>
           <CardTitle class="mt-3 text-xl font-semibold">{local.title}</CardTitle>

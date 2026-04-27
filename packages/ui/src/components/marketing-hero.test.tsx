@@ -40,12 +40,13 @@ describe("<MarketingHero /> source contract", () => {
     expect(heroSource).not.toMatch(/text-transparent/);
   });
 
-  it("renders kicker conditionally (Show wrapper)", () => {
+  it("renders kicker conditionally (Show wrapper for text)", () => {
     expect(heroSource).toContain("Show when={local.kicker}");
   });
 
-  it("renders actions conditionally (Show wrapper)", () => {
-    expect(heroSource).toContain("Show when={local.actions}");
+  it("renders actions slot in a stable wrapper (always-rendered for hydration)", () => {
+    expect(heroSource).toContain("flex flex-wrap items-center gap-4");
+    expect(heroSource).toContain("{local.actions}");
   });
 });
 
