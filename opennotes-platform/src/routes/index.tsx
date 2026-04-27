@@ -1,5 +1,5 @@
-import { A, query } from "@solidjs/router";
-import { Button, buttonVariants } from "@opennotes/ui/components/ui/button";
+import { A, createAsync, query } from "@solidjs/router";
+import { buttonVariants } from "@opennotes/ui/components/ui/button";
 import { MarketingHero } from "@opennotes/ui/components/marketing-hero";
 import { StepsList } from "@opennotes/ui/components/steps-list";
 import { AudienceCard } from "@opennotes/ui/components/audience-card";
@@ -16,6 +16,10 @@ export const route = {
 };
 
 export default function HomePage() {
+  // Consume the redirect query in the page body so a stale "anonymous" cache
+  // entry is re-evaluated on client navigation (e.g. after login transitions).
+  createAsync(() => checkLandingRedirect());
+
   return (
     <main>
       <MarketingHero
@@ -30,9 +34,12 @@ export default function HomePage() {
         body="Open Notes combines AI classification with community review. Wire it into your platform so flagged content enters a bridging-based review loop, and consensus decisions flow back as moderation actions."
         actions={
           <>
-            <Button as={A} href="/register" variant="default" size="lg">
+            <A
+              href="/register"
+              class={buttonVariants({ variant: "default", size: "lg" })}
+            >
               Get started
-            </Button>
+            </A>
             <a
               href="https://docs.opennotes.ai"
               class={buttonVariants({ variant: "link", size: "lg" })}
@@ -130,12 +137,18 @@ export default function HomePage() {
             </p>
           </div>
           <div class="flex gap-3">
-            <Button as={A} href="/register" variant="default" size="lg">
+            <A
+              href="/register"
+              class={buttonVariants({ variant: "default", size: "lg" })}
+            >
               Sign Up
-            </Button>
-            <Button as={A} href="/login" variant="ghost" size="lg">
+            </A>
+            <A
+              href="/login"
+              class={buttonVariants({ variant: "ghost", size: "lg" })}
+            >
               Sign In
-            </Button>
+            </A>
           </div>
         </div>
       </section>
