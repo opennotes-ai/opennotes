@@ -35,6 +35,7 @@ import json
 import socket
 from collections.abc import AsyncIterator, Iterator
 from datetime import UTC, datetime, timedelta
+from collections.abc import Callable
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -45,6 +46,11 @@ from testcontainers.postgres import PostgresContainer
 
 from src.cache.scrape_cache import CachedScrape
 from src.firecrawl_client import ScrapeMetadata, ScrapeResult
+
+ScrapeOutcome = ScrapeResult | BaseException | Callable[[], ScrapeResult]
+"""Per-URL outcome a recording client can serve: a fixed result, a raised
+exception (e.g. `FirecrawlBlocked`), or a no-arg factory for state-dependent
+tests."""
 from src.main import app
 from src.routes import analyze as analyze_route
 
@@ -390,24 +396,52 @@ def scrape_cache(db_pool: Any) -> AsyncpgScrapeCache:
 class RecordingFirecrawlClient:
     """Programmable Firecrawl stand-in with a per-URL result map.
 
-    Each `scrape(url, ...)` call appends to `calls`. Tests that want to
-    prove the cache-rescue path NOT call Firecrawl on the second submit
-    assert `len(calls) == 1` after both submits complete.
+    Each `scrape(url, ...)` and `interact(url, ...)` call appends to `calls`
+    (preserved for back-compat with `len(calls) == N` style assertions in
+    existing tests) and to `scrape_calls` / `interact_calls` as
+    `(url, kwargs)` tuples for new contract-pinning assertions.
+
+    Per-URL outcome is `ScrapeOutcome`: a fixed `ScrapeResult`, a raised
+    `BaseException` (e.g. `FirecrawlBlocked` for refusal scenarios), or a
+    no-arg callable factory for state-dependent tests.
 
     `metadata.source_url` defaults to the requested URL so the post-scrape
-    SSRF revalidator passes; the SSRF integration test overrides this to
-    a private IP.
+    SSRF revalidator passes; SSRF tests override this to a private IP.
     """
 
     def __init__(
         self,
         *,
-        results_by_url: dict[str, ScrapeResult] | None = None,
+        results_by_url: dict[str, ScrapeOutcome] | None = None,
+        interact_results_by_url: dict[str, ScrapeOutcome] | None = None,
         default_markdown: str = "Sample post content with substantive prose.",
     ) -> None:
         self.calls: list[str] = []
-        self._results_by_url = dict(results_by_url or {})
+        self.scrape_calls: list[tuple[str, dict[str, Any]]] = []
+        self.interact_calls: list[tuple[str, dict[str, Any]]] = []
+        self._results_by_url: dict[str, ScrapeOutcome] = dict(
+            results_by_url or {}
+        )
+        self._interact_results_by_url: dict[str, ScrapeOutcome] = dict(
+            interact_results_by_url or {}
+        )
         self._default_markdown = default_markdown
+
+    def _resolve(
+        self, url: str, results: dict[str, ScrapeOutcome]
+    ) -> ScrapeResult:
+        if url not in results:
+            return ScrapeResult(
+                markdown=self._default_markdown,
+                html=f"<article>{self._default_markdown}</article>",
+                metadata=ScrapeMetadata(title="Test Page", source_url=url),
+            )
+        outcome = results[url]
+        if isinstance(outcome, BaseException):
+            raise outcome
+        if callable(outcome):
+            return outcome()
+        return outcome
 
     async def scrape(
         self,
@@ -417,15 +451,31 @@ class RecordingFirecrawlClient:
         only_main_content: bool = False,
     ) -> ScrapeResult:
         self.calls.append(url)
-        if url in self._results_by_url:
-            return self._results_by_url[url]
-        return ScrapeResult(
-            markdown=self._default_markdown,
-            html=f"<article>{self._default_markdown}</article>",
-            metadata=ScrapeMetadata(
-                title="Test Page", source_url=url
-            ),
+        self.scrape_calls.append(
+            (url, {"formats": formats, "only_main_content": only_main_content})
         )
+        return self._resolve(url, self._results_by_url)
+
+    async def interact(
+        self,
+        url: str,
+        actions: list[dict[str, Any]],
+        *,
+        formats: list[str] | None = None,
+        only_main_content: bool = False,
+    ) -> ScrapeResult:
+        self.calls.append(url)
+        self.interact_calls.append(
+            (
+                url,
+                {
+                    "actions": actions,
+                    "formats": formats,
+                    "only_main_content": only_main_content,
+                },
+            )
+        )
+        return self._resolve(url, self._interact_results_by_url)
 
 
 # ---------------------------------------------------------------------------
