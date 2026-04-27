@@ -21,6 +21,7 @@ in the orchestrator (TASK-1474.23.03.04 + .05).
 """
 from __future__ import annotations
 
+from collections import deque
 from dataclasses import dataclass
 from typing import Final
 
@@ -72,35 +73,51 @@ class TransientExtractionError(Exception):
 
 
 def _walk_cause_chain(exc: BaseException) -> list[BaseException]:
-    """Return [exc, exc.__cause__, exc.__context__, ...] depth-first,
+    """Return [exc, exc.__cause__, exc.__context__, ...] in BFS order,
     deduplicated by identity, capped at 8 to avoid pathological cycles.
+
+    Per PEP 3134, when both `__cause__` (explicit `raise X from Y`) and
+    `__context__` (implicit prior raise inside an except) are set, the
+    explicit cause is the author's intent and must win. We enqueue
+    `__cause__` before `__context__` and use a FIFO queue so the cause
+    branch is fully visited before the context branch at the same depth.
     """
     seen: list[BaseException] = []
-    stack: list[BaseException] = [exc]
-    while stack and len(seen) < 8:
-        cur = stack.pop()
-        if any(cur is s for s in seen):
+    seen_ids: set[int] = set()
+    queue: deque[BaseException] = deque([exc])
+    while queue and len(seen) < 8:
+        cur = queue.popleft()
+        if id(cur) in seen_ids:
             continue
+        seen_ids.add(id(cur))
         seen.append(cur)
         if cur.__cause__ is not None:
-            stack.append(cur.__cause__)
+            queue.append(cur.__cause__)
         if cur.__context__ is not None and not cur.__suppress_context__:
-            stack.append(cur.__context__)
+            queue.append(cur.__context__)
     return seen
 
 
 def _find_inner_model_http_error(exc: BaseException) -> ModelHTTPError | None:
-    """Walk the cause/context chain looking for an inner ModelHTTPError.
+    """Walk the FULL cause/context chain and prefer a retriable
+    ModelHTTPError over a non-retriable one.
 
     Both direct `raise ModelHTTPError(...)` AND
     `UnexpectedModelBehavior(__cause__=ModelHTTPError(...))` must surface
     the inner status_code so the classifier returns transient for
-    429/503/504.
+    429/500/503/504. If a non-retriable ModelHTTPError appears earlier
+    in the walked chain and a retriable one appears later, the retriable
+    one wins — otherwise the classifier would terminate jobs that should
+    redeliver. Falls back to the first ModelHTTPError if none retriable.
     """
+    first: ModelHTTPError | None = None
     for inner in _walk_cause_chain(exc):
         if isinstance(inner, ModelHTTPError):
-            return inner
-    return None
+            if inner.status_code in _VERTEX_RETRIABLE_STATUSES:
+                return inner
+            if first is None:
+                first = inner
+    return first
 
 
 def _vertex_status_name(status_code: int) -> str:

@@ -122,3 +122,69 @@ def test_classify_unrelated_exception_returns_none() -> None:
     exc = ValueError("totally unrelated")
     assert classify_pydantic_ai_error(exc) is None
     assert classify_firecrawl_error(exc) is None
+
+
+def test_walk_prefers_cause_over_context_per_pep_3134() -> None:
+    """PEP 3134: when both __cause__ and __context__ are set, __cause__
+    is the explicit author intent and must be visited before __context__.
+
+    Pin this with a chain where the *cause* branch holds a retriable
+    ModelHTTPError(504) and the *context* branch holds a non-retriable
+    ModelHTTPError(400). With the LIFO bug, the context (400) is popped
+    first and `_find_inner_model_http_error` returned terminal. After
+    the fix, the cause (504) wins — classifier returns transient.
+    """
+    inner_retriable = ModelHTTPError(status_code=504, model_name="gemini-2.5-pro", body=None)
+    inner_non_retriable_context = ModelHTTPError(
+        status_code=400, model_name="gemini-2.5-pro", body=None
+    )
+    outer = UnexpectedModelBehavior("tool retry exhausted")
+    outer.__cause__ = inner_retriable
+    outer.__context__ = inner_non_retriable_context
+    outer.__suppress_context__ = False
+
+    result = classify_pydantic_ai_error(outer, model_name="gemini-2.5-pro")
+    assert isinstance(result, TransientExtractionError)
+    assert result.status_code == 504
+    assert result.status == "DEADLINE_EXCEEDED"
+
+
+def test_classify_picks_retriable_after_non_retriable_in_chain() -> None:
+    """If a non-retriable ModelHTTPError(400) appears earlier in the
+    chain and a retriable ModelHTTPError(504) appears deeper, the
+    classifier must pick the retriable one — not return terminal.
+    """
+    deeper_retriable = ModelHTTPError(status_code=504, model_name="gemini-2.5-pro", body=None)
+    earlier_non_retriable = ModelHTTPError(status_code=400, model_name="gemini-2.5-pro", body=None)
+    earlier_non_retriable.__cause__ = deeper_retriable
+    outer = UnexpectedModelBehavior("tool retry exhausted")
+    outer.__cause__ = earlier_non_retriable
+
+    result = classify_pydantic_ai_error(outer, model_name="gemini-2.5-pro")
+    assert isinstance(result, TransientExtractionError)
+    assert result.status_code == 504
+
+    deeper_non_retriable = ModelHTTPError(status_code=401, model_name="gemini-2.5-pro", body=None)
+    earlier_non_retriable_2 = ModelHTTPError(status_code=400, model_name="gemini-2.5-pro", body=None)
+    earlier_non_retriable_2.__cause__ = deeper_non_retriable
+    outer2 = UnexpectedModelBehavior("tool retry exhausted")
+    outer2.__cause__ = earlier_non_retriable_2
+
+    assert classify_pydantic_ai_error(outer2) is None
+
+
+def test_walk_cause_chain_terminates_on_cycle() -> None:
+    """Synthetic __cause__ cycle must not hang the walker."""
+    from src.utterances.errors import _walk_cause_chain
+
+    a = Exception("a")
+    b = Exception("b")
+    a.__cause__ = b
+    b.__cause__ = a
+
+    walked = _walk_cause_chain(a)
+    assert len(walked) <= 8
+    assert any(x is a for x in walked)
+    assert any(x is b for x in walked)
+
+    assert classify_pydantic_ai_error(a) is None
