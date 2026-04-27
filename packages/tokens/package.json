@@ -24,10 +24,14 @@
   },
   "peerDependencies": {
     "@fontsource/ibm-plex-sans": "^5.2.0",
+    "@fontsource/ibm-plex-sans-condensed": "^5.2.0",
     "@fontsource/ibm-plex-serif": "^5.2.0"
   },
   "peerDependenciesMeta": {
     "@fontsource/ibm-plex-sans": {
+      "optional": true
+    },
+    "@fontsource/ibm-plex-sans-condensed": {
       "optional": true
     },
     "@fontsource/ibm-plex-serif": {
@@ -36,6 +40,7 @@
   },
   "devDependencies": {
     "@fontsource/ibm-plex-sans": "^5.2.0",
+    "@fontsource/ibm-plex-sans-condensed": "^5.2.0",
     "@fontsource/ibm-plex-serif": "^5.2.0",
     "vitest": "^4.0.18"
   },

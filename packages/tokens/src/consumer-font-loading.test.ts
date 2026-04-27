@@ -45,3 +45,49 @@ describe("first-party token font loading", () => {
     expect(vibecheckEntry).not.toContain("fonts.googleapis.com");
   });
 });
+
+describe("IBM Plex Sans Condensed", () => {
+  it("declares the Condensed family in the CDN entry point", () => {
+    const cdnCss = readWorkspaceFile("packages/tokens/src/fonts-cdn.css");
+
+    expect(cdnCss).toContain("IBM+Plex+Sans+Condensed");
+  });
+
+  it("declares all 10 Condensed weights in the self-hosted entry point", () => {
+    const selfHostedCss = readWorkspaceFile(
+      "packages/tokens/src/fonts-self-hosted.css",
+    );
+
+    const expectedFiles = [
+      "300.css",
+      "400.css",
+      "500.css",
+      "600.css",
+      "700.css",
+      "300-italic.css",
+      "400-italic.css",
+      "500-italic.css",
+      "600-italic.css",
+      "700-italic.css",
+    ];
+
+    for (const file of expectedFiles) {
+      expect(selfHostedCss).toContain(
+        `@import "@fontsource/ibm-plex-sans-condensed/${file}";`,
+      );
+    }
+  });
+
+  it("declares the Condensed package as an optional peer dependency", () => {
+    const pkgRaw = readWorkspaceFile("packages/tokens/package.json");
+    const pkg = JSON.parse(pkgRaw) as {
+      peerDependencies?: Record<string, string>;
+      peerDependenciesMeta?: Record<string, { optional?: boolean }>;
+    };
+
+    expect(pkg.peerDependencies?.["@fontsource/ibm-plex-sans-condensed"]).toBeDefined();
+    expect(
+      pkg.peerDependenciesMeta?.["@fontsource/ibm-plex-sans-condensed"]?.optional,
+    ).toBe(true);
+  });
+});
