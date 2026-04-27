@@ -45,13 +45,22 @@ export async function GET(event: APIEvent): Promise<Response> {
       signal: event.request.signal,
     });
   } catch {
-    return Response.json({ detail: "Archive unavailable" }, { status: 502 });
+    return new Response("Archive unavailable", {
+      status: 502,
+      headers: {
+        "content-type": "text/plain; charset=utf-8",
+        "cache-control": "no-store, private",
+      },
+    });
   }
 
   if (!response.ok) {
     return new Response("", {
       status: response.status,
-      headers: ARCHIVE_HEADERS,
+      headers: {
+        "content-type": "text/plain; charset=utf-8",
+        "cache-control": "no-store, private",
+      },
     });
   }
 
