@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncIterator
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
 from pathlib import Path
 from urllib.parse import urlparse
@@ -81,6 +83,24 @@ def _apply_schema(client: Client) -> None:
         )
 
 
+_EXTRACTOR_TO_THREAD_CALL_SITES = 3
+_DEFAULT_THREAD_POOL_CAP = 64
+
+
+def _resolve_thread_pool_workers(container_concurrency: int) -> int:
+    """Size the asyncio default executor for Cloud Run worst-case fan-out.
+
+    The utterance extractor wraps `_sanitize_html`, `attribute_media`, and the
+    optional `get_html` agent tool in `asyncio.to_thread`. At
+    `containerConcurrency=80` that is up to 240 simultaneous thread tasks, far
+    above asyncio's default `min(32, cpu_count + 4)` (~5-6 threads on a 1-2
+    vCPU Cloud Run instance). We size for the worst case but cap to keep
+    thread-context overhead bounded on small instances.
+    """
+    requested = max(1, container_concurrency) * _EXTRACTOR_TO_THREAD_CALL_SITES
+    return min(requested, _DEFAULT_THREAD_POOL_CAP)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # Install Logfire span scrubbing before any route handler (and therefore
@@ -89,6 +109,24 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # unavailable in a given environment (e.g. stripped-down unit runs).
     configure_logfire()
     settings = get_settings()
+
+    # Replace asyncio's default ThreadPoolExecutor so `asyncio.to_thread` in
+    # the extractor (TASK-1474.23.04) does not saturate at ~5-6 workers under
+    # Cloud Run's containerConcurrency=80. See `_resolve_thread_pool_workers`
+    # for the sizing rationale (TASK-1474.23.03.24).
+    thread_pool_workers = _resolve_thread_pool_workers(settings.CONTAINER_CONCURRENCY)
+    executor = ThreadPoolExecutor(
+        max_workers=thread_pool_workers,
+        thread_name_prefix="vibecheck-default",
+    )
+    asyncio.get_running_loop().set_default_executor(executor)
+    app.state.default_executor = executor
+    logger.info(
+        "vibecheck default ThreadPoolExecutor sized for Cloud Run concurrency "
+        "(workers=%s, container_concurrency=%s)",
+        thread_pool_workers,
+        settings.CONTAINER_CONCURRENCY,
+    )
     cache_key = (
         settings.VIBECHECK_SUPABASE_SERVICE_ROLE_KEY
         or settings.VIBECHECK_SUPABASE_ANON_KEY
@@ -139,3 +177,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             await pool.close()
             app.state.db_pool = None
         app.state.cache = None
+        executor = getattr(app.state, "default_executor", None)
+        if executor is not None:
+            executor.shutdown(wait=False, cancel_futures=True)
+            app.state.default_executor = None

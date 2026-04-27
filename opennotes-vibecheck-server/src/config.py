@@ -90,6 +90,14 @@ class Settings(BaseSettings):
     # per-request CPU minimal at the cost of this constraint.
     VIBECHECK_RECENT_ANALYSES_CACHE_TTL_SECONDS: int = 60
 
+    # TASK-1474.23.03.24: Cloud Run sets containerConcurrency=80 for
+    # vibecheck-server. The startup lifespan sizes asyncio's default
+    # ThreadPoolExecutor against this value so `asyncio.to_thread` calls in
+    # the extractor (TASK-1474.23.04) don't saturate the default ~5-6 worker
+    # pool. Override via VIBECHECK_CONTAINER_CONCURRENCY when the Cloud Run
+    # revision uses a different concurrency setting.
+    CONTAINER_CONCURRENCY: int = 80
+
     @field_validator("VIBECHECK_RECENT_ANALYSES_CACHE_TTL_SECONDS")
     @classmethod
     def _recent_cache_ttl_under_signed_url_validity(cls, value: int) -> int:
