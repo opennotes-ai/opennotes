@@ -126,13 +126,15 @@ class TerminalError(Exception):
     - `error_detail`: free-form prose summary intended for log surfacing
       and the (TEXT) `vibecheck_jobs.error_message` column. Stable for
       operators reading logs; NOT a stable test surface.
-    - `detail`: optional structured fields intended for tests and
-      (future) JSONB persistence. Tests should assert on specific
-      `detail[k]` keys instead of substrings of `error_detail` so a
-      reword of the prose summary does not break tests with identical
-      behavior. Defaults to `{}` so existing two-arg raise sites keep
-      working unchanged; new raises populate it as their tests need to
-      de-brittle (TASK-1474.23.03.13).
+    - `detail`: optional structured fields. Currently a test-only
+      payload — not persisted (no JSONB column on `vibecheck_jobs`) and
+      not surfaced as Logfire span attributes by the `run_job` catch
+      site. Tests should assert on specific `detail[k]` keys instead of
+      substrings of `error_detail` so a reword of the prose summary
+      does not break tests with identical behavior. Defaults to `{}` so
+      existing two-arg raise sites keep working unchanged; new raises
+      populate it as their tests need to de-brittle
+      (TASK-1474.23.03.13).
     """
 
     def __init__(
