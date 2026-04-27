@@ -196,19 +196,23 @@ async def _insert_job_with_slot(
             ),
         }
     }
+    finished_at = (
+        datetime.now(UTC) if job_status in ("done", "partial", "failed") else None
+    )
     async with pool.acquire() as conn:
         job_id = await conn.fetchval(
             """
             INSERT INTO vibecheck_jobs (
-                url, normalized_url, host, status, attempt_id, sections
+                url, normalized_url, host, status, attempt_id, sections, finished_at
             )
-            VALUES ($1, $1, 'example.com', $2, $3, $4::jsonb)
+            VALUES ($1, $1, 'example.com', $2, $3, $4::jsonb, $5)
             RETURNING job_id
             """,
             url,
             job_status,
             attempt_id,
             json.dumps(sections),
+            finished_at,
         )
         if with_utterance:
             await conn.execute(

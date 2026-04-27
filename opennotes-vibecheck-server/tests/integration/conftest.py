@@ -93,7 +93,23 @@ CREATE TABLE IF NOT EXISTS vibecheck_jobs (
     safety_recommendation JSONB,
     last_stage TEXT,
     preview_description TEXT,
-    extract_transient_attempts INT NOT NULL DEFAULT 0
+    extract_transient_attempts INT NOT NULL DEFAULT 0,
+    CONSTRAINT vibecheck_jobs_status_check
+        CHECK (status IN ('pending', 'extracting', 'analyzing', 'done', 'partial', 'failed')),
+    CONSTRAINT vibecheck_jobs_error_code_check
+        CHECK (
+            error_code IS NULL
+            OR error_code IN (
+                'invalid_url', 'unsafe_url', 'unsupported_site', 'upstream_error',
+                'extraction_failed', 'section_failure', 'timeout',
+                'rate_limited', 'internal'
+            )
+        ),
+    CONSTRAINT vibecheck_jobs_terminal_finished_at
+        CHECK (
+            (status NOT IN ('done', 'partial', 'failed') AND finished_at IS NULL)
+            OR (status IN ('done', 'partial', 'failed') AND finished_at IS NOT NULL)
+        )
 );
 
 CREATE INDEX IF NOT EXISTS vibecheck_jobs_normalized_url_idx

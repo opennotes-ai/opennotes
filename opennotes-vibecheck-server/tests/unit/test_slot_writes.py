@@ -244,7 +244,8 @@ async def test_claim_slot_rejected_when_job_status_is_failed(db_pool) -> None:
     # heartbeat-expiry path: sweeper flips status without bumping attempt).
     async with db_pool.acquire() as conn:
         await conn.execute(
-            "UPDATE vibecheck_jobs SET status = 'failed' WHERE job_id = $1",
+            "UPDATE vibecheck_jobs SET status = 'failed', finished_at = now() "
+            "WHERE job_id = $1",
             job_id,
         )
 
@@ -264,7 +265,8 @@ async def test_claim_slot_rejected_when_job_status_is_done(db_pool) -> None:
 
     async with db_pool.acquire() as conn:
         await conn.execute(
-            "UPDATE vibecheck_jobs SET status = 'done' WHERE job_id = $1",
+            "UPDATE vibecheck_jobs SET status = 'done', finished_at = now() "
+            "WHERE job_id = $1",
             job_id,
         )
 
@@ -431,7 +433,8 @@ async def test_mark_slot_done_fails_when_job_status_is_terminal(db_pool) -> None
     # Sweeper (or explicit error path) transitions the job to failed.
     async with db_pool.acquire() as conn:
         await conn.execute(
-            "UPDATE vibecheck_jobs SET status = 'failed' WHERE job_id = $1",
+            "UPDATE vibecheck_jobs SET status = 'failed', finished_at = now() "
+            "WHERE job_id = $1",
             job_id,
         )
 
@@ -990,7 +993,8 @@ async def test_finalize_does_not_upsert_when_job_status_is_terminal(db_pool) -> 
 
     async with db_pool.acquire() as conn:
         await conn.execute(
-            "UPDATE vibecheck_jobs SET status = 'failed' WHERE job_id = $1",
+            "UPDATE vibecheck_jobs SET status = 'failed', finished_at = now() "
+            "WHERE job_id = $1",
             job_id,
         )
 
