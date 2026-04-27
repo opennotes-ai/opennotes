@@ -356,6 +356,9 @@ export default function AnalyzePage() {
                           archivedPreviewUrl={frameCompat().archivedPreviewUrl}
                           screenshotUrl={frameCompat().screenshotUrl}
                           previewMode={previewMode()}
+                          onResolvedModeChange={(mode) => {
+                            if (mode !== "unavailable") setPreviewMode(mode);
+                          }}
                         />
                         <Show when={frameCompatError()}>
                           {(message) => (
