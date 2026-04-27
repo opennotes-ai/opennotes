@@ -1,6 +1,19 @@
-import { A } from "@solidjs/router";
+import { A, createAsync, query } from "@solidjs/router";
+
+const checkLandingRedirect = query(async () => {
+  "use server";
+  const { redirectIfAuthenticated } = await import("~/lib/auth-guard");
+  await redirectIfAuthenticated();
+  return null;
+}, "landing-redirect");
+
+export const route = {
+  preload: () => checkLandingRedirect(),
+};
 
 export default function HomePage() {
+  createAsync(() => checkLandingRedirect());
+
   return (
     <main class="mx-auto max-w-2xl px-4 py-16 text-center">
       <h1 class="text-4xl font-bold tracking-tight">Open Notes Platform</h1>
