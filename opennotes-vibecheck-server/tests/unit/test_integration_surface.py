@@ -285,40 +285,8 @@ async def test_run_job_redelivery_returns_no_op_after_first_run(
 
 
 @pytest.fixture
-def _verify_oidc_mock(monkeypatch: pytest.MonkeyPatch) -> Iterator[MagicMock]:
-    """OIDC verifier stub for /_internal/* routes.
-
-    Mirrors the fixture in tests/unit/test_worker.py — the verifier itself
-    is mocked; the bearer string is opaque since only the header shape
-    matters once the verifier returns a happy-path payload.
-    """
-    from src.auth import cloud_tasks_oidc
-    from src.config import get_settings
-
-    get_settings.cache_clear()
-    monkeypatch.setenv("VIBECHECK_SERVER_URL", "https://vibecheck.test")
-    monkeypatch.setenv(
-        "VIBECHECK_TASKS_ENQUEUER_SA",
-        "vibecheck-tasks@open-notes-core.iam.gserviceaccount.com",
-    )
-    get_settings.cache_clear()
-
-    mock = MagicMock(
-        return_value={
-            "iss": "https://accounts.google.com",
-            "aud": "https://vibecheck.test",
-            "email": "vibecheck-tasks@open-notes-core.iam.gserviceaccount.com",
-            "email_verified": True,
-        }
-    )
-    monkeypatch.setattr(cloud_tasks_oidc, "_verify_oauth2_token", mock)
-    yield mock
-    get_settings.cache_clear()
-
-
-@pytest.fixture
 async def worker_client(
-    db_pool: Any, _verify_oidc_mock: MagicMock
+    db_pool: Any, install_oidc_mock: MagicMock
 ) -> AsyncIterator[httpx.AsyncClient]:
     """ASGI client wired against the real /_internal worker route."""
     app.state.cache = None
@@ -333,12 +301,10 @@ async def worker_client(
     analyze_route.limiter.reset()
 
 
-_OIDC_HEADERS = {"Authorization": "Bearer fake.jwt.token"}
-
-
 async def test_extract_transient_backstop_first_delivery_increments_counter_and_redelivers(
     worker_client: httpx.AsyncClient,
     db_pool: Any,
+    oidc_headers: dict[str, str],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """First Cloud Tasks delivery raising TransientExtractionError must:
@@ -388,7 +354,7 @@ async def test_extract_transient_backstop_first_delivery_increments_counter_and_
     resp = await worker_client.post(
         f"/_internal/jobs/{job_id}/run",
         json={"job_id": str(job_id), "expected_attempt_id": str(initial)},
-        headers=_OIDC_HEADERS,
+        headers=oidc_headers,
     )
     assert resp.status_code == 503, resp.text
 
@@ -406,6 +372,7 @@ async def test_extract_transient_backstop_first_delivery_increments_counter_and_
 async def test_extract_transient_backstop_second_delivery_escalates_to_terminal(
     worker_client: httpx.AsyncClient,
     db_pool: Any,
+    oidc_headers: dict[str, str],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Two consecutive Cloud Tasks deliveries that each raise
@@ -450,7 +417,7 @@ async def test_extract_transient_backstop_second_delivery_escalates_to_terminal(
     first = await worker_client.post(
         f"/_internal/jobs/{job_id}/run",
         json={"job_id": str(job_id), "expected_attempt_id": str(initial)},
-        headers=_OIDC_HEADERS,
+        headers=oidc_headers,
     )
     assert first.status_code == 503, first.text
     async with db_pool.acquire() as conn:
@@ -469,7 +436,7 @@ async def test_extract_transient_backstop_second_delivery_escalates_to_terminal(
     second = await worker_client.post(
         f"/_internal/jobs/{job_id}/run",
         json={"job_id": str(job_id), "expected_attempt_id": str(initial)},
-        headers=_OIDC_HEADERS,
+        headers=oidc_headers,
     )
     assert second.status_code == 200, second.text
     async with db_pool.acquire() as conn:

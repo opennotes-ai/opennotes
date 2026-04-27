@@ -88,41 +88,8 @@ async def db_pool(_postgres_container: PostgresContainer) -> AsyncIterator[Any]:
 
 
 @pytest.fixture
-def verify_oidc_mock(monkeypatch: pytest.MonkeyPatch) -> Iterator[MagicMock]:
-    """Default: OIDC verification passes for the configured SA + audience.
-
-    Individual tests override by setting `verify_oidc_mock.return_value` or
-    `.side_effect` to simulate invalid token payloads.
-    """
-    from src.auth import cloud_tasks_oidc
-
-    # Point settings at a known audience + SA so the default payload matches.
-    from src.config import get_settings
-
-    get_settings.cache_clear()
-    monkeypatch.setenv("VIBECHECK_SERVER_URL", "https://vibecheck.test")
-    monkeypatch.setenv(
-        "VIBECHECK_TASKS_ENQUEUER_SA",
-        "vibecheck-tasks@open-notes-core.iam.gserviceaccount.com",
-    )
-    get_settings.cache_clear()
-
-    mock = MagicMock(
-        return_value={
-            "iss": "https://accounts.google.com",
-            "aud": "https://vibecheck.test",
-            "email": "vibecheck-tasks@open-notes-core.iam.gserviceaccount.com",
-            "email_verified": True,
-        }
-    )
-    monkeypatch.setattr(cloud_tasks_oidc, "_verify_oauth2_token", mock)
-    yield mock
-    get_settings.cache_clear()
-
-
-@pytest.fixture
 async def client(
-    db_pool: Any, verify_oidc_mock: MagicMock
+    db_pool: Any, install_oidc_mock: MagicMock
 ) -> AsyncIterator[httpx.AsyncClient]:
     app.state.cache = None
     app.state.db_pool = db_pool
@@ -179,9 +146,9 @@ async def test_oidc_missing_bearer_returns_401(
 async def test_oidc_wrong_audience_returns_401(
     client: httpx.AsyncClient,
     db_pool: Any,
-    verify_oidc_mock: MagicMock,
+    install_oidc_mock: MagicMock,
 ) -> None:
-    verify_oidc_mock.return_value = {
+    install_oidc_mock.return_value = {
         "iss": "https://accounts.google.com",
         "aud": "https://evil.test",
         "email": "vibecheck-tasks@open-notes-core.iam.gserviceaccount.com",
@@ -191,7 +158,7 @@ async def test_oidc_wrong_audience_returns_401(
     # google.oauth2 id_token API raises ValueError when audience doesn't
     # match the expected arg. We simulate that: the handler should still
     # 401 either way.
-    verify_oidc_mock.side_effect = ValueError("audience mismatch")
+    install_oidc_mock.side_effect = ValueError("audience mismatch")
 
     job_id, attempt = await _insert_pending_job(db_pool)
     resp = await client.post(
@@ -205,9 +172,9 @@ async def test_oidc_wrong_audience_returns_401(
 async def test_oidc_wrong_email_returns_401(
     client: httpx.AsyncClient,
     db_pool: Any,
-    verify_oidc_mock: MagicMock,
+    install_oidc_mock: MagicMock,
 ) -> None:
-    verify_oidc_mock.return_value = {
+    install_oidc_mock.return_value = {
         "iss": "https://accounts.google.com",
         "aud": "https://vibecheck.test",
         "email": "attacker@evil.test",
@@ -225,9 +192,9 @@ async def test_oidc_wrong_email_returns_401(
 async def test_oidc_wrong_issuer_returns_401(
     client: httpx.AsyncClient,
     db_pool: Any,
-    verify_oidc_mock: MagicMock,
+    install_oidc_mock: MagicMock,
 ) -> None:
-    verify_oidc_mock.return_value = {
+    install_oidc_mock.return_value = {
         "iss": "https://evil.issuer",
         "aud": "https://vibecheck.test",
         "email": "vibecheck-tasks@open-notes-core.iam.gserviceaccount.com",
@@ -245,9 +212,9 @@ async def test_oidc_wrong_issuer_returns_401(
 async def test_oidc_email_unverified_returns_401(
     client: httpx.AsyncClient,
     db_pool: Any,
-    verify_oidc_mock: MagicMock,
+    install_oidc_mock: MagicMock,
 ) -> None:
-    verify_oidc_mock.return_value = {
+    install_oidc_mock.return_value = {
         "iss": "https://accounts.google.com",
         "aud": "https://vibecheck.test",
         "email": "vibecheck-tasks@open-notes-core.iam.gserviceaccount.com",
