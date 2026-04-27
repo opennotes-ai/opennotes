@@ -1,3 +1,5 @@
+from unittest.mock import MagicMock
+
 import pytest
 from fastapi.testclient import TestClient
 from opentelemetry.sdk.metrics import MeterProvider
@@ -162,3 +164,41 @@ def test_detailed_health_includes_dbos(client: TestClient) -> None:
     components = data["components"]
     assert "dbos" in components
     assert components["dbos"]["status"] in ("healthy", "degraded", "unhealthy")
+
+
+def test_health_live_does_not_create_db_session(client: TestClient) -> None:
+    from src.database import get_db
+    from src.main import app
+
+    get_db_spy = MagicMock(side_effect=AssertionError("get_db must not be called by /health/live"))
+    missing_sentinel = object()
+    prior_override = app.dependency_overrides.get(get_db, missing_sentinel)
+    app.dependency_overrides[get_db] = get_db_spy
+    try:
+        response = client.get("/health/live")
+    finally:
+        if prior_override is missing_sentinel:
+            app.dependency_overrides.pop(get_db, None)
+        else:
+            app.dependency_overrides[get_db] = prior_override
+
+    assert response.status_code == 200
+    assert response.json() == {"alive": True}
+    assert get_db_spy.call_count == 0
+
+
+def test_health_live_does_not_invoke_check_all(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from src.main import app
+
+    check_all_spy = MagicMock(
+        side_effect=AssertionError("HealthChecker.check_all must not be called by /health/live")
+    )
+    monkeypatch.setattr(app.state.health_checker, "check_all", check_all_spy)
+
+    response = client.get("/health/live")
+
+    assert response.status_code == 200
+    assert response.json() == {"alive": True}
+    assert check_all_spy.call_count == 0
