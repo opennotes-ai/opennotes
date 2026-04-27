@@ -25,7 +25,7 @@ describe("extractClientIp (X-Forwarded-For trust boundary)", () => {
     expect(extractClientIp(headers)).toBe("203.0.113.10");
   });
 
-  it("does NOT trust a single-entry XFF as the client IP (no LB hop visible)", () => {
+  it("returns null for a single-entry XFF (no LB hop visible)", () => {
     const headers = new Headers({ "x-forwarded-for": "203.0.113.10" });
     expect(extractClientIp(headers)).toBeNull();
   });
@@ -50,13 +50,38 @@ describe("extractClientIp (X-Forwarded-For trust boundary)", () => {
     });
     expect(extractClientIp(headers)).toBe("2001:db8::1");
   });
+
+  it("strips port suffix from IPv4 host:port form (RFC 7239)", () => {
+    const headers = new Headers({ "x-forwarded-for": "203.0.113.10:54321, 35.191.0.5" });
+    expect(extractClientIp(headers)).toBe("203.0.113.10");
+  });
+
+  it("strips brackets and port suffix from [IPv6]:port form", () => {
+    const headers = new Headers({
+      "x-forwarded-for": "[2001:db8::1]:54321, 35.191.0.5",
+    });
+    expect(extractClientIp(headers)).toBe("2001:db8::1");
+  });
+
+  it("lowercases IPv6 addresses so case variants share a bucket", () => {
+    const headers = new Headers({
+      "x-forwarded-for": "2001:DB8::1, 35.191.0.5",
+    });
+    expect(extractClientIp(headers)).toBe("2001:db8::1");
+  });
+
+  it("strips IPv6 zone identifiers (%eth0)", () => {
+    const headers = new Headers({
+      "x-forwarded-for": "fe80::1%eth0, 35.191.0.5",
+    });
+    expect(extractClientIp(headers)).toBe("fe80::1");
+  });
 });
 
 describe("checkAnalyzeRateLimit (per-IP window)", () => {
   beforeEach(() => {
     _resetRateLimitForTesting();
-    process.env.NODE_ENV = "production";
-    process.env.VIBECHECK_RATE_LIMIT_DISABLED = "0";
+    delete process.env.VIBECHECK_RATE_LIMIT_DISABLED;
     process.env.VIBECHECK_RATE_LIMIT_PER_HOUR = "10";
   });
 
@@ -64,6 +89,7 @@ describe("checkAnalyzeRateLimit (per-IP window)", () => {
     _resetRateLimitForTesting();
     delete process.env.VIBECHECK_RATE_LIMIT_PER_HOUR;
     delete process.env.VIBECHECK_RATE_LIMIT_DISABLED;
+    delete process.env.VIBECHECK_LOG_HASH_SALT;
   });
 
   function xffHeaders(clientIp: string): Headers {
@@ -75,9 +101,11 @@ describe("checkAnalyzeRateLimit (per-IP window)", () => {
     for (let i = 0; i < 10; i++) {
       const decision = checkAnalyzeRateLimit(headers);
       expect(decision.allowed, `request ${i + 1}/11 should be allowed`).toBe(true);
+      expect(decision.outcome).toBe("allowed");
     }
     const eleventh = checkAnalyzeRateLimit(headers);
     expect(eleventh.allowed).toBe(false);
+    expect(eleventh.outcome).toBe("denied");
     expect(eleventh.retryAfterSec).toBeGreaterThan(0);
   });
 
@@ -89,28 +117,35 @@ describe("checkAnalyzeRateLimit (per-IP window)", () => {
     expect(checkAnalyzeRateLimit(headersB).allowed).toBe(true);
   });
 
-  it("disabled when NODE_ENV is not production", () => {
-    process.env.NODE_ENV = "development";
+  it("limiter is enabled by default in non-production environments (no NODE_ENV gating)", () => {
+    process.env.NODE_ENV = "test";
     const headers = xffHeaders("203.0.113.10");
-    for (let i = 0; i < 100; i++) {
+    for (let i = 0; i < 10; i++) {
       expect(checkAnalyzeRateLimit(headers).allowed).toBe(true);
     }
+    expect(checkAnalyzeRateLimit(headers).allowed).toBe(false);
   });
 
-  it("can be force-disabled via VIBECHECK_RATE_LIMIT_DISABLED=1 even in production", () => {
+  it("VIBECHECK_RATE_LIMIT_DISABLED=1 is the only way to disable the limiter", () => {
     process.env.VIBECHECK_RATE_LIMIT_DISABLED = "1";
     const headers = xffHeaders("203.0.113.10");
     for (let i = 0; i < 50; i++) {
-      expect(checkAnalyzeRateLimit(headers).allowed).toBe(true);
+      const decision = checkAnalyzeRateLimit(headers);
+      expect(decision.allowed).toBe(true);
+      expect(decision.outcome).toBe("disabled");
     }
   });
 
-  it("falls back to a single shared 'unknown' bucket when XFF is missing", () => {
+  it("unattributable requests (missing or single-entry XFF) are NOT coalesced into a shared bucket", () => {
     const noXff = new Headers();
-    for (let i = 0; i < 10; i++) {
-      expect(checkAnalyzeRateLimit(noXff).allowed).toBe(true);
+    const singleEntry = new Headers({ "x-forwarded-for": "203.0.113.10" });
+    for (let i = 0; i < 50; i++) {
+      const a = checkAnalyzeRateLimit(noXff);
+      const b = checkAnalyzeRateLimit(singleEntry);
+      expect(a.allowed, `noXff request ${i + 1} should pass-through`).toBe(true);
+      expect(a.outcome).toBe("unattributable");
+      expect(b.outcome).toBe("unattributable");
     }
-    expect(checkAnalyzeRateLimit(noXff).allowed).toBe(false);
   });
 
   it("resets the bucket once the window elapses", () => {
@@ -122,10 +157,28 @@ describe("checkAnalyzeRateLimit (per-IP window)", () => {
     expect(checkAnalyzeRateLimit(headers, after).allowed).toBe(true);
   });
 
-  it("emits a hashed IP prefix on the decision so logs do not store raw IPs", () => {
+  it("emits a deterministic 12-hex log identifier (HMAC when salt is set)", () => {
+    process.env.VIBECHECK_LOG_HASH_SALT = "secret-salt";
     const headers = xffHeaders("203.0.113.10");
-    const decision = checkAnalyzeRateLimit(headers);
-    expect(decision.ipHashPrefix).toMatch(/^[0-9a-f]{8,}$/);
-    expect(decision.ipHashPrefix).not.toContain("203.0.113.10");
+    const a = checkAnalyzeRateLimit(headers);
+    expect(a.ipHashPrefix).toMatch(/^[0-9a-f]{12}$/);
+    expect(a.ipHashPrefix).not.toContain("203.0.113.10");
+    delete process.env.VIBECHECK_LOG_HASH_SALT;
+    process.env.VIBECHECK_LOG_HASH_SALT = "different-salt";
+    _resetRateLimitForTesting();
+    const b = checkAnalyzeRateLimit(headers);
+    expect(b.ipHashPrefix).not.toBe(a.ipHashPrefix);
+  });
+
+  it("MAX_BUCKETS overflow sheds new arrivals (allowed but with outcome=shed)", () => {
+    process.env.VIBECHECK_RATE_LIMIT_PER_HOUR = "10";
+    const start = 1_700_000_000_000;
+    for (let i = 0; i < 10_000; i++) {
+      const ip = `203.0.${(i >> 8) & 0xff}.${i & 0xff}`;
+      checkAnalyzeRateLimit(xffHeaders(ip), start);
+    }
+    const overflow = checkAnalyzeRateLimit(xffHeaders("198.51.100.99"), start);
+    expect(overflow.allowed).toBe(true);
+    expect(overflow.outcome).toBe("shed");
   });
 });

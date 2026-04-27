@@ -14,8 +14,16 @@ vi.mock("~/lib/api-client.server", async () => {
   };
 });
 
-function makeEvent(request: Request) {
-  return { request, response: new Response(), locals: {} } as never;
+import type { APIEvent } from "@solidjs/start/server";
+
+function makeEvent(request: Request): APIEvent {
+  return {
+    request,
+    response: new Response(),
+    locals: {},
+    params: {},
+    nativeEvent: {} as never,
+  } as APIEvent;
 }
 
 function fdRequest(method: string, url: string | null): Request {
@@ -43,6 +51,7 @@ describe("POST /embed/v1/start", () => {
     const response = await POST(makeEvent(fdRequest("POST", "https://example.com/p")));
     expect(response.status).toBe(303);
     expect(response.headers.get("Location")).toBe("/analyze?job=job-abc");
+    expect(response.headers.get("Cache-Control")).toBe("no-store, private");
   });
 
   it("appends &c=1 when the response is cached", async () => {
@@ -72,6 +81,20 @@ describe("POST /embed/v1/start", () => {
     const response = await POST(makeEvent(fdRequest("POST", null)));
     expect(response.status).toBe(303);
     expect(response.headers.get("Location")).toBe("/?error=invalid_url");
+    expect(analyzeUrlMock).not.toHaveBeenCalled();
+  });
+
+  it("formData() parse failure (malformed multipart) falls back to /?error=invalid_url with relative Location", async () => {
+    const req = new Request("https://vibecheck.opennotes.ai/embed/v1/start", {
+      method: "POST",
+      headers: { "content-type": "multipart/form-data; boundary=---x" },
+      body: "this is not multipart",
+    });
+    const { POST } = await import("./start");
+    const response = await POST(makeEvent(req));
+    expect(response.status).toBe(303);
+    expect(response.headers.get("Location")).toBe("/?error=invalid_url");
+    expect(response.headers.get("Cache-Control")).toBe("no-store, private");
     expect(analyzeUrlMock).not.toHaveBeenCalled();
   });
 
@@ -107,6 +130,16 @@ describe("POST /embed/v1/start", () => {
     expect(response.headers.get("Location")).toContain(
       "pending_error=upstream_error",
     );
+  });
+
+  it("non-redirect Response thrown by inner handler is rewritten to 500 (does not leak inner body)", async () => {
+    analyzeUrlMock.mockImplementation(async () => {
+      throw new Response("inner-body", { status: 200 });
+    });
+    const { POST } = await import("./start");
+    const response = await POST(makeEvent(fdRequest("POST", "https://example.com/p")));
+    expect(response.status).toBe(500);
+    expect(await response.text()).toBe("");
   });
 
   it("accepts multipart/form-data submissions", async () => {
@@ -150,7 +183,7 @@ describe("POST /embed/v1/start", () => {
     expect(response.headers.get("Location")).toBe("/analyze?job=job-urlencoded");
   });
 
-  it("calls analyzeUrl exactly once per POST (exactly-once submission counting)", async () => {
+  it("POST invokes analyzeUrl exactly once per request (downstream dedup is enforced by the backend single-flight, not this layer)", async () => {
     analyzeUrlMock.mockResolvedValue({
       job_id: "job-once",
       status: "pending",
@@ -162,25 +195,16 @@ describe("POST /embed/v1/start", () => {
   });
 });
 
-describe("GET (and other non-POST methods) /embed/v1/start", () => {
-  it("returns 405 with Allow: POST", async () => {
-    const { GET } = await import("./start");
-    const response = await GET();
-    expect(response.status).toBe(405);
-    expect(response.headers.get("Allow")).toBe("POST");
-  });
-
-  it("PUT returns 405 with Allow: POST", async () => {
-    const { PUT } = await import("./start");
-    const response = await PUT();
-    expect(response.status).toBe(405);
-    expect(response.headers.get("Allow")).toBe("POST");
-  });
-
-  it("DELETE returns 405 with Allow: POST", async () => {
-    const { DELETE } = await import("./start");
-    const response = await DELETE();
-    expect(response.status).toBe(405);
-    expect(response.headers.get("Allow")).toBe("POST");
-  });
+describe("non-POST methods on /embed/v1/start", () => {
+  it.each(["GET", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"] as const)(
+    "%s returns 405 with Allow: POST and Cache-Control: no-store",
+    async (method) => {
+      const mod = await import("./start");
+      const handler = mod[method as keyof typeof mod] as () => Promise<Response>;
+      const response = await handler();
+      expect(response.status).toBe(405);
+      expect(response.headers.get("Allow")).toBe("POST");
+      expect(response.headers.get("Cache-Control")).toBe("no-store, private");
+    },
+  );
 });

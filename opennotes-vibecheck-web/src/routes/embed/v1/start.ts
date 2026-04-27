@@ -1,15 +1,21 @@
 import type { APIEvent } from "@solidjs/start/server";
 import { resolveAnalyzeRedirect } from "~/routes/analyze.data";
 
-const ALLOW_HEADER: Record<string, string> = { Allow: "POST" };
+const NO_STORE = "no-store, private";
+const ALLOW_POST: Record<string, string> = {
+  Allow: "POST",
+  "Cache-Control": NO_STORE,
+};
+
+function methodNotAllowed(): Response {
+  return new Response(null, { status: 405, headers: ALLOW_POST });
+}
 
 function rewriteAs303(response: Response): Response {
   if (response.status >= 300 && response.status < 400) {
-    const location = response.headers.get("Location") ?? "";
-    return new Response(null, {
-      status: 303,
-      headers: { Location: location },
-    });
+    const headers = new Headers(response.headers);
+    if (!headers.has("Cache-Control")) headers.set("Cache-Control", NO_STORE);
+    return new Response(null, { status: 303, headers });
   }
   return response;
 }
@@ -19,32 +25,49 @@ export async function POST(event: APIEvent): Promise<Response> {
   try {
     formData = await event.request.formData();
   } catch {
-    return Response.redirect(
-      new URL("/?error=invalid_url", event.request.url),
-      303,
-    );
+    return new Response(null, {
+      status: 303,
+      headers: { Location: "/?error=invalid_url", "Cache-Control": NO_STORE },
+    });
   }
   try {
     await resolveAnalyzeRedirect(formData);
   } catch (thrown) {
-    if (thrown instanceof Response) return rewriteAs303(thrown);
+    if (thrown instanceof Response) {
+      if (thrown.status >= 300 && thrown.status < 400) return rewriteAs303(thrown);
+      return new Response(null, {
+        status: 500,
+        headers: { "Cache-Control": NO_STORE },
+      });
+    }
     throw thrown;
   }
-  return new Response("internal: redirect missing", { status: 500 });
+  return new Response(null, {
+    status: 500,
+    headers: { "Cache-Control": NO_STORE },
+  });
 }
 
 export async function GET(): Promise<Response> {
-  return new Response(null, { status: 405, headers: ALLOW_HEADER });
+  return methodNotAllowed();
 }
 
 export async function PUT(): Promise<Response> {
-  return new Response(null, { status: 405, headers: ALLOW_HEADER });
+  return methodNotAllowed();
 }
 
 export async function DELETE(): Promise<Response> {
-  return new Response(null, { status: 405, headers: ALLOW_HEADER });
+  return methodNotAllowed();
 }
 
 export async function PATCH(): Promise<Response> {
-  return new Response(null, { status: 405, headers: ALLOW_HEADER });
+  return methodNotAllowed();
+}
+
+export async function HEAD(): Promise<Response> {
+  return methodNotAllowed();
+}
+
+export async function OPTIONS(): Promise<Response> {
+  return methodNotAllowed();
 }

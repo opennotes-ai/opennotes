@@ -58,7 +58,16 @@ Cross-origin form POST is allowed by browsers without preflight (form-encoded re
 
 ### Rate limiting
 
-Submissions are rate-limited per real client IP at the web tier — extracted from the GCLB-set `X-Forwarded-For` header (TASK-1483.09). Default budget is 30 submissions per IP per hour. When exceeded, the endpoint redirects to `/analyze?pending_error=rate_limited&url=<x>`. The limit is configurable via the `VIBECHECK_RATE_LIMIT_PER_HOUR` environment variable; the limiter is disabled in non-production environments and can be force-disabled with `VIBECHECK_RATE_LIMIT_DISABLED=1`.
+Submissions are rate-limited per real client IP at the web tier — extracted from the GCLB-set `X-Forwarded-For` header (TASK-1483.09). Default budget is 30 submissions per IP per hour. When exceeded, the endpoint redirects to `/analyze?pending_error=rate_limited&url=<x>`.
+
+Configuration:
+- `VIBECHECK_RATE_LIMIT_PER_HOUR` — per-IP budget (default 30).
+- `VIBECHECK_RATE_LIMIT_DISABLED=1` — explicit kill-switch for local dev / tests. The limiter is **on by default in every environment**, including dev — set the kill-switch in your local `.env` if you don't want it. There is no implicit `NODE_ENV`-based opt-out.
+- `VIBECHECK_LOG_HASH_SALT` — optional HMAC salt for the IP hash prefix that appears in denial logs. When unset, denial logs use a plain SHA-256 prefix (treat as identifying information for log handling); when set, the prefix is HMAC-SHA-256, suitable for log-deduplication without leaking the source IP.
+
+Failure modes:
+- A request whose `X-Forwarded-For` cannot be parsed (single-entry XFF, missing XFF, internal probe) is treated as **unattributable** and passes through with a `vibecheck.rate_limit.unattributable` warn log. Unattributable requests are NOT coalesced into a shared bucket.
+- If the in-memory bucket map fills up (>10k unique IPs in one window), new arrivals are **shed** (allowed with a `vibecheck.rate_limit.shed` warn log) rather than denied.
 
 ### Versioning policy
 

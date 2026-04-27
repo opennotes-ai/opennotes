@@ -59,6 +59,22 @@ test.describe("/embed/v1/start", () => {
     expect(response.headers().allow).toBe("POST");
   });
 
+  test("AC3: PUT/DELETE/OPTIONS each return 405 with Allow: POST", async ({
+    request,
+    baseURL,
+  }) => {
+    for (const method of ["PUT", "DELETE", "OPTIONS"] as const) {
+      const response = await request.fetch(`${baseURL}/embed/v1/start`, {
+        method,
+      });
+      expect(response.status(), `${method} should return 405`).toBe(405);
+      expect(
+        response.headers().allow,
+        `${method} should advertise Allow: POST`,
+      ).toBe("POST");
+    }
+  });
+
   // AC8d "exactly-once submit count" is exercised by the unit test in
   // src/routes/embed/v1/start.test.ts ("calls analyzeUrl exactly once per
   // POST"); the SolidStart server makes the downstream /api/analyze call

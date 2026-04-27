@@ -42,10 +42,14 @@ class Settings(BaseSettings):
     # per-IP bucket before calling /api/analyze). This backend limiter is
     # therefore keyed on the SolidStart server IP — useless as per-user
     # enforcement, but retained as a coarse defense-in-depth safety valve
-    # against the FastAPI service being hit directly. Default raised from
-    # 10 to 600 so the blunt per-instance bucket does not throttle legit
-    # multi-user traffic that already passed the web-tier limiter.
-    RATE_LIMIT_PER_IP_PER_HOUR: int = 600
+    # against the FastAPI service being hit directly. Default 5000 so the
+    # blunt per-instance bucket does not throttle legit multi-user traffic
+    # that already passed the web-tier limiter — at 80 concurrent requests
+    # per Cloud Run instance and a few seconds per request, normal traffic
+    # would run at ~3000-4000/hr per instance under load.
+    # The web tier is the source of truth; raise this knob (or remove the
+    # decorator) before tightening backend enforcement, never the reverse.
+    RATE_LIMIT_PER_IP_PER_HOUR: int = 5000
     CACHE_TTL_HOURS: int = 72
     MAX_IMAGES_MODERATED: int = 30
     MAX_VIDEOS_MODERATED: int = 5
