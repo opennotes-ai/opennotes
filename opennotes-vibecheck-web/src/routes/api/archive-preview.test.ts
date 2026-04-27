@@ -1,5 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { APIEvent } from "@solidjs/start/server";
+import {
+  ARCHIVE_FONT_CDN_URL,
+  ARCHIVE_FONT_FAMILY,
+} from "@opennotes/tokens/archive-fonts";
 
 vi.mock("~/lib/api-client.server", () => ({
   resolveBaseUrl: vi.fn(() => "http://backend.test"),
@@ -117,12 +121,35 @@ describe("GET /api/archive-preview", () => {
       expect(response.headers.get("content-type")).toBe(
         "text/html; charset=utf-8",
       );
-      expect(body).toContain("'IBM Plex Sans Condensed'");
-      const styleIdx = body.indexOf("'IBM Plex Sans Condensed'");
+      expect(body).toContain(ARCHIVE_FONT_FAMILY);
+      expect(body).toContain(ARCHIVE_FONT_CDN_URL);
+      const styleIdx = body.indexOf(ARCHIVE_FONT_FAMILY);
       const headCloseIdx = body.indexOf("</head>");
       expect(styleIdx).toBeGreaterThan(-1);
       expect(headCloseIdx).toBeGreaterThan(-1);
       expect(styleIdx).toBeLessThan(headCloseIdx);
+    });
+
+    it("loads the IBM Plex Sans Condensed family inside the iframe document via @import", async () => {
+      const upstream =
+        "<html><head><title>X</title></head><body>hi</body></html>";
+      vi.stubGlobal(
+        "fetch",
+        vi.fn().mockResolvedValue(new Response(upstream, { status: 200 })),
+      );
+
+      const event = buildEvent(
+        "http://localhost:3000/api/archive-preview?url=https%3A%2F%2Fexample.com",
+      );
+      const response = await GET(event);
+      const body = await response.text();
+
+      // The @import must come BEFORE the font-family rule (CSS @import rules
+      // are only valid as the first rule of a stylesheet).
+      const importIdx = body.indexOf(`@import url('${ARCHIVE_FONT_CDN_URL}')`);
+      const familyIdx = body.indexOf(`font-family:${ARCHIVE_FONT_FAMILY}`);
+      expect(importIdx).toBeGreaterThan(-1);
+      expect(familyIdx).toBeGreaterThan(importIdx);
     });
 
     it("prepends the style block when upstream HTML has no </head>", async () => {

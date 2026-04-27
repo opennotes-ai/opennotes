@@ -1,4 +1,8 @@
 import type { APIEvent } from "@solidjs/start/server";
+import {
+  ARCHIVE_FONT_CDN_URL,
+  ARCHIVE_FONT_FAMILY,
+} from "@opennotes/tokens/archive-fonts";
 import { getAuthorizationHeader, resolveBaseUrl } from "~/lib/api-client.server";
 
 const ARCHIVE_CSP =
@@ -13,7 +17,11 @@ const ARCHIVE_HEADERS = {
 };
 
 function injectFontFallback(html: string): string {
-  const style = `<style>html,body{font-family:'IBM Plex Sans Condensed',system-ui,sans-serif;}</style>`;
+  const style =
+    `<style>` +
+    `@import url('${ARCHIVE_FONT_CDN_URL}');` +
+    `html,body{font-family:${ARCHIVE_FONT_FAMILY},system-ui,sans-serif;}` +
+    `</style>`;
   if (html.includes("</head>")) {
     return html.replace("</head>", `${style}</head>`);
   }

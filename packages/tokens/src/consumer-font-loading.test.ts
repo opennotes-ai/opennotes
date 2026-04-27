@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { ARCHIVE_FONT_CDN_URL, ARCHIVE_FONT_FAMILY } from "./archive-fonts";
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
 
@@ -89,5 +90,26 @@ describe("IBM Plex Sans Condensed", () => {
     expect(
       pkg.peerDependenciesMeta?.["@fontsource/ibm-plex-sans-condensed"]?.optional,
     ).toBe(true);
+  });
+});
+
+describe("archive font specification (single source of truth)", () => {
+  it("ARCHIVE_FONT_CDN_URL matches the IBM Plex Sans Condensed @import in fonts-cdn.css", () => {
+    const cdnCss = readWorkspaceFile("packages/tokens/src/fonts-cdn.css");
+
+    expect(cdnCss).toContain(ARCHIVE_FONT_CDN_URL);
+  });
+
+  it("ARCHIVE_FONT_FAMILY is the Condensed family name", () => {
+    expect(ARCHIVE_FONT_FAMILY).toBe("'IBM Plex Sans Condensed'");
+  });
+
+  it("exports archive-fonts from package.json", () => {
+    const pkgRaw = readWorkspaceFile("packages/tokens/package.json");
+    const pkg = JSON.parse(pkgRaw) as {
+      exports?: Record<string, string>;
+    };
+
+    expect(pkg.exports?.["./archive-fonts"]).toBe("./src/archive-fonts.ts");
   });
 });

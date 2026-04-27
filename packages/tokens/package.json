@@ -14,7 +14,8 @@
     "./fonts-cdn.css": "./src/fonts-cdn.css",
     "./fonts-self-hosted.css": "./src/fonts-self-hosted.css",
     "./animations.css": "./src/animations.css",
-    "./index.css": "./src/index.css"
+    "./index.css": "./src/index.css",
+    "./archive-fonts": "./src/archive-fonts.ts"
   },
   "files": [
     "src"
