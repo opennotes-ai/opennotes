@@ -171,11 +171,16 @@ def test_health_live_does_not_create_db_session(client: TestClient) -> None:
     from src.main import app
 
     get_db_spy = MagicMock(side_effect=AssertionError("get_db must not be called by /health/live"))
+    missing_sentinel = object()
+    prior_override = app.dependency_overrides.get(get_db, missing_sentinel)
     app.dependency_overrides[get_db] = get_db_spy
     try:
         response = client.get("/health/live")
     finally:
-        app.dependency_overrides.pop(get_db, None)
+        if prior_override is missing_sentinel:
+            app.dependency_overrides.pop(get_db, None)
+        else:
+            app.dependency_overrides[get_db] = prior_override
 
     assert response.status_code == 200
     assert response.json() == {"alive": True}
