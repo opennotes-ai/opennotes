@@ -35,33 +35,36 @@ class _FakeTableQuery:
     """Captures chained Supabase-style table calls against an in-memory store.
 
     Mirrors the supabase-py postgrest builder surface we actually use: `.select`
-    + `.eq` for the lookup key, `.gt("expires_at", iso_ts)` for the TTL
-    predicate (strictly greater-than; server-side `expires_at > $1`), and
-    `.upsert(row, on_conflict=...)` for writes. The execute() step is
-    deliberately tight — supports only the shapes the real code relies on, so
-    a new query shape surfaces as `AssertionError(unexpected op)` instead of
-    silently returning wrong data.
+    + `.eq` (chainable, multiple times), `.gt("expires_at", iso_ts)` for the
+    TTL predicate (strictly greater-than; server-side `expires_at > $1`),
+    `.upsert(row, on_conflict=...)` for writes, and `.delete()` for evict.
+
+    Storage is keyed by `(normalized_url, tier)` so the cache's tier-aware
+    contract is exercised honestly: scrape-tier rows and interact-tier rows
+    coexist under the same URL with independent TTLs and screenshot keys
+    (TASK-1488.01).
     """
 
     def __init__(
-        self, store: dict[str, dict[str, Any]], upsert_error: Exception | None = None
+        self,
+        store: dict[tuple[str, str], dict[str, Any]],
+        upsert_error: Exception | None = None,
     ) -> None:
         self._store = store
         self._upsert_error = upsert_error
         self._op: str | None = None
-        self._eq_col: str | None = None
-        self._eq_val: str | None = None
+        self._eqs: dict[str, Any] = {}
         self._gt_col: str | None = None
         self._gt_val: str | None = None
         self._upsert_row: dict[str, Any] | None = None
+        self._upsert_on_conflict: str | None = None
 
     def select(self, *_fields: str) -> _FakeTableQuery:
         self._op = "select"
         return self
 
-    def eq(self, column: str, value: str) -> _FakeTableQuery:
-        self._eq_col = column
-        self._eq_val = value
+    def eq(self, column: str, value: Any) -> _FakeTableQuery:
+        self._eqs[column] = value
         return self
 
     def gt(self, column: str, value: str) -> _FakeTableQuery:
@@ -77,46 +80,102 @@ class _FakeTableQuery:
     ) -> _FakeTableQuery:
         self._op = "upsert"
         self._upsert_row = row
+        self._upsert_on_conflict = on_conflict
         return self
+
+    def delete(self) -> _FakeTableQuery:
+        self._op = "delete"
+        return self
+
+    def _matches_eqs(self, row: dict[str, Any]) -> bool:
+        return all(row.get(col) == val for col, val in self._eqs.items())
 
     def execute(self) -> _FakeResponse:
         if self._op == "select":
-            assert self._eq_val is not None
-            row = self._store.get(self._eq_val)
-            if row is None:
-                return _FakeResponse(None)
-            # Apply TTL predicate if set — strictly greater-than, matching
-            # `.gt("expires_at", now_iso)`. If not set, fall through without
-            # filtering (storage-key-only lookups don't pass a TTL).
-            if self._gt_col == "expires_at" and self._gt_val is not None:
-                threshold = datetime.fromisoformat(self._gt_val)
-                row_expires = datetime.fromisoformat(row["expires_at"])
-                if not row_expires > threshold:
-                    return _FakeResponse(None)
-            return _FakeResponse(dict(row))
+            for row in self._store.values():
+                if not self._matches_eqs(row):
+                    continue
+                if self._gt_col == "expires_at" and self._gt_val is not None:
+                    threshold = datetime.fromisoformat(self._gt_val)
+                    row_expires = datetime.fromisoformat(row["expires_at"])
+                    if not row_expires > threshold:
+                        continue
+                return _FakeResponse(dict(row))
+            return _FakeResponse(None)
         if self._op == "upsert":
             assert self._upsert_row is not None
             if self._upsert_error is not None:
                 raise self._upsert_error
-            self._store[self._upsert_row["normalized_url"]] = dict(self._upsert_row)
+            tier = self._upsert_row.get("tier", "scrape")
+            key = (self._upsert_row["normalized_url"], tier)
+            self._store[key] = dict(self._upsert_row)
             return _FakeResponse(dict(self._upsert_row))
+        if self._op == "delete":
+            to_delete = [
+                key for key, row in self._store.items() if self._matches_eqs(row)
+            ]
+            for key in to_delete:
+                del self._store[key]
+            return _FakeResponse(None)
         raise AssertionError(f"unexpected op {self._op}")
 
 
 class _FakeSupabaseClient:
     def __init__(self) -> None:
-        self.store: dict[str, dict[str, Any]] = {}
+        # Keyed by (normalized_url, tier). The store property exposes a
+        # back-compat dict view keyed by normalized_url that returns the
+        # scrape-tier row, so existing tests that index `fake.store[norm]`
+        # continue to read the default tier transparently.
+        self._rows: dict[tuple[str, str], dict[str, Any]] = {}
         self.tables_called: list[str] = []
         # When set, the next upsert raises this error. Lets tests exercise
         # the orphan-blob cleanup path where the DB write fails after a
         # successful screenshot upload.
         self.next_upsert_error: Exception | None = None
 
+    @property
+    def store(self) -> _StoreView:
+        return _StoreView(self._rows)
+
     def table(self, name: str) -> _FakeTableQuery:
         self.tables_called.append(name)
         err = self.next_upsert_error
         self.next_upsert_error = None
-        return _FakeTableQuery(self.store, upsert_error=err)
+        return _FakeTableQuery(self._rows, upsert_error=err)
+
+
+class _StoreView:
+    """Back-compat view: indexing by `normalized_url` reads the scrape-tier row.
+
+    Existing tests pre-seed rows with `fake.store[norm] = {...}` and read
+    them back with `fake.store[norm]`. After the tier-aware redesign the
+    underlying storage is keyed by `(normalized_url, tier)`; this view
+    transparently maps the legacy single-key indexing to the default
+    scrape-tier slot so those tests keep working without per-line edits.
+    """
+
+    def __init__(self, rows: dict[tuple[str, str], dict[str, Any]]) -> None:
+        self._rows = rows
+
+    def __getitem__(self, norm: str) -> dict[str, Any]:
+        return self._rows[(norm, "scrape")]
+
+    def __setitem__(self, norm: str, row: dict[str, Any]) -> None:
+        # Default seed rows to scrape-tier so legacy seeders are tier-aware
+        # without per-line edits. Tier-aware tests bypass this view and
+        # write through `cache.put(..., tier=...)`.
+        materialized = dict(row)
+        materialized.setdefault("tier", "scrape")
+        self._rows[(norm, materialized["tier"])] = materialized
+
+    def __contains__(self, norm: str) -> bool:
+        return (norm, "scrape") in self._rows
+
+    def __len__(self) -> int:
+        return len(self._rows)
+
+    def values(self) -> Any:
+        return self._rows.values()
 
 
 def _make_cache(
@@ -675,3 +734,183 @@ class TestCanonicalCacheKey:
         """Validator rejection bubbles up; caller decides how to surface."""
         with pytest.raises(InvalidURL):
             canonical_cache_key("ftp://example.com/a")
+
+
+# ---------------------------------------------------------------------------
+# TASK-1488.01 — Tier-aware cache (scrape vs interact)
+#
+# The vibecheck_scrapes UNIQUE constraint moves from `normalized_url` to
+# `(normalized_url, tier)` so the Tier 1 (`scrape`) cheap-failure cache and
+# the Tier 2 (`interact`) post-fallback cache can coexist for the same URL.
+# A retry that successfully fell through to interact must not be short-
+# circuited by the still-fresh scrape-tier failure-flagged row, and vice
+# versa.
+# ---------------------------------------------------------------------------
+
+
+class TestTierAwareCache:
+    @pytest.mark.asyncio
+    async def test_put_scrape_tier_then_interact_tier_persists_two_rows(
+        self,
+    ) -> None:
+        """Same URL written under both tiers produces two independent rows.
+
+        Asserts on the underlying store rather than mocked calls — the
+        UNIQUE(normalized_url, tier) contract is what we care about, not
+        which postgrest method was invoked.
+        """
+        fake = _FakeSupabaseClient()
+        cache, _ = _make_cache(fake)
+
+        await cache.put(
+            "https://example.com/a",
+            _make_scrape(markdown="scrape-md"),
+            tier="scrape",
+        )
+        await cache.put(
+            "https://example.com/a",
+            _make_scrape(markdown="interact-md"),
+            tier="interact",
+        )
+
+        norm = normalize_url("https://example.com/a")
+        rows = list(fake._rows.values())  # pyright: ignore[reportPrivateUsage]
+        assert len(rows) == 2
+        keys = {(r["normalized_url"], r["tier"]) for r in rows}
+        assert keys == {(norm, "scrape"), (norm, "interact")}
+        markdowns = {r["tier"]: r["markdown"] for r in rows}
+        assert markdowns["scrape"] == "scrape-md"
+        assert markdowns["interact"] == "interact-md"
+
+    @pytest.mark.asyncio
+    async def test_get_filters_by_tier_returning_matching_row(self) -> None:
+        """`get(url, tier='scrape')` and `get(url, tier='interact')`
+        return distinct cached payloads for the same URL.
+        """
+        fake = _FakeSupabaseClient()
+        cache, _ = _make_cache(fake)
+        await cache.put(
+            "https://example.com/a",
+            _make_scrape(markdown="scrape-md", title="Scrape"),
+            tier="scrape",
+        )
+        await cache.put(
+            "https://example.com/a",
+            _make_scrape(markdown="interact-md", title="Interact"),
+            tier="interact",
+        )
+
+        scrape_hit = await cache.get("https://example.com/a", tier="scrape")
+        interact_hit = await cache.get("https://example.com/a", tier="interact")
+
+        assert scrape_hit is not None
+        assert scrape_hit.markdown == "scrape-md"
+        assert scrape_hit.metadata is not None
+        assert scrape_hit.metadata.title == "Scrape"
+        assert interact_hit is not None
+        assert interact_hit.markdown == "interact-md"
+        assert interact_hit.metadata is not None
+        assert interact_hit.metadata.title == "Interact"
+
+    @pytest.mark.asyncio
+    async def test_get_default_tier_is_scrape_for_backward_compat(self) -> None:
+        """A call without `tier=` resolves to the scrape-tier row, matching
+        the behavior of every existing call site before TASK-1488.01.
+        """
+        fake = _FakeSupabaseClient()
+        cache, _ = _make_cache(fake)
+        await cache.put(
+            "https://example.com/a",
+            _make_scrape(markdown="scrape-default"),
+            tier="scrape",
+        )
+        await cache.put(
+            "https://example.com/a",
+            _make_scrape(markdown="interact-default"),
+            tier="interact",
+        )
+
+        defaulted = await cache.get("https://example.com/a")
+
+        assert defaulted is not None
+        assert defaulted.markdown == "scrape-default"
+
+    @pytest.mark.asyncio
+    async def test_get_returns_none_when_only_other_tier_is_cached(self) -> None:
+        """A scrape-tier hit must NOT satisfy an interact-tier read.
+
+        Tier separation is the whole point — a Tier 1 failure-flagged row
+        should not poison the Tier 2 retry path.
+        """
+        fake = _FakeSupabaseClient()
+        cache, _ = _make_cache(fake)
+        await cache.put(
+            "https://example.com/a",
+            _make_scrape(markdown="scrape-only"),
+            tier="scrape",
+        )
+
+        miss = await cache.get("https://example.com/a", tier="interact")
+
+        assert miss is None
+
+    @pytest.mark.asyncio
+    async def test_evict_with_tier_removes_only_that_tier(self) -> None:
+        """`evict(url, tier='scrape')` leaves the interact-tier row intact.
+
+        Asserts on row state, not on which delete chain executed.
+        """
+        fake = _FakeSupabaseClient()
+        cache, _ = _make_cache(fake)
+        await cache.put(
+            "https://example.com/a", _make_scrape(markdown="s"), tier="scrape"
+        )
+        await cache.put(
+            "https://example.com/a", _make_scrape(markdown="i"), tier="interact"
+        )
+
+        await cache.evict("https://example.com/a", tier="scrape")
+
+        norm = normalize_url("https://example.com/a")
+        rows = list(fake._rows.values())  # pyright: ignore[reportPrivateUsage]
+        assert len(rows) == 1
+        assert rows[0]["normalized_url"] == norm
+        assert rows[0]["tier"] == "interact"
+        assert await cache.get("https://example.com/a", tier="scrape") is None
+        assert await cache.get("https://example.com/a", tier="interact") is not None
+
+    @pytest.mark.asyncio
+    async def test_evict_without_tier_removes_all_tiers_for_url(self) -> None:
+        """`evict(url)` with no tier kwarg drops every cached tier row for
+        the URL — the redirect-revalidation path needs to flush both
+        tiers in one shot rather than poisoning only Tier 1.
+        """
+        fake = _FakeSupabaseClient()
+        cache, _ = _make_cache(fake)
+        await cache.put(
+            "https://example.com/a", _make_scrape(markdown="s"), tier="scrape"
+        )
+        await cache.put(
+            "https://example.com/a", _make_scrape(markdown="i"), tier="interact"
+        )
+
+        await cache.evict("https://example.com/a")
+
+        assert fake._rows == {}  # pyright: ignore[reportPrivateUsage]
+        assert await cache.get("https://example.com/a", tier="scrape") is None
+        assert await cache.get("https://example.com/a", tier="interact") is None
+
+    @pytest.mark.asyncio
+    async def test_put_default_tier_writes_scrape_row(self) -> None:
+        """No-kwarg `put()` keeps every legacy caller pinned to scrape-tier
+        without per-site code changes — backward-compat AC#2.
+        """
+        fake = _FakeSupabaseClient()
+        cache, _ = _make_cache(fake)
+
+        await cache.put("https://example.com/a", _make_scrape(markdown="legacy"))
+
+        rows = list(fake._rows.values())  # pyright: ignore[reportPrivateUsage]
+        assert len(rows) == 1
+        assert rows[0]["tier"] == "scrape"
+        assert rows[0]["markdown"] == "legacy"

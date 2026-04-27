@@ -73,6 +73,13 @@ async def test_second_submit_within_ttl_reuses_scrape_cache(
     monkeypatch.setattr(
         orchestrator, "_build_firecrawl_client", lambda _settings: fake_firecrawl
     )
+    # TASK-1488.05: Tier 1 fail-fast client is a separate factory seam.
+    # Both tiers share the same fake so call counts stay deterministic.
+    monkeypatch.setattr(
+        orchestrator,
+        "_build_firecrawl_tier1_client",
+        lambda _settings: fake_firecrawl,
+    )
     for slug in SectionSlug:
         async def _empty_handler(
             pool: Any,
@@ -92,7 +99,12 @@ async def test_second_submit_within_ttl_reuses_scrape_cache(
     # ----- Job 1: scrape succeeds, extraction fails -----------------------
 
     async def _failing_extract(
-        url: str, client: Any, cache: Any, *, settings: Any = None
+        url: str,
+        client: Any,
+        cache: Any,
+        *,
+        settings: Any = None,
+        scrape: Any = None,
     ) -> UtterancesPayload:
         raise RuntimeError("Gemini connection lost")
 
@@ -129,7 +141,12 @@ async def test_second_submit_within_ttl_reuses_scrape_cache(
     # ----- Job 2: extraction now succeeds; Firecrawl must NOT be called --
 
     async def _ok_extract(
-        url: str, client: Any, cache: Any, *, settings: Any = None
+        url: str,
+        client: Any,
+        cache: Any,
+        *,
+        settings: Any = None,
+        scrape: Any = None,
     ) -> UtterancesPayload:
         return _payload(url)
 

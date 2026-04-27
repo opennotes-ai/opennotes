@@ -39,6 +39,8 @@ from src.utterances.errors import (
 from src.utterances.extractor import (
     EXTRACTOR_SYSTEM_PROMPT,
     ExtractorDeps,
+    UtteranceExtractionError,
+    ZeroUtterancesError,
     _get_html_impl,
     _get_screenshot_impl,
     extract_utterances,
@@ -108,7 +110,7 @@ class _FakeScrapeCache:
         )
         self.signed_url_calls: list[CachedScrape | ScrapeResult] = []
 
-    async def get(self, url: str) -> CachedScrape | None:
+    async def get(self, url: str, *, tier: str = "scrape") -> CachedScrape | None:
         self.get_calls.append(url)
         return self._cached
 
@@ -116,6 +118,8 @@ class _FakeScrapeCache:
         self,
         url: str,
         scrape: ScrapeResult,
+        *,
+        tier: str = "scrape",
         screenshot_bytes: bytes | None = None,
     ) -> CachedScrape:
         self.put_calls.append((url, scrape))
@@ -234,13 +238,17 @@ def _payload(
     scraped_at: datetime | None = None,
     title: str | None = "Sample",
 ) -> UtterancesPayload:
+    # Distinguish "caller didn't pass utterances" (None → default to one
+    # post utterance) from "caller explicitly passed []" (empty list →
+    # used verbatim, drives the ZeroUtterancesError path).
+    if utterances is None:
+        utterances = [Utterance(utterance_id=None, kind="post", text="the post body")]
     return UtterancesPayload(
         source_url="",
         scraped_at=scraped_at or datetime(2020, 1, 1, tzinfo=UTC),
         page_title=title,
         page_kind=page_kind,
-        utterances=utterances
-        or [Utterance(utterance_id=None, kind="post", text="the post body")],
+        utterances=utterances,
     )
 
 
@@ -869,6 +877,102 @@ async def test_extract_utterances_treats_parse_failure_as_terminal(
         await _call(TARGET_URL, client, cache, settings)
 
 
+# ---------------------------------------------------------------------------
+# TASK-1488.06 — ZeroUtterancesError on empty Gemini output
+# ---------------------------------------------------------------------------
+#
+# After Gemini agent runs and returns 0 utterances, `extract_utterances` must
+# raise a typed `ZeroUtterancesError` instead of silently succeeding with an
+# empty payload. The orchestrator catches this signal to layer a once-only
+# Tier 2 escalation. Today's silent-empty path masked the failure mode where
+# /scrape returned non-trivial markdown but the agent couldn't parse a single
+# utterance — an INTERSTITIAL classification that snuck past the cheap quality
+# checks but still left no extractable content.
+#
+# `UtteranceExtractionError` is unchanged for true scrape/agent failures
+# (Firecrawl errors, Gemini agent exceptions, missing markdown).
+
+
+@pytest.mark.asyncio
+async def test_extract_utterances_raises_zero_utterances_error_on_empty_payload(
+    monkeypatch: pytest.MonkeyPatch, settings: Settings
+) -> None:
+    """Gemini returning utterances=[] is a typed signal, not a success.
+
+    The orchestrator distinguishes ZeroUtterancesError from
+    UtteranceExtractionError so it can escalate to Tier 2 once before
+    declaring EXTRACTION_FAILED. Today's silent-empty path was the bug.
+    """
+    client = _FakeFirecrawlClient(result=_scrape())
+    cache = _FakeScrapeCache()
+    _stub_agent(
+        monkeypatch,
+        _payload(
+            page_kind=PageKind.ARTICLE,
+            utterances=[],
+        ),
+    )
+
+    with pytest.raises(ZeroUtterancesError):
+        await _call(TARGET_URL, client, cache, settings)
+
+
+@pytest.mark.asyncio
+async def test_zero_utterances_error_is_distinct_from_utterance_extraction_error(
+    monkeypatch: pytest.MonkeyPatch, settings: Settings
+) -> None:
+    """ZeroUtterancesError must NOT subclass UtteranceExtractionError.
+
+    The orchestrator catches them on different paths — escalating on
+    ZeroUtterancesError, terminating on UtteranceExtractionError — so a
+    subclass relationship would collapse the two cases together.
+    """
+    client = _FakeFirecrawlClient(result=_scrape())
+    cache = _FakeScrapeCache()
+    _stub_agent(
+        monkeypatch,
+        _payload(
+            page_kind=PageKind.ARTICLE,
+            utterances=[],
+        ),
+    )
+
+    with pytest.raises(ZeroUtterancesError) as exc_info:
+        await _call(TARGET_URL, client, cache, settings)
+
+    assert not isinstance(exc_info.value, UtteranceExtractionError)
+
+
+@pytest.mark.asyncio
+async def test_extract_utterances_still_raises_extraction_error_on_agent_exception(
+    monkeypatch: pytest.MonkeyPatch, settings: Settings
+) -> None:
+    """The existing UtteranceExtractionError path remains intact: a Gemini
+    agent exception (network blip, model timeout) is NOT a zero-utterance
+    signal — it's a true scrape/agent failure that should not trigger Tier 2
+    escalation.
+    """
+    client = _FakeFirecrawlClient(result=_scrape())
+    cache = _FakeScrapeCache()
+
+    class _ExplodingAgent:
+        def tool(self, func: Any = None, /, **_kwargs: Any) -> Any:
+            if func is None:
+                return lambda f: f
+            return func
+
+        async def run(self, user_prompt: str, *, deps: Any = None) -> Any:
+            raise RuntimeError("upstream Gemini blew up")
+
+    monkeypatch.setattr(
+        "src.utterances.extractor.build_agent",
+        lambda settings, output_type=None, system_prompt=None, name=None: _ExplodingAgent(),
+    )
+
+    with pytest.raises(UtteranceExtractionError):
+        await _call(TARGET_URL, client, cache, settings)
+
+
 @pytest.mark.asyncio
 async def test_extract_utterances_classifies_firecrawl_503_as_transient(
     monkeypatch: pytest.MonkeyPatch, settings: Settings
@@ -1043,3 +1147,27 @@ async def test_extract_utterances_sets_upstream_attrs_on_firecrawl_transient(
     # Vertex-only legacy attrs must not be set on non-Vertex transient.
     assert "vertex_status_code" not in set_attrs
     assert "vertex_status" not in set_attrs
+
+
+@pytest.mark.asyncio
+async def test_extract_utterances_succeeds_when_payload_has_one_or_more_utterances(
+    monkeypatch: pytest.MonkeyPatch, settings: Settings
+) -> None:
+    """Sanity guard: the new ZeroUtterancesError check must not mis-fire on
+    a non-empty payload. A single utterance is enough to take the success
+    path.
+    """
+    client = _FakeFirecrawlClient(result=_scrape())
+    cache = _FakeScrapeCache()
+    _stub_agent(
+        monkeypatch,
+        _payload(
+            page_kind=PageKind.ARTICLE,
+            utterances=[Utterance(utterance_id=None, kind="post", text="present")],
+        ),
+    )
+
+    payload = await _call(TARGET_URL, client, cache, settings)
+
+    assert len(payload.utterances) == 1
+    assert payload.utterances[0].text == "present"

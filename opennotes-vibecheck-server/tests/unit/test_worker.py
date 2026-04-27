@@ -522,30 +522,46 @@ async def test_post_scrape_private_redirect_marks_invalid_url(
     from src.cache import scrape_cache as scrape_cache_module
     from src.jobs import orchestrator
 
-    # Capture orchestrator's scrape cache so we can assert discard happened.
-    evict_calls: list[str] = []
+    # Capture orchestrator's scrape cache so we can assert discard happened
+    # AND the call carried `tier=None` (TASK-1488.12) — flushing both Tier 1
+    # and Tier 2 rows so a poisoned redirect can't survive in the Tier 2
+    # cache and replay on retry.
+    evict_calls: list[tuple[str, str | None]] = []
+
+    # `markdown` here is intentionally substantial (> MIN_BODY_CHARS) so the
+    # TASK-1488.05 quality classifier in `_scrape_step` returns `OK` and
+    # the ladder caches the bundle — only THEN does post-scrape redirect
+    # revalidation discover the private-IP `source_url` and raise.
+    redirect_body = (
+        "A real-looking body of substantive prose with enough words to clear "
+        "the legitimacy threshold so the scrape ladder treats it as OK and "
+        "continues into the post-scrape SSRF revalidator. " * 4
+    )
+    redirect_html = f"<html><body><article>{redirect_body}</article></body></html>"
 
     class _FakeCache:
-        async def get(self, url: str) -> Any:
+        async def get(self, url: str, *, tier: str = "scrape") -> Any:
             return None
 
-        async def put(self, url: str, scrape: Any) -> Any:
+        async def put(
+            self, url: str, scrape: Any, *, tier: str = "scrape"
+        ) -> Any:
             return scrape_cache_module.CachedScrape(
-                markdown="hi",
-                html=None,
+                markdown=redirect_body,
+                html=redirect_html,
                 metadata=ScrapeMetadata(source_url="http://169.254.169.254/"),
                 storage_key="mock-storage-key",
             )
 
-        async def evict(self, url: str) -> None:
-            evict_calls.append(url)
+        async def evict(self, url: str, *, tier: str | None = None) -> None:
+            evict_calls.append((url, tier))
 
     fake_client = MagicMock()
 
     async def _scrape(*args: Any, **kwargs: Any) -> Any:
         return MagicMock(
-            markdown="hi",
-            html=None,
+            markdown=redirect_body,
+            html=redirect_html,
             raw_html=None,
             screenshot=None,
             links=None,
@@ -558,8 +574,16 @@ async def test_post_scrape_private_redirect_marks_invalid_url(
     monkeypatch.setattr(
         orchestrator, "_build_scrape_cache", lambda _settings: _FakeCache()
     )
+    # Stub BOTH client factories — TASK-1488.05 splits the Tier 1 fail-fast
+    # client from the Tier 2 / extract default-retry client. The same fake
+    # serves both so call counts and behavior remain deterministic.
     monkeypatch.setattr(
         orchestrator, "_build_firecrawl_client", lambda _settings: fake_client
+    )
+    monkeypatch.setattr(
+        orchestrator,
+        "_build_firecrawl_tier1_client",
+        lambda _settings: fake_client,
     )
 
     # Stub section fanout so the test focuses on the post-scrape check —
@@ -586,6 +610,12 @@ async def test_post_scrape_private_redirect_marks_invalid_url(
     assert "private" in (row["error_message"] or "").lower()
     # Cache was told to discard the bad scrape.
     assert evict_calls, "scrape cache was not told to evict the invalid redirect"
+    # TASK-1488.12: must flush ALL tiers, not just Tier 1. A poisoned Tier 2
+    # row would otherwise survive and replay the SSRF input on retry.
+    assert all(tier is None for _, tier in evict_calls), (
+        f"_revalidate_final_url must call evict(tier=None) to flush both "
+        f"tiers; got {evict_calls!r}"
+    )
 
 
 # =========================================================================

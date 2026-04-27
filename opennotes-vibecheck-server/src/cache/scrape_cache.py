@@ -38,7 +38,7 @@ from __future__ import annotations
 
 import hashlib
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import Any, Literal
 from urllib.parse import urlparse
 from uuid import uuid4
 
@@ -54,6 +54,10 @@ from src.utils.html_sanitize import strip_noise
 from src.utils.url_security import validate_public_http_url
 
 logger = get_logger(__name__)
+
+# TASK-1488.01: ladder tier discriminator. `scrape` = Tier 1 cheap
+# Firecrawl /scrape; `interact` = Tier 2 post-fallback Firecrawl /interact.
+ScrapeTier = Literal["scrape", "interact"]
 
 
 def canonical_cache_key(raw_url: str) -> str:
@@ -85,7 +89,7 @@ _TABLE_NAME = "vibecheck_scrapes"
 _SIGNED_URL_TTL_SECONDS = 15 * 60
 
 _SELECTED_COLUMNS = (
-    "normalized_url, url, host, page_kind, page_title, markdown, html, "
+    "normalized_url, tier, url, host, page_kind, page_title, markdown, html, "
     "screenshot_storage_key, scraped_at, expires_at"
 )
 
@@ -138,7 +142,17 @@ class SupabaseScrapeCache:
         self._store = screenshot_store
         self._ttl_hours = ttl_hours
 
-    async def get(self, url: str) -> CachedScrape | None:
+    async def get(
+        self, url: str, *, tier: ScrapeTier = "scrape"
+    ) -> CachedScrape | None:
+        """Look up a fresh cached scrape for `url` under the given tier.
+
+        TASK-1488.01: tier separates Tier 1 (`scrape`) from Tier 2
+        (`interact`) so a cheap-tier failure-flagged row cannot short-
+        circuit a retry that would have escalated to the interact tier
+        (and vice versa). UNIQUE(normalized_url, tier) is enforced at
+        the schema level.
+        """
         norm = normalize_url(url)
         # TTL filter: strictly greater-than, evaluated server-side against an
         # ISO timestamp we compute now. The prior `.gte("now()")` passed the
@@ -151,12 +165,15 @@ class SupabaseScrapeCache:
                 self._client.table(_TABLE_NAME)
                 .select(_SELECTED_COLUMNS)
                 .eq("normalized_url", norm)
+                .eq("tier", tier)
                 .gt("expires_at", now_iso)
                 .maybe_single()
                 .execute()
             )
         except Exception as exc:
-            logger.warning("scrape cache get failed for %s: %s", norm, exc)
+            logger.warning(
+                "scrape cache get failed for %s (tier=%s): %s", norm, tier, exc
+            )
             return None
         if not resp or not resp.data:
             return None
@@ -169,8 +186,15 @@ class SupabaseScrapeCache:
         self,
         url: str,
         scrape: ScrapeResult,
+        *,
+        tier: ScrapeTier = "scrape",
         screenshot_bytes: bytes | None = None,
     ) -> CachedScrape:
+        """Persist `scrape` under `(normalized_url, tier)`.
+
+        TASK-1488.01: each tier has its own row; on_conflict targets the
+        composite UNIQUE so re-puts within a tier still upsert in place.
+        """
         norm = normalize_url(url)
         host = urlparse(norm).netloc
 
@@ -183,6 +207,7 @@ class SupabaseScrapeCache:
         metadata = scrape.metadata or ScrapeMetadata()
         row = {
             "normalized_url": norm,
+            "tier": tier,
             "url": url,
             "host": host,
             "page_kind": "other",
@@ -195,10 +220,12 @@ class SupabaseScrapeCache:
         }
         try:
             self._client.table(_TABLE_NAME).upsert(
-                row, on_conflict="normalized_url"
+                row, on_conflict="normalized_url,tier"
             ).execute()
         except Exception as exc:
-            logger.warning("scrape cache put failed for %s: %s", norm, exc)
+            logger.warning(
+                "scrape cache put failed for %s (tier=%s): %s", norm, tier, exc
+            )
             # Storage upload succeeded but DB upsert failed → best-effort
             # cleanup so the blob doesn't orphan. pg_cron sweeps anything
             # this misses.
@@ -216,44 +243,67 @@ class SupabaseScrapeCache:
             storage_key=storage_key,
         )
 
-    async def evict(self, url: str) -> None:
-        """Discard the cached scrape row + screenshot blob for a URL.
+    async def evict(self, url: str, *, tier: ScrapeTier | None = None) -> None:
+        """Discard the cached scrape row(s) + screenshot blob(s) for a URL.
 
-        Used by the orchestrator's post-scrape redirect revalidation
-        (TASK-1473.12, codex P1-3): when Firecrawl follows a 3xx into a
-        private host we must not retain the response — a later retry that
-        hits the same normalized_url should re-fetch, not replay the
-        poisoned cache entry.
+        TASK-1488.01: when `tier` is given, only that tier's row is dropped;
+        when `tier` is None, every tier's row for the URL is removed. The
+        redirect-revalidation path (orchestrator) needs the tier=None
+        flush so a poisoned target can't survive on the other tier; the
+        ladder retry path may want to drop just the failure-flagged
+        Tier 1 row.
 
-        Best-effort: either leg (row delete or blob remove) may fail; we
+        Best-effort: any leg (lookup, delete, blob remove) may fail; we
         log and continue so a partial cleanup still progresses the caller
         toward the TerminalError path. pg_cron sweeps anything we miss.
         """
         norm = normalize_url(url)
-        storage_key: str | None = None
+        storage_keys: list[str] = []
         try:
-            resp = (
+            select_query = (
                 self._client.table(_TABLE_NAME)
                 .select("screenshot_storage_key")
                 .eq("normalized_url", norm)
-                .maybe_single()
-                .execute()
             )
-            if resp and isinstance(resp.data, dict):
-                key = resp.data.get("screenshot_storage_key")
-                storage_key = key if isinstance(key, str) else None
+            if tier is not None:
+                select_query = select_query.eq("tier", tier)
+            resp = select_query.execute()
+            data = getattr(resp, "data", None) if resp is not None else None
+            if isinstance(data, list):
+                for item in data:
+                    if isinstance(item, dict):
+                        key = item.get("screenshot_storage_key")
+                        if isinstance(key, str) and key:
+                            storage_keys.append(key)
+            elif isinstance(data, dict):
+                key = data.get("screenshot_storage_key")
+                if isinstance(key, str) and key:
+                    storage_keys.append(key)
         except Exception as exc:
-            logger.warning("scrape cache evict lookup failed for %s: %s", norm, exc)
+            logger.warning(
+                "scrape cache evict lookup failed for %s (tier=%s): %s",
+                norm,
+                tier,
+                exc,
+            )
 
         try:
-            self._client.table(_TABLE_NAME).delete().eq(
-                "normalized_url", norm
-            ).execute()
+            delete_query = (
+                self._client.table(_TABLE_NAME).delete().eq("normalized_url", norm)
+            )
+            if tier is not None:
+                delete_query = delete_query.eq("tier", tier)
+            delete_query.execute()
         except Exception as exc:
-            logger.warning("scrape cache evict delete failed for %s: %s", norm, exc)
+            logger.warning(
+                "scrape cache evict delete failed for %s (tier=%s): %s",
+                norm,
+                tier,
+                exc,
+            )
 
-        if storage_key:
-            self._cleanup_orphan_blob(storage_key)
+        for key in storage_keys:
+            self._cleanup_orphan_blob(key)
 
     async def signed_screenshot_url(self, scrape: ScrapeResult) -> str | None:
         """Mint a fresh 15-minute signed URL for a cached screenshot.

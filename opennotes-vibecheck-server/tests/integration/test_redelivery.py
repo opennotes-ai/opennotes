@@ -71,12 +71,23 @@ async def test_two_deliveries_with_same_expected_attempt_id_are_idempotent(
     monkeypatch.setattr(
         orchestrator, "_build_firecrawl_client", lambda _settings: fake_firecrawl
     )
+    # TASK-1488.05: Tier 1 fail-fast client is a separate factory seam.
+    monkeypatch.setattr(
+        orchestrator,
+        "_build_firecrawl_tier1_client",
+        lambda _settings: fake_firecrawl,
+    )
 
     target_url = "https://example.com/redelivery"
     extract_calls = 0
 
     async def _stub_extract(
-        url: str, client: Any, cache: Any, *, settings: Any = None
+        url: str,
+        client: Any,
+        cache: Any,
+        *,
+        settings: Any = None,
+        scrape: Any = None,
     ) -> UtterancesPayload:
         nonlocal extract_calls
         extract_calls += 1

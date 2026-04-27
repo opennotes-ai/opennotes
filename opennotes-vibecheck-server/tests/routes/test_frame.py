@@ -63,8 +63,11 @@ class TestFrameCompat:
         from src.cache.scrape_cache import CachedScrape
 
         class StubCache:
-            async def get(self, url: str) -> CachedScrape:
+            async def get(
+                self, url: str, *, tier: str = "scrape"
+            ) -> CachedScrape:
                 assert url == "https://archived.example.com/"
+                assert tier == "scrape"
                 return CachedScrape(html="<main>Archived</main>")
 
         httpx_mock.add_response(
@@ -309,8 +312,11 @@ class TestArchivePreview:
         from src.cache.scrape_cache import CachedScrape
 
         class StubCache:
-            async def get(self, url: str) -> CachedScrape:
+            async def get(
+                self, url: str, *, tier: str = "scrape"
+            ) -> CachedScrape:
                 assert url == "https://example.com/article"
+                assert tier == "scrape"
                 return CachedScrape(
                     html="<main><h1>Archived preview</h1></main>",
                     raw_html="<script>alert(1)</script>",
@@ -337,8 +343,9 @@ class TestArchivePreview:
         self, client: TestClient
     ) -> None:
         class StubCache:
-            async def get(self, url: str) -> None:
+            async def get(self, url: str, *, tier: str = "scrape") -> None:
                 assert url == "https://example.com/miss"
+                assert tier == "scrape"
 
         with patch("src.routes.frame.get_scrape_cache", return_value=StubCache()):
             resp = client.get(
@@ -356,12 +363,21 @@ class TestArchivePreview:
         class StubCache:
             def __init__(self) -> None:
                 self.put_url: str | None = None
+                self.put_tier: str | None = None
 
-            async def get(self, url: str) -> None:
+            async def get(self, url: str, *, tier: str = "scrape") -> None:
                 assert url == "https://example.com/fresh"
+                assert tier == "scrape"
 
-            async def put(self, url: str, scrape: ScrapeResult) -> CachedScrape:
+            async def put(
+                self,
+                url: str,
+                scrape: ScrapeResult,
+                *,
+                tier: str = "scrape",
+            ) -> CachedScrape:
                 self.put_url = url
+                self.put_tier = tier
                 return CachedScrape(html=scrape.html, metadata=scrape.metadata)
 
         class StubClient:
@@ -390,7 +406,7 @@ class TestArchivePreview:
         self, client: TestClient, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         class StubCache:
-            async def get(self, url: str) -> None:
+            async def get(self, url: str, *, tier: str = "scrape") -> None:
                 return None
 
         class SlowClient:

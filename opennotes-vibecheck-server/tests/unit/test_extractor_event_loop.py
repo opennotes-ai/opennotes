@@ -62,13 +62,17 @@ class _FakeScrapeCache:
     def __init__(self) -> None:
         self.put_calls: list[tuple[str, ScrapeResult]] = []
 
-    async def get(self, url: str) -> CachedScrape | None:
+    async def get(
+        self, url: str, *, tier: str = "scrape"
+    ) -> CachedScrape | None:
         return None
 
     async def put(
         self,
         url: str,
         scrape: ScrapeResult,
+        *,
+        tier: str = "scrape",
         screenshot_bytes: bytes | None = None,
     ) -> CachedScrape:
         self.put_calls.append((url, scrape))

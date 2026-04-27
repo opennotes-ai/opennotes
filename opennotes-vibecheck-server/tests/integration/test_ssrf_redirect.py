@@ -63,6 +63,12 @@ async def test_post_scrape_redirect_to_private_ip_marks_invalid_url(
     monkeypatch.setattr(
         orchestrator, "_build_firecrawl_client", lambda _settings: fake_firecrawl
     )
+    # TASK-1488.05: Tier 1 fail-fast client is a separate factory seam.
+    monkeypatch.setattr(
+        orchestrator,
+        "_build_firecrawl_tier1_client",
+        lambda _settings: fake_firecrawl,
+    )
 
     # Stub the extractor so a hypothetical fall-through past revalidate
     # doesn't reach Vertex AI. The contract under test requires revalidate
