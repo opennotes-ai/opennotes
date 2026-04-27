@@ -75,17 +75,25 @@ CREATE TABLE vibecheck_jobs (
     safety_recommendation JSONB,
     last_stage TEXT,
     preview_description TEXT,
-    extract_transient_attempts INT NOT NULL DEFAULT 0
+    extract_transient_attempts INT NOT NULL DEFAULT 0,
+    CONSTRAINT vibecheck_jobs_status_check
+        CHECK (status IN ('pending', 'extracting', 'analyzing', 'done', 'partial', 'failed')),
+    CONSTRAINT vibecheck_jobs_error_code_check
+        CHECK (
+            error_code IS NULL
+            OR error_code IN (
+                'invalid_url', 'unsafe_url', 'unsupported_site', 'upstream_error',
+                'extraction_failed', 'section_failure', 'timeout',
+                'rate_limited', 'internal'
+            )
+        ),
+    CONSTRAINT vibecheck_jobs_terminal_finished_at
+        CHECK (
+            (status NOT IN ('done', 'partial', 'failed') AND finished_at IS NULL)
+            OR (status IN ('done', 'partial', 'failed') AND finished_at IS NOT NULL)
+        )
 );
 """
-
-# NOTE: the production schema (src/cache/schema.sql:77-92) carries three
-# CHECK constraints (vibecheck_jobs_status_check, vibecheck_jobs_error_code_check,
-# vibecheck_jobs_terminal_finished_at) that are intentionally OMITTED here.
-# Several tests insert rows in shapes the production constraints would reject
-# (e.g. status='failed' with finished_at=NULL for retry-flow assertions);
-# tightening the test DDL to match production needs each of those tests to
-# stop bypassing the invariant first. Tracked as TASK-1474.23.03.10.
 
 
 @pytest.fixture(autouse=True)

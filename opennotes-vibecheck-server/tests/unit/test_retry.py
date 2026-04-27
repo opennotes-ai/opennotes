@@ -120,35 +120,10 @@ def enqueue_section_mock(monkeypatch: pytest.MonkeyPatch) -> AsyncMock:
 
 
 @pytest.fixture
-def verify_oidc_mock(monkeypatch: pytest.MonkeyPatch) -> Iterator[MagicMock]:
-    """OIDC verification passes by default (for the worker endpoint)."""
-    from src.auth import cloud_tasks_oidc
-    from src.config import get_settings
-
-    get_settings.cache_clear()
-    monkeypatch.setenv("VIBECHECK_SERVER_URL", "https://vibecheck.test")
-    monkeypatch.setenv(
-        "VIBECHECK_TASKS_ENQUEUER_SA",
-        "vibecheck-tasks@open-notes-core.iam.gserviceaccount.com",
-    )
-    get_settings.cache_clear()
-
-    mock = MagicMock(
-        return_value={
-            "iss": "https://accounts.google.com",
-            "aud": "https://vibecheck.test",
-            "email": "vibecheck-tasks@open-notes-core.iam.gserviceaccount.com",
-            "email_verified": True,
-        }
-    )
-    monkeypatch.setattr(cloud_tasks_oidc, "_verify_oauth2_token", mock)
-    yield mock
-    get_settings.cache_clear()
-
-
-@pytest.fixture
 async def client(
-    db_pool: Any, enqueue_section_mock: AsyncMock, verify_oidc_mock: MagicMock
+    db_pool: Any,
+    enqueue_section_mock: AsyncMock,
+    install_oidc_mock: MagicMock,
 ) -> AsyncIterator[httpx.AsyncClient]:
     app.state.cache = None
     app.state.db_pool = db_pool
@@ -196,19 +171,23 @@ async def _insert_job_with_slot(
             ),
         }
     }
+    finished_at = (
+        datetime.now(UTC) if job_status in ("done", "partial", "failed") else None
+    )
     async with pool.acquire() as conn:
         job_id = await conn.fetchval(
             """
             INSERT INTO vibecheck_jobs (
-                url, normalized_url, host, status, attempt_id, sections
+                url, normalized_url, host, status, attempt_id, sections, finished_at
             )
-            VALUES ($1, $1, 'example.com', $2, $3, $4::jsonb)
+            VALUES ($1, $1, 'example.com', $2, $3, $4::jsonb, $5)
             RETURNING job_id
             """,
             url,
             job_status,
             attempt_id,
             json.dumps(sections),
+            finished_at,
         )
         if with_utterance:
             await conn.execute(

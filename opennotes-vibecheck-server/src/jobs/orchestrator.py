@@ -120,14 +120,34 @@ class TerminalError(Exception):
 
     The handler writes `status=failed`, `error_code`, and
     `error_message` to the job row and returns 200 so Cloud Tasks does
-    not retry. Callers pass the stable `ErrorCode` enum; the message is
-    free-form prose for log surfacing.
+    not retry. Callers pass the stable `ErrorCode` enum.
+
+    Two payload fields, by intent:
+    - `error_detail`: free-form prose summary intended for log surfacing
+      and the (TEXT) `vibecheck_jobs.error_message` column. Stable for
+      operators reading logs; NOT a stable test surface.
+    - `detail`: optional structured fields. Currently a test-only
+      payload — not persisted (no JSONB column on `vibecheck_jobs`) and
+      not surfaced as Logfire span attributes by the `run_job` catch
+      site. Tests should assert on specific `detail[k]` keys instead of
+      substrings of `error_detail` so a reword of the prose summary
+      does not break tests with identical behavior. Defaults to `{}` so
+      existing two-arg raise sites keep working unchanged; new raises
+      populate it as their tests need to de-brittle
+      (TASK-1474.23.03.13).
     """
 
-    def __init__(self, error_code: ErrorCode, error_detail: str) -> None:
+    def __init__(
+        self,
+        error_code: ErrorCode,
+        error_detail: str,
+        *,
+        detail: dict[str, Any] | None = None,
+    ) -> None:
         super().__init__(error_detail)
         self.error_code = error_code
         self.error_detail = error_detail
+        self.detail: dict[str, Any] = detail or {}
 
 
 class HandlerSuperseded(Exception):  # noqa: N818 — matches spec terminology; not raised as an "Error"
@@ -895,6 +915,12 @@ async def _run_pipeline(
                 f"upstream extraction error after {new_count} transient "
                 f"attempts: provider={exc.provider} "
                 f"status_code={exc.status_code} status={exc.status}: {exc}",
+                detail={
+                    "provider": exc.provider,
+                    "status_code": exc.status_code,
+                    "status": exc.status,
+                    "transient_attempts": new_count,
+                },
             ) from exc
         raise TransientError(
             f"transient extraction error "

@@ -31,6 +31,7 @@ proceed from markdown alone.
 """
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import cast
@@ -177,8 +178,8 @@ async def extract_utterances(
         payload.source_url = url
         payload.scraped_at = datetime.now(UTC)
         _assign_stable_ids(payload)
-        sanitized_html = _sanitize_html(scrape.html or "")
-        attribute_media(sanitized_html, payload.utterances)
+        sanitized_html = await asyncio.to_thread(_sanitize_html, scrape.html or "")
+        await asyncio.to_thread(attribute_media, sanitized_html, payload.utterances)
         return payload
 
 
@@ -248,9 +249,9 @@ def _register_tools(agent: Agent[None, UtterancesPayload]) -> None:
     """
 
     @agent.tool  # pyright: ignore[reportArgumentType]
-    def get_html(ctx: RunContext[ExtractorDeps]) -> str:
+    async def get_html(ctx: RunContext[ExtractorDeps]) -> str:
         """Return the page's sanitized HTML. Prefer markdown; call at most once."""
-        return _get_html_impl(ctx.deps)
+        return await asyncio.to_thread(_get_html_impl, ctx.deps)
 
     @agent.tool  # pyright: ignore[reportArgumentType]
     async def get_screenshot(ctx: RunContext[ExtractorDeps]) -> ImageUrl | None:

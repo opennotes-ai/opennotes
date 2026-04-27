@@ -93,7 +93,23 @@ CREATE TABLE IF NOT EXISTS vibecheck_jobs (
     safety_recommendation JSONB,
     last_stage TEXT,
     preview_description TEXT,
-    extract_transient_attempts INT NOT NULL DEFAULT 0
+    extract_transient_attempts INT NOT NULL DEFAULT 0,
+    CONSTRAINT vibecheck_jobs_status_check
+        CHECK (status IN ('pending', 'extracting', 'analyzing', 'done', 'partial', 'failed')),
+    CONSTRAINT vibecheck_jobs_error_code_check
+        CHECK (
+            error_code IS NULL
+            OR error_code IN (
+                'invalid_url', 'unsafe_url', 'unsupported_site', 'upstream_error',
+                'extraction_failed', 'section_failure', 'timeout',
+                'rate_limited', 'internal'
+            )
+        ),
+    CONSTRAINT vibecheck_jobs_terminal_finished_at
+        CHECK (
+            (status NOT IN ('done', 'partial', 'failed') AND finished_at IS NULL)
+            OR (status IN ('done', 'partial', 'failed') AND finished_at IS NOT NULL)
+        )
 );
 
 CREATE INDEX IF NOT EXISTS vibecheck_jobs_normalized_url_idx
@@ -120,7 +136,12 @@ CREATE TABLE IF NOT EXISTS vibecheck_scrapes (
     html TEXT,
     screenshot_storage_key TEXT,
     scraped_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    expires_at TIMESTAMPTZ NOT NULL DEFAULT (now() + INTERVAL '72 hours')
+    expires_at TIMESTAMPTZ NOT NULL DEFAULT (now() + INTERVAL '72 hours'),
+    CONSTRAINT vibecheck_scrapes_page_kind_check
+        CHECK (page_kind IN (
+            'blog_post', 'forum_thread', 'hierarchical_thread',
+            'blog_index', 'article', 'other'
+        ))
 );
 
 CREATE TABLE IF NOT EXISTS vibecheck_web_risk_lookups (
@@ -144,7 +165,9 @@ CREATE TABLE IF NOT EXISTS vibecheck_job_utterances (
     position INT NOT NULL DEFAULT 0,
     page_title TEXT,
     page_kind TEXT,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CONSTRAINT vibecheck_job_utterances_kind_check
+        CHECK (kind IN ('post', 'comment', 'reply'))
 );
 
 -- Sweeper function — verbatim copy of src/cache/schema.sql so the
@@ -386,45 +409,12 @@ class RecordingFirecrawlClient:
 
 
 # ---------------------------------------------------------------------------
-# OIDC + ASGI client wiring.
+# ASGI client wiring.
+#
+# `install_oidc_mock` and `oidc_headers` are consumed from the root
+# `tests/conftest.py` (TASK-1474.23.03.14 consolidation). Pytest discovers
+# fixtures up the conftest tree automatically, so no re-export is needed.
 # ---------------------------------------------------------------------------
-
-
-_DEFAULT_OIDC_AUDIENCE = "https://vibecheck.test"
-_DEFAULT_OIDC_EMAIL = (
-    "vibecheck-tasks@open-notes-core.iam.gserviceaccount.com"
-)
-
-
-@pytest.fixture
-def oidc_headers() -> dict[str, str]:
-    return {"Authorization": "Bearer integration.test.token"}
-
-
-@pytest.fixture
-def install_oidc_mock(monkeypatch: pytest.MonkeyPatch):
-    """Install a happy-path OIDC verifier and matching settings."""
-    from unittest.mock import MagicMock
-
-    from src.auth import cloud_tasks_oidc
-    from src.config import get_settings
-
-    get_settings.cache_clear()
-    monkeypatch.setenv("VIBECHECK_SERVER_URL", _DEFAULT_OIDC_AUDIENCE)
-    monkeypatch.setenv("VIBECHECK_TASKS_ENQUEUER_SA", _DEFAULT_OIDC_EMAIL)
-    get_settings.cache_clear()
-
-    mock = MagicMock(
-        return_value={
-            "iss": "https://accounts.google.com",
-            "aud": _DEFAULT_OIDC_AUDIENCE,
-            "email": _DEFAULT_OIDC_EMAIL,
-            "email_verified": True,
-        }
-    )
-    monkeypatch.setattr(cloud_tasks_oidc, "_verify_oauth2_token", mock)
-    yield mock
-    get_settings.cache_clear()
 
 
 @pytest.fixture

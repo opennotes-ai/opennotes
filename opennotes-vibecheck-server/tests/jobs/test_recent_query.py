@@ -302,7 +302,8 @@ async def _seed_job(
     finished_at: datetime | None = None,
 ) -> UUID:
     sections = sections if sections is not None else _full_sections()
-    finished_at = finished_at or datetime.now(UTC)
+    if finished_at is None and status in ("done", "partial", "failed"):
+        finished_at = datetime.now(UTC)
     async with pool.acquire() as conn:
         return await conn.fetchval(
             """

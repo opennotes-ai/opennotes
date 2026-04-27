@@ -52,7 +52,11 @@ async def _seed_job_with_slot(
             """
             UPDATE vibecheck_jobs
             SET sections = jsonb_build_object($2::text, $3::jsonb),
-                status = $4
+                status = $4,
+                finished_at = CASE
+                    WHEN $4 IN ('done', 'partial', 'failed') THEN now()
+                    ELSE NULL
+                END
             WHERE job_id = $1
             """,
             job_id,

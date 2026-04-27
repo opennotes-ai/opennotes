@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncIterator
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
 from pathlib import Path
 from urllib.parse import urlparse
@@ -81,6 +83,24 @@ def _apply_schema(client: Client) -> None:
         )
 
 
+_EXTRACTOR_TO_THREAD_CALL_SITES = 3
+_DEFAULT_THREAD_POOL_CAP = 64
+
+
+def _resolve_thread_pool_workers(container_concurrency: int) -> int:
+    """Size the asyncio default executor for Cloud Run worst-case fan-out.
+
+    The utterance extractor wraps `_sanitize_html`, `attribute_media`, and the
+    optional `get_html` agent tool in `asyncio.to_thread`. At
+    `containerConcurrency=80` that is up to 240 simultaneous thread tasks, far
+    above asyncio's default `min(32, cpu_count + 4)` (~5-6 threads on a 1-2
+    vCPU Cloud Run instance). We size for the worst case but cap to keep
+    thread-context overhead bounded on small instances.
+    """
+    requested = max(1, container_concurrency) * _EXTRACTOR_TO_THREAD_CALL_SITES
+    return min(requested, _DEFAULT_THREAD_POOL_CAP)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # Install Logfire span scrubbing before any route handler (and therefore
@@ -89,49 +109,70 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # unavailable in a given environment (e.g. stripped-down unit runs).
     configure_logfire()
     settings = get_settings()
-    cache_key = (
-        settings.VIBECHECK_SUPABASE_SERVICE_ROLE_KEY
-        or settings.VIBECHECK_SUPABASE_ANON_KEY
-    )
-    if settings.VIBECHECK_SUPABASE_URL and cache_key:
-        # The analysis cache writes through vibecheck_analyses, which is RLS-
-        # locked to service_role (src/cache/schema.sql). Prefer the
-        # service-role key; fall back to anon so dev envs without the
-        # lockdown applied keep working.
-        client = _build_supabase_client(settings.VIBECHECK_SUPABASE_URL, cache_key)
-        _apply_schema(client)
-        app.state.cache = SupabaseCache(client, ttl_hours=settings.CACHE_TTL_HOURS)
-        logger.info("vibecheck supabase cache initialized (ttl=%sh)", settings.CACHE_TTL_HOURS)
-    else:
-        app.state.cache = None
-        logger.warning("vibecheck supabase cache disabled: missing VIBECHECK_SUPABASE_* env")
 
-    # asyncpg pool for the analyze pipeline. Routes raise 503 with
-    # error_code="internal" when this is missing, so a deploy without the
-    # right Supabase credentials is loud rather than silently broken.
-    if settings.VIBECHECK_SUPABASE_URL and settings.VIBECHECK_SUPABASE_DB_PASSWORD:
-        try:
-            app.state.db_pool = await _create_db_pool(
-                supabase_url=settings.VIBECHECK_SUPABASE_URL,
-                db_password=settings.VIBECHECK_SUPABASE_DB_PASSWORD,
-                host=settings.VIBECHECK_DATABASE_HOST or _DEFAULT_POOLER_HOST,
-                port=settings.VIBECHECK_DATABASE_PORT or _DEFAULT_POOLER_PORT,
-            )
-            logger.info(
-                "vibecheck db pool initialized (host=%s port=%s)",
-                settings.VIBECHECK_DATABASE_HOST or _DEFAULT_POOLER_HOST,
-                settings.VIBECHECK_DATABASE_PORT or _DEFAULT_POOLER_PORT,
-            )
-        except Exception as exc:
-            logger.error("vibecheck db pool initialization failed: %s", exc)
-            raise
-    else:
-        app.state.db_pool = None
-        logger.warning(
-            "vibecheck db pool disabled: missing VIBECHECK_SUPABASE_URL / VIBECHECK_SUPABASE_DB_PASSWORD"
-        )
+    # Replace asyncio's default ThreadPoolExecutor so `asyncio.to_thread` in
+    # the extractor (TASK-1474.23.04) does not saturate at ~5-6 workers under
+    # Cloud Run's containerConcurrency=80. See `_resolve_thread_pool_workers`
+    # for the sizing rationale (TASK-1474.23.03.24).
+    thread_pool_workers = _resolve_thread_pool_workers(
+        settings.VIBECHECK_CONTAINER_CONCURRENCY
+    )
+    executor = ThreadPoolExecutor(
+        max_workers=thread_pool_workers,
+        thread_name_prefix="vibecheck-default",
+    )
+    asyncio.get_running_loop().set_default_executor(executor)
+    app.state.default_executor = executor
+    logger.info(
+        "vibecheck default ThreadPoolExecutor sized for Cloud Run concurrency "
+        "(workers=%s, container_concurrency=%s)",
+        thread_pool_workers,
+        settings.VIBECHECK_CONTAINER_CONCURRENCY,
+    )
 
     try:
+        cache_key = (
+            settings.VIBECHECK_SUPABASE_SERVICE_ROLE_KEY
+            or settings.VIBECHECK_SUPABASE_ANON_KEY
+        )
+        if settings.VIBECHECK_SUPABASE_URL and cache_key:
+            # The analysis cache writes through vibecheck_analyses, which is RLS-
+            # locked to service_role (src/cache/schema.sql). Prefer the
+            # service-role key; fall back to anon so dev envs without the
+            # lockdown applied keep working.
+            client = _build_supabase_client(settings.VIBECHECK_SUPABASE_URL, cache_key)
+            _apply_schema(client)
+            app.state.cache = SupabaseCache(client, ttl_hours=settings.CACHE_TTL_HOURS)
+            logger.info("vibecheck supabase cache initialized (ttl=%sh)", settings.CACHE_TTL_HOURS)
+        else:
+            app.state.cache = None
+            logger.warning("vibecheck supabase cache disabled: missing VIBECHECK_SUPABASE_* env")
+
+        # asyncpg pool for the analyze pipeline. Routes raise 503 with
+        # error_code="internal" when this is missing, so a deploy without the
+        # right Supabase credentials is loud rather than silently broken.
+        if settings.VIBECHECK_SUPABASE_URL and settings.VIBECHECK_SUPABASE_DB_PASSWORD:
+            try:
+                app.state.db_pool = await _create_db_pool(
+                    supabase_url=settings.VIBECHECK_SUPABASE_URL,
+                    db_password=settings.VIBECHECK_SUPABASE_DB_PASSWORD,
+                    host=settings.VIBECHECK_DATABASE_HOST or _DEFAULT_POOLER_HOST,
+                    port=settings.VIBECHECK_DATABASE_PORT or _DEFAULT_POOLER_PORT,
+                )
+                logger.info(
+                    "vibecheck db pool initialized (host=%s port=%s)",
+                    settings.VIBECHECK_DATABASE_HOST or _DEFAULT_POOLER_HOST,
+                    settings.VIBECHECK_DATABASE_PORT or _DEFAULT_POOLER_PORT,
+                )
+            except Exception as exc:
+                logger.error("vibecheck db pool initialization failed: %s", exc)
+                raise
+        else:
+            app.state.db_pool = None
+            logger.warning(
+                "vibecheck db pool disabled: missing VIBECHECK_SUPABASE_URL / VIBECHECK_SUPABASE_DB_PASSWORD"
+            )
+
         yield
     finally:
         pool = getattr(app.state, "db_pool", None)
@@ -139,3 +180,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             await pool.close()
             app.state.db_pool = None
         app.state.cache = None
+        executor = getattr(app.state, "default_executor", None)
+        if executor is not None:
+            executor.shutdown(wait=False, cancel_futures=True)
+            app.state.default_executor = None
