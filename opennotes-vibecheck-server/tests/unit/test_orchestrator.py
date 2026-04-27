@@ -9,7 +9,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from typing import Any
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
 import asyncpg
@@ -454,6 +454,11 @@ async def test_run_pipeline_treats_utterance_extraction_error_as_terminal_extrac
 
     monkeypatch.setattr(orchestrator, "extract_utterances", raise_terminal)
 
+    increment_spy = AsyncMock()
+    monkeypatch.setattr(
+        orchestrator, "_increment_extract_transient_attempts", increment_spy
+    )
+
     pool = MagicMock()
     job_id = uuid4()
     task_attempt = uuid4()
@@ -465,6 +470,7 @@ async def test_run_pipeline_treats_utterance_extraction_error_as_terminal_extrac
 
     assert info.value.error_code == ErrorCode.EXTRACTION_FAILED
     assert "agent returned empty utterances" in info.value.error_detail
+    increment_spy.assert_not_called()
 
 
 async def test_run_pipeline_unexpected_exception_falls_through_to_terminal(
@@ -486,6 +492,11 @@ async def test_run_pipeline_unexpected_exception_falls_through_to_terminal(
 
     monkeypatch.setattr(orchestrator, "extract_utterances", boom)
 
+    increment_spy = AsyncMock()
+    monkeypatch.setattr(
+        orchestrator, "_increment_extract_transient_attempts", increment_spy
+    )
+
     pool = MagicMock()
     job_id = uuid4()
     task_attempt = uuid4()
@@ -497,6 +508,7 @@ async def test_run_pipeline_unexpected_exception_falls_through_to_terminal(
 
     assert info.value.error_code == ErrorCode.EXTRACTION_FAILED
     assert "kaboom unknown bug" in info.value.error_detail
+    increment_spy.assert_not_called()
 
 
 async def test_run_pipeline_falls_back_to_transient_when_column_missing(
