@@ -4,6 +4,8 @@ import { FileRoutes } from "@solidjs/start/router";
 import { ErrorBoundary, Suspense } from "solid-js";
 import { MetaProvider, Title } from "@solidjs/meta";
 import { Button } from "@opennotes/ui/components/ui/button";
+import { NavBar } from "@opennotes/ui/components/nav-bar";
+import ModeToggle from "@opennotes/ui/components/mode-toggle";
 
 export default function App() {
   return (
@@ -11,9 +13,25 @@ export default function App() {
       root={(props) => (
         <MetaProvider>
           <Title>Open Notes Platform</Title>
-          <nav class="flex h-16 items-center gap-4 border-b border-border bg-background/80 backdrop-blur-lg px-4 sm:px-6 lg:px-8">
-            <span class="text-lg font-semibold tracking-tight">Open Notes Platform</span>
-          </nav>
+          <NavBar
+            logo={
+              <img
+                src="/opennotes-logo.svg"
+                alt="Open Notes"
+                class="h-9 w-auto"
+              />
+            }
+            logoHref="/"
+            items={[{ label: "Docs", href: "https://docs.opennotes.ai" }]}
+            actions={
+              <>
+                <ModeToggle />
+                <Button as="a" href="/login" variant="default" size="sm">
+                  Sign In
+                </Button>
+              </>
+            }
+          />
           <ErrorBoundary
             fallback={(err, reset) => (
               <div class="p-8">
