@@ -25,3 +25,7 @@ export { default as ModeToggle } from "./mode-toggle";
 export { default as FontToggle } from "./font-toggle";
 export { default as Pagination } from "./pagination";
 export { OAuthButtonsRow, type OAuthProvider, type OAuthButtonsRowProps } from "./oauth-buttons-row";
+export { NavBar, type NavBarItem, type NavBarProps } from "./nav-bar";
+export { MarketingHero, type MarketingHeroProps } from "./marketing-hero";
+export { StepsList, type Step, type StepsListProps } from "./steps-list";
+export { AudienceCard, type AudienceCardProps } from "./audience-card";
