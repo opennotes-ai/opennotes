@@ -88,13 +88,11 @@ def canonical_cache_key(raw_url: str) -> str:
 _TABLE_NAME = "vibecheck_scrapes"
 _SIGNED_URL_TTL_SECONDS = 15 * 60
 
-# TASK-1488.18: how long after `evict()` the tombstone fence rejects
-# fresh `put()` calls. The fence is best-effort defense-in-depth; any
-# put that started its upload before the evict and lands its upsert
-# inside this window is recognized via the row's `evicted_at` and
-# aborted. 30 seconds covers the worst-case Firecrawl + screenshot
-# upload latency the orchestrator observes in practice.
-_EVICT_FENCE_SECONDS = 30
+# TASK-1488.18: small clock-skew tolerance when comparing the put's
+# anchor timestamp (Python clock) against the row's `evicted_at`
+# (Python clock at evict() time, but on a possibly-different host).
+# A 1-second margin absorbs typical NTP drift between worker pods.
+_EVICT_FENCE_CLOCK_SKEW_SECONDS = 1
 
 _SELECTED_COLUMNS = (
     "normalized_url, tier, url, final_url, host, page_kind, page_title, "
@@ -211,20 +209,29 @@ class SupabaseScrapeCache:
           host on a replay. Without this, `_revalidate_final_url` on a
           poisoned redirect retry sees the input URL as both the lookup
           key and the resolved URL and silently skips the SSRF re-check.
-        - Pre-upsert fence: read the row's `evicted_at`. If a recent
-          `evict()` set the tombstone within the fence window, abort
-          the put + cleanup the just-uploaded blob. Residual race
-          window between this read and the subsequent upsert is small
-          (~ms vs the original ~seconds Firecrawl upload).
+        - Pre-upsert fence: an anchor timestamp `put_started_at` is
+          captured *before* the screenshot upload (which may take up to
+          httpx's 60s timeout). After the upload, the row's `evicted_at`
+          is read; if any tombstone was written at-or-after the anchor
+          (i.e. while this put was in flight), the put aborts and cleans
+          up the orphaned blob. This survives slow uploads — a fixed
+          fence-window threshold would let a stale tombstone be ignored
+          if the upload outlasted the window. Codex 5.5 high review of
+          PR #431 flagged the original 30s window vs 60s httpx timeout.
         """
         norm = normalize_url(url)
         host = urlparse(norm).netloc
+
+        # Capture the fence anchor BEFORE the upload so a tombstone
+        # written by a concurrent evict() during the upload window is
+        # always recognized, regardless of how long the upload took.
+        put_started_at = datetime.now(UTC)
 
         storage_key = await self._upload_screenshot(
             url=norm, scrape=scrape, screenshot_bytes=screenshot_bytes
         )
 
-        if self._evict_fence_active(norm, tier):
+        if self._evict_fence_active(norm, tier, since=put_started_at):
             logger.warning(
                 "scrape cache put aborted by evict fence for %s (tier=%s)",
                 norm,
@@ -290,10 +297,16 @@ class SupabaseScrapeCache:
         )
 
     def _evict_fence_active(
-        self, norm: str, tier: ScrapeTier
+        self, norm: str, tier: ScrapeTier, *, since: datetime
     ) -> bool:
-        """Read `evicted_at` for `(norm, tier)` and return True iff a
-        recent `evict()` tombstoned the slot within `_EVICT_FENCE_SECONDS`.
+        """Read `evicted_at` for `(norm, tier)` and return True iff the
+        slot was tombstoned at-or-after `since` (the put's anchor).
+
+        A small clock-skew tolerance subtracts
+        `_EVICT_FENCE_CLOCK_SKEW_SECONDS` from the comparison so an
+        evict that happened a sub-second before the put started is still
+        recognized when worker pod clocks drift slightly (typical NTP
+        skew under a second).
 
         Bypasses the TTL filter (`expires_at > now()`) used by `get()`
         because tombstones intentionally have an `expires_at` in the past
@@ -326,8 +339,8 @@ class SupabaseScrapeCache:
             evicted_at = datetime.fromisoformat(evicted_at_raw)
         except ValueError:
             return False
-        threshold = datetime.now(UTC) - timedelta(seconds=_EVICT_FENCE_SECONDS)
-        return evicted_at > threshold
+        threshold = since - timedelta(seconds=_EVICT_FENCE_CLOCK_SKEW_SECONDS)
+        return evicted_at >= threshold
 
     async def evict(self, url: str, *, tier: ScrapeTier | None = None) -> None:
         """Discard the cached scrape row(s) + screenshot blob(s) for a URL.

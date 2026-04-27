@@ -989,15 +989,16 @@ class TestEvictFenceAndFinalUrl:
 
     @pytest.mark.asyncio
     async def test_put_after_old_evict_proceeds(self) -> None:
-        """An evict that fired LONG ago (outside the fence window) must
-        not block fresh puts forever. The fence releases on a stale
-        `evicted_at`.
+        """An evict that fired BEFORE the put started must not block
+        the put. Under the put_started_at anchor approach, a tombstone
+        written before the anchor is a legitimate prior state that the
+        new put is replacing.
         """
         fake = _FakeSupabaseClient()
         cache, _ = _make_cache(fake)
         norm = normalize_url("https://example.com/long-ago-evicted")
 
-        # evicted_at older than the 30s fence window → fence released.
+        # Tombstone written 5 minutes ago — well before the put starts.
         old_iso = (datetime.now(UTC) - timedelta(minutes=5)).isoformat()
         past_iso = (datetime.now(UTC) - timedelta(hours=1)).isoformat()
         now_iso = datetime.now(UTC).isoformat()
@@ -1026,6 +1027,75 @@ class TestEvictFenceAndFinalUrl:
         assert row["markdown"] == "fresh"
         # Successful put clears the tombstone marker.
         assert row["evicted_at"] is None
+
+    @pytest.mark.asyncio
+    async def test_put_with_slow_upload_still_fenced_by_recent_evict(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Codex 5.5 high review of PR #431 P1 finding: the original
+        30s fence window was shorter than httpx's 60s screenshot
+        upload timeout. A slow upload that ran >30s would observe a
+        tombstone (written, say, 45s ago) as stale and clobber it.
+
+        The put_started_at anchor approach catches this: any tombstone
+        written at-or-after the anchor is recognized regardless of
+        absolute age. Here the upload simulates 45s of latency; the
+        evict tombstone landed 40s ago (well outside any old 30s
+        window) but AFTER the put's anchor. The put must abort.
+        """
+        from src.cache import scrape_cache as scrape_cache_module
+
+        fake = _FakeSupabaseClient()
+        cache, store = _make_cache(fake)
+        norm = normalize_url("https://example.com/slow-upload")
+
+        # Put's anchor is captured at the start of put(). We pin
+        # datetime.now() so the anchor corresponds to T-45s, simulating
+        # a 45-second upload that started before the eviction.
+        anchor_time = datetime.now(UTC) - timedelta(seconds=45)
+        evict_time = datetime.now(UTC) - timedelta(seconds=40)
+        fence_read_time = datetime.now(UTC)  # the upload "completes" now
+
+        nows = iter([anchor_time, fence_read_time])
+
+        class _PinnedDatetime(datetime):
+            @classmethod
+            def now(cls, tz: Any = None) -> datetime:
+                return next(nows)
+
+        monkeypatch.setattr(scrape_cache_module, "datetime", _PinnedDatetime)
+
+        # Tombstone landed 40s ago — between anchor (T-45s) and now.
+        past_iso = (datetime.now(UTC) - timedelta(hours=1)).isoformat()
+        fake._rows[(norm, "scrape")] = {  # pyright: ignore[reportPrivateUsage]
+            "normalized_url": norm,
+            "tier": "scrape",
+            "url": norm,
+            "final_url": None,
+            "host": "example.com",
+            "page_kind": "other",
+            "page_title": None,
+            "markdown": None,
+            "html": None,
+            "screenshot_storage_key": None,
+            "scraped_at": evict_time.isoformat(),
+            "expires_at": past_iso,
+            "evicted_at": evict_time.isoformat(),
+        }
+
+        result = await cache.put(
+            "https://example.com/slow-upload",
+            _make_scrape(markdown="slow", screenshot=None),
+            screenshot_bytes=b"pngbytes",
+        )
+
+        # Put aborted by the anchor-based fence even though the
+        # tombstone is "stale" (>30s old).
+        assert result.storage_key is None
+        row = fake._rows[(norm, "scrape")]  # pyright: ignore[reportPrivateUsage]
+        assert row["markdown"] is None
+        assert row["evicted_at"] is not None
+        assert len(store.delete_calls) == 1
 
     @pytest.mark.asyncio
     async def test_get_rehydrates_metadata_source_url_from_final_url(

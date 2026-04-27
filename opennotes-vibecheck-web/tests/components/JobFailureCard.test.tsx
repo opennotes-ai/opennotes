@@ -226,14 +226,22 @@ describe("<JobFailureCard />", () => {
       });
     }
 
-    it("does not render any vendor-leak strings (firecrawl, /v2/, 403, tier 1:)", async () => {
-      // Anti-leak regression for TASK-1488.19. Even if `errorMessage` were
-      // accidentally re-introduced as a prop, the component no longer
-      // accepts it, so the raw vendor envelope cannot reach the DOM.
+    it("does not render any vendor-leak strings even when a leak candidate is forced via cast", async () => {
+      // Anti-leak regression for TASK-1488.19. Codex review pointed out
+      // a vacuous version of this test that asserted clean output for
+      // clean inputs. Force a real leak candidate via cast so the
+      // assertion is non-trivially testing prop suppression: if a
+      // future refactor re-adds an `errorMessage` prop and renders it,
+      // this test will fail.
+      const leak =
+        'tier 1: firecrawl_blocked: firecrawl /v2/scrape refused: 403 {"success":false,"error":"..."}';
       renderCard({
         url: URL,
         errorCode: "unsupported_site",
         errorHost: "linkedin.com",
+        // Cast through unknown to slip an extra prop past the typed
+        // surface. The component must not render this anywhere.
+        ...({ errorMessage: leak } as unknown as Record<string, never>),
       });
       const card = await screen.findByTestId("job-failure-card");
       const text = card.textContent ?? "";
@@ -241,6 +249,11 @@ describe("<JobFailureCard />", () => {
       expect(text).not.toContain("/v2/");
       expect(text).not.toContain("403");
       expect(text).not.toContain("tier 1:");
+      // Sanity: the component still renders the curated detail line.
+      const detail = await screen.findByTestId("job-failure-detail");
+      expect(detail.textContent).toBe(
+        "This site blocks automated readers.",
+      );
     });
   });
 });
