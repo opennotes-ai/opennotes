@@ -26,6 +26,7 @@ from src.firecrawl_client import (
     ScrapeResult,
 )
 from src.jobs.orchestrator import TerminalError, TransientError, _run_section
+from src.utterances.errors import UtteranceExtractionError
 
 # ---------------------------------------------------------------------------
 # TASK-1473.59 regression — write_slot DB failure must propagate as
@@ -1619,3 +1620,61 @@ async def test_scrape_step_force_tier_interact_logs_escalation_reason_zero_utter
     # tier_attempted must reflect the bypass: only Tier 2 ran.
     assert span.attrs.get("tier_attempted") == ["interact"]
     assert span.attrs.get("tier_success") == "interact"
+
+
+# ---------------------------------------------------------------------------
+# TASK-1488.11 — `_run_pipeline` must thread the `_scrape_step` result into
+# `extract_utterances` so a Tier 2 escalation actually reaches Gemini. Without
+# the pass-through, the extractor's `_get_or_scrape` re-reads `tier="scrape"`
+# from cache and silently overwrites a fresh Tier 2 bundle with the cached
+# Tier 1 INTERSTITIAL — defeating `force_tier`.
+# ---------------------------------------------------------------------------
+
+
+async def test_run_pipeline_threads_scrape_step_result_into_extractor(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`_scrape_and_extract` must pass the `_scrape_step` result to
+    `extract_utterances` as the `scrape=` kwarg. Otherwise the extractor
+    re-reads Tier 1 from cache and the Tier 2 escalation is dead code in
+    production.
+    """
+    from src.jobs import orchestrator
+
+    _stub_extract_arm_only(monkeypatch)
+
+    sentinel_scrape = CachedScrape(
+        markdown="TIER_2_BUNDLE",
+        html="<html>tier 2</html>",
+        raw_html=None,
+        screenshot=None,
+        links=None,
+        metadata=ScrapeMetadata(
+            title="Tier 2", source_url="https://example.com"
+        ),
+        warning=None,
+        storage_key=None,
+    )
+
+    async def stub_scrape_step(*args: Any, **kwargs: Any) -> CachedScrape:
+        return sentinel_scrape
+
+    monkeypatch.setattr(orchestrator, "_scrape_step", stub_scrape_step)
+
+    captured: dict[str, Any] = {}
+
+    async def capturing_extract(*args: Any, **kwargs: Any):
+        captured["args"] = args
+        captured["kwargs"] = kwargs
+        # Raise terminal so we don't have to mock the post-Gemini path.
+        raise UtteranceExtractionError("stop here")
+
+    monkeypatch.setattr(orchestrator, "extract_utterances", capturing_extract)
+
+    pool = FakePool(MagicMock())
+    with pytest.raises(orchestrator.TerminalError):
+        await orchestrator._run_pipeline(
+            pool, uuid4(), uuid4(), "https://example.com", MagicMock()
+        )
+
+    assert captured["kwargs"].get("scrape") is sentinel_scrape

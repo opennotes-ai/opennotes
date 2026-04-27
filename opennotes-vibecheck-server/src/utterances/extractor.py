@@ -129,11 +129,18 @@ async def extract_utterances(
     scrape_cache: SupabaseScrapeCache,
     *,
     settings: Settings | None = None,
+    scrape: CachedScrape | None = None,
 ) -> UtterancesPayload:
     """Scrape + persist + agent-extract utterances for a URL.
 
     Returns a fully validated `UtterancesPayload` with freshly-assigned
     `source_url`, `scraped_at = now(UTC)`, and deduplicated `utterance_id`s.
+
+    When the caller already fetched a `CachedScrape` (e.g. the orchestrator's
+    Tier 1/Tier 2 ladder), pass it as `scrape=` so the extractor reuses that
+    bundle instead of re-reading `tier="scrape"` from cache. Without this
+    pass-through the extractor's `_get_or_scrape` would silently overwrite
+    a fresh Tier 2 escalation with a cached Tier 1 INTERSTITIAL bundle.
 
     Wrapped in a `vibecheck.extract_utterances` Logfire span. Transient
     upstream failures (Vertex 429/503/504, Firecrawl 429/5xx, network
@@ -145,7 +152,10 @@ async def extract_utterances(
     settings = settings or get_settings()
 
     with logfire.span("vibecheck.extract_utterances", url=url) as span:
-        scrape = await _get_or_scrape(url, client, scrape_cache, span=span)
+        if scrape is None:
+            scrape = await _get_or_scrape(
+                url, client, scrape_cache, span=span
+            )
         markdown = scrape.markdown
         if not markdown or not markdown.strip():
             raise UtteranceExtractionError("firecrawl scrape returned no markdown")

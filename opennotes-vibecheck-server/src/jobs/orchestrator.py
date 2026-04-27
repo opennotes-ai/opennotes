@@ -1227,8 +1227,13 @@ async def _run_pipeline(
         # Post-scrape revalidate: reject redirects into private space.
         await _revalidate_final_url(scrape, url=url, scrape_cache=scrape_cache)
 
+        # Thread the bundle we just resolved through the ladder into the
+        # extractor so a Tier 2 escalation actually reaches Gemini. Without
+        # this, `extract_utterances._get_or_scrape` would re-read
+        # `tier="scrape"` from cache and overwrite the Tier 2 bundle with the
+        # cached Tier 1 INTERSTITIAL — silently defeating force_tier.
         return await extract_utterances(
-            url, client, scrape_cache, settings=settings
+            url, client, scrape_cache, settings=settings, scrape=scrape
         )
 
     async def _classify_transient_or_raise(
