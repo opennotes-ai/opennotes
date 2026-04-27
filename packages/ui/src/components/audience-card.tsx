@@ -13,7 +13,10 @@ export type AudienceCardProps = {
   icon?: JSX.Element;
   eyebrow: string;
   title: string;
-  body: JSX.Element | string;
+  // String-only because body renders inside a <p>; passing block JSX would
+  // produce invalid HTML and reparent during hydration. Also avoids a
+  // nested-interactive-content footgun, since the whole card is an <a>.
+  body: string;
   href: string;
   linkLabel?: string;
   class?: string;

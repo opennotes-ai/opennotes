@@ -5,7 +5,9 @@ import { cn } from "../utils";
 export type MarketingHeroProps = {
   kicker?: string;
   headline: JSX.Element | string;
-  body: JSX.Element | string;
+  // String-only because body renders inside a <p>; passing block JSX would
+  // produce invalid HTML and reparent during hydration.
+  body: string;
   actions?: JSX.Element;
   class?: string;
 };
