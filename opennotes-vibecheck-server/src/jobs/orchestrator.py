@@ -688,6 +688,58 @@ async def _run_tier1(
     )
 
 
+def _classify_cached_tier1(cached: CachedScrape) -> _Tier1Outcome:
+    """Re-classify a cached Tier 1 bundle so retries don't trust degraded rows.
+
+    The Tier 1 path caches both OK and INTERSTITIAL bundles under
+    `tier='scrape'` so retries skip the upstream Firecrawl probe. Without
+    re-classification on cache hit, an INTERSTITIAL row short-circuits the
+    ladder and gets returned as if it were OK — bypassing the Tier 2
+    escalation that the ladder is meant to provide. The same `_Tier1Outcome`
+    shape used by `_run_tier1` lets `_scrape_step` dispatch through one
+    code path regardless of cache vs probe origin. (codex P1, PR #426 review.)
+    """
+    quality = classify_scrape(cached)
+    if quality is ScrapeQuality.OK:
+        return _Tier1Outcome(
+            cached=cached,
+            terminal=None,
+            escalation_reason=None,
+            tier1_reason="ok",
+            final_classification="ok",
+        )
+    if quality is ScrapeQuality.AUTH_WALL:
+        return _Tier1Outcome(
+            cached=None,
+            terminal=TerminalError(
+                ErrorCode.EXTRACTION_FAILED,
+                "login wall on Tier 1 cache (auth_wall) — not escalated",
+            ),
+            escalation_reason=None,
+            tier1_reason="auth_wall",
+            final_classification="auth_wall",
+        )
+    if quality is ScrapeQuality.LEGITIMATELY_EMPTY:
+        return _Tier1Outcome(
+            cached=None,
+            terminal=TerminalError(
+                ErrorCode.EXTRACTION_FAILED,
+                "page empty on Tier 1 cache (legitimately_empty) — not escalated",
+            ),
+            escalation_reason=None,
+            tier1_reason="legitimately_empty",
+            final_classification="legitimately_empty",
+        )
+    assert quality is ScrapeQuality.INTERSTITIAL
+    return _Tier1Outcome(
+        cached=None,
+        terminal=None,
+        escalation_reason="interstitial",
+        tier1_reason="interstitial",
+        final_classification="interstitial",
+    )
+
+
 @dataclass
 class _Tier2Outcome:
     """Result of running Tier 2. `cached` is set on OK; otherwise
@@ -834,13 +886,36 @@ async def _scrape_step(
                     f"tier 1: skipped (forced); tier 2: {t2.tier2_reason}",
                 )
 
-            # Tier 1 cache hit: short-circuit before the probe runs.
+            # Tier 1 cache hit: re-classify before short-circuiting. The
+            # Tier 1 path caches INTERSTITIAL bundles under tier='scrape'
+            # so retries skip the upstream Firecrawl probe; without
+            # re-classification a degraded row would return as if OK and
+            # bypass Tier 2. (codex P1, PR #426 review.)
             cached = await scrape_cache.get(url, tier="scrape")
             if cached is not None:
                 tier_attempted.append("scrape")
-                tier_success = "scrape"
-                final_classification = "ok"
-                return cached
+                cached_t1 = _classify_cached_tier1(cached)
+                final_classification = cached_t1.final_classification
+                if cached_t1.cached is not None:
+                    tier_success = "scrape"
+                    return cached_t1.cached
+                if cached_t1.terminal is not None:
+                    raise cached_t1.terminal
+                # INTERSTITIAL — fall through to Tier 2 escalation using
+                # the cached outcome's reason.
+                assert cached_t1.escalation_reason is not None
+                escalation_reason = cached_t1.escalation_reason
+                tier_attempted.append("interact")
+                t2_cached = await _run_tier2(url, interact_client, scrape_cache)
+                final_classification = t2_cached.final_classification
+                if t2_cached.cached is not None:
+                    tier_success = "interact"
+                    return t2_cached.cached
+                raise TerminalError(
+                    ErrorCode.UNSUPPORTED_SITE,
+                    f"tier 1: {cached_t1.tier1_reason} (cached); "
+                    f"tier 2: {t2_cached.tier2_reason}",
+                )
 
             # Tier 1 probe (cache miss).
             tier_attempted.append("scrape")

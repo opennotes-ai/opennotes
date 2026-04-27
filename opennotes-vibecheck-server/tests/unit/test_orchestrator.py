@@ -1046,6 +1046,77 @@ async def test_scrape_step_tier1_cache_hit_skips_firecrawl() -> None:
     assert len(interact_client.interact_calls) == 0
 
 
+async def test_scrape_step_tier1_cache_hit_with_interstitial_reclassifies_and_escalates() -> None:
+    """Codex P1 (TASK-1488 PR #426 review): a Tier 1 cache row classified as
+    INTERSTITIAL must NOT short-circuit. The previous run cached the
+    degraded bundle so retries can skip the Firecrawl probe — but the
+    reclassification on cache hit is what guarantees the ladder still
+    escalates to Tier 2 instead of returning the interstitial as if it
+    were OK. Without this, every retry of an interstitial-cached URL
+    bypasses the Tier 2 escalation that's the whole point of the ladder.
+    """
+
+    url = "https://example.com/cf-cached"
+    cache = _FakeScrapeCache()
+    cache.store[(url, "scrape")] = CachedScrape(
+        markdown="Just a moment...",
+        html=(
+            "<html><body><div class='cf-browser-verification'>"
+            "Just a moment</div></body></html>"
+        ),
+        metadata=ScrapeMetadata(status_code=200, source_url=url),
+        storage_key="cached-interstitial-key",
+    )
+
+    def _fail_scrape() -> ScrapeResult:
+        raise AssertionError("scrape must not run on Tier 1 cache hit")
+
+    scrape_client = _FakeFirecrawlClient(scrape_result=_fail_scrape)
+    interact_client = _FakeFirecrawlClient(
+        interact_result=_ok_scrape_result(body="Real content past CF. " * 20)
+    )
+
+    result = await _call_scrape_step(url, scrape_client, interact_client, cache)
+
+    assert result.markdown is not None
+    assert "Real content past CF" in result.markdown
+    assert len(scrape_client.scrape_calls) == 0
+    assert len(interact_client.interact_calls) == 1
+    assert (url, "interact") in cache.store
+
+
+async def test_scrape_step_tier1_cache_hit_with_auth_wall_terminates() -> None:
+    """Defense-in-depth: a cached AUTH_WALL Tier 1 row must terminate
+    rather than short-circuit. _run_tier1 doesn't currently cache
+    AUTH_WALL, but a stale row from an earlier code path or operator
+    backfill must not silently bypass the auth-wall ToS guard.
+    """
+
+    url = "https://members-only.example/article"
+    cache = _FakeScrapeCache()
+    cache.store[(url, "scrape")] = CachedScrape(
+        markdown="Sign in to continue",
+        html=(
+            "<html><body><form action='/login'>"
+            "<input type='password' name='pw'></form></body></html>"
+        ),
+        metadata=ScrapeMetadata(status_code=200, source_url=url),
+        storage_key="cached-auth-wall-key",
+    )
+
+    def _fail() -> ScrapeResult:
+        raise AssertionError("no Firecrawl call should fire on auth-wall cache hit")
+
+    scrape_client = _FakeFirecrawlClient(scrape_result=_fail)
+    interact_client = _FakeFirecrawlClient(interact_result=_fail)
+
+    with pytest.raises(TerminalError) as exc_info:
+        await _call_scrape_step(url, scrape_client, interact_client, cache)
+
+    assert exc_info.value.error_code is ErrorCode.EXTRACTION_FAILED
+    assert len(interact_client.interact_calls) == 0
+
+
 async def test_scrape_step_tier2_cache_hit_skips_interact() -> None:
     """If Tier 1 trips escalation but a Tier 2 cache row already exists,
     /interact is not called — the cached interact bundle short-circuits.
