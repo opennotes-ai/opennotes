@@ -136,7 +136,12 @@ CREATE TABLE IF NOT EXISTS vibecheck_scrapes (
     html TEXT,
     screenshot_storage_key TEXT,
     scraped_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    expires_at TIMESTAMPTZ NOT NULL DEFAULT (now() + INTERVAL '72 hours')
+    expires_at TIMESTAMPTZ NOT NULL DEFAULT (now() + INTERVAL '72 hours'),
+    CONSTRAINT vibecheck_scrapes_page_kind_check
+        CHECK (page_kind IN (
+            'blog_post', 'forum_thread', 'hierarchical_thread',
+            'blog_index', 'article', 'other'
+        ))
 );
 
 CREATE TABLE IF NOT EXISTS vibecheck_web_risk_lookups (
@@ -160,7 +165,9 @@ CREATE TABLE IF NOT EXISTS vibecheck_job_utterances (
     position INT NOT NULL DEFAULT 0,
     page_title TEXT,
     page_kind TEXT,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CONSTRAINT vibecheck_job_utterances_kind_check
+        CHECK (kind IN ('post', 'comment', 'reply'))
 );
 
 -- Sweeper function — verbatim copy of src/cache/schema.sql so the
