@@ -173,6 +173,50 @@ def test_classify_picks_retriable_after_non_retriable_in_chain() -> None:
     assert classify_pydantic_ai_error(outer2) is None
 
 
+def test_cause_non_retriable_anchors_over_context_timeout() -> None:
+    """PEP 3134 BFS bug: outer's __cause__ is non-retriable
+    ModelHTTPError(400) and outer's __context__ is TimeoutError. The
+    explicit cause must anchor the classifier decision; the implicit
+    timeout in __context__ must not flip the result to transient.
+    """
+    non_retriable_cause = ModelHTTPError(
+        status_code=400, model_name="gemini-2.5-pro", body=None
+    )
+    context_timeout = TimeoutError("upstream context timeout")
+    outer = UnexpectedModelBehavior("tool retry exhausted")
+    outer.__cause__ = non_retriable_cause
+    outer.__context__ = context_timeout
+    outer.__suppress_context__ = False
+
+    assert classify_pydantic_ai_error(outer, model_name="gemini-2.5-pro") is None
+
+
+def test_cause_chain_retriable_deeper_wins_over_context_retriable() -> None:
+    """Cause-chain depth wins: outer.__cause__ is non-retriable 400 whose
+    own __cause__ is retriable 504; outer.__context__ is a retriable
+    TimeoutError. The cause-chain decision must anchor (504 transient
+    with status_code populated) — not the context timeout (which would
+    leave status_code unset).
+    """
+    deeper_retriable = ModelHTTPError(
+        status_code=504, model_name="gemini-2.5-pro", body=None
+    )
+    cause_non_retriable = ModelHTTPError(
+        status_code=400, model_name="gemini-2.5-pro", body=None
+    )
+    cause_non_retriable.__cause__ = deeper_retriable
+    context_timeout = TimeoutError("retriable context timeout")
+    outer = UnexpectedModelBehavior("tool retry exhausted")
+    outer.__cause__ = cause_non_retriable
+    outer.__context__ = context_timeout
+    outer.__suppress_context__ = False
+
+    result = classify_pydantic_ai_error(outer, model_name="gemini-2.5-pro")
+    assert isinstance(result, TransientExtractionError)
+    assert result.status_code == 504
+    assert result.status == "DEADLINE_EXCEEDED"
+
+
 def test_walk_cause_chain_terminates_on_cycle() -> None:
     """Synthetic __cause__ cycle must not hang the walker."""
     from src.utterances.errors import _walk_cause_chain

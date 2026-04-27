@@ -81,6 +81,12 @@ def _walk_cause_chain(exc: BaseException) -> list[BaseException]:
     explicit cause is the author's intent and must win. We enqueue
     `__cause__` before `__context__` and use a FIFO queue so the cause
     branch is fully visited before the context branch at the same depth.
+
+    Note: simple FIFO BFS still interleaves shallow `__context__` nodes
+    with deeper `__cause__` nodes — for classifier anchoring per PEP 3134
+    the caller must walk the cause-only subtree first via
+    `_walk_cause_only` and only fall through to a context walk if the
+    cause yields no signal.
     """
     seen: list[BaseException] = []
     seen_ids: set[int] = set()
@@ -98,26 +104,72 @@ def _walk_cause_chain(exc: BaseException) -> list[BaseException]:
     return seen
 
 
-def _find_inner_model_http_error(exc: BaseException) -> ModelHTTPError | None:
-    """Walk the FULL cause/context chain and prefer a retriable
+def _walk_cause_only(exc: BaseException) -> list[BaseException]:
+    """Return [exc, exc.__cause__, exc.__cause__.__cause__, ...] — the
+    explicit cause chain only, no `__context__` traversal. Deduplicated
+    by identity, capped at 8 to terminate on synthetic cycles.
+
+    Per PEP 3134, the explicit `raise X from Y` chain encodes author
+    intent and must anchor the classifier's decision. Walk this first;
+    only fall back to `__context__` if the cause chain yields no signal.
+    """
+    seen: list[BaseException] = []
+    seen_ids: set[int] = set()
+    cur: BaseException | None = exc
+    while cur is not None and len(seen) < 8:
+        if id(cur) in seen_ids:
+            break
+        seen_ids.add(id(cur))
+        seen.append(cur)
+        cur = cur.__cause__
+    return seen
+
+
+def _walk_context_only(exc: BaseException) -> list[BaseException]:
+    """Return the implicit `__context__` chain rooted at `exc`, skipping
+    `exc` itself (already visited by the cause walk). Honors
+    `__suppress_context__`. Deduplicated by identity, capped at 8.
+    """
+    seen: list[BaseException] = []
+    seen_ids: set[int] = {id(exc)}
+    cur: BaseException | None = (
+        exc.__context__ if not exc.__suppress_context__ else None
+    )
+    while cur is not None and len(seen) < 8:
+        if id(cur) in seen_ids:
+            break
+        seen_ids.add(id(cur))
+        seen.append(cur)
+        cur = cur.__context__ if not cur.__suppress_context__ else None
+    return seen
+
+
+def _scan_for_model_http_error(
+    chain: list[BaseException],
+) -> ModelHTTPError | None:
+    """Scan a pre-walked exception chain and prefer a retriable
     ModelHTTPError over a non-retriable one.
 
-    Both direct `raise ModelHTTPError(...)` AND
-    `UnexpectedModelBehavior(__cause__=ModelHTTPError(...))` must surface
-    the inner status_code so the classifier returns transient for
-    429/500/503/504. If a non-retriable ModelHTTPError appears earlier
-    in the walked chain and a retriable one appears later, the retriable
-    one wins — otherwise the classifier would terminate jobs that should
-    redeliver. Falls back to the first ModelHTTPError if none retriable.
+    If a non-retriable ModelHTTPError appears earlier in the chain and a
+    retriable one appears later, the retriable one wins — otherwise the
+    classifier would terminate jobs that should redeliver. Falls back to
+    the first ModelHTTPError if none are retriable.
     """
     first: ModelHTTPError | None = None
-    for inner in _walk_cause_chain(exc):
+    for inner in chain:
         if isinstance(inner, ModelHTTPError):
             if inner.status_code in _VERTEX_RETRIABLE_STATUSES:
                 return inner
             if first is None:
                 first = inner
     return first
+
+
+def _find_inner_model_http_error(exc: BaseException) -> ModelHTTPError | None:
+    """Back-compat wrapper: walk the full cause/context BFS chain and
+    pick a ModelHTTPError per `_scan_for_model_http_error` semantics.
+    """
+    return _scan_for_model_http_error(_walk_cause_chain(exc))
 
 
 def _vertex_status_name(status_code: int) -> str:
@@ -127,6 +179,50 @@ def _vertex_status_name(status_code: int) -> str:
         503: "UNAVAILABLE",
         504: "DEADLINE_EXCEEDED",
     }.get(status_code, f"HTTP_{status_code}")
+
+
+def _classify_pydantic_ai_chain(
+    chain: list[BaseException], model_name: str | None
+) -> TransientExtractionError | None:
+    """Apply pydantic-ai retriable rules to a single pre-walked chain.
+
+    Returns a `TransientExtractionError` for the first signal found
+    (retriable ModelHTTPError, asyncio/httpx timeout, httpx transport
+    error). Returns `None` if a ModelHTTPError is present but every
+    occurrence is non-retriable — that anchors the classifier in
+    terminal territory and prevents a non-retriable cause from being
+    overridden by a retriable signal further along (e.g. in __context__).
+    Returns `None` if the chain has no recognised signal at all so the
+    caller can fall through to the next chain.
+    """
+    inner_http = _scan_for_model_http_error(chain)
+    if inner_http is not None:
+        if inner_http.status_code in _VERTEX_RETRIABLE_STATUSES:
+            return TransientExtractionError(
+                provider="vertex",
+                status_code=inner_http.status_code,
+                status=_vertex_status_name(inner_http.status_code),
+                model_name=model_name,
+                fallback_message=f"Vertex {inner_http.status_code}: {inner_http}",
+            )
+        return None
+
+    for inner in chain:
+        if isinstance(inner, TimeoutError | httpx.TimeoutException):
+            return TransientExtractionError(
+                provider="vertex",
+                status=type(inner).__name__,
+                model_name=model_name,
+                fallback_message=f"upstream timeout: {inner}",
+            )
+        if isinstance(inner, httpx.TransportError):
+            return TransientExtractionError(
+                provider="vertex",
+                status=type(inner).__name__,
+                model_name=model_name,
+                fallback_message=f"upstream transport error: {inner}",
+            )
+    return None
 
 
 def classify_pydantic_ai_error(
@@ -144,37 +240,24 @@ def classify_pydantic_ai_error(
     - UnexpectedModelBehavior wrapping ModelHTTPError with retriable status
     - asyncio.TimeoutError / httpx.TimeoutException / httpx.TransportError
       in the cause chain
+
+    PEP 3134: the explicit `__cause__` chain is the author's intent and
+    must anchor the decision. We classify the cause-only walk first; if
+    it yields a transient signal we return it, if it yields a
+    non-retriable ModelHTTPError we return terminal (None) without
+    consulting `__context__`. Only when the cause walk has no recognised
+    signal at all do we fall through to the implicit `__context__`
+    chain.
     """
-    inner_http = _find_inner_model_http_error(exc)
-    if (
-        inner_http is not None
-        and inner_http.status_code in _VERTEX_RETRIABLE_STATUSES
-    ):
-        return TransientExtractionError(
-            provider="vertex",
-            status_code=inner_http.status_code,
-            status=_vertex_status_name(inner_http.status_code),
-            model_name=model_name,
-            fallback_message=f"Vertex {inner_http.status_code}: {inner_http}",
-        )
+    cause_chain = _walk_cause_only(exc)
+    cause_result = _classify_pydantic_ai_chain(cause_chain, model_name)
+    if cause_result is not None:
+        return cause_result
+    if _scan_for_model_http_error(cause_chain) is not None:
+        return None
 
-    for inner in _walk_cause_chain(exc):
-        if isinstance(inner, TimeoutError | httpx.TimeoutException):
-            return TransientExtractionError(
-                provider="vertex",
-                status=type(inner).__name__,
-                model_name=model_name,
-                fallback_message=f"upstream timeout: {inner}",
-            )
-        if isinstance(inner, httpx.TransportError):
-            return TransientExtractionError(
-                provider="vertex",
-                status=type(inner).__name__,
-                model_name=model_name,
-                fallback_message=f"upstream transport error: {inner}",
-            )
-
-    return None
+    context_chain = _walk_context_only(exc)
+    return _classify_pydantic_ai_chain(context_chain, model_name)
 
 
 def classify_firecrawl_error(
