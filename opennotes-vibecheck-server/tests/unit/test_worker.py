@@ -522,8 +522,11 @@ async def test_post_scrape_private_redirect_marks_invalid_url(
     from src.cache import scrape_cache as scrape_cache_module
     from src.jobs import orchestrator
 
-    # Capture orchestrator's scrape cache so we can assert discard happened.
-    evict_calls: list[str] = []
+    # Capture orchestrator's scrape cache so we can assert discard happened
+    # AND the call carried `tier=None` (TASK-1488.12) — flushing both Tier 1
+    # and Tier 2 rows so a poisoned redirect can't survive in the Tier 2
+    # cache and replay on retry.
+    evict_calls: list[tuple[str, str | None]] = []
 
     # `markdown` here is intentionally substantial (> MIN_BODY_CHARS) so the
     # TASK-1488.05 quality classifier in `_scrape_step` returns `OK` and
@@ -551,7 +554,7 @@ async def test_post_scrape_private_redirect_marks_invalid_url(
             )
 
         async def evict(self, url: str, *, tier: str | None = None) -> None:
-            evict_calls.append(url)
+            evict_calls.append((url, tier))
 
     fake_client = MagicMock()
 
@@ -607,6 +610,12 @@ async def test_post_scrape_private_redirect_marks_invalid_url(
     assert "private" in (row["error_message"] or "").lower()
     # Cache was told to discard the bad scrape.
     assert evict_calls, "scrape cache was not told to evict the invalid redirect"
+    # TASK-1488.12: must flush ALL tiers, not just Tier 1. A poisoned Tier 2
+    # row would otherwise survive and replay the SSRF input on retry.
+    assert all(tier is None for _, tier in evict_calls), (
+        f"_revalidate_final_url must call evict(tier=None) to flush both "
+        f"tiers; got {evict_calls!r}"
+    )
 
 
 # =========================================================================

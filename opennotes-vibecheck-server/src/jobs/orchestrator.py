@@ -891,6 +891,13 @@ async def _revalidate_final_url(
     validator; on rejection, evict the cached scrape so a subsequent retry
     fetches fresh input rather than replaying the poisoned entry, then
     raise TerminalError invalid_url.
+
+    `tier=None` flushes both Tier 1 and Tier 2 rows. The poisoned scrape may
+    have been written at `tier="interact"` (Tier 2 escalation), so evicting
+    only `tier="scrape"` would leave the SSRF-poisoned row alive for retry —
+    a security regression. The cache contract at
+    `SupabaseScrapeCache.evict()` documents `tier=None` as the all-tiers
+    flush; this call honors that contract.
     """
     final = scrape.metadata.source_url if scrape.metadata else None
     if not final:
@@ -899,7 +906,7 @@ async def _revalidate_final_url(
         revalidate_redirect_target(final)
     except InvalidURL:
         try:
-            await scrape_cache.evict(url, tier="scrape")
+            await scrape_cache.evict(url, tier=None)
         except Exception as exc:
             logger.warning(
                 "scrape cache evict failed after redirect-block for %s: %s",
