@@ -319,7 +319,7 @@ up automatically. Keep `docs.json` focused on theme, colors, and navigation:
 {
   "$schema": "https://mintlify.com/docs.json",
   "theme": "mint",
-  "name": "OpenNotes Docs",
+  "name": "Open Notes Docs",
   "colors": {
     "primary": "#3EB489",
     "light":   "#3EB489",

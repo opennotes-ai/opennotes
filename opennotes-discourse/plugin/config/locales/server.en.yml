@@ -1,8 +1,8 @@
 en:
   site_settings:
-    opennotes_enabled: "Enable OpenNotes community moderation"
-    opennotes_server_url: "URL of the OpenNotes server"
-    opennotes_api_key: "API key for authenticating with the OpenNotes server"
+    opennotes_enabled: "Enable Open Notes community moderation"
+    opennotes_server_url: "URL of the Open Notes server"
+    opennotes_api_key: "API key for authenticating with the Open Notes server"
     opennotes_monitored_categories: "Comma-separated category slug paths to monitor (e.g. 'parent/child' for subcategories)"
     opennotes_reviewer_min_trust_level: "Minimum trust level required to participate in community review"
     opennotes_auto_hide_on_consensus: "Automatically hide posts when community consensus is reached"
@@ -11,11 +11,11 @@ en:
   opennotes:
     errors:
       already_voted: "You have already voted on this note"
-      server_unavailable: "OpenNotes server is temporarily unavailable"
+      server_unavailable: "Open Notes server is temporarily unavailable"
     staff_annotation:
       overturned: "This post was automatically hidden but has been restored after community review determined the action was incorrect."
     staff_annotations:
-      auto_hidden: "This post was automatically hidden by OpenNotes based on content classification."
+      auto_hidden: "This post was automatically hidden by Open Notes based on content classification."
       action_overturned: "This post was automatically hidden but has been restored after community review determined the action was incorrect."
     reviewable:
       actions:

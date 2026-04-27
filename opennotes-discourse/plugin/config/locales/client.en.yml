@@ -6,7 +6,7 @@ en:
           discourse_opennotes: "Open Notes - Moderation"
   js:
     opennotes:
-      title: "OpenNotes"
+      title: "Open Notes"
       community_review: "Community Review"
       under_review: "This post is under community review"
       reviewed: "Community Reviewed"
@@ -23,8 +23,8 @@ en:
         voted: "You voted: %{choice}"
         submitting: "Submitting..."
       admin:
-        dashboard: "OpenNotes Dashboard"
-        settings: "OpenNotes Settings"
+        dashboard: "Open Notes Dashboard"
+        settings: "Open Notes Settings"
       banner:
         under_review: "This post is under community review."
         auto_actioned: "This post was auto-hidden for moderation review."
@@ -34,7 +34,7 @@ en:
         under_review: "Under Review"
         auto_actioned: "Auto-Actioned"
       dashboard:
-        title: "OpenNotes Dashboard"
+        title: "Open Notes Dashboard"
         activity: "Activity Metrics"
         classification: "Classification Breakdown"
         consensus: "Consensus Health"

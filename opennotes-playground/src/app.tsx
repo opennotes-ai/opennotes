@@ -18,12 +18,12 @@ export default function App() {
             <A href="/" class="flex items-center">
               <img
                 src="https://slelguoygbfzlpylpxfs.supabase.co/storage/v1/object/public/document-uploads/Open-Notes-Logo-Light-1760550305591.png"
-                alt="OpenNotes"
+                alt="Open Notes"
                 class="h-10 w-auto sm:h-12 md:h-16 dark:hidden"
               />
               <img
                 src="https://slelguoygbfzlpylpxfs.supabase.co/storage/v1/object/public/document-uploads/Open-Notes-Logo-Dark-1760550305520.png"
-                alt="OpenNotes"
+                alt="Open Notes"
                 class="hidden h-10 w-auto sm:h-12 md:h-16 dark:block"
               />
             </A>

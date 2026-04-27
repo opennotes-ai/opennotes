@@ -1,4 +1,4 @@
-# OpenNotes Documentation
+# Open Notes Documentation
 
 The source for [docs.opennotes.ai](https://docs.opennotes.ai), built with [Mintlify](https://mintlify.com).
 
