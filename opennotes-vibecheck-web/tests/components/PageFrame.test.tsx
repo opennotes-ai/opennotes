@@ -379,4 +379,38 @@ describe("<PageFrame />", () => {
     expect(link.getAttribute("target")).toBe("_blank");
     expect(link.getAttribute("rel")).toMatch(/noreferrer|noopener/);
   });
+
+  it("contains the section width with min-w-0/max-w-full so wide content cannot push the layout", () => {
+    render(() => (
+      <PageFrame
+        url="https://example.com/article"
+        canIframe={true}
+        previewMode="screenshot"
+        screenshotUrl="https://cdn.example.com/shot.png"
+      />
+    ));
+    const section = screen.getByLabelText("Page preview");
+    const cls = section.getAttribute("class") ?? "";
+    expect(cls).toMatch(/\bw-full\b/);
+    expect(cls).toMatch(/\bmin-w-0\b/);
+    expect(cls).toMatch(/\bmax-w-full\b/);
+  });
+
+  it("marks the hidden Original iframe inert when the active preview is screenshot", () => {
+    render(() => (
+      <PageFrame
+        url="https://example.com/article"
+        canIframe={true}
+        previewMode="screenshot"
+        screenshotUrl="https://cdn.example.com/shot.png"
+      />
+    ));
+    const iframe = screen.getByTestId("page-frame-iframe") as HTMLIFrameElement;
+    // Solid + jsdom set `inert` as a DOM property rather than reflecting it as
+    // an HTML attribute. Asserting the property captures the actual a11y
+    // semantics (the element is inert) without depending on attribute
+    // reflection differences across runtimes.
+    expect((iframe as unknown as { inert: boolean }).inert).toBe(true);
+    expect(iframe.getAttribute("aria-hidden")).toBe("true");
+  });
 });

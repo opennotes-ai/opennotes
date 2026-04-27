@@ -219,12 +219,12 @@ export default function AnalyzePage() {
 
   const layoutClass = createMemo(() => {
     if (previewSize() === "large") {
-      return "flex flex-col gap-6 lg:grid lg:grid-cols-[5fr_2fr] lg:gap-8";
+      return "flex flex-col gap-6 lg:grid lg:grid-cols-[minmax(0,5fr)_minmax(0,2fr)] lg:gap-8";
     }
     if (previewSize() === "max") {
       return "flex flex-col gap-6 lg:grid lg:grid-cols-1 lg:gap-6";
     }
-    return "flex flex-col gap-6 lg:grid lg:grid-cols-[3fr_2fr] lg:gap-8";
+    return "flex flex-col gap-6 lg:grid lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)] lg:gap-8";
   });
 
   const segmentCornerClass = (index: number, total: number) => {
@@ -281,7 +281,7 @@ export default function AnalyzePage() {
                 data-preview-size={previewSize()}
                 class={layoutClass()}
               >
-                <div class="flex min-h-[60vh] flex-col gap-4">
+                <div class="flex min-h-[60vh] min-w-0 flex-col gap-4">
                   <div class="flex flex-wrap items-center justify-between gap-2">
                     <div
                       data-testid="preview-mode-selector"

@@ -182,7 +182,7 @@ export default function PageFrame(props: PageFrameProps) {
   return (
     <section
       aria-label="Page preview"
-      class="relative flex h-full min-h-[60vh] flex-col overflow-hidden rounded-lg border border-border bg-card"
+      class="relative flex h-full min-h-[60vh] w-full min-w-0 max-w-full flex-col overflow-hidden rounded-lg border border-border bg-card"
     >
       <Show when={showIframe()}>
         <iframe
@@ -194,6 +194,7 @@ export default function PageFrame(props: PageFrameProps) {
           loading="lazy"
           ref={iframeRef}
           aria-hidden={showOriginalVisible() ? undefined : "true"}
+          inert={showOriginalVisible() ? undefined : true}
           onLoad={handleIframeLoad}
           onError={handleIframeError}
           class={
@@ -242,7 +243,7 @@ export default function PageFrame(props: PageFrameProps) {
       </Show>
 
       <div class="flex items-center justify-between gap-2 border-t border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
-        <span class="truncate" title={props.url}>
+        <span class="min-w-0 flex-1 truncate" title={props.url}>
           {props.url}
         </span>
         <a
