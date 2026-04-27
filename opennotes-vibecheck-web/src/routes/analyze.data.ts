@@ -115,6 +115,28 @@ export async function resolveAnalyzeRedirect(formData: FormData): Promise<never>
     throw redirect("/?error=invalid_url");
   }
 
+  const { getRequestEvent } = await import("solid-js/web");
+  const evt = getRequestEvent();
+  if (evt?.request?.headers) {
+    const { checkAnalyzeRateLimit } = await import("~/lib/rate-limit.server");
+    const decision = checkAnalyzeRateLimit(evt.request.headers);
+    if (!decision.allowed) {
+      console.warn(
+        JSON.stringify({
+          event: "vibecheck.rate_limit.denied",
+          route: "resolveAnalyzeRedirect",
+          ip_hash_prefix: decision.ipHashPrefix,
+          retry_after_sec: decision.retryAfterSec,
+        }),
+      );
+      const qs = redirectParams({
+        pending_error: "rate_limited",
+        url: rawUrl,
+      });
+      throw redirect(`/analyze?${qs}`);
+    }
+  }
+
   let response;
   try {
     response = await analyzeUrl(rawUrl);

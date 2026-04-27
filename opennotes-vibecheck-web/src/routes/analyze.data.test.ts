@@ -1,4 +1,4 @@
-import { describe, expect, it, vi, beforeEach } from "vitest";
+import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 
 const { analyzeUrlMock, retrySectionMock, clientGetMock } = vi.hoisted(() => ({
   analyzeUrlMock: vi.fn(),
@@ -205,6 +205,128 @@ describe("analyzeAction", () => {
     const location = response.headers.get("Location") ?? "";
     expect(location).toContain("pending_error=rate_limited");
     expect(location).toContain(`url=${encodeURIComponent(url)}`);
+  });
+});
+
+describe("resolveAnalyzeRedirect web-tier rate limiter (TASK-1483.09)", () => {
+  const headersWithXff = (clientIp: string) =>
+    new Headers({ "x-forwarded-for": `${clientIp}, 10.0.0.1` });
+
+  let currentRequest: Request | null = null;
+
+  async function callWithRequest(
+    url: string,
+    request: Request,
+  ): Promise<Response> {
+    currentRequest = request;
+    const { resolveAnalyzeRedirect } = await import("./analyze.data");
+    const fd = new FormData();
+    fd.set("url", url);
+    try {
+      await resolveAnalyzeRedirect(fd);
+      throw new Error("resolveAnalyzeRedirect did not redirect");
+    } catch (thrown) {
+      if (thrown instanceof Response) return thrown;
+      throw thrown;
+    }
+  }
+
+  beforeEach(async () => {
+    analyzeUrlMock.mockReset();
+    retrySectionMock.mockReset();
+    clientGetMock.mockReset();
+    currentRequest = null;
+    vi.resetModules();
+    vi.doMock("solid-js/web", async () => {
+      const actual = await vi.importActual<typeof import("solid-js/web")>(
+        "solid-js/web",
+      );
+      return {
+        ...actual,
+        getRequestEvent: () =>
+          currentRequest
+            ? { request: currentRequest, response: new Response() }
+            : undefined,
+      };
+    });
+    process.env.NODE_ENV = "production";
+    process.env.VIBECHECK_RATE_LIMIT_DISABLED = "0";
+    process.env.VIBECHECK_RATE_LIMIT_PER_HOUR = "10";
+    const { _resetRateLimitForTesting } = await import(
+      "~/lib/rate-limit.server"
+    );
+    _resetRateLimitForTesting();
+    analyzeUrlMock.mockResolvedValue({
+      job_id: "job-ok",
+      status: "pending",
+      cached: false,
+    });
+  });
+
+  it("eleventh submission from the same client IP redirects to /analyze?pending_error=rate_limited", async () => {
+    const url = "https://example.com/p";
+    const headers = headersWithXff("203.0.113.10");
+    for (let i = 0; i < 10; i++) {
+      const r = await callWithRequest(
+        url,
+        new Request("https://vibecheck.opennotes.ai/", {
+          method: "POST",
+          headers,
+        }),
+      );
+      const loc = r.headers.get("Location") ?? "";
+      expect(loc, `request ${i + 1}/11 should reach analyze`).toContain(
+        "/analyze?job=",
+      );
+    }
+    const eleventh = await callWithRequest(
+      url,
+      new Request("https://vibecheck.opennotes.ai/", {
+        method: "POST",
+        headers,
+      }),
+    );
+    const loc = eleventh.headers.get("Location") ?? "";
+    expect(loc).toContain("pending_error=rate_limited");
+    expect(loc).toContain(`url=${encodeURIComponent(url)}`);
+  });
+
+  it("twelfth submission from a different client IP is unaffected by the first IP's exhausted bucket", async () => {
+    const url = "https://example.com/p";
+    const headersA = headersWithXff("203.0.113.10");
+    const headersB = headersWithXff("198.51.100.20");
+    for (let i = 0; i < 10; i++) {
+      await callWithRequest(
+        url,
+        new Request("https://vibecheck.opennotes.ai/", {
+          method: "POST",
+          headers: headersA,
+        }),
+      );
+    }
+    const denied = await callWithRequest(
+      url,
+      new Request("https://vibecheck.opennotes.ai/", {
+        method: "POST",
+        headers: headersA,
+      }),
+    );
+    expect(denied.headers.get("Location") ?? "").toContain(
+      "pending_error=rate_limited",
+    );
+    const allowed = await callWithRequest(
+      url,
+      new Request("https://vibecheck.opennotes.ai/", {
+        method: "POST",
+        headers: headersB,
+      }),
+    );
+    expect(allowed.headers.get("Location") ?? "").toContain("/analyze?job=");
+  });
+
+  afterEach(() => {
+    delete process.env.VIBECHECK_RATE_LIMIT_PER_HOUR;
+    delete process.env.VIBECHECK_RATE_LIMIT_DISABLED;
   });
 });
 

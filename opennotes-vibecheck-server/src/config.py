@@ -37,7 +37,15 @@ class Settings(BaseSettings):
     # screenshot_storage_key. Provisioned in infra (gcs_screenshots.tf).
     VIBECHECK_GCS_SCREENSHOT_BUCKET: str = ""
 
-    RATE_LIMIT_PER_IP_PER_HOUR: int = 10
+    # TASK-1483.09: per-real-user rate limiting now lives at the web tier
+    # (vibecheck-web reads the GCLB-set X-Forwarded-For and enforces a
+    # per-IP bucket before calling /api/analyze). This backend limiter is
+    # therefore keyed on the SolidStart server IP — useless as per-user
+    # enforcement, but retained as a coarse defense-in-depth safety valve
+    # against the FastAPI service being hit directly. Default raised from
+    # 10 to 600 so the blunt per-instance bucket does not throttle legit
+    # multi-user traffic that already passed the web-tier limiter.
+    RATE_LIMIT_PER_IP_PER_HOUR: int = 600
     CACHE_TTL_HOURS: int = 72
     MAX_IMAGES_MODERATED: int = 30
     MAX_VIDEOS_MODERATED: int = 5
