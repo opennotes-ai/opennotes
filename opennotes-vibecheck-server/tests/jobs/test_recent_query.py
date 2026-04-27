@@ -37,7 +37,9 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
     + """
 CREATE TABLE vibecheck_scrapes (
     scrape_id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    normalized_url TEXT NOT NULL UNIQUE,
+    normalized_url TEXT NOT NULL,
+    tier TEXT NOT NULL DEFAULT 'scrape'
+        CHECK (tier IN ('scrape', 'interact')),
     url TEXT NOT NULL,
     host TEXT NOT NULL,
     page_kind TEXT NOT NULL DEFAULT 'other',
@@ -46,7 +48,8 @@ CREATE TABLE vibecheck_scrapes (
     html TEXT,
     screenshot_storage_key TEXT,
     scraped_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    expires_at TIMESTAMPTZ NOT NULL DEFAULT (now() + INTERVAL '72 hours')
+    expires_at TIMESTAMPTZ NOT NULL DEFAULT (now() + INTERVAL '72 hours'),
+    UNIQUE (normalized_url, tier)
 );
 """
 )
@@ -325,6 +328,7 @@ async def _seed_scrape(
     pool: Any,
     *,
     url: str,
+    tier: str = "scrape",
     page_title: str | None = "Example Title",
     storage_key: str | None = "abc/screenshot.png",
     expires_in: timedelta = timedelta(hours=72),
@@ -334,11 +338,12 @@ async def _seed_scrape(
         await conn.execute(
             """
             INSERT INTO vibecheck_scrapes
-                (normalized_url, url, host, page_title, screenshot_storage_key,
-                 expires_at)
-            VALUES ($1, $1, 'example.com', $2, $3, $4)
+                (normalized_url, tier, url, host, page_title,
+                 screenshot_storage_key, expires_at)
+            VALUES ($1, $2, $1, 'example.com', $3, $4, $5)
             """,
             url,
+            tier,
             page_title,
             storage_key,
             expires_at,
@@ -491,6 +496,90 @@ class TestListRecentExclusionRules:
         await _seed_scrape(db_pool, url=url)
         result = await list_recent(db_pool, limit=5, signer=_StubSigner())
         assert result == []
+
+
+# TASK-1488.16 — gallery join must prefer tier='interact' when both tier
+# rows exist for the same URL. Without the preference, the JOIN is
+# non-deterministic and a Tier 1 INTERSTITIAL row (e.g. CF challenge)
+# can shadow a Tier 2 success.
+
+
+class TestListRecentTierPreference:
+    async def test_picks_interact_tier_when_both_tiers_exist(
+        self, db_pool: Any
+    ) -> None:
+        """Both tier='scrape' and tier='interact' rows exist for the same
+        URL — the gallery returns the interact-tier asset (page_title +
+        screenshot_storage_key), not the cached interstitial.
+        """
+        url = "https://example.com/cf-then-interact-success"
+        await _seed_job(db_pool, url=url)
+        await _seed_scrape(
+            db_pool,
+            url=url,
+            tier="scrape",
+            page_title="Just a moment...",
+            storage_key="cf-interstitial.png",
+        )
+        await _seed_scrape(
+            db_pool,
+            url=url,
+            tier="interact",
+            page_title="Real Article Title",
+            storage_key="real-content.png",
+        )
+        result = await list_recent(db_pool, limit=5, signer=_StubSigner())
+        assert len(result) == 1
+        assert result[0].page_title == "Real Article Title"
+        assert "real-content.png" in result[0].screenshot_url
+
+    async def test_falls_back_to_scrape_tier_when_interact_missing(
+        self, db_pool: Any
+    ) -> None:
+        """Regression: a URL with only a tier='scrape' row (no interact
+        row) is still surfaced — the tier preference must not require
+        the interact row.
+        """
+        url = "https://example.com/scrape-only"
+        await _seed_job(db_pool, url=url)
+        await _seed_scrape(
+            db_pool,
+            url=url,
+            tier="scrape",
+            page_title="Plain Article",
+            storage_key="plain.png",
+        )
+        result = await list_recent(db_pool, limit=5, signer=_StubSigner())
+        assert len(result) == 1
+        assert result[0].page_title == "Plain Article"
+
+    async def test_falls_back_to_scrape_when_interact_expired(
+        self, db_pool: Any
+    ) -> None:
+        """Boundary: a fresh tier='scrape' row beats an expired
+        tier='interact' row — the TTL filter applies before the tier
+        preference.
+        """
+        url = "https://example.com/interact-expired"
+        await _seed_job(db_pool, url=url)
+        await _seed_scrape(
+            db_pool,
+            url=url,
+            tier="scrape",
+            page_title="Fresh Scrape",
+            storage_key="fresh.png",
+        )
+        await _seed_scrape(
+            db_pool,
+            url=url,
+            tier="interact",
+            page_title="Stale Interact",
+            storage_key="stale.png",
+            expires_in=timedelta(hours=-1),
+        )
+        result = await list_recent(db_pool, limit=5, signer=_StubSigner())
+        assert len(result) == 1
+        assert result[0].page_title == "Fresh Scrape"
 
 
 class TestListRecentPrivacyFilters:
