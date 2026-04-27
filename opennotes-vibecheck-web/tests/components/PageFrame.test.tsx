@@ -47,7 +47,7 @@ describe("<PageFrame />", () => {
     );
   });
 
-  it("falls back to the screenshot (not the archive) when Original is selected and the iframe is blocked", () => {
+  it("falls back to the archive when Original is selected, iframe is blocked, and archive is available (chain B)", () => {
     render(() => (
       <PageFrame
         url="https://example.com/article"
@@ -59,16 +59,14 @@ describe("<PageFrame />", () => {
       />
     ));
 
-    const screenshot = screen.getByTestId(
-      "page-frame-screenshot",
-    ) as HTMLImageElement;
-    expect(screenshot.getAttribute("src")).toBe(
-      "https://cdn.example.com/shot.png",
+    const archived = screen.getByTestId("page-frame-archived-iframe") as HTMLIFrameElement;
+    expect(archived.getAttribute("src")).toBe(
+      "/api/archive-preview?url=https%3A%2F%2Fexample.com%2Farticle",
     );
-    expect(screen.queryByTestId("page-frame-archived-iframe")).toBeNull();
+    expect(screen.queryByTestId("page-frame-screenshot")).toBeNull();
   });
 
-  it("never silently renders the archive when Original is selected, even without a screenshot", () => {
+  it("renders the archive when Original is blocked and no screenshot exists (chain B)", () => {
     render(() => (
       <PageFrame
         url="https://example.com/article"
@@ -80,8 +78,8 @@ describe("<PageFrame />", () => {
       />
     ));
 
-    expect(screen.queryByTestId("page-frame-archived-iframe")).toBeNull();
-    expect(screen.queryByTestId("page-frame-unavailable")).not.toBeNull();
+    expect(screen.getByTestId("page-frame-archived-iframe")).not.toBeNull();
+    expect(screen.queryByTestId("page-frame-unavailable")).toBeNull();
   });
 
   it("shows the archived iframe when the user explicitly selects Archived", () => {

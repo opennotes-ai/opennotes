@@ -34,9 +34,12 @@ export default function PageFrame(props: PageFrameProps) {
       if (hasArchive()) return "archived";
       return props.screenshotUrl ? "screenshot" : "unavailable";
     }
+    // requestedMode === "original"
     if (!hasBlockingHint() && !iframeFailed()) {
       return "original";
     }
+    // Original blocked or failed — chain B (Original → Archived → Screenshot)
+    if (hasArchive()) return "archived";
     if (props.screenshotUrl) return "screenshot";
     return "unavailable";
   };
