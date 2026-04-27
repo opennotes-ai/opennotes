@@ -99,7 +99,12 @@ async def test_second_submit_within_ttl_reuses_scrape_cache(
     # ----- Job 1: scrape succeeds, extraction fails -----------------------
 
     async def _failing_extract(
-        url: str, client: Any, cache: Any, *, settings: Any = None
+        url: str,
+        client: Any,
+        cache: Any,
+        *,
+        settings: Any = None,
+        scrape: Any = None,
     ) -> UtterancesPayload:
         raise RuntimeError("Gemini connection lost")
 
@@ -136,7 +141,12 @@ async def test_second_submit_within_ttl_reuses_scrape_cache(
     # ----- Job 2: extraction now succeeds; Firecrawl must NOT be called --
 
     async def _ok_extract(
-        url: str, client: Any, cache: Any, *, settings: Any = None
+        url: str,
+        client: Any,
+        cache: Any,
+        *,
+        settings: Any = None,
+        scrape: Any = None,
     ) -> UtterancesPayload:
         return _payload(url)
 

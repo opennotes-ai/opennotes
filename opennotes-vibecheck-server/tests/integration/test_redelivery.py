@@ -82,7 +82,12 @@ async def test_two_deliveries_with_same_expected_attempt_id_are_idempotent(
     extract_calls = 0
 
     async def _stub_extract(
-        url: str, client: Any, cache: Any, *, settings: Any = None
+        url: str,
+        client: Any,
+        cache: Any,
+        *,
+        settings: Any = None,
+        scrape: Any = None,
     ) -> UtterancesPayload:
         nonlocal extract_calls
         extract_calls += 1

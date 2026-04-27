@@ -110,7 +110,12 @@ async def test_post_then_internal_run_then_poll_to_done(
     payload = await _make_utterances_payload(target_url)
 
     async def _stub_extract(
-        url: str, client: Any, cache: Any, *, settings: Any = None
+        url: str,
+        client: Any,
+        cache: Any,
+        *,
+        settings: Any = None,
+        scrape: Any = None,
     ) -> UtterancesPayload:
         return payload
 
@@ -371,7 +376,12 @@ async def test_write_slot_cas_miss_propagates_503_for_redelivery(
     payload = await _make_utterances_payload(target_url)
 
     async def _stub_extract(
-        url: str, client: Any, cache: Any, *, settings: Any = None
+        url: str,
+        client: Any,
+        cache: Any,
+        *,
+        settings: Any = None,
+        scrape: Any = None,
     ) -> UtterancesPayload:
         return payload
 
