@@ -13,6 +13,17 @@
 @import "@fontsource/ibm-plex-sans/600-italic.css";
 @import "@fontsource/ibm-plex-sans/700-italic.css";
 
+@import "@fontsource/ibm-plex-sans-condensed/300.css";
+@import "@fontsource/ibm-plex-sans-condensed/400.css";
+@import "@fontsource/ibm-plex-sans-condensed/500.css";
+@import "@fontsource/ibm-plex-sans-condensed/600.css";
+@import "@fontsource/ibm-plex-sans-condensed/700.css";
+@import "@fontsource/ibm-plex-sans-condensed/300-italic.css";
+@import "@fontsource/ibm-plex-sans-condensed/400-italic.css";
+@import "@fontsource/ibm-plex-sans-condensed/500-italic.css";
+@import "@fontsource/ibm-plex-sans-condensed/600-italic.css";
+@import "@fontsource/ibm-plex-sans-condensed/700-italic.css";
+
 @import "@fontsource/ibm-plex-serif/400.css";
 @import "@fontsource/ibm-plex-serif/500.css";
 @import "@fontsource/ibm-plex-serif/600.css";

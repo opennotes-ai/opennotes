@@ -1,4 +1,8 @@
 import type { APIEvent } from "@solidjs/start/server";
+import {
+  ARCHIVE_FONT_CDN_URL,
+  ARCHIVE_FONT_FAMILY,
+} from "@opennotes/tokens/archive-fonts";
 import { getAuthorizationHeader, resolveBaseUrl } from "~/lib/api-client.server";
 
 const ARCHIVE_CSP =
@@ -10,7 +14,20 @@ const ARCHIVE_HEADERS = {
   "content-type": "text/html; charset=utf-8",
   "cache-control": "no-store, private",
   "content-security-policy": ARCHIVE_CSP,
+  "referrer-policy": "no-referrer",
 };
+
+function injectFontFallback(html: string): string {
+  const style =
+    `<style>` +
+    `@import url('${ARCHIVE_FONT_CDN_URL}');` +
+    `html,body{font-family:${ARCHIVE_FONT_FAMILY},system-ui,sans-serif;}` +
+    `</style>`;
+  if (html.includes("</head>")) {
+    return html.replace("</head>", `${style}</head>`);
+  }
+  return style + html;
+}
 
 function isHttpUrl(candidate: string): boolean {
   try {
@@ -45,17 +62,27 @@ export async function GET(event: APIEvent): Promise<Response> {
       signal: event.request.signal,
     });
   } catch {
-    return Response.json({ detail: "Archive unavailable" }, { status: 502 });
+    return new Response("Archive unavailable", {
+      status: 502,
+      headers: {
+        "content-type": "text/plain; charset=utf-8",
+        "cache-control": "no-store, private",
+      },
+    });
   }
 
   if (!response.ok) {
     return new Response("", {
       status: response.status,
-      headers: ARCHIVE_HEADERS,
+      headers: {
+        "content-type": "text/plain; charset=utf-8",
+        "cache-control": "no-store, private",
+      },
     });
   }
 
-  return new Response(await response.text(), {
+  const upstreamHtml = await response.text();
+  return new Response(injectFontFallback(upstreamHtml), {
     status: 200,
     headers: ARCHIVE_HEADERS,
   });

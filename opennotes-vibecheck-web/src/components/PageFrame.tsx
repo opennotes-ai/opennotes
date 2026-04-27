@@ -10,23 +10,26 @@ export interface PageFrameProps {
   archivedPreviewUrl?: string | null;
   screenshotUrl: string | null;
   previewMode: PreviewMode;
+  onResolvedModeChange?: (mode: PreviewMode | "unavailable") => void;
 }
 
 const IFRAME_LOAD_TIMEOUT_MS = 20_000;
-const ARCHIVE_LOAD_TIMEOUT_MS = 3_000;
+const ARCHIVE_LOAD_TIMEOUT_MS = 8_000;
+const FALLBACK_COUNTDOWN_MS = 15_000;
 
 export default function PageFrame(props: PageFrameProps) {
   const [iframeFailed, setIframeFailed] = createSignal(false);
   const [iframeLoaded, setIframeLoaded] = createSignal(false);
   const [archivedFailed, setArchivedFailed] = createSignal(false);
   const [archivedLoaded, setArchivedLoaded] = createSignal(false);
+  const [countdownElapsed, setCountdownElapsed] = createSignal(false);
 
   const hasBlockingHint = () =>
     !props.canIframe || !!props.blockingHeader || !!props.cspFrameAncestors;
   const requestedMode = () => props.previewMode;
   const hasArchive = () => !!props.archivedPreviewUrl && !archivedFailed();
 
-  const activePreview = (): PreviewMode | "unavailable" => {
+  const activePreview = (): PreviewMode | "deciding" | "unavailable" => {
     if (requestedMode() === "screenshot") {
       return props.screenshotUrl ? "screenshot" : "unavailable";
     }
@@ -34,9 +37,18 @@ export default function PageFrame(props: PageFrameProps) {
       if (hasArchive()) return "archived";
       return props.screenshotUrl ? "screenshot" : "unavailable";
     }
+    // requestedMode === "original"
     if (!hasBlockingHint() && !iframeFailed()) {
       return "original";
     }
+    // Original blocked or failed — show the interstitial during the countdown
+    // window unless the user has already overridden by clicking a tab (which
+    // flips requestedMode out of "original" and bypasses this branch).
+    if (!countdownElapsed()) {
+      return "deciding";
+    }
+    // Countdown elapsed — chain B (Original → Archived → Screenshot)
+    if (hasArchive()) return "archived";
     if (props.screenshotUrl) return "screenshot";
     return "unavailable";
   };
@@ -45,6 +57,7 @@ export default function PageFrame(props: PageFrameProps) {
   const showOriginalVisible = () => activePreview() === "original";
   const showArchived = () => activePreview() === "archived";
   const showScreenshot = () => activePreview() === "screenshot";
+  const showDeciding = () => activePreview() === "deciding";
 
   let timeoutId: ReturnType<typeof setTimeout> | null = null;
   let archiveTimeoutId: ReturnType<typeof setTimeout> | null = null;
@@ -94,6 +107,7 @@ export default function PageFrame(props: PageFrameProps) {
       setIframeLoaded(false);
       setArchivedFailed(false);
       setArchivedLoaded(false);
+      setCountdownElapsed(false);
       startLoadTimeout();
     }
   });
@@ -109,6 +123,35 @@ export default function PageFrame(props: PageFrameProps) {
       return;
     }
     clearArchiveTimeout();
+  });
+
+  createEffect(() => {
+    // Countdown effect: arms a single timer when Original is the requested
+    // mode AND we have evidence (server hint or runtime failure) that the
+    // iframe cannot render. Resets/clears on any change to those inputs or
+    // when requestedMode flips (user override). Per AC #4/#8 the timer body
+    // only runs setState — it never reads from render predicates.
+    const decidingTriggerActive =
+      requestedMode() === "original" && (hasBlockingHint() || iframeFailed());
+    if (!decidingTriggerActive) {
+      setCountdownElapsed(false);
+      return;
+    }
+    setCountdownElapsed(false);
+    const id = setTimeout(
+      () => setCountdownElapsed(true),
+      FALLBACK_COUNTDOWN_MS,
+    );
+    onCleanup(() => clearTimeout(id));
+  });
+
+  createEffect(() => {
+    // AC #4: emit the resolved mode upstream from a createEffect, never from
+    // inside activePreview() or render predicates. Skip "deciding" so the
+    // parent only sees real, renderable modes.
+    const resolved = activePreview();
+    if (resolved === "deciding") return;
+    props.onResolvedModeChange?.(resolved);
   });
 
   const classifyLoadedIframe = (): "blocked" | "rendered" | "unknown" => {
@@ -136,11 +179,16 @@ export default function PageFrame(props: PageFrameProps) {
   };
 
   const handleIframeLoad = () => {
+    const classification = classifyLoadedIframe();
+    if (classification === "blocked") {
+      setIframeFailed(true);
+      // Intentionally do NOT call setIframeLoaded(true) or clearLoadTimeout —
+      // the timeout safety net (startLoadTimeout) checks !iframeLoaded() and
+      // remains active to backstop a future false-negative classification.
+      return;
+    }
     setIframeLoaded(true);
     clearLoadTimeout();
-    if (classifyLoadedIframe() === "blocked") {
-      setIframeFailed(true);
-    }
   };
 
   const handleIframeError = () => {
@@ -174,7 +222,7 @@ export default function PageFrame(props: PageFrameProps) {
   return (
     <section
       aria-label="Page preview"
-      class="relative flex h-full min-h-[60vh] flex-col overflow-hidden rounded-lg border border-border bg-card"
+      class="relative flex h-full min-h-[60vh] w-full min-w-0 max-w-full flex-col overflow-hidden rounded-lg border border-border bg-card"
     >
       <Show when={showIframe()}>
         <iframe
@@ -186,6 +234,7 @@ export default function PageFrame(props: PageFrameProps) {
           loading="lazy"
           ref={iframeRef}
           aria-hidden={showOriginalVisible() ? undefined : "true"}
+          inert={showOriginalVisible() ? undefined : true}
           onLoad={handleIframeLoad}
           onError={handleIframeError}
           class={
@@ -222,6 +271,33 @@ export default function PageFrame(props: PageFrameProps) {
         </div>
       </Show>
 
+      <Show when={showDeciding()}>
+        <div
+          data-testid="page-frame-deciding"
+          role="status"
+          aria-live="polite"
+          class="flex flex-1 flex-col items-center justify-center gap-3 p-8 text-center"
+        >
+          <p class="text-sm text-foreground">
+            This page prevents being loaded in a frame. Please select Archived
+            or Screenshot above.
+          </p>
+          <p class="text-xs text-muted-foreground">Auto-switching in ~15s.</p>
+          <div
+            class="h-1 w-full max-w-xs overflow-hidden rounded-full bg-muted"
+            aria-hidden="true"
+          >
+            <div
+              data-testid="page-frame-deciding-progress"
+              class="h-full bg-primary"
+              style={{
+                animation: `pageFrameDecidingProgress ${FALLBACK_COUNTDOWN_MS}ms linear forwards`,
+              }}
+            />
+          </div>
+        </div>
+      </Show>
+
       <Show when={activePreview() === "unavailable"}>
         <div
           data-testid="page-frame-unavailable"
@@ -234,7 +310,7 @@ export default function PageFrame(props: PageFrameProps) {
       </Show>
 
       <div class="flex items-center justify-between gap-2 border-t border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
-        <span class="truncate" title={props.url}>
+        <span class="min-w-0 flex-1 truncate" title={props.url}>
           {props.url}
         </span>
         <a

@@ -484,11 +484,15 @@ describe("AnalyzePage route", () => {
 
     const layout = screen.getByTestId("analyze-layout");
     expect(layout.getAttribute("data-preview-size")).toBe("regular");
-    expect(layout.getAttribute("class")).toContain("lg:grid-cols-[3fr_2fr]");
+    expect(layout.getAttribute("class")).toContain(
+      "lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]",
+    );
 
     fireEvent.click(screen.getByRole("button", { name: "Large" }));
     expect(layout.getAttribute("data-preview-size")).toBe("large");
-    expect(layout.getAttribute("class")).toContain("lg:grid-cols-[5fr_2fr]");
+    expect(layout.getAttribute("class")).toContain(
+      "lg:grid-cols-[minmax(0,5fr)_minmax(0,2fr)]",
+    );
 
     fireEvent.click(screen.getByRole("button", { name: "Max width" }));
     expect(layout.getAttribute("data-preview-size")).toBe("max");
