@@ -1,6 +1,6 @@
 ---
 title: Manage instances
-description: Add, name, and configure the platform instances under your OpenNotes community.
+description: Add, name, and configure the platform instances under your Open Notes community.
 ---
 
 An **instance** is a specific platform deployment attached to your community — for example, a particular Discourse forum or Discord guild. Moderation requests carry a `community_server_id` that identifies the instance the flagged content came from. Keeping instances separate lets you track per-forum or per-guild statistics and configure different moderation tiers for each.
@@ -11,14 +11,14 @@ An **instance** is a specific platform deployment attached to your community —
 |---|---|
 | Discourse | One forum installation (`forum.example.com`) |
 | Discord | One guild (server) |
-| Custom | Any platform you build using the adapter contract |
+| Custom | Any platform you build using the public API contract |
 
 ## Instance identifiers
 
 Each instance is identified by a **`community_server_id`** — a string that is meaningful on the source platform (e.g., a Discord guild ID or a Discourse site URL slug). You choose this value when you submit your first request from a new instance; the server auto-creates the `community_server` record on first contact when it can resolve the platform identity from your `X-Adapter-*` headers.
 
 <Note>
-  The `community_server_id` you set in your adapter must be stable. Changing it after you have existing notes or ratings will break historical linkage.
+  The `community_server_id` you set in your integration must be stable. Changing it after you have existing notes or ratings will break historical linkage.
 </Note>
 
 ## Viewing instances
@@ -31,9 +31,9 @@ Your registered instances appear in the **API Keys** dashboard under each key's 
 
 ### Decide on a stable identifier
 
-For Discourse this is typically the Discourse site URL or a short stable slug. For Discord it is the guild's snowflake ID. Document it in your adapter's configuration.
+For Discourse this is typically the Discourse site URL or a short stable slug. For Discord it is the guild's snowflake ID. Document it in your integration's configuration.
 
-### Configure the adapter
+### Configure the integration
 
 Pass the identifier as:
 - The `community_server_id` attribute in every `POST /api/public/v1/requests` body.
@@ -69,7 +69,7 @@ After the first successful request, the instance appears in the dashboard. You c
 
 ## Looking up an instance
 
-Use the `GET /api/public/v1/community-servers/lookup` endpoint to resolve a platform community server ID to its OpenNotes UUID:
+Use the `GET /api/public/v1/community-servers/lookup` endpoint to resolve a platform community server ID to its Open Notes UUID:
 
 ```bash
 curl "https://api.opennotes.ai/api/public/v1/community-servers/lookup?platform_id=my-forum-slug" \

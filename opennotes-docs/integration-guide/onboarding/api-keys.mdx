@@ -1,6 +1,6 @@
 ---
 title: Mint API keys
-description: Create a platform:adapter-scoped API key that your adapter uses to call /api/public/v1.
+description: Create a platform:adapter-scoped API key that your integration uses to call /api/public/v1.
 ---
 
 Every call to `/api/public/v1` must be authenticated with an API key in the `Authorization: Bearer` header. This page explains how to mint a key, which scopes to request, how to store the secret, and how to rotate when needed.
@@ -15,14 +15,14 @@ Every call to `/api/public/v1` must be authenticated with an API key in the `Aut
 ## The platform:adapter scope
 
 <Note>
-  Adapter keys use the scope `platform:adapter`. This scope is distinct from user-grantable scopes. Only community owners with `platform_admin` status can mint `platform:adapter` keys. The platform.opennotes.ai dashboard handles this automatically for registered communities.
+  Integration keys use the scope `platform:adapter`. This scope is distinct from user-grantable scopes. Only community owners with `platform_admin` status can mint `platform:adapter` keys. The platform.opennotes.ai dashboard handles this automatically for registered communities.
 </Note>
 
 `platform:adapter` unlocks:
 - `POST /api/public/v1/requests` — submit content for review
 - `GET /api/public/v1/requests` / `GET /api/public/v1/requests/{id}` — retrieve request status
 - `PATCH /api/public/v1/requests/{id}` — update request metadata
-- `POST /api/public/v1/moderation-actions` — record adapter-side moderation actions
+- `POST /api/public/v1/moderation-actions` — record integration-side moderation actions
 - `GET /api/public/v1/notes` and note sub-resources — read community notes
 - `POST /api/public/v1/ratings` — submit ratings
 - `GET /api/public/v1/community-servers/lookup` — resolve instance IDs
@@ -82,7 +82,7 @@ curl https://api.opennotes.ai/api/public/v1/requests \
   -H "X-Adapter-Scope: my-community-id"
 ```
 
-See [Headers and auth](/integration-guide/concepts/headers-and-auth) for the full header set your adapter must send.
+See [Headers and auth](/integration-guide/concepts/headers-and-auth) for the full header set your integration must send.
 
 ## Rotation procedure
 

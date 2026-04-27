@@ -1,9 +1,9 @@
 ---
-title: Adapter choreography
-description: How an adapter takes a post from "just flagged" to "community consensus applied" via /api/public/v1.
+title: Integration walkthrough
+description: How an integration takes a post from "just flagged" to "community consensus applied" via /api/public/v1.
 ---
 
-This walkthrough traces a single post through the complete OpenNotes lifecycle. Each step maps to a concrete `/api/public/v1` call that your adapter makes — in exactly this order.
+This walkthrough traces a single post through the complete Open Notes lifecycle. Each step maps to a concrete `/api/public/v1` call that your integration makes — in exactly this order.
 
 ## The five-step sequence
 
@@ -56,10 +56,10 @@ This walkthrough traces a single post through the complete OpenNotes lifecycle. 
 Every call in this walkthrough requires:
 
 - An `Authorization: Bearer <api_key>` header (see [Authentication](/integration-guide/concepts/headers-and-auth) for how to obtain a key)
-- A full set of `X-Adapter-*` headers that identify your adapter, community, and the acting user (see [Headers and auth](/integration-guide/concepts/headers-and-auth))
+- A full set of `X-Adapter-*` headers that identify your integration, community, and the acting user (see [Headers and auth](/integration-guide/concepts/headers-and-auth))
 
-Consult the [Adapter contract](/integration-guide/concepts/adapter-contract) for the full list of obligations before shipping to production.
+Consult the [Integration Guide overview](/integration-guide/overview) for the full list of integration responsibilities before shipping to production.
 
 ## Reference implementation
 
-The [Discourse plugin](https://github.com/opennotes-ai/opennotes/blob/main/opennotes-discourse/plugin/lib/opennotes/client.rb) is the canonical adapter. Every code excerpt in this walkthrough points at the corresponding method in that file.
+The [Discourse plugin](https://github.com/opennotes-ai/opennotes/blob/main/opennotes-discourse/plugin/lib/opennotes/client.rb) is the canonical integration. Every code excerpt in this walkthrough points at the corresponding method in that file.

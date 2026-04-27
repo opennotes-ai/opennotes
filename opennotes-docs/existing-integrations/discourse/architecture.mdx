@@ -1,13 +1,13 @@
 ---
 title: Plugin architecture
-description: How the Discourse plugin maps the universal adapter contract onto Ember, Sidekiq, and ReviewableOpenNotesItem.
+description: How the Discourse plugin maps the public API contract onto Ember, Sidekiq, and ReviewableOpenNotesItem.
 ---
 
-This page is an orientation to the plugin's moving parts for contributors and adapter authors. The
-plugin is the **reference implementation** of the [adapter contract](/integration-guide/concepts/adapter-contract)
-— everything here traces back to that universal spec.
+This page is an orientation to the plugin's moving parts for contributors and integration authors. The
+plugin is the **reference implementation** of the [public API contract](/integration-guide/overview)
+— everything here traces back to that spec.
 
-See the [API reference](/api-reference/overview) for the full OpenNotes server API that the plugin
+See the [API reference](/api-reference/overview) for the full Open Notes server API that the plugin
 calls.
 
 ## High-level structure
@@ -18,7 +18,7 @@ plugin/
   lib/opennotes/
     client.rb                      # HTTP client — auth, retries, identity headers
     post_mapper.rb                 # Discourse Post → OpenNotes request payload
-    user_mapper.rb                 # Discourse User → adapter identity headers
+    user_mapper.rb                 # Discourse User → X-Adapter-* identity headers
     action_executor.rb             # Hide/unhide/annotate post side-effects
     status_mapper.rb               # OpenNotes state → Discourse display status
     community_server_resolver.rb   # Resolves community server UUID from server
@@ -46,7 +46,7 @@ contract:
 - `X-Adapter-Platform`, `X-Adapter-User-Id`, `X-Adapter-Username`, `X-Adapter-Trust-Level`,
   `X-Adapter-Admin`, `X-Adapter-Moderator`, `X-Adapter-Scope` — per-request user identity headers
   added when a `user:` argument is passed. These map to the [scopes](/integration-guide/concepts/scopes)
-  concept in the adapter contract.
+  concept in the public API contract.
 
 All paths are constructed relative to `PUBLIC_API_PREFIX = "/api/public/v1"`, defined in
 `lib/opennotes.rb`. The client retries on `429`, `500`, `502`, `503`, and `504` with exponential
@@ -59,7 +59,7 @@ backoff (up to 3 retries).
     Triggered by `DiscourseEvent.on(:post_created)` and `(:post_edited)` in `plugin.rb`.
 
     Flow:
-    1. Maps the Discourse `Post` to an OpenNotes request payload via `OpenNotes::PostMapper`.
+    1. Maps the Discourse `Post` to an Open Notes request payload via `OpenNotes::PostMapper`.
     2. POSTs to `/api/public/v1/requests`.
     3. Reads `moderation_action` from the response and branches:
        - `auto_hide` / `immediate_action` → hides the post, creates a `ReviewableOpennotesItem`
@@ -69,7 +69,7 @@ backoff (up to 3 retries).
   </Tab>
   <Tab title="SyncFlagToOpennotes (regular)">
     Triggered by `DiscourseEvent.on(:flag_created)` when `opennotes_route_flags_to_community` is
-    enabled. Forwards the user's flag to the OpenNotes server so it can be surfaced as a community
+    enabled. Forwards the user's flag to the Open Notes server so it can be surfaced as a community
     review item, not only as a staff flag.
   </Tab>
   <Tab title="SyncScoringStatus (scheduled, every 5 min)">
@@ -84,7 +84,7 @@ backoff (up to 3 retries).
 
 ## ReviewableOpenNotesItem
 
-`ReviewableOpennotesItem` subclasses Discourse's `Reviewable` and adds an OpenNotes-specific state
+`ReviewableOpennotesItem` subclasses Discourse's `Reviewable` and adds an Open Notes-specific state
 machine stored in `reviewable.payload`.
 
 States:

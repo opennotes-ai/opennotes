@@ -3,7 +3,7 @@ title: "Step 2 — Identify the community"
 description: Resolve the community-server UUID via GET /api/public/v1/community-servers/lookup.
 ---
 
-Every request and moderation action is scoped to a community-server UUID — a stable internal identifier that OpenNotes assigns when your community is registered. `GET /api/public/v1/community-servers/lookup` converts your platform-specific identifier (e.g. a Discourse site slug or a Discord guild ID) into that UUID.
+Every request and moderation action is scoped to a community-server UUID — a stable internal identifier that Open Notes assigns when your community is registered. `GET /api/public/v1/community-servers/lookup` converts your platform-specific identifier (e.g. a Discourse site slug or a Discord guild ID) into that UUID.
 
 You should cache the UUID aggressively. It never changes for a given community. Re-fetching it on every request adds unnecessary latency.
 
@@ -28,7 +28,7 @@ curl -X GET "https://api.opennotes.ai/api/public/v1/community-servers/lookup" \
 
 | Parameter | Required | Description |
 |-----------|----------|-------------|
-| `platform` | yes | Adapter platform identifier, e.g. `discourse` |
+| `platform` | yes | Integration platform identifier, e.g. `discourse` |
 | `platform_community_server_id` | yes | Your platform-specific community identifier (slug, guild ID, subreddit, etc.) |
 
 ## Response
@@ -45,7 +45,7 @@ HTTP 200:
       "platform": "discourse",
       "platform_community_server_id": "my-community",
       "name": "My Community",
-      "description": "A community powered by OpenNotes moderation.",
+      "description": "A community powered by Open Notes moderation.",
       "is_active": true,
       "is_public": true,
       "flashpoint_detection_enabled": false,
@@ -56,11 +56,11 @@ HTTP 200:
 }
 ```
 
-A 404 means your community has not been registered. Contact the OpenNotes team or follow the [onboarding guide](/integration-guide/onboarding) to provision a community server.
+A 404 means your community has not been registered. Contact the Open Notes team or follow the [onboarding guide](/integration-guide/onboarding) to provision a community server.
 
 ## What to pass to the next step
 
-Capture `data.id` — this is your `community_server_id`. Every subsequent call in the adapter lifecycle requires this UUID.
+Capture `data.id` — this is your `community_server_id`. Every subsequent call in the integration lifecycle requires this UUID.
 
 ## Reference implementation
 
@@ -79,7 +79,7 @@ end
 
 The result is stored in `PluginStore` (persistent across restarts) and in Discourse's in-memory cache with a 5-minute TTL (`CACHE_TTL = 5.minutes`). On a cache miss, the store is checked before hitting the API.
 
-Never hard-code the UUID. Use this lookup on startup and cache the result — the UUID is stable but the lookup ensures your adapter stays correct if a community is migrated or re-provisioned.
+Never hard-code the UUID. Use this lookup on startup and cache the result — the UUID is stable but the lookup ensures your integration stays correct if a community is migrated or re-provisioned.
 
 ## API reference
 

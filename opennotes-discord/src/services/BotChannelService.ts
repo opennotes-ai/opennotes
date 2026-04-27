@@ -52,7 +52,7 @@ export class BotChannelService {
       const channel = await guild.channels.create({
         name: channelName,
         type: ChannelType.GuildText,
-        topic: 'OpenNotes bot channel - use slash commands to interact with the bot',
+        topic: 'Open Notes bot channel - use slash commands to interact with the bot',
       });
 
       logger.info('Created bot channel', {

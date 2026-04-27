@@ -104,7 +104,7 @@ describe('about-opennotes command', () => {
       const container = containerBuilder.toJSON();
       const allContent = JSON.stringify(container.components);
 
-      expect(allContent).toContain('About OpenNotes');
+      expect(allContent).toContain('About Open Notes');
       expect(allContent).toContain('community moderation tool');
     });
 
@@ -283,7 +283,7 @@ describe('about-opennotes command', () => {
       );
 
       expect(mockInteraction.editReply).toHaveBeenCalledWith({
-        content: expect.stringContaining('Failed to display information about OpenNotes'),
+        content: expect.stringContaining('Failed to display information about Open Notes'),
       });
     });
   });

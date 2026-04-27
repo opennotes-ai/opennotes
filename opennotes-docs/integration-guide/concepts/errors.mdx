@@ -1,13 +1,13 @@
 ---
 title: Error shapes
-description: The canonical error envelope returned by /api/public/v1 and how adapters should classify and react to each failure.
+description: The canonical error envelope returned by /api/public/v1 and how integrations should classify and react to each failure.
 ---
 
-All errors from `/api/public/v1` follow predictable shapes. Understanding them lets your adapter distinguish transient failures (worth retrying) from permanent failures (worth alerting on).
+All errors from `/api/public/v1` follow predictable shapes. Understanding them lets your integration distinguish transient failures (worth retrying) from permanent failures (worth alerting on).
 
 ## HTTP status code semantics
 
-| Status | Meaning | Adapter action |
+| Status | Meaning | Integration action |
 |---|---|---|
 | `400 Bad Request` | Malformed request body or invalid field values | Fix the request — do not retry |
 | `401 Unauthorized` | Missing, expired, or invalid API key | Check key configuration — do not retry until fixed |
@@ -88,7 +88,7 @@ Non-retryable: 400, 401, 403, 404, 409, 422
 
 Recommended backoff for retryable errors: `0.5 s × 2^(attempt - 1)` with a cap at 60 s and a maximum of 3 attempts. This matches the Discourse plugin's `INITIAL_BACKOFF = 0.5` / `MAX_RETRIES = 3` constants.
 
-## Example: handling errors in an adapter
+## Example: handling errors in an integration
 
 <Tabs>
   <Tab title="Ruby (Discourse plugin pattern)">
@@ -147,7 +147,7 @@ Recommended backoff for retryable errors: `0.5 s × 2^(attempt - 1)` with a cap 
 
 ## Idempotency note
 
-`POST /api/public/v1/requests` is idempotent on `request_id`. If you retry a request that already succeeded, the server returns HTTP 200 with the existing record rather than HTTP 201. Your adapter should treat both 200 and 201 as success.
+`POST /api/public/v1/requests` is idempotent on `request_id`. If you retry a request that already succeeded, the server returns HTTP 200 with the existing record rather than HTTP 201. Your integration should treat both 200 and 201 as success.
 
 ## See also
 

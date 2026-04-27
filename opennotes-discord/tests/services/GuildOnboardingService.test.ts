@@ -114,7 +114,7 @@ describe('GuildOnboardingService', () => {
 
     const mockBotUser = {
       id: 'bot-user-123',
-      username: 'OpenNotes',
+      username: 'Open Notes',
       bot: true,
     };
 
@@ -179,14 +179,14 @@ describe('GuildOnboardingService', () => {
       expect(container.data.accent_color).toBe(V2_COLORS.PRIMARY);
     });
 
-    it('should include About OpenNotes header', async () => {
+    it('should include About Open Notes header', async () => {
       await service.postWelcomeToChannel(mockChannel);
 
       const sendCall = mockChannel.send.mock.calls[0][0];
       const container = sendCall.components[0];
       const allContent = JSON.stringify(container.toJSON().components);
 
-      expect(allContent).toContain('About OpenNotes');
+      expect(allContent).toContain('About Open Notes');
     });
 
     it('should include all information sections', async () => {
@@ -679,7 +679,7 @@ describe('GuildOnboardingService', () => {
 
       mockBotUser = {
         id: 'bot-user-123',
-        username: 'OpenNotes',
+        username: 'Open Notes',
         bot: true,
       };
 
@@ -951,7 +951,7 @@ describe('GuildOnboardingService', () => {
 
       mockBotUser = {
         id: 'bot-user-123',
-        username: 'OpenNotes',
+        username: 'Open Notes',
         bot: true,
       };
 

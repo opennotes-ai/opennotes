@@ -54,7 +54,7 @@ export async function execute(interaction: ChatInputCommandInteraction): Promise
     });
 
     await interaction.editReply({
-      content: formatErrorForUser(errorId, 'Failed to display information about OpenNotes.'),
+      content: formatErrorForUser(errorId, 'Failed to display information about Open Notes.'),
     });
   }
 }

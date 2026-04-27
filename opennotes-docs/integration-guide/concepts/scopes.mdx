@@ -16,19 +16,19 @@ Every endpoint that requires a specific scope calls `require_scope_or_admin(user
 
 ## The platform:adapter scope
 
-`platform:adapter` is the scope every external adapter needs. It signals that the caller is a trusted adapter speaking on behalf of a community. Without it, the server will not read `X-Adapter-*` headers for user identity — they are simply ignored.
+`platform:adapter` is the scope every external integration needs. It signals that the caller is a trusted integration speaking on behalf of a community. Without it, the server will not read `X-Adapter-*` headers for user identity — they are simply ignored.
 
 `platform:adapter` keys can only be minted by users with `platform_admin` role (convention: the community owner). The platform.opennotes.ai dashboard enforces this — you cannot select `platform:adapter` through the user-facing scope picker unless you are the community owner.
 
 ## All available scopes
 
 <Tabs>
-  <Tab title="Adapter scopes">
-    These are the scopes an external adapter typically uses:
+  <Tab title="Integration scopes">
+    These are the scopes an external integration typically uses:
 
     | Scope | What it unlocks |
     |---|---|
-    | `platform:adapter` | Enables `X-Adapter-*` header identity; required for all adapter operations |
+    | `platform:adapter` | Enables `X-Adapter-*` header identity; required for all integration operations |
     | `requests:read` | `GET /api/public/v1/requests`, `GET /api/public/v1/requests/{id}` |
     | `requests:write` | `POST /api/public/v1/requests`, `PATCH /api/public/v1/requests/{id}` |
     | `notes:read` | `GET /api/public/v1/notes`, `GET /api/public/v1/notes/{id}` |

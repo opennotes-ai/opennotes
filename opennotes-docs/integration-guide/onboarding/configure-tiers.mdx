@@ -3,7 +3,7 @@ title: Configure tiers
 description: Pick per-category moderation tiers and thresholds for your community.
 ---
 
-OpenNotes uses a two-tier moderation model. **Tier 1** is fully automated — the platform takes action without human review. **Tier 2** sends the content to community raters and only acts once consensus is reached. Tiers are configurable per content category so you can apply stricter automation to egregious content while leaving nuanced cases to the community.
+Open Notes uses a two-tier moderation model. **Tier 1** is fully automated — the platform takes action without human review. **Tier 2** sends the content to community raters and only acts once consensus is reached. Tiers are configurable per content category so you can apply stricter automation to egregious content while leaving nuanced cases to the community.
 
 ## The two tiers at a glance
 
@@ -22,7 +22,7 @@ OpenNotes uses a two-tier moderation model. **Tier 1** is fully automated — th
 
 ## How scoring works
 
-When your adapter calls `POST /api/public/v1/requests`, the server:
+When your integration calls `POST /api/public/v1/requests`, the server:
 
 1. Scores the content with its AI model.
 2. Compares the score to the **Tier 1 threshold** for each matched category.
@@ -33,7 +33,7 @@ When your adapter calls `POST /api/public/v1/requests`, the server:
 ## Configuring tiers
 
 <Note>
-  Tier configuration is currently managed through the OpenNotes team for new communities. Self-serve tier configuration will be available in a future platform release. Contact the team via the [Discourse community](https://community.opennotes.ai) to update your thresholds.
+  Tier configuration is currently managed through the Open Notes team for new communities. Self-serve tier configuration will be available in a future platform release. Contact the team via the [Discourse community](https://community.opennotes.ai) to update your thresholds.
 </Note>
 
 When requesting configuration, specify:
@@ -41,7 +41,7 @@ When requesting configuration, specify:
 - **Category names** — e.g., `spam`, `harassment`, `misinformation`
 - **Tier 1 threshold** (0.0–1.0) — the auto-action confidence floor
 - **Tier 2 threshold** (0.0–1.0) — the community-review confidence floor (must be ≤ Tier 1 threshold)
-- **Action type** — `hide`, `delete`, `flag`, or `notify` (adapter-defined)
+- **Action type** — `hide`, `delete`, `flag`, or `notify` (integration-defined)
 
 ### Example configuration
 
@@ -53,13 +53,13 @@ When requesting configuration, specify:
 
 In the example above, `misinformation` never auto-acts — all flagged content goes to community review.
 
-## Adapter responsibilities
+## Integration responsibilities
 
-Your adapter must handle both outcomes:
+Your integration must handle both outcomes:
 
-**Tier 1 auto-action** — the server calls your registered webhook with a `moderation.decision` event immediately. Your adapter should apply the action without waiting for community consensus.
+**Tier 1 auto-action** — the server calls your registered webhook with a `moderation.decision` event immediately. Your integration should apply the action without waiting for community consensus.
 
-**Tier 2 community review** — the server queues the content. Your adapter can optionally mark the content as "under review" in the UI. When consensus is reached the server sends the same `moderation.decision` webhook event.
+**Tier 2 community review** — the server queues the content. Your integration can optionally mark the content as "under review" in the UI. When consensus is reached the server sends the same `moderation.decision` webhook event.
 
 ```bash
 POST https://api.opennotes.ai/api/public/v1/moderation-actions \
@@ -81,9 +81,9 @@ POST https://api.opennotes.ai/api/public/v1/moderation-actions \
 
 ## Discourse reference
 
-The Discourse plugin reads the moderation decision from the webhook payload and calls the Discourse Silence/Delete API accordingly. See the [Discourse plugin architecture](/existing-integrations/discourse/architecture) for how the plugin maps OpenNotes decisions to Discourse actions.
+The Discourse plugin reads the moderation decision from the webhook payload and calls the Discourse Silence/Delete API accordingly. See the [Discourse plugin architecture](/existing-integrations/discourse/architecture) for how the plugin maps Open Notes decisions to Discourse actions.
 
 ## See also
 
-- [Webhooks](/integration-guide/concepts/webhooks) — how decisions are delivered back to your adapter
-- [Adapter contract](/integration-guide/concepts/adapter-contract) — full list of adapter responsibilities
+- [Webhooks](/integration-guide/concepts/webhooks) — how decisions are delivered back to your integration
+- [Integration Guide overview](/integration-guide/overview) — full list of integration responsibilities

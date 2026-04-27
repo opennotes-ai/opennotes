@@ -149,7 +149,7 @@ export async function getBotChannelOrRedirect(
     command: interaction.commandName,
   });
 
-  const noChannelMessage = `The bot channel "${botChannelName}" was not found. Please ask an administrator to set up the OpenNotes bot channel.`;
+  const noChannelMessage = `The bot channel "${botChannelName}" was not found. Please ask an administrator to set up the Open Notes bot channel.`;
   await replyToInteraction(interaction, noChannelMessage);
 
   return {

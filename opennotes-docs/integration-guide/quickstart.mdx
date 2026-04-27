@@ -66,7 +66,7 @@ A successful call returns **HTTP 201** with a JSON:API resource body:
 
 ### Poll or receive a webhook
 
-OpenNotes scores the content asynchronously. You can either poll `GET /api/public/v1/requests/{request_id}` or register a webhook to receive the consensus decision automatically. See [Webhooks](/integration-guide/concepts/webhooks) for delivery semantics.
+Open Notes scores the content asynchronously. You can either poll `GET /api/public/v1/requests/{request_id}` or register a webhook to receive the consensus decision automatically. See [Webhooks](/integration-guide/concepts/webhooks) for delivery semantics.
 
 </Steps>
 
@@ -79,8 +79,8 @@ OpenNotes scores the content asynchronously. You can either poll `GET /api/publi
   <Card title="Manage instances" icon="server" href="/integration-guide/onboarding/manage-instances">
     Add Discourse forums, Discord guilds, or other platform instances.
   </Card>
-  <Card title="Adapter contract" icon="handshake" href="/integration-guide/concepts/adapter-contract">
-    What every adapter must do and what the server guarantees in return.
+  <Card title="Public API contract" icon="handshake" href="/integration-guide/overview">
+    What every integration must do and what the server guarantees in return.
   </Card>
   <Card title="Headers and auth" icon="lock" href="/integration-guide/concepts/headers-and-auth">
     Authorization bearer + X-Adapter-* header flow end-to-end.

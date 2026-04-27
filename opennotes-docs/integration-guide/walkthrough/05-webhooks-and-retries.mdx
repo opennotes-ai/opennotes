@@ -9,7 +9,7 @@ The four steps before this one describe the happy path. This page covers everyth
 
 See [Webhooks](/integration-guide/concepts/webhooks) for the full conceptual overview. In brief:
 
-- OpenNotes sends an HTTP POST to your registered endpoint with a JSON body.
+- Open Notes sends an HTTP POST to your registered endpoint with a JSON body.
 - The `X-OpenNotes-Signature` header contains an HMAC-SHA256 of the raw request body, keyed with the `secret` you supplied when registering the webhook.
 - Verify the signature before processing the payload.
 
@@ -29,7 +29,7 @@ Register a webhook via `POST /api/public/v1/webhooks` (not shown in this walkthr
 
 ## Retry schedule
 
-OpenNotes retries failed webhook deliveries (any non-2xx response or connection timeout) using exponential backoff:
+Open Notes retries failed webhook deliveries (any non-2xx response or connection timeout) using exponential backoff:
 
 | Attempt | Delay before retry |
 |---------|--------------------|
@@ -68,11 +68,11 @@ Source: [`OpenNotes::Client#request_with_retries`](https://github.com/opennotes-
 
 The Discourse plugin does not use webhooks today — it polls `GET /api/public/v1/moderation-actions?action_state=proposed` on a background schedule. This is a valid production strategy and guarantees eventual delivery even if your webhook endpoint is temporarily unreachable.
 
-Combine both approaches for the most resilient adapter: process webhook deliveries as they arrive, then run a periodic poll to catch anything missed.
+Combine both approaches for the most resilient integration: process webhook deliveries as they arrive, then run a periodic poll to catch anything missed.
 
 ## Idempotency — preventing double-apply
 
-OpenNotes delivers each action **at least once**. Your endpoint may receive the same action ID more than once (re-delivery after a timeout, a duplicate webhook fire, or a poll that races with a push).
+Open Notes delivers each action **at least once**. Your endpoint may receive the same action ID more than once (re-delivery after a timeout, a duplicate webhook fire, or a poll that races with a push).
 
 Guard every action application with a check against the action state you last recorded:
 
@@ -94,11 +94,11 @@ def self.unhide_post(post)
 end
 ```
 
-The same guard must exist at the OpenNotes layer: after you call `PATCH /moderation-actions/{id}` with `action_state=applied`, any subsequent delivery of that action ID is safe to discard.
+The same guard must exist at the Open Notes layer: after you call `PATCH /moderation-actions/{id}` with `action_state=applied`, any subsequent delivery of that action ID is safe to discard.
 
 ## Ordering guarantees
 
-OpenNotes does **not** guarantee that moderation actions arrive in the order they were created. If a post receives two sequential actions (`hide` then `unhide`), the second action may arrive before the first under high load or after a re-delivery.
+Open Notes does **not** guarantee that moderation actions arrive in the order they were created. If a post receives two sequential actions (`hide` then `unhide`), the second action may arrive before the first under high load or after a re-delivery.
 
 To handle out-of-order delivery:
 
@@ -108,9 +108,9 @@ To handle out-of-order delivery:
 
 ## TASK-1453 — evolving toward exactly-once delivery
 
-Today's guarantee is **at-least-once**. TASK-1453 tracks the work to add exactly-once delivery semantics. Until that ships, adapters must assume that any action may be re-delivered and apply the idempotency guards described above.
+Today's guarantee is **at-least-once**. TASK-1453 tracks the work to add exactly-once delivery semantics. Until that ships, integrations must assume that any action may be re-delivered and apply the idempotency guards described above.
 
-When TASK-1453 lands, the webhook payload will include a `delivery_id` field. Adapters can use that ID as a deduplication key in addition to the `action_id`.
+When TASK-1453 lands, the webhook payload will include a `delivery_id` field. Integrations can use that ID as a deduplication key in addition to the `action_id`.
 
 ## Summary checklist
 
@@ -122,4 +122,4 @@ When TASK-1453 lands, the webhook payload will include a `delivery_id` field. Ad
 
 ---
 
-You have now walked through the complete adapter lifecycle. Return to the [walkthrough overview](/integration-guide/walkthrough) or consult the [Adapter contract](/integration-guide/concepts/adapter-contract) for the full list of obligations before shipping to production.
+You have now walked through the complete integration lifecycle. Return to the [walkthrough overview](/integration-guide/walkthrough) or consult the [Integration Guide overview](/integration-guide/overview) for the full list of integration obligations before shipping to production.

@@ -53,7 +53,7 @@ Open Notes empowers communities to self-moderate by surfacing context rather tha
 export function buildWelcomeContainer(): ContainerBuilder {
   return createContainer(V2_COLORS.PRIMARY)
     .addTextDisplayComponents(
-      new TextDisplayBuilder().setContent('## About OpenNotes')
+      new TextDisplayBuilder().setContent('## About Open Notes')
     )
     .addTextDisplayComponents(
       new TextDisplayBuilder().setContent(

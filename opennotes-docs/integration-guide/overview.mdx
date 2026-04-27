@@ -1,11 +1,11 @@
 ---
 title: Integration Guide overview
-description: Build an OpenNotes adapter for any platform using the universal adapter contract.
+description: Build an Open Notes integration for any platform using the public API contract.
 ---
 
-The Integration Guide is for anyone wiring OpenNotes into a new platform.
-Every adapter — Discourse today, Mattermost or Ghost tomorrow — speaks the
-same contract:
+The Integration Guide is for anyone wiring Open Notes into a new platform.
+Every integration — Discourse today, Mattermost or Ghost tomorrow — speaks the
+same public API contract:
 
 - Authenticate with a `platform:adapter`-scoped API key minted on
   [platform.opennotes.ai](https://platform.opennotes.ai).
@@ -22,19 +22,100 @@ same contract:
     moderation tier. This unlocks everything else.
   </Step>
   <Step title="Concepts">
-    Learn the three things every request carries: an API key (scope), adapter
-    headers (user identity), and the endpoints those keys can reach.
+    Learn the three things every request carries: an API key (scope), identity
+    headers (user context), and the endpoints those keys can reach.
   </Step>
-  <Step title="Adapter choreography">
+  <Step title="Integration walkthrough">
     Walk through the lifecycle of a single piece of content: classification
     request → community review → webhook-driven action. This is the core loop
-    every adapter implements.
+    every integration implements.
   </Step>
 </Steps>
 
-## When in doubt
+## The public API contract
 
-If this guide is ambiguous, treat the
-[Discourse plugin](/existing-integrations/discourse/overview) as the source
-of truth. It implements the contract end-to-end in production and exercises
-every endpoint you'll need.
+An **integration** is any service that connects a community platform
+(Discourse, Discord, Reddit, …) to the Open Notes API. The public API contract
+defines the exact responsibilities on each side. Follow it and your integration
+gets scoring, community review, and decision delivery automatically.
+
+### What an integration does
+
+<CardGroup cols={2}>
+  <Card title="Submit content" icon="upload">
+    Call `POST /api/public/v1/requests` with the content and platform context headers whenever a user posts or a moderator flags something.
+  </Card>
+  <Card title="Carry user identity" icon="user">
+    Send `X-Adapter-*` headers so Open Notes knows who submitted the content. The server uses this to weight rater influence and detect patterns.
+  </Card>
+  <Card title="Apply decisions" icon="gavel">
+    Listen for `moderation.decision` webhooks and apply the action on the source platform (hide, delete, flag, notify).
+  </Card>
+  <Card title="Record actions" icon="clipboard-list">
+    After applying a decision, call `POST /api/public/v1/moderation-actions` so the audit trail is complete.
+  </Card>
+</CardGroup>
+
+### What the server guarantees
+
+| Guarantee | Detail |
+|---|---|
+| **Idempotent submission** | Submitting the same `request_id` twice returns the existing record, not a duplicate. |
+| **At-least-once delivery** | Webhooks are retried up to 3 times with exponential backoff (10 s, 30 s, 90 s). |
+| **Authenticated identity** | `X-Platform-*` spoofing from external callers is stripped by middleware. Only valid `platform:adapter` keys can attach user context via `X-Adapter-*`. |
+| **Stable IDs** | Request IDs, note IDs, and rating IDs are UUID v7 and never reused. |
+| **Public API isolation** | The `/api/public/v1` surface is versioned and will not break without a major version bump and a deprecation notice. |
+
+### Minimum viable integration
+
+A minimal integration needs exactly three things:
+
+1. A `platform:adapter`-scoped API key (see [Mint API keys](/integration-guide/onboarding/api-keys)).
+2. Logic to call `POST /api/public/v1/requests` when content should be reviewed.
+3. A webhook endpoint that receives `moderation.decision` events and applies the action.
+
+The [Quickstart](/integration-guide/quickstart) shows the minimum call. You can grow from there.
+
+### Header shape (summary)
+
+Every request your integration makes must include:
+
+```
+Authorization: Bearer <api_key>
+X-Adapter-Platform: discourse        # or: discord, reddit, custom
+X-Adapter-User-Id: <platform_user_id>
+X-Adapter-Username: <username>
+X-Adapter-Trust-Level: <0-4>
+X-Adapter-Admin: false
+X-Adapter-Moderator: false
+X-Adapter-Scope: <community_server_id>
+```
+
+See [Headers and auth](/integration-guide/concepts/headers-and-auth) for the full semantics and failure modes.
+
+### Security boundary
+
+The server enforces two layers of security:
+
+1. **API key authentication** — the `Authorization: Bearer` header is checked first. A missing or invalid key returns HTTP 401.
+2. **Scope check** — the key must include `platform:adapter`. Any key without this scope returns HTTP 403 on integration endpoints.
+
+`X-Platform-*` headers (used by internal services) are stripped from all external requests by `InternalHeaderValidationMiddleware` before they reach any route handler. External integrations cannot spoof platform-level identity — they can only assert user-level identity via `X-Adapter-*`, which is gated behind the `platform:adapter` scope check.
+
+## The Discourse plugin as reference implementation
+
+The [Discourse plugin](/existing-integrations/discourse/overview) is the canonical reference. It implements the full public API contract end-to-end in production. **If this guide is ambiguous, treat the Discourse plugin as the source of truth** — its source code is the tie-breaker.
+
+| Contract piece | Discourse plugin implementation |
+|---|---|
+| Submit content | `OpenNotes::Client#post("/api/public/v1/requests", ...)` called from a `PostCustomField` job |
+| Carry user identity | `execute_request` sets all six `X-Adapter-*` headers from the Discourse `User` object |
+| Apply decisions | Discourse Silence / Hide Post / Delete API called from the webhook handler |
+| Record actions | `POST /api/public/v1/moderation-actions` called after every platform action |
+| Auth | `X-API-Key` header with the key stored in the `opennotes_api_key` site setting |
+
+The Ruby client lives at `plugin/lib/opennotes/client.rb`. Reading it is the fastest way to understand the full flow.
+
+## Walkthrough
+
+For a step-by-step end-to-end guide with real examples see [Integration walkthrough](/integration-guide/walkthrough/index).

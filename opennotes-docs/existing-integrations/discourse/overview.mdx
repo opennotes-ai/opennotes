@@ -1,15 +1,15 @@
 ---
 title: Discourse plugin overview
-description: What the OpenNotes Discourse plugin does, who it's for, and how the pieces fit.
+description: What the Open Notes Discourse plugin does, who it's for, and how the pieces fit.
 ---
 
-The OpenNotes Discourse plugin adds AI-powered content moderation with community oversight to your
-forum. It is the **reference implementation** of the [adapter contract](/integration-guide/concepts/adapter-contract)
-— every decision made during its design is the tie-breaker for ambiguity in the universal spec.
+The Open Notes Discourse plugin adds AI-powered content moderation with community oversight to your
+forum. It is the **reference implementation** of the [public API contract](/integration-guide/overview)
+— every decision made during its design is the tie-breaker for ambiguity in the integration spec.
 
 ## What it does
 
-When a post is created or edited in a monitored category, the plugin sends it to the OpenNotes
+When a post is created or edited in a monitored category, the plugin sends it to the Open Notes
 server for classification. The response determines which of two paths the post takes.
 
 ### Two-tier moderation
@@ -65,6 +65,6 @@ If the community votes to overturn an automated action:
     What community members see and how review voting works.
   </Card>
   <Card title="Architecture" icon="code" href="/existing-integrations/discourse/architecture">
-    Ember components, Sidekiq jobs, and how the plugin maps the adapter contract.
+    Ember components, Sidekiq jobs, and how the plugin maps the public API contract.
   </Card>
 </CardGroup>

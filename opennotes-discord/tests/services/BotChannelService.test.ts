@@ -22,7 +22,7 @@ describe('BotChannelService', () => {
 
     mockRole = {
       id: 'role-123',
-      name: 'OpenNotes',
+      name: 'Open Notes',
     };
 
     mockBotMember = discordMemberFactory.build({
@@ -115,7 +115,7 @@ describe('BotChannelService', () => {
 
       expect(mockGuild.channels.create).toHaveBeenCalledWith(
         expect.objectContaining({
-          topic: expect.stringContaining('OpenNotes'),
+          topic: expect.stringContaining('Open Notes'),
         })
       );
     });
@@ -323,7 +323,7 @@ describe('BotChannelService', () => {
     it('should set up permissions on newly created channel', async () => {
       mockGuildConfigService.get
         .mockResolvedValueOnce('new-channel')
-        .mockResolvedValueOnce('OpenNotes');
+        .mockResolvedValueOnce('Open Notes');
       mockGuild.channels.cache = new Collection();
 
       const newChannel = {
@@ -359,7 +359,7 @@ describe('BotChannelService', () => {
     it('should log when creating new channel', async () => {
       mockGuildConfigService.get
         .mockResolvedValueOnce('new-channel')
-        .mockResolvedValueOnce('OpenNotes');
+        .mockResolvedValueOnce('Open Notes');
       mockGuild.channels.cache = new Collection();
 
       const newChannel = {
@@ -412,7 +412,7 @@ describe('BotChannelService', () => {
     it('should handle race condition when channel is created by another process (AC1)', async () => {
       mockGuildConfigService.get
         .mockResolvedValueOnce('new-channel')
-        .mockResolvedValueOnce('OpenNotes');
+        .mockResolvedValueOnce('Open Notes');
       mockGuild.channels.cache = new Collection();
 
       const duplicateError = new Error('Duplicate channel') as Error & { code: number };
@@ -457,7 +457,7 @@ describe('BotChannelService', () => {
     it('should use fetchMe when guild.members.me is null (AC2)', async () => {
       mockGuildConfigService.get
         .mockResolvedValueOnce('new-channel')
-        .mockResolvedValueOnce('OpenNotes');
+        .mockResolvedValueOnce('Open Notes');
       mockGuild.channels.cache = new Collection();
       mockGuild.members.me = null;
       mockGuild.members.fetchMe = jest.fn<(...args: any[]) => Promise<any>>().mockResolvedValue(mockBotMember);
@@ -484,7 +484,7 @@ describe('BotChannelService', () => {
     it('should skip permissions when fetchMe fails (AC2)', async () => {
       mockGuildConfigService.get
         .mockResolvedValueOnce('new-channel')
-        .mockResolvedValueOnce('OpenNotes');
+        .mockResolvedValueOnce('Open Notes');
       mockGuild.channels.cache = new Collection();
       mockGuild.members.me = null;
       mockGuild.members.fetchMe = jest.fn<(...args: any[]) => Promise<any>>().mockRejectedValue(new Error('Fetch failed'));
@@ -515,7 +515,7 @@ describe('BotChannelService', () => {
 
   describe('findRole', () => {
     it('should find role by name', () => {
-      const result = service.findRole(mockGuild, 'OpenNotes');
+      const result = service.findRole(mockGuild, 'Open Notes');
 
       expect(result).toBe(mockRole);
     });
@@ -527,7 +527,7 @@ describe('BotChannelService', () => {
     });
 
     it('should be case-insensitive', () => {
-      const result = service.findRole(mockGuild, 'opennotes');
+      const result = service.findRole(mockGuild, 'open notes');
 
       expect(result).toBe(mockRole);
     });
@@ -567,7 +567,7 @@ describe('BotChannelService', () => {
 
       mockGuild.channels.cache = new Collection([['old-channel-123', oldMockChannel]]);
       mockGuild.channels.create.mockResolvedValue(newMockChannel);
-      mockGuildConfigService.get.mockResolvedValue('OpenNotes');
+      mockGuildConfigService.get.mockResolvedValue('Open Notes');
     });
 
     it('should create new channel with new name', async () => {
@@ -702,7 +702,7 @@ describe('BotChannelService', () => {
     });
 
     it('should use fetchMe when guild.members.me is null during migration (AC2)', async () => {
-      mockGuildConfigService.get.mockResolvedValue('OpenNotes');
+      mockGuildConfigService.get.mockResolvedValue('Open Notes');
       mockGuild.members.me = null;
       mockGuild.members.fetchMe = jest.fn<(...args: any[]) => Promise<any>>().mockResolvedValue(mockBotMember);
 
@@ -719,7 +719,7 @@ describe('BotChannelService', () => {
     });
 
     it('should skip permissions when fetchMe fails during migration (AC2)', async () => {
-      mockGuildConfigService.get.mockResolvedValue('OpenNotes');
+      mockGuildConfigService.get.mockResolvedValue('Open Notes');
       mockGuild.members.me = null;
       mockGuild.members.fetchMe = jest.fn<(...args: any[]) => Promise<any>>().mockRejectedValue(new Error('Fetch failed'));
 
