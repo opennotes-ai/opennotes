@@ -80,7 +80,41 @@ Both are **committed in-tree** (temporarily — see TASK-1468.12) so Mintlify Cl
 
 `docs.opennotes.ai` is hosted by Mintlify Cloud with the **content root** set to `opennotes/opennotes-docs/` (so Mintlify ignores the rest of the opennotes monorepo). Preview deploys fire on PRs to the `opennotes-ai/opennotes` repo that touch this directory.
 
-DNS (a `docs` CNAME → Mintlify's publishing host) is configured in the `infrastructure` repo (`environments/production/dns.tf`). The deploy runbook is tracked in TASK-1460.06.
+### DNS (managed in OpenTofu)
+
+DNS for `docs.opennotes.ai` lives in the `infrastructure` repo at `environments/production/dns.tf`, gated behind `enable_docs_site` (currently `true` in `production.auto.tfvars`):
+
+| Record | Name | Value | Purpose |
+|---|---|---|---|
+| `CNAME` | `docs.opennotes.ai.` | `cname.mintlify-dns.com.` | Routes traffic to Mintlify Cloud's publishing host |
+| `TXT` | `_vercel.opennotes.ai.` | `vc-domain-verify=docs.opennotes.ai,…` | Custom-domain verification (Mintlify's CDN runs on Vercel) |
+
+Apply DNS changes with `mise run apply:infra:prod`. Verify propagation:
+
+```bash
+dig docs.opennotes.ai CNAME @8.8.8.8
+dig _vercel.opennotes.ai TXT @8.8.8.8
+```
+
+### Mintlify Cloud dashboard setup (one-time)
+
+These are manual steps in the [Mintlify Cloud dashboard](https://dashboard.mintlify.com); record any change to this configuration here.
+
+1. Sign in with the OpenNotes org account.
+2. **Connect repository** → `opennotes-ai/opennotes`.
+3. **Content root** → `opennotes-docs/`. Mintlify will ignore the rest of the monorepo.
+4. **Default branch** → `main`. **Preview branches** → all PRs that touch `opennotes-docs/**`.
+5. **Custom domain** → add `docs.opennotes.ai`. Mintlify will surface a verification token in a `TXT _vercel.opennotes.ai` record. The OpenTofu config above already publishes that token; click **Verify** and the domain should validate immediately.
+6. Wait for Mintlify to issue an HTTPS cert (typically a few minutes after verification). When the green checkmark appears, the site is live at `https://docs.opennotes.ai`.
+
+### Verifying a deploy
+
+- **Production**: `curl -I https://docs.opennotes.ai` returns `200` and a Mintlify/Vercel `server` header; the landing page renders the three nav tabs.
+- **PR previews**: Open a PR that touches `opennotes-docs/**`; Mintlify posts a check with a preview URL of the form `https://<branch>.<project>.mintlify.app`. Failing builds surface in the same check.
+
+### Rotating the verify token
+
+If Mintlify ever requires a new verification token (e.g., after disconnecting and re-adding the domain), update the `rrdatas` value of `google_dns_record_set.vercel_verification_txt` in `dns.tf` and re-apply.
 
 ## Adding content
 
