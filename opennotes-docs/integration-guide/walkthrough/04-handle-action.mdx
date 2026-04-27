@@ -3,16 +3,16 @@ title: "Step 4 — Handle the action"
 description: Receive and apply a moderation-action consensus decision, either via webhook push or by polling /api/public/v1/moderation-actions.
 ---
 
-After the request from [Step 3](/integration-guide/walkthrough/03-submit-request) is scored and reaches community consensus, OpenNotes produces a **moderation action** — a structured decision telling your adapter what to do with the post. Your adapter receives this decision in one of two ways:
+After the request from [Step 3](/integration-guide/walkthrough/03-submit-request) is scored and reaches community consensus, Open Notes produces a **moderation action** — a structured decision telling your integration what to do with the post. Your integration receives this decision in one of two ways:
 
-1. **Webhook push** — OpenNotes calls your registered endpoint. Recommended for production.
-2. **Poll** — Your adapter calls `GET /api/public/v1/moderation-actions` on a schedule. Used by the Discourse plugin today.
+1. **Webhook push** — Open Notes calls your registered endpoint. Recommended for production.
+2. **Poll** — Your integration calls `GET /api/public/v1/moderation-actions` on a schedule. Used by the Discourse plugin today.
 
 See [Step 5](/integration-guide/walkthrough/05-webhooks-and-retries) for retry and idempotency details.
 
 ## Option A — Webhook delivery
 
-If you have registered a webhook endpoint (see [Webhooks](/integration-guide/concepts/webhooks)), OpenNotes will POST a payload to your URL when a consensus decision is reached. The payload looks like this:
+If you have registered a webhook endpoint (see [Webhooks](/integration-guide/concepts/webhooks)), Open Notes will POST a payload to your URL when a consensus decision is reached. The payload looks like this:
 
 ```json
 {
@@ -69,7 +69,7 @@ curl -X GET "https://api.opennotes.ai/api/public/v1/moderation-actions" \
 
 ## Action types and what they mean
 
-| `action_type` | What your adapter should do |
+| `action_type` | What your integration should do |
 |---------------|-----------------------------|
 | `hide` | Hide the post from public view. |
 | `unhide` | Restore a previously hidden post. |
@@ -98,7 +98,7 @@ curl -X PATCH "https://api.opennotes.ai/api/public/v1/moderation-actions/01906b2
   }'
 ```
 
-Set `action_state` to `applied` after you execute the action on your platform. This signals to OpenNotes that delivery was successful and closes the loop.
+Set `action_state` to `applied` after you execute the action on your platform. This signals to Open Notes that delivery was successful and closes the loop.
 
 ## Reference implementation
 
@@ -123,7 +123,7 @@ def self.execute_action(action_type:, post:, metadata: {})
 end
 ```
 
-The executor is idempotent — `hide_post` checks `post.hidden?` before calling `post.hide!`, and `unhide_post` checks `post.hidden?` before calling `post.unhide!`. Apply the same guard in your adapter.
+The executor is idempotent — `hide_post` checks `post.hidden?` before calling `post.hide!`, and `unhide_post` checks `post.hidden?` before calling `post.unhide!`. Apply the same guard in your integration.
 
 ## API reference
 

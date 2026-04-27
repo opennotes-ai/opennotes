@@ -22,7 +22,7 @@ the `platform:adapter` scope. See [Authentication](/api-reference/authentication
 
 If you are building an integration for the first time, the narrative entry point is the
 [Integration Guide walkthrough](/integration-guide/walkthrough/index). It explains the
-adapter contract, auth flow, and the full choreography across endpoints before you dive
+public API contract, auth flow, and the full sequence across endpoints before you dive
 into the per-endpoint reference.
 
 The [Discourse plugin](/existing-integrations/discourse/overview) is the canonical
@@ -52,26 +52,26 @@ for the full flow.
 ## Notes
 
 Community notes are the scored text explanations attached to content under review.
-Your adapter may create notes on behalf of community members and dismiss notes that
+Your integration may create notes on behalf of community members and dismiss notes that
 are no longer relevant. AI-generated notes are triggered via
 `POST /api/public/v1/requests/{request_id}/ai-notes`.
 
 ## Ratings
 
 Ratings drive the helpfulness score that determines whether a note is published.
-Your adapter submits ratings from community members and can read aggregate stats
+Your integration submits ratings from community members and can read aggregate stats
 to surface note quality signals in the platform UI.
 
 ## Moderation Actions
 
 Moderation actions represent decisions taken on content — approve, remove, escalate,
 etc. Actions are created by the server after evaluating request state and note scores,
-and your adapter applies them to the platform. Adapters may also submit actions
+and your integration applies them to the platform. Integrations may also submit actions
 directly for platform-originated moderation events.
 
 ## Community Servers
 
-Look up the OpenNotes server record for a given platform community using
+Look up the Open Notes server record for a given platform community using
 `GET /api/public/v1/community-servers/lookup`. The server record holds configuration
 that governs tier assignment and moderation behavior. See
 [Onboarding: Manage instances](/integration-guide/onboarding/manage-instances) for

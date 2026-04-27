@@ -1,14 +1,14 @@
 ---
 title: Authentication and headers
-description: Authorization bearer token + X-Adapter-* headers end-to-end — how every adapter request is authenticated and how user identity flows through the system.
+description: Authorization bearer token + X-Adapter-* headers end-to-end — how every integration request is authenticated and how user identity flows through the system.
 ---
 
-Every call your adapter makes to `/api/public/v1` must carry an `Authorization` header and a set of `X-Adapter-*` headers. This page explains what each header does, what happens when one is missing or wrong, and how the server distinguishes external adapters from internal services.
+Every call your integration makes to `/api/public/v1` must carry an `Authorization` header and a set of `X-Adapter-*` headers. This page explains what each header does, what happens when one is missing or wrong, and how the server distinguishes external integrations from internal services.
 
 ## The two-layer auth model
 
 ```
-Adapter ──────────────────────────────────────────► OpenNotes API
+Integration ─────────────────────────────────────► Open Notes API
          Authorization: Bearer <api_key>             Layer 1: key valid?
          X-Adapter-Platform: discourse               Layer 2: platform:adapter scope?
          X-Adapter-User-Id: 42                       Passed through to route handlers
@@ -44,7 +44,7 @@ The API key is a long random string minted on [platform.opennotes.ai](https://pl
 
 ## X-Adapter-* headers
 
-These headers carry the acting user's platform identity. They are validated only if the API key has the `platform:adapter` scope — the scope gate prevents unauthorized header injection.
+These headers carry the acting user's platform identity. They are validated only if the API key has the `platform:adapter` scope — the scope gate prevents unauthorized header injection by external callers.
 
 | Header | Required | Description |
 |---|---|---|
@@ -75,14 +75,14 @@ req.headers["X-Adapter-Moderator"] = user.moderator?.to_s
 req.headers["X-Adapter-Scope"] = SiteSetting.opennotes_platform_community_server_id
 ```
 
-The plugin uses `X-API-Key` for the key (a legacy header the server also accepts). New adapters should prefer `Authorization: Bearer`.
+The plugin uses `X-API-Key` for the key (a legacy header the server also accepts). New integrations should prefer `Authorization: Bearer`.
 
 ## X-Platform-* headers — internal only
 
-`X-Platform-*` headers carry signed internal service identity. They are **stripped from all external requests** by `InternalHeaderValidationMiddleware` before any route handler runs. External adapters cannot send these headers to impersonate platform-level identity.
+`X-Platform-*` headers carry signed internal service identity. They are **stripped from all external requests** by `InternalHeaderValidationMiddleware` before any route handler runs. External integrations cannot send these headers to impersonate platform-level identity.
 
 <Note>
-  You will never need to set `X-Platform-*` headers in an external adapter. They are only used by internal OpenNotes services that share the `INTERNAL_SERVICE_SECRET`.
+  You will never need to set `X-Platform-*` headers in an external integration. They are only used by internal Open Notes services that share the `INTERNAL_SERVICE_SECRET`.
 </Note>
 
 ## Full request example
@@ -135,5 +135,5 @@ curl -X POST https://api.opennotes.ai/api/public/v1/requests \
 
 - [Scopes](/integration-guide/concepts/scopes) — which scopes unlock which endpoints
 - [Error shapes](/integration-guide/concepts/errors) — canonical error envelope
-- [Adapter contract](/integration-guide/concepts/adapter-contract) — full adapter responsibilities
+- [Integration Guide overview](/integration-guide/overview) — full integration responsibilities and public API contract
 - [Discourse plugin](/existing-integrations/discourse/overview) — reference implementation

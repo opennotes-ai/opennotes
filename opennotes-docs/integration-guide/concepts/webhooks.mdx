@@ -1,9 +1,9 @@
 ---
 title: Webhooks
-description: How OpenNotes delivers moderation decisions back to your adapter — delivery semantics, HMAC signing, ordering, and the polling fallback.
+description: How Open Notes delivers moderation decisions back to your integration — delivery semantics, HMAC signing, ordering, and the polling fallback.
 ---
 
-After OpenNotes scores content and reaches a consensus, it delivers the decision to your adapter via a **webhook**. Your adapter registers an HTTPS endpoint; the server posts a signed JSON payload to that URL when a decision is ready.
+After Open Notes scores content and reaches a consensus, it delivers the decision to your integration via a **webhook**. Your integration registers an HTTPS endpoint; the server posts a signed JSON payload to that URL when a decision is ready.
 
 ## Registering a webhook
 
@@ -122,11 +122,11 @@ The canonical JSON sorts keys alphabetically (`orjson.OPT_SORT_KEYS`). The signa
 
 ## Event ordering
 
-OpenNotes does not guarantee strict ordering across different `request_id` values. For a single `request_id` you will receive at most one `moderation.decision` event. If your adapter needs total ordering, buffer events and sort by `_webhook_timestamp`.
+Open Notes does not guarantee strict ordering across different `request_id` values. For a single `request_id` you will receive at most one `moderation.decision` event. If your integration needs total ordering, buffer events and sort by `_webhook_timestamp`.
 
 ## Polling fallback
 
-If your adapter is temporarily unable to receive webhooks (downtime, firewall changes), use polling to catch up:
+If your integration is temporarily unable to receive webhooks (downtime, firewall changes), use polling to catch up:
 
 ```bash
 curl "https://api.opennotes.ai/api/public/v1/requests?status=decided&since=<iso8601_timestamp>" \
@@ -154,4 +154,4 @@ The Discourse plugin registers its webhook during the seed job. Incoming `modera
 
 - [Configure tiers](/integration-guide/onboarding/configure-tiers) — how tier configuration determines when decisions are delivered
 - [Error shapes](/integration-guide/concepts/errors) — delivery failure codes
-- [Adapter contract](/integration-guide/concepts/adapter-contract) — full adapter responsibilities
+- [Integration Guide overview](/integration-guide/overview) — full integration responsibilities and public API contract

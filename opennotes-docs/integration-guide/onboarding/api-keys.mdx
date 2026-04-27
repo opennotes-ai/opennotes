@@ -1,6 +1,6 @@
 ---
 title: Mint API keys
-description: Create a platform:adapter-scoped API key that your adapter uses to call /api/public/v1.
+description: Create a platform:adapter-scoped API key that your integration uses to call /api/public/v1.
 ---
 
 Every call to `/api/public/v1` must be authenticated with an API key in the `Authorization: Bearer` header. This page explains how to mint a key, which scopes to request, how to store the secret, and how to rotate when needed.
@@ -82,7 +82,7 @@ curl https://api.opennotes.ai/api/public/v1/requests \
   -H "X-Adapter-Scope: my-community-id"
 ```
 
-See [Headers and auth](/integration-guide/concepts/headers-and-auth) for the full header set your adapter must send.
+See [Headers and auth](/integration-guide/concepts/headers-and-auth) for the full header set your integration must send.
 
 ## Rotation procedure
 

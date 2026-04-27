@@ -5,7 +5,7 @@ description: Server URL, API key, monitored categories, and moderation behavior 
 
 All plugin settings live at **Admin > Settings > Plugins > OpenNotes**.
 
-The plugin implements the [adapter contract](/integration-guide/concepts/adapter-contract) — the
+The plugin implements the [public API contract](/integration-guide/overview) — the
 settings below map directly to the concepts described there. See
 [headers and auth](/integration-guide/concepts/headers-and-auth) for how authentication is carried
 on each request, and [scopes](/integration-guide/concepts/scopes) for how community server identity
@@ -18,7 +18,7 @@ is established.
     | Setting | Description |
     |---------|-------------|
     | `opennotes_enabled` | Master switch. No posts are sent to the server while this is off. |
-    | `opennotes_server_url` | Base URL of your OpenNotes server, e.g. `https://api.opennotes.ai`. The plugin appends `/api/public/v1/...` to this value for every API call. |
+    | `opennotes_server_url` | Base URL of your Open Notes server, e.g. `https://api.opennotes.ai`. The plugin appends `/api/public/v1/...` to this value for every API call. |
     | `opennotes_api_key` | Service account API key. Sent as `X-API-Key` on every outbound request. |
 
     <Warning>
@@ -54,7 +54,7 @@ is established.
     |---------|---------|-------------|
     | `opennotes_auto_hide_on_consensus` | `false` | Hide posts automatically when community consensus says the moderation note is helpful (Tier 2 path). When `false`, consensus creates a staff task instead of acting directly. |
     | `opennotes_staff_approval_required` | `true` | Require a staff member to confirm before automated actions take effect. |
-    | `opennotes_route_flags_to_community` | `true` | Forward user flags on monitored posts to OpenNotes for community review, in addition to the normal staff flag queue. |
+    | `opennotes_route_flags_to_community` | `true` | Forward user flags on monitored posts to Open Notes for community review, in addition to the normal staff flag queue. |
   </Tab>
 
   <Tab title="Review participation">
@@ -96,7 +96,7 @@ As a fallback, `Jobs::SyncScoringStatus` polls `/api/public/v1/requests` every f
 catch any missed webhook deliveries.
 
 <Note>
-  Make sure your Discourse instance is reachable from your OpenNotes server on the webhook
-  endpoint. If you run behind a firewall, allow inbound requests from the OpenNotes server IP
+  Make sure your Discourse instance is reachable from your Open Notes server on the webhook
+  endpoint. If you run behind a firewall, allow inbound requests from the Open Notes server IP
   range.
 </Note>

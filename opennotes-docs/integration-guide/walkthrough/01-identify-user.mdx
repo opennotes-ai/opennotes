@@ -1,11 +1,11 @@
 ---
 title: "Step 1 — Identify the user"
-description: Use GET /api/public/v1/user-profiles/lookup to map a platform user to an OpenNotes profile.
+description: Use GET /api/public/v1/user-profiles/lookup to map a platform user to an Open Notes profile.
 ---
 
-Before you can submit a request, you need the OpenNotes UUID for the user who authored (or flagged) the post. `GET /api/public/v1/user-profiles/lookup` performs a reverse-lookup by platform identity and returns the canonical profile.
+Before you can submit a request, you need the Open Notes UUID for the user who authored (or flagged) the post. `GET /api/public/v1/user-profiles/lookup` performs a reverse-lookup by platform identity and returns the canonical profile.
 
-A 404 means the user has no OpenNotes profile yet. The server creates one lazily on the first request that references them — you can proceed to [Step 3](/integration-guide/walkthrough/03-submit-request) using the platform user ID directly in `requested_by`.
+A 404 means the user has no Open Notes profile yet. The server creates one lazily on the first request that references them — you can proceed to [Step 3](/integration-guide/walkthrough/03-submit-request) using the platform user ID directly in `requested_by`.
 
 ## Request
 
@@ -29,7 +29,7 @@ curl -X GET "https://api.opennotes.ai/api/public/v1/user-profiles/lookup" \
 
 | Parameter | Required | Description |
 |-----------|----------|-------------|
-| `platform` | yes | Adapter platform identifier, e.g. `discourse` |
+| `platform` | yes | Integration platform identifier, e.g. `discourse` |
 | `platform_user_id` | yes | The user's ID on your platform (as a string) |
 | `provider_scope` | yes | Your community-server slug from `opennotes_platform_community_server_id` |
 
@@ -58,7 +58,7 @@ HTTP 404 — no profile yet; the server will create one when the first request f
 
 ## What to pass to the next step
 
-Capture `data.id` — this is the OpenNotes `user_profile_id`. You'll need it in [Step 3](/integration-guide/walkthrough/03-submit-request) as the `requested_by` field.
+Capture `data.id` — this is the Open Notes `user_profile_id`. You'll need it in [Step 3](/integration-guide/walkthrough/03-submit-request) as the `requested_by` field.
 
 ## Reference implementation
 

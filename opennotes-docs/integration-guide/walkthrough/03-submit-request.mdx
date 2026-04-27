@@ -5,7 +5,7 @@ description: POST /api/public/v1/requests to create a classification request for
 
 With a user profile ID (from [Step 1](/integration-guide/walkthrough/01-identify-user)) and a community-server ID (from [Step 2](/integration-guide/walkthrough/02-identify-community)) in hand, you submit a classification request for the flagged post. The server queues the content for scoring and — eventually — community review.
 
-This is the core adapter operation. Every piece of content that enters the OpenNotes pipeline starts here.
+This is the core integration operation. Every piece of content that enters the Open Notes pipeline starts here.
 
 ## Request
 
@@ -47,15 +47,15 @@ curl -X POST "https://api.opennotes.ai/api/public/v1/requests" \
 |-------|----------|-------------|
 | `data.type` | yes | Must be the string `"requests"` |
 | `data.attributes.request_id` | yes | Your stable, idempotency key for this content item. Use a platform-scoped identifier such as `"discourse-post-98765"`. Submitting the same `request_id` twice is idempotent. |
-| `data.attributes.requested_by` | yes | The OpenNotes profile ID (UUID) of the user who triggered this review. |
+| `data.attributes.requested_by` | yes | The Open Notes profile ID (UUID) of the user who triggered this review. |
 | `data.attributes.community_server_id` | yes | The community-server UUID from Step 2. |
 | `data.attributes.original_message_content` | recommended | Full text of the post. Omit only when content must not be stored. |
 | `data.attributes.platform_message_id` | recommended | Platform's native message ID. Used for deduplication and deep links. |
 | `data.attributes.platform_channel_id` | recommended | Channel or topic ID on your platform. |
 | `data.attributes.platform_author_id` | recommended | The author's platform-native user ID (distinct from `requested_by`, which is the reporter). |
 | `data.attributes.platform_timestamp` | recommended | ISO 8601 timestamp of when the post was created on the platform. |
-| `data.attributes.metadata` | optional | Freeform JSON object for any extra context your adapter needs to round-trip back when the action arrives. |
-| `data.attributes.similarity_score` | optional | If your adapter pre-computes a similarity score against known content, include it here (0.0–1.0). |
+| `data.attributes.metadata` | optional | Freeform JSON object for any extra context your integration needs to round-trip back when the action arrives. |
+| `data.attributes.similarity_score` | optional | If your integration pre-computes a similarity score against known content, include it here (0.0–1.0). |
 | `data.attributes.dataset_name` | optional | Source dataset name if the request originates from a dataset-matching pipeline. |
 | `data.attributes.dataset_item_id` | optional | Fact-check item ID from the matched dataset. |
 
@@ -90,15 +90,15 @@ HTTP 201 — request accepted:
 }
 ```
 
-Capture `data.id` — this is the OpenNotes `request_id` UUID. You will need it to correlate incoming moderation actions in [Step 4](/integration-guide/walkthrough/04-handle-action).
+Capture `data.id` — this is the Open Notes `request_id` UUID. You will need it to correlate incoming moderation actions in [Step 4](/integration-guide/walkthrough/04-handle-action).
 
 ### Status field
 
-The request starts at `PENDING`. The server will score the content asynchronously and move the status forward. Your adapter does not poll on status — it waits for a moderation action to arrive (either via webhook push or poll).
+The request starts at `PENDING`. The server will score the content asynchronously and move the status forward. Your integration does not poll on status — it waits for a moderation action to arrive (either via webhook push or poll).
 
 ### Idempotency
 
-If your adapter submits the same `request_id` string twice (e.g. after a network timeout), the server returns the existing request rather than creating a duplicate. Always use a stable, platform-scoped identifier for `request_id`.
+If your integration submits the same `request_id` string twice (e.g. after a network timeout), the server returns the existing request rather than creating a duplicate. Always use a stable, platform-scoped identifier for `request_id`.
 
 ## Reference implementation
 
