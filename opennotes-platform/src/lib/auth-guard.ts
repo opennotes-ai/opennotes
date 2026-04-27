@@ -9,3 +9,12 @@ export async function requireAuth() {
   }
   return event.locals.user;
 }
+
+export async function redirectIfAuthenticated(target = "/dashboard") {
+  "use server";
+  const event = getRequestEvent();
+  if (!event) return;
+  if (event.locals.user) {
+    throw redirect(target);
+  }
+}
