@@ -65,7 +65,8 @@ describe("<StepsList /> module surface", () => {
     };
     const props1: StepsListProps = { steps: [step] };
     const props2: StepsListProps = { steps: [step], columns: 2 };
-    expect(props1.steps[0].title).toBe("T");
+    expect(props1.steps.length).toBe(1);
+    expect(props1.steps[0]?.title).toBe("T");
     expect(props2.columns).toBe(2);
     expect(stepWithDetail.detail).toBeNull();
   });

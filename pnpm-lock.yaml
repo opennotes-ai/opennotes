@@ -452,6 +452,9 @@ importers:
       '@solidjs/testing-library':
         specifier: ^0.8.10
         version: 0.8.10(@solidjs/router@0.15.4(solid-js@1.9.12))(solid-js@1.9.12)
+      '@types/node':
+        specifier: ^20.19.39
+        version: 20.19.39
       class-variance-authority:
         specifier: ^0.7.1
         version: 0.7.1

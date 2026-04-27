@@ -66,6 +66,7 @@
     "@kobalte/core": "^0.13.11",
     "@solidjs/router": "^0.15.3",
     "@solidjs/testing-library": "^0.8.10",
+    "@types/node": "^20.19.39",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "echarts": "^6.0.0",
