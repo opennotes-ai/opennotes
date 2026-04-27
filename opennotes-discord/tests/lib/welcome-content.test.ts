@@ -18,11 +18,11 @@ describe('welcome-content', () => {
       expect(container.data.accent_color).toBe(V2_COLORS.PRIMARY);
     });
 
-    it('should include About OpenNotes header', () => {
+    it('should include About Open Notes header', () => {
       const container = buildWelcomeContainer();
 
       const hasAboutHeader = container.components.some(
-        (c: any) => c.data?.content?.includes('About OpenNotes')
+        (c: any) => c.data?.content?.includes('About Open Notes')
       );
       expect(hasAboutHeader).toBe(true);
     });

@@ -272,7 +272,7 @@ function buildHubContainer(): ContainerBuilder {
   const container = createContainer(V2_COLORS.PRIMARY);
 
   container.addTextDisplayComponents(
-    createTextSection('## OpenNotes Navigation')
+    createTextSection('## Open Notes Navigation')
   );
   container.addTextDisplayComponents(
     createTextSection('Browse all available actions and navigate between features.')

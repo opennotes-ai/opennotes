@@ -216,7 +216,7 @@ describe('Bot Channel Welcome Flow Integration', () => {
       const container = sendCall.components[0];
       const allContent = JSON.stringify(container.toJSON().components);
 
-      expect(allContent).toContain('About OpenNotes');
+      expect(allContent).toContain('About Open Notes');
       expect(allContent).toContain('How It Works');
       expect(allContent).toContain('Note Submission');
       expect(allContent).toContain('Commands');

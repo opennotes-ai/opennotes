@@ -115,7 +115,7 @@ describe('BotChannelService', () => {
 
       expect(mockGuild.channels.create).toHaveBeenCalledWith(
         expect.objectContaining({
-          topic: expect.stringContaining('OpenNotes'),
+          topic: expect.stringContaining('Open Notes'),
         })
       );
     });

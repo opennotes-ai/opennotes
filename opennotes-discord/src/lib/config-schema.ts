@@ -153,13 +153,13 @@ export const CONFIG_SCHEMA: Record<ConfigKey, ConfigDefinition> = {
     type: 'string',
     default: 'open-notes',
     shortName: 'Bot Channel Name',
-    description: 'Name of the dedicated OpenNotes bot channel',
+    description: 'Name of the dedicated Open Notes bot channel',
   },
   [ConfigKey.OPENNOTES_ROLE_NAME]: {
     key: ConfigKey.OPENNOTES_ROLE_NAME,
     type: 'string',
-    default: 'OpenNotes',
-    shortName: 'OpenNotes Role',
+    default: 'Open Notes',
+    shortName: 'Open Notes Role',
     description: 'Name of the role that can send messages in the bot channel',
   },
 
