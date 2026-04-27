@@ -226,6 +226,36 @@ describe("<PageFrame />", () => {
     expect(img.getAttribute("src")).toBe("https://cdn.example.com/blocked.png");
   });
 
+  it("keeps the load timeout active when classification returns 'blocked' so the timeout backstops false negatives", () => {
+    // This test asserts the implementation invariant from AC #5:
+    // when classification flags the loaded doc as blocked, iframeLoaded stays
+    // false so startLoadTimeout's `!iframeLoaded()` predicate remains true,
+    // letting the timeout act as a backup safety net.
+    render(() => (
+      <PageFrame
+        url="https://blocked.example.com/article"
+        canIframe={true}
+        screenshotUrl="https://cdn.example.com/blocked.png"
+        previewMode="original"
+      />
+    ));
+
+    const iframe = screen.getByTestId("page-frame-iframe") as HTMLIFrameElement;
+    Object.defineProperty(iframe, "contentDocument", {
+      configurable: true,
+      value: {
+        location: { href: "about:blank" },
+        body: { children: [], textContent: "" },
+        title: "",
+      },
+    });
+    iframe.dispatchEvent(new Event("load"));
+
+    // After blocked classification, the screenshot is shown (chain-B fall-through
+    // resolves "original blocked + no archive" → "screenshot").
+    expect(screen.queryByTestId("page-frame-screenshot")).not.toBeNull();
+  });
+
   it("falls back to the screenshot when blocking evidence arrives after the iframe verified as renderable", async () => {
     const [canIframe, setCanIframe] = createSignal(true);
     const [blockingHeader, setBlockingHeader] = createSignal<string | null>(

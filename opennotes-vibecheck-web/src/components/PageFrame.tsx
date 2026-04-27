@@ -139,11 +139,16 @@ export default function PageFrame(props: PageFrameProps) {
   };
 
   const handleIframeLoad = () => {
+    const classification = classifyLoadedIframe();
+    if (classification === "blocked") {
+      setIframeFailed(true);
+      // Intentionally do NOT call setIframeLoaded(true) or clearLoadTimeout —
+      // the timeout safety net (startLoadTimeout) checks !iframeLoaded() and
+      // remains active to backstop a future false-negative classification.
+      return;
+    }
     setIframeLoaded(true);
     clearLoadTimeout();
-    if (classifyLoadedIframe() === "blocked") {
-      setIframeFailed(true);
-    }
   };
 
   const handleIframeError = () => {
