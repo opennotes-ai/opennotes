@@ -320,3 +320,66 @@ async def test_run_pipeline_backstop_escalates_to_terminal_at_max(
         row["extract_transient_attempts"]
         == orchestrator.EXTRACT_TRANSIENT_MAX_ATTEMPTS
     )
+
+
+# ---------------------------------------------------------------------------
+# _mark_failed — error_host plumbing for UNSUPPORTED_SITE (TASK-1488.13).
+# ---------------------------------------------------------------------------
+
+
+async def test_mark_failed_writes_error_host_when_provided(
+    db_pool: Any,
+) -> None:
+    """`_mark_failed(error_host="linkedin.com")` writes the value to
+    `vibecheck_jobs.error_host` so the FE can render host-specific copy
+    on UNSUPPORTED_SITE (TASK-1488.13)."""
+    from src.analyses.schemas import ErrorCode
+    from src.jobs import orchestrator
+
+    job_id, attempt = await insert_pending_job(db_pool)
+
+    await orchestrator._mark_failed(
+        db_pool,
+        job_id,
+        task_attempt=attempt,
+        error_code=ErrorCode.UNSUPPORTED_SITE,
+        error_message="tier 1: …; tier 2: …",
+        error_host="linkedin.com",
+    )
+
+    row = await read_job(db_pool, job_id)
+    assert row["status"] == "failed"
+    assert row["error_code"] == "unsupported_site"
+    assert row["error_host"] == "linkedin.com"
+
+
+async def test_mark_failed_leaves_error_host_unchanged_when_none(
+    db_pool: Any,
+) -> None:
+    """`_mark_failed(error_host=None)` (legacy callers / non-UNSUPPORTED_SITE
+    paths) does not clobber an existing `error_host`. The COALESCE(_, error_host)
+    in `_MARK_FAILED_SQL` preserves prior writes."""
+    from src.analyses.schemas import ErrorCode
+    from src.jobs import orchestrator
+
+    job_id, attempt = await insert_pending_job(db_pool)
+    # Pre-populate error_host on the row (e.g. from an earlier UNSUPPORTED_SITE
+    # write that this terminal call should not erase).
+    async with db_pool.acquire() as conn:
+        await conn.execute(
+            "UPDATE vibecheck_jobs SET error_host = $1 WHERE job_id = $2",
+            "preserved.example.com",
+            job_id,
+        )
+
+    await orchestrator._mark_failed(
+        db_pool,
+        job_id,
+        task_attempt=attempt,
+        error_code=ErrorCode.EXTRACTION_FAILED,
+        error_message="extraction failed",
+    )
+
+    row = await read_job(db_pool, job_id)
+    assert row["error_code"] == "extraction_failed"
+    assert row["error_host"] == "preserved.example.com"

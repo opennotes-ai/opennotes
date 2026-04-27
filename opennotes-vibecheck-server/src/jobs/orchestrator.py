@@ -60,6 +60,7 @@ import logging
 import time
 from dataclasses import dataclass
 from typing import Any, Final, Literal, NoReturn
+from urllib.parse import urlparse
 from uuid import UUID, uuid4
 
 import asyncpg
@@ -214,6 +215,7 @@ UPDATE vibecheck_jobs
 SET status = 'failed',
     error_code = $2,
     error_message = $3,
+    error_host = COALESCE($5, error_host),
     finished_at = now(),
     updated_at = now()
 WHERE job_id = $1
@@ -333,8 +335,16 @@ async def _mark_failed(
     task_attempt: UUID,
     error_code: ErrorCode,
     error_message: str,
+    error_host: str | None = None,
 ) -> None:
-    """Flip the job row to status=failed with the classified error_code."""
+    """Flip the job row to status=failed with the classified error_code.
+
+    `error_host` is the URL's hostname; populated by the caller for
+    UNSUPPORTED_SITE so the FE can render host-specific copy
+    ("We can't analyze {host} yet"). When None, the SQL leaves the
+    existing `error_host` value untouched (legacy paths that never
+    populated it stay null) (TASK-1488.13).
+    """
     async with pool.acquire() as conn:
         await conn.execute(
             _MARK_FAILED_SQL,
@@ -342,6 +352,7 @@ async def _mark_failed(
             error_code.value,
             error_message,
             task_attempt,
+            error_host,
         )
 
 
@@ -884,6 +895,7 @@ async def _scrape_step(
                 raise TerminalError(
                     ErrorCode.UNSUPPORTED_SITE,
                     f"tier 1: skipped (forced); tier 2: {t2.tier2_reason}",
+                    detail={"error_host": urlparse(url).hostname},
                 )
 
             # Tier 1 cache hit: re-classify before short-circuiting. The
@@ -915,6 +927,7 @@ async def _scrape_step(
                     ErrorCode.UNSUPPORTED_SITE,
                     f"tier 1: {cached_t1.tier1_reason} (cached); "
                     f"tier 2: {t2_cached.tier2_reason}",
+                    detail={"error_host": urlparse(url).hostname},
                 )
 
             # Tier 1 probe (cache miss).
@@ -942,6 +955,7 @@ async def _scrape_step(
             raise TerminalError(
                 ErrorCode.UNSUPPORTED_SITE,
                 f"tier 1: {t1.tier1_reason}; tier 2: {t2.tier2_reason}",
+                detail={"error_host": urlparse(url).hostname},
             )
         finally:
             # Set span attributes incrementally so a partial trace still
@@ -1617,12 +1631,17 @@ async def run_job(
                 exc.error_code.value,
                 exc.error_detail,
             )
+            error_host_raw = exc.detail.get("error_host")
+            error_host = (
+                error_host_raw if isinstance(error_host_raw, str) else None
+            )
             await _mark_failed(
                 pool,
                 job_id,
                 task_attempt=task_attempt,
                 error_code=exc.error_code,
                 error_message=exc.error_detail,
+                error_host=error_host,
             )
             return RunResult(status_code=200)
         except HandlerSuperseded:
