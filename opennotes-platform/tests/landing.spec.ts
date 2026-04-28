@@ -113,9 +113,9 @@ test.describe("signout flow", () => {
     await expect(
       page.getByRole("link", { name: /Sign In/i }),
     ).toBeVisible();
-    await expect(
-      page.getByRole("button", { name: /Sign Out/i }),
-    ).toHaveCount(0);
+    // Catch any regression that renders Sign Out as a link or plain text,
+    // not just as the current submit button.
+    await expect(page.getByText(/^Sign Out$/i)).toHaveCount(0);
   });
 
   // Skipped until Supabase test-user fixtures are wired in (TASK-1503.10).
@@ -183,8 +183,9 @@ test.describe("signout flow", () => {
   // Skipped until Supabase test-user fixtures are wired in (TASK-1503.10).
   // Sanity-check that dark-mode color scheme does not hide the Sign Out
   // button. No screenshot diff (visual baselines are out of scope here —
-  // see TASK-1468.17). Asserting visibility under emulated dark mode is
-  // enough to catch a regression that would remove the button entirely.
+  // see TASK-1468.17). We first assert the dark theme actually activated
+  // (ModeToggle reads prefers-color-scheme and toggles `.dark` on
+  // documentElement), then assert the button still renders.
   test.skip(
     "Sign Out button renders under dark color scheme",
     async ({ page }) => {
@@ -201,6 +202,9 @@ test.describe("signout flow", () => {
       );
       await page.click('button[type="submit"]');
       await page.waitForURL("**/dashboard");
+      // Confirm dark theme actually took effect — without this the test
+      // would silently pass even if `.dark` never got applied.
+      await expect(page.locator("html")).toHaveClass(/(^|\s)dark(\s|$)/);
       await expect(
         page.getByRole("button", { name: /Sign Out/i }),
       ).toBeVisible();
