@@ -103,9 +103,7 @@ describe("<JobFailureCard />", () => {
   it("uses exact extraction_failed copy", async () => {
     renderCard({ url: URL, errorCode: "extraction_failed" });
     const copy = await screen.findByTestId("job-failure-copy");
-    expect(copy.textContent).toBe(
-      "We couldn't extract content from that page.",
-    );
+    expect(copy.textContent).toBe("We couldn't read this page's content.");
   });
 
   it("uses exact timeout copy", async () => {
@@ -193,11 +191,11 @@ describe("<JobFailureCard />", () => {
       ["unsupported_site", "This site blocks automated readers."],
       [
         "upstream_error",
-        "Try again in a moment — the page wasn't reachable.",
+        "The site may be blocking automated readers, or it could be a temporary outage — try again in a moment.",
       ],
       [
         "extraction_failed",
-        "We couldn't pull readable content from that page.",
+        "This often happens when a site blocks automated readers (login walls, paywalls, captchas, or bot protection).",
       ],
       ["section_failure", "Some analysis sections couldn't complete."],
       [
