@@ -757,6 +757,61 @@ describe("AnalyzePage Original tab — soft-disabled when canIframe=false (TASK-
     expect(original.getAttribute("aria-pressed")).toBe("true");
   });
 
+  it("clears all preview tab pressed states when no preview is available", async () => {
+    getFrameCompatMock.mockResolvedValue({
+      ok: true,
+      frameCompat: {
+        canIframe: false,
+        blockingHeader: "content-security-policy: frame-ancestors 'none'",
+        cspFrameAncestors: "'none'",
+        screenshotUrl: null,
+        archivedPreviewUrl: null,
+      },
+    } as never);
+    renderAt("/analyze?job=job-unavailable&url=https://nypost.com/article");
+
+    expect(await screen.findByTestId("page-frame-unavailable")).not.toBeNull();
+
+    for (const testId of [
+      "preview-mode-original",
+      "preview-mode-archived",
+      "preview-mode-screenshot",
+    ]) {
+      expect(screen.getByTestId(testId).getAttribute("aria-pressed")).toBe(
+        "false",
+      );
+    }
+  });
+
+  it("keeps all preview tabs unpressed when clicking the requested tab while preview is unavailable", async () => {
+    getFrameCompatMock.mockResolvedValue({
+      ok: true,
+      frameCompat: {
+        canIframe: false,
+        blockingHeader: "content-security-policy: frame-ancestors 'none'",
+        cspFrameAncestors: "'none'",
+        screenshotUrl: null,
+        archivedPreviewUrl: null,
+      },
+    } as never);
+    renderAt("/analyze?job=job-unavailable&url=https://nypost.com/article");
+
+    expect(await screen.findByTestId("page-frame-unavailable")).not.toBeNull();
+
+    fireEvent.click(screen.getByTestId("preview-mode-original"));
+
+    expect(screen.getByTestId("page-frame-unavailable")).not.toBeNull();
+    for (const testId of [
+      "preview-mode-original",
+      "preview-mode-archived",
+      "preview-mode-screenshot",
+    ]) {
+      expect(screen.getByTestId(testId).getAttribute("aria-pressed")).toBe(
+        "false",
+      );
+    }
+  });
+
   it("does not render the tooltip span or the muted styling when canIframe=true", async () => {
     // default mock returns canIframe: true
     renderAt("/analyze?job=job-permissive&url=https://news.example.com/a");

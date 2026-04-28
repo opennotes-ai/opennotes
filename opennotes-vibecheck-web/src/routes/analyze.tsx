@@ -33,6 +33,7 @@ const ALL_ERROR_CODES: readonly ErrorCode[] = [
 ];
 
 type PreviewSize = "regular" | "large" | "max";
+type ResolvedPreviewMode = PreviewMode | "unavailable";
 
 const PREVIEW_SIZE_KEY = "vibecheck:preview-size";
 const PREVIEW_MODE_OPTIONS: ReadonlyArray<{
@@ -85,6 +86,8 @@ export default function AnalyzePage() {
     typeof searchParams.host === "string" ? searchParams.host : "";
   const cachedHint = () => searchParams.c === "1";
   const [previewMode, setPreviewMode] = createSignal<PreviewMode>("original");
+  const [resolvedPreviewMode, setResolvedPreviewMode] =
+    createSignal<ResolvedPreviewMode>("original");
   const [previewSize, setPreviewSize] = createSignal<PreviewSize>("regular");
   let previewModeJobId = jobId();
 
@@ -104,6 +107,7 @@ export default function AnalyzePage() {
     if (currentJobId !== previewModeJobId) {
       previewModeJobId = currentJobId;
       setPreviewMode("original");
+      setResolvedPreviewMode("original");
     }
   });
 
@@ -206,6 +210,13 @@ export default function AnalyzePage() {
       // Best effort only.
     }
   };
+
+  const selectPreviewMode = (mode: PreviewMode) => {
+    setPreviewMode(mode);
+  };
+
+  const isPreviewModePressed = (mode: PreviewMode) =>
+    resolvedPreviewMode() !== "unavailable" && previewMode() === mode;
 
   const mainClass = createMemo(() => {
     if (previewSize() === "max") {
@@ -316,19 +327,21 @@ export default function AnalyzePage() {
                                 type="button"
                                 data-testid={`preview-mode-${option.value}`}
                                 class={`${segmentClass(
-                                  previewMode() === option.value,
+                                  isPreviewModePressed(option.value),
                                   segmentCornerClass(
                                     index(),
                                     PREVIEW_MODE_OPTIONS.length,
                                   ),
                                 )}${isOriginalBlocked() ? " opacity-60" : ""}`}
-                                aria-pressed={previewMode() === option.value}
+                                aria-pressed={isPreviewModePressed(
+                                  option.value,
+                                )}
                                 aria-describedby={
                                   isOriginalBlocked()
                                     ? "preview-mode-original-tip"
                                     : undefined
                                 }
-                                onClick={() => setPreviewMode(option.value)}
+                                onClick={() => selectPreviewMode(option.value)}
                               >
                                 {option.label}
                               </button>
@@ -393,6 +406,7 @@ export default function AnalyzePage() {
                           screenshotUrl={frameCompat().screenshotUrl}
                           previewMode={previewMode()}
                           onResolvedModeChange={(mode) => {
+                            setResolvedPreviewMode(mode);
                             if (mode !== "unavailable") setPreviewMode(mode);
                           }}
                         />
