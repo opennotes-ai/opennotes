@@ -33,9 +33,8 @@ from __future__ import annotations
 
 import json
 import socket
-from collections.abc import AsyncIterator, Iterator
+from collections.abc import AsyncIterator, Callable, Iterator
 from datetime import UTC, datetime, timedelta
-from collections.abc import Callable
 from typing import Any
 from uuid import UUID, uuid4
 
