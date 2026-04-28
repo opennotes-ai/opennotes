@@ -14,8 +14,10 @@ import JobFailureCard from "~/components/JobFailureCard";
 import PageFrame from "~/components/PageFrame";
 import type { PreviewMode } from "~/components/PageFrame";
 import Sidebar from "~/components/sidebar/Sidebar";
+import { HeadlineSummaryReport } from "~/components/sidebar/reports";
 import type { ErrorCode, SectionSlug } from "~/lib/api-client.server";
 import { createPollingResource } from "~/lib/polling";
+import { resolveHeadline } from "~/lib/headline-fallback";
 import { getFrameCompat, type FrameCompatResult } from "./analyze.data";
 
 const ALL_ERROR_CODES: readonly ErrorCode[] = [
@@ -280,6 +282,19 @@ export default function AnalyzePage() {
                 class={layoutClass()}
               >
                 <div class="flex min-h-[60vh] min-w-0 flex-col gap-4">
+                  <Show when={jobStatus() === "done" || sidebarPayload()}>
+                    <HeadlineSummaryReport
+                      headline={resolveHeadline(
+                        sidebarPayload()?.headline ?? null,
+                        {
+                          url: jobUrl(),
+                          pageTitle: jobState()?.page_title,
+                          recommendation:
+                            sidebarPayload()?.safety?.recommendation ?? null,
+                        },
+                      )}
+                    />
+                  </Show>
                   <div class="flex flex-wrap items-center justify-between gap-2">
                     <div
                       data-testid="preview-mode-selector"
