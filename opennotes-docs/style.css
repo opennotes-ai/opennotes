@@ -1,17 +1,23 @@
 /* Auto-loaded by the Mintlify CLI on every page. Vendored tokens live in
-   styles/tokens/ (gitignored, populated by `pnpm run vendor:tokens`). */
-@import "./styles/tokens/theme.css";
+   styles/tokens/ (tracked, refreshed by `pnpm run vendor:tokens`).
+
+   Mintlify only honors a small subset of the `@opennotes/tokens` surface on
+   this site: `docs.json#colors.primary/light/dark` (hex), `--primary*`
+   RGB-triplet vars (custom CSS), `--mint-*` syntax-highlight vars, and a
+   handful of brittle DOM selectors. Tokens like `--background`,
+   `--foreground`, `--card`, `--muted`, `--accent`, `--ring`, `--input`,
+   `--popover`, `--border`, `--destructive`, `--chart-*`, `--radius` from the
+   upstream `theme.css` are inert here, so we deliberately do NOT import
+   `theme.css` (or `index.css`, which transitively imports it). The
+   Mintlify-shaped triplets below are the entire token contract for this
+   site — change a value below and it ships; change anything in
+   `@opennotes/tokens/theme.css` and it will not. */
 @import "./styles/tokens/animations.css";
 @import "./styles/tokens/fonts-cdn.css";
 
 /* Mintlify's built-in brand widgets (sidebar active link, focus rings, search
    highlights, inline link accents) consume `--primary` via
-   `rgb(var(--primary) / <alpha>)`, which only parses an "R G B" triplet.
-   theme.css sets --primary to oklch(...), breaking that wrapper and leaving
-   widgets to fall back to currentColor. Re-assert Mintlify-shaped triplets
-   here so brand accents render in the correct green. Tailwind's
-   --color-primary mapping is irrelevant on this site because Mintlify owns
-   MDX rendering and we don't emit bg-primary / text-primary utility classes. */
+   `rgb(var(--primary) / <alpha>)`, which only parses an "R G B" triplet. */
 :root {
   --primary: 0 171 120;       /* oklch(0.65 0.15 165) */
   --primary-light: 88 198 155; /* oklch(0.75 0.12 165) — matches our --accent */
