@@ -94,6 +94,19 @@ async def test_two_deliveries_with_same_expected_attempt_id_are_idempotent(
         return _payload(url)
 
     monkeypatch.setattr(orchestrator, "extract_utterances", _stub_extract)
+    for slug in SectionSlug:
+        async def _empty_handler(
+            pool: Any,
+            job_id: Any,
+            task_attempt: Any,
+            payload: Any,
+            settings: Any,
+            *,
+            _slug: SectionSlug = slug,
+        ) -> dict[str, Any]:
+            return orchestrator._empty_section_data(_slug)
+
+        monkeypatch.setitem(orchestrator._SECTION_HANDLERS, slug, _empty_handler)
 
     job_id, expected_attempt = await insert_pending_job(
         db_pool, url=target_url
