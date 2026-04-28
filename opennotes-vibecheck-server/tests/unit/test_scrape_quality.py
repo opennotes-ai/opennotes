@@ -27,7 +27,6 @@ from src.jobs.scrape_quality import (
     INTERSTITIAL_MARKERS,
     LEGITIMATELY_EMPTY_MARKERS,
     MIN_BODY_CHARS,
-    SPARSE_BODY_THRESHOLD,
     ScrapeQuality,
     classify_scrape,
 )
@@ -252,7 +251,6 @@ def test_constants_are_exported_for_parameterization() -> None:
     assert isinstance(LEGITIMATELY_EMPTY_MARKERS, tuple)
     assert isinstance(AUTH_WALL_STATUS_CODES, frozenset)
     assert MIN_BODY_CHARS > 0
-    assert SPARSE_BODY_THRESHOLD > MIN_BODY_CHARS
     assert "Just a moment" in INTERSTITIAL_MARKERS
     assert 401 in AUTH_WALL_STATUS_CODES
     assert 403 in AUTH_WALL_STATUS_CODES
@@ -379,64 +377,62 @@ def test_real_sparse_login_page_via_cached_scrape_classifies_auth_wall() -> None
 
 
 # ---------------------------------------------------------------------------
-# Sparseness-gate behavior — password / login-form markers no longer
-# fire on substantive bodies (the new gate).
+# Long-body login pages — password input still fires AUTH_WALL even
+# when the page renders substantial supporting prose (privacy/terms
+# links, social-login boilerplate, "trouble logging in" copy).
+#
+# These tests close the regression Codex 5.5-high flagged on PR #438:
+# a 582-char login page returning OK is a ToS violation because Tier 2
+# /interact would then attempt to bypass real auth.
 # ---------------------------------------------------------------------------
 
 
-def test_substantive_article_with_password_input_classifies_ok() -> None:
-    """Article body with embedded login chrome -> OK, not AUTH_WALL.
+def test_long_login_page_with_password_classifies_auth_wall() -> None:
+    """Real-world login pages have substantive supporting copy.
 
-    Some article pages embed a hidden newsletter signup or login modal
-    in their HTML. As long as the markdown body is above the sparseness
-    threshold, the password marker is treated as chrome rather than
-    gating signal.
+    Privacy/Terms links, "Sign in with Google/Apple/Facebook" buttons,
+    "Trouble logging in?" help text, and language selectors push the
+    markdown well past the old SPARSE_BODY_THRESHOLD = 500. A page
+    with `<input type="password">` is a login wall regardless of
+    body length.
     """
-    body = "This is a real article paragraph that has substantive content. " * 20
-    result = ScrapeResult(
-        markdown=f"# An Article With A Hidden Login Modal\n\n{body}",
-        html=(
-            f"<html><body><article><p>{body}</p></article>"
-            "<div hidden><form action='/login'>"
-            "<input type='password' name='password'>"
-            "</form></div></body></html>"
-        ),
-        metadata=ScrapeMetadata(status_code=200),
+    boilerplate = (
+        "Sign in to your account. Sign in with Google. Sign in with Apple. "
+        "Sign in with Facebook. By continuing you agree to our Terms of "
+        "Service and Privacy Policy. Need help? Visit our help center for "
+        "assistance with login issues, account recovery, two-factor "
+        "authentication setup, security best practices, single sign-on "
+        "configuration, and more. Trouble logging in? Reset your password. "
+        "New user? Create an account. Trusted by millions of creators "
+        "worldwide. We support modern browsers including Chrome, Firefox, "
+        "Safari, and Edge. JavaScript and cookies must be enabled."
     )
-    assert len(result.markdown or "") > SPARSE_BODY_THRESHOLD
-
-    assert classify_scrape(result) is ScrapeQuality.OK
-
-
-def test_substantive_article_with_login_form_action_classifies_ok() -> None:
-    """Same gate applies to `action="/login"` form-action markers."""
-    body = "Long-form journalism content that scrapes to full markdown. " * 20
     result = ScrapeResult(
-        markdown=f"# News Article\n\n{body}",
+        markdown=boilerplate,
         html=(
-            f"<html><body><article><p>{body}</p></article>"
-            "<form action='/login' method='post'>"
-            "<input type='text' name='username'>"
+            "<html><body><form action='/login' method='post'>"
+            "<input name='email' type='email'>"
+            "<input name='password' type='password'>"
             "</form></body></html>"
         ),
         metadata=ScrapeMetadata(status_code=200),
     )
-    assert len(result.markdown or "") > SPARSE_BODY_THRESHOLD
+    # Sanity-check the fixture body length so the regression intent is
+    # explicit: this would have slipped through the SPARSE_BODY_THRESHOLD
+    # = 500 gate that was originally proposed.
+    assert len(result.markdown or "") > 500
 
-    assert classify_scrape(result) is ScrapeQuality.OK
+    assert classify_scrape(result) is ScrapeQuality.AUTH_WALL
 
 
-def test_sparse_body_with_form_action_login_classifies_auth_wall() -> None:
-    """Sparse body + form-action="/login" -> AUTH_WALL via the gate."""
-    result = ScrapeResult(
-        markdown="Sign in to your account",
-        html=(
-            "<html><body><form action='/login' method='post'>"
-            "<input type='text' name='email'>"
-            "<button>Continue</button></form></body></html>"
-        ),
-        metadata=ScrapeMetadata(status_code=200),
-    )
-    assert len(result.markdown or "") < SPARSE_BODY_THRESHOLD
+def test_real_long_login_page_fixture_classifies_auth_wall() -> None:
+    """WordPress.org login (2368 chars markdown + password input).
+
+    Real Firecrawl capture; locks in the long-body-login regression.
+    """
+    result = _load_fixture("login_gated_long.json")
+    assert len(result.markdown or "") > 500
+
+    assert classify_scrape(result) is ScrapeQuality.AUTH_WALL
 
     assert classify_scrape(result) is ScrapeQuality.AUTH_WALL
