@@ -217,7 +217,8 @@ Reasons:
   privacy/bandwidth/CSP constraint emerges later.
 
 Implementation: the root `style.css` explicitly `@import`s
-`./styles/tokens/fonts-cdn.css` after `theme.css` (see section 6.3).
+`./styles/tokens/fonts-cdn.css` (alongside `animations.css`; see §6.3).
+`theme.css` is no longer imported — see TASK-1515.03 and §4 for why.
 
 ## 6. Concrete next action (mechanism (b) implementation spec)
 
@@ -270,19 +271,31 @@ Mintlify reads. See TASK-1515.03 for the full rationale.
 
 `opennotes-docs/style.css` is committed and imports only the consumed
 vendored files. The Mintlify-honored RGB triplets for `--primary*` live
-inline in the same file (see §4 for the full token contract):
+inline in the same file, alongside an a11y-fix override that swaps the
+`.prose a` border-bottom-color to a darker on-surface teal for WCAG AA
+on white. Sketch (see the live file for full comments):
 
 ```css
 @import "./styles/tokens/animations.css";
 @import "./styles/tokens/fonts-cdn.css";
 
 :root {
-  --primary: 0 171 120;
+  --primary: 0 171 120;        /* brand teal — sidebar/badges/widgets */
   --primary-light: 88 198 155;
   --primary-dark: 0 137 96;
+  --primary-on-surface: 0 130 82; /* WCAG AA: ~4.87:1 vs white (TASK-1515.01) */
 }
-.dark {
-  --primary: 0 187 135;
+.dark { --primary: 0 187 135; }
+
+/* Override Mintlify's prose-anchor border-bottom-color for AA on white.
+   Selector mirrors Mintlify's own; style.css loads after the Mintlify
+   bundle so a matching-specificity rule wins. Dark mode keeps `--primary`
+   because the underline sits on near-black, not white. */
+.prose :where(a):not(:where([class~="not-prose"], [class~="not-prose"] *)) {
+  border-bottom-color: rgb(var(--primary-on-surface));
+}
+.dark .prose :where(a):not(:where([class~="not-prose"], [class~="not-prose"] *)) {
+  border-bottom-color: rgb(var(--primary));
 }
 ```
 

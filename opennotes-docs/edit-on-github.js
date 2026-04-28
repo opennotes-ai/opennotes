@@ -10,13 +10,21 @@
      script, so we hook history events and re-inject on every URL change.
    - We mark the injected node with [data-edit-on-github] and replace it on
      each navigation, so we never duplicate.
+   - Idempotence: a window-level guard prevents history.pushState/replaceState
+     wrappers from stacking if the script is evaluated more than once (HMR,
+     hot reload, future Mintlify loader changes).
+   - SPA route-change race: after navigation, React rerenders the page content
+     asynchronously. We poll for ~1s post-navigation AND attach a
+     MutationObserver that re-injects if our node is removed by a later
+     rerender.
    - API Reference endpoint pages (e.g. /api-reference/public/list-requests)
      are generated from openapi-public.json and have no .mdx source. We skip
-     injection on /api-reference/<slug> paths that don't match a known
-     hand-authored MDX file. */
+     injection on paths that don't match the hand-authored MDX allowlist. */
 
 (function () {
   if (typeof window === "undefined") return;
+  if (window.__opennotesEditOnGithubInstalled) return;
+  window.__opennotesEditOnGithubInstalled = true;
 
   var REPO_BASE = "https://github.com/opennotes-ai/opennotes/edit/main/opennotes-docs";
 
@@ -53,9 +61,17 @@
     "/api-reference/conventions",
   ]);
 
+  function normalizePath(pathname) {
+    if (!pathname || pathname === "/") return "/introduction";
+    return pathname.length > 1 && pathname.endsWith("/")
+      ? pathname.slice(0, -1)
+      : pathname;
+  }
+
   function pathToSourceUrl(pathname) {
-    if (!MDX_PAGES.has(pathname)) return null;
-    return REPO_BASE + pathname + ".mdx";
+    var p = normalizePath(pathname);
+    if (!MDX_PAGES.has(p)) return null;
+    return REPO_BASE + p + ".mdx";
   }
 
   function findMountPoint() {
@@ -86,11 +102,21 @@
   }
 
   function inject() {
-    var existing = document.querySelector("[data-edit-on-github]");
-    if (existing) existing.remove();
-
     var url = pathToSourceUrl(window.location.pathname);
-    if (!url) return;
+    if (!url) {
+      // Path is not in the MDX allowlist (e.g. OpenAPI-generated page) —
+      // remove any stale link from a prior in-allowlist page.
+      var stale = document.querySelector("[data-edit-on-github]");
+      if (stale) stale.remove();
+      return;
+    }
+
+    // If a link already exists with the right href, leave it alone.
+    var existing = document.querySelector("[data-edit-on-github] a");
+    if (existing && existing.href === url) return;
+
+    var oldWrapper = document.querySelector("[data-edit-on-github]");
+    if (oldWrapper) oldWrapper.remove();
 
     var mount = findMountPoint();
     if (!mount) return;
@@ -103,17 +129,33 @@
     }
   }
 
+  // Poll briefly post-navigation: React often replaces the page content
+  // asynchronously, so a single inject() right after pushState may land
+  // before the new <div id="pagination"> mounts (or be wiped by the rerender
+  // immediately after). Run all attempts; inject() is idempotent.
   function scheduleInject() {
-    // Mintlify's MDX render lands after route change; wait briefly for the
-    // DOM, then poll a few times in case React is mid-rerender.
     var attempts = 0;
     var timer = setInterval(function () {
       inject();
       attempts++;
-      if (attempts >= 6 || document.querySelector("[data-edit-on-github]")) {
-        clearInterval(timer);
-      }
+      if (attempts >= 8) clearInterval(timer);
     }, 150);
+  }
+
+  // MutationObserver re-injects after the polling window if Mintlify's React
+  // tree replaces the content area. Watches the body for child-list changes;
+  // re-runs inject() when our wrapper is missing from the current page.
+  var observer = new MutationObserver(function () {
+    if (!document.querySelector("[data-edit-on-github]")) {
+      inject();
+    }
+  });
+  if (document.body) {
+    observer.observe(document.body, { childList: true, subtree: true });
+  } else {
+    document.addEventListener("DOMContentLoaded", function () {
+      observer.observe(document.body, { childList: true, subtree: true });
+    });
   }
 
   // Patch history to re-inject on SPA navigation.

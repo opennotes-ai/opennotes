@@ -11,7 +11,7 @@ flow back as moderation actions.
 ```mermaid
 flowchart LR
     A[User posts on platform] --> B[Integration submits to Open Notes API]
-    B --> C[Community review &amp; bridging-based scoring]
+    B --> C["Community review and bridging-based scoring"]
     C --> D[Decision returned via webhook]
     D --> E[Integration applies action on platform]
 ```

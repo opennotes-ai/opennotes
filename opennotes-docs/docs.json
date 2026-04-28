@@ -4,8 +4,8 @@
   "name": "Open Notes Docs",
   "colors": {
     "primary": "#3EB489",
-    "light": "#3EB489",
-    "dark": "#00BB87"
+    "light": "#00BB87",
+    "dark": "#3EB489"
   },
   "contextual": {
     "options": ["copy", "view", "chatgpt", "claude"]
