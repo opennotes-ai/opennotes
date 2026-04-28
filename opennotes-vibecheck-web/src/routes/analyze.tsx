@@ -281,7 +281,10 @@ export default function AnalyzePage() {
                 data-preview-size={previewSize()}
                 class={layoutClass()}
               >
-                <div class="flex min-h-[60vh] min-w-0 flex-col gap-4">
+                <div
+                  data-testid="analyze-left-column"
+                  class="flex min-w-0 flex-col gap-4"
+                >
                   <Show when={jobStatus() === "done" || sidebarPayload()}>
                     <HeadlineSummaryReport
                       headline={resolveHeadline(

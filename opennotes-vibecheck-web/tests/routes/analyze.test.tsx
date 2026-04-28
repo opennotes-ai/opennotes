@@ -680,6 +680,19 @@ describe("AnalyzePage route", () => {
   });
 });
 
+describe("AnalyzePage left column min-h floor (TASK-1483.13.03)", () => {
+  it("left column wrapper does not enforce min-h-[60vh] so it sizes to actual content", async () => {
+    renderAt("/analyze?job=job-left-col&url=https://news.example.com/a");
+
+    const leftColumn = await screen.findByTestId("analyze-left-column");
+    const cls = leftColumn.getAttribute("class") ?? "";
+    expect(cls).not.toMatch(/min-h-\[60vh\]/);
+    // Sanity: surrounding flex/min-w invariants preserved.
+    expect(cls).toMatch(/\bflex\b/);
+    expect(cls).toMatch(/\bmin-w-0\b/);
+  });
+});
+
 describe("AnalyzePage Original tab — soft-disabled when canIframe=false (TASK-1483.13.02)", () => {
   function mockBlockedFrame() {
     getFrameCompatMock.mockResolvedValue({
