@@ -739,6 +739,21 @@ describe("AnalyzePage route", () => {
     expect(screen.getByRole("button", { name: "Screenshot" })).not.toBeNull();
   });
 
+  it("visually distinguishes the preview size controls from preview mode controls", async () => {
+    renderAt("/analyze?job=job-preview-controls&url=https://news.example.com/a");
+
+    await waitFor(() => {
+      expect(screen.queryByTestId("preview-mode-selector")).not.toBeNull();
+    });
+
+    const modeClass =
+      screen.getByTestId("preview-mode-selector").getAttribute("class") ?? "";
+    const sizeClass =
+      screen.getByTestId("preview-size-selector").getAttribute("class") ?? "";
+    expect(sizeClass).toMatch(/border-dashed/);
+    expect(modeClass).not.toMatch(/border-dashed/);
+  });
+
   it("manual preview mode selection is session-scoped and resets for a new job", async () => {
     getArchiveProbeMock.mockResolvedValue(
       frameCompatResult({
@@ -854,6 +869,22 @@ describe("AnalyzePage left column min-h floor (TASK-1483.13.03)", () => {
     // Sanity: surrounding flex/min-w invariants preserved.
     expect(cls).toMatch(/\bflex\b/);
     expect(cls).toMatch(/\bmin-w-0\b/);
+  });
+});
+
+describe("AnalyzePage mobile analysis-first layout (TASK-1483.14.05)", () => {
+  it("orders the analysis sidebar before the page preview on mobile and restores preview-left on desktop", async () => {
+    renderAt("/analyze?job=job-mobile-order&url=https://news.example.com/a");
+
+    const leftColumn = await screen.findByTestId("analyze-left-column");
+    const sidebar = screen.getByTestId("analysis-sidebar");
+
+    const leftClass = leftColumn.getAttribute("class") ?? "";
+    const sidebarClass = sidebar.getAttribute("class") ?? "";
+    expect(leftClass).toMatch(/\border-2\b/);
+    expect(leftClass).toMatch(/\blg:order-1\b/);
+    expect(sidebarClass).toMatch(/\border-1\b/);
+    expect(sidebarClass).toMatch(/\blg:order-2\b/);
   });
 });
 

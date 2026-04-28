@@ -1,4 +1,5 @@
 import { Show, createEffect, createSignal, onCleanup, onMount } from "solid-js";
+import { ExternalLink } from "lucide-solid";
 
 export type PreviewMode = "original" | "archived" | "screenshot";
 export type ResolvedPreviewMode = PreviewMode | "unavailable";
@@ -386,21 +387,13 @@ export default function PageFrame(props: PageFrameProps) {
             class="inline-flex items-center gap-1 rounded-md px-2 py-1 text-foreground hover:bg-accent hover:text-accent-foreground"
           >
             Open original
-            <svg
+            <ExternalLink
               aria-hidden="true"
-              viewBox="0 0 16 16"
-              width="12"
-              height="12"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="1.6"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            >
-              <path d="M6 3H3v10h10v-3" />
-              <path d="M10 2h4v4" />
-              <path d="M14 2l-6 6" />
-            </svg>
+              data-testid="open-original-icon"
+              data-icon="external-link"
+              size={12}
+              strokeWidth={1.6}
+            />
           </a>
         </Show>
       </div>

@@ -518,6 +518,11 @@ export default function AnalyzePage() {
       ? `${corners} bg-foreground px-3 py-1.5 text-xs font-medium text-background disabled:cursor-not-allowed disabled:opacity-50`
       : `${corners} px-3 py-1.5 text-xs font-medium text-muted-foreground hover:bg-accent hover:text-accent-foreground disabled:cursor-not-allowed disabled:opacity-50`;
 
+  const sizeSegmentClass = (isSelected: boolean, corners: string) =>
+    isSelected
+      ? `${corners} bg-muted px-2.5 py-1 text-[11px] font-medium text-foreground disabled:cursor-not-allowed disabled:opacity-50`
+      : `${corners} px-2.5 py-1 text-[11px] font-medium text-muted-foreground hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50`;
+
   return (
     <>
       <Title>vibecheck — analyzing</Title>
@@ -566,7 +571,7 @@ export default function AnalyzePage() {
               >
                 <div
                   data-testid="analyze-left-column"
-                  class="flex min-w-0 flex-col gap-4"
+                  class="order-2 flex min-w-0 flex-col gap-4 lg:order-1"
                 >
                   <Show when={jobStatus() === "done" || sidebarPayload()}>
                     <HeadlineSummaryReport
@@ -666,16 +671,16 @@ export default function AnalyzePage() {
                     </div>
                     <div
                       data-testid="preview-size-selector"
-                      class="flex items-center justify-end"
+                      class="flex items-center justify-end rounded-md border border-dashed border-border/80 bg-background/60 p-1"
                       role="group"
                       aria-label="Preview size"
                     >
-                      <div class="inline-flex rounded-lg border border-border bg-muted/50 p-1">
+                      <div class="inline-flex rounded-md bg-transparent">
                         <For each={PREVIEW_SIZE_OPTIONS}>
                           {(option, index) => (
                             <button
                               type="button"
-                              class={segmentClass(
+                              class={sizeSegmentClass(
                                 previewSize() === option.value,
                                 segmentCornerClass(
                                   index(),
@@ -741,6 +746,7 @@ export default function AnalyzePage() {
                     Boolean(frameCompat().archivedPreviewUrl) &&
                     hasCurrentUtteranceAnchors()
                   }
+                  class="order-1 lg:order-2"
                 />
               </div>
             }

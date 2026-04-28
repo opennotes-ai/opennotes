@@ -9,6 +9,12 @@ import {
   untrack,
   type JSX,
 } from "solid-js";
+import { ChevronDown, CircleHelp } from "lucide-solid";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@opennotes/ui/components/ui/popover";
 import type { SectionSlot } from "~/lib/api-client.server";
 import type {
   PartialSectionSlots,
@@ -17,6 +23,11 @@ import type {
 import { SKELETONS } from "./skeletons";
 import RetryButton from "./RetryButton";
 import { sectionDisplayName } from "./display";
+import {
+  sectionHelp,
+  slotHelp,
+  type SidebarHelpCopy,
+} from "./help";
 
 export type SlugToSlots = PartialSectionSlots;
 
@@ -37,26 +48,19 @@ export interface SectionGroupProps {
 
 function ChevronIcon(props: { expanded: boolean }) {
   return (
-    <svg
+    <ChevronDown
       data-testid="slot-chevron"
+      data-icon="chevron-down"
       data-state={props.expanded ? "expanded" : "collapsed"}
       aria-hidden="true"
-      viewBox="0 0 16 16"
-      width="12"
-      height="12"
-      fill="none"
-      stroke="currentColor"
-      stroke-width="1.8"
-      stroke-linecap="round"
-      stroke-linejoin="round"
+      size={12}
+      strokeWidth={1.8}
       class={
         props.expanded
           ? "shrink-0 transition-transform duration-150"
           : "shrink-0 -rotate-90 transition-transform duration-150"
       }
-    >
-      <path d="M3 6l5 5 5-5" />
-    </svg>
+    />
   );
 }
 
@@ -98,6 +102,52 @@ function slugHeadingLabel(slug: SectionSlugLiteral): string {
     case "opinions_sentiments__subjective":
       return "Subjective claims";
   }
+}
+
+function HelpPopover(props: {
+  copy: SidebarHelpCopy | null;
+  triggerTestId: string;
+  contentTestId: string;
+  label: string;
+}) {
+  return (
+    <Show when={props.copy}>
+      {(copy) => (
+        <Popover>
+          <PopoverTrigger
+            type="button"
+            data-testid={props.triggerTestId}
+            aria-label={`What does ${props.label} mean?`}
+            class="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-sm text-muted-foreground outline-none hover:bg-accent hover:text-accent-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
+          >
+            <CircleHelp
+              aria-hidden="true"
+              data-icon="circle-help"
+              size={14}
+              strokeWidth={1.9}
+            />
+          </PopoverTrigger>
+          <PopoverContent
+            data-testid={props.contentTestId}
+            class="max-w-xs space-y-2 text-xs leading-relaxed"
+          >
+            <p>
+              <span class="font-semibold text-foreground">
+                What we look for:
+              </span>{" "}
+              {copy().looksFor}
+            </p>
+            <p>
+              <span class="font-semibold text-foreground">
+                What these results mean:
+              </span>{" "}
+              {copy().means}
+            </p>
+          </PopoverContent>
+        </Popover>
+      )}
+    </Show>
+  );
 }
 
 function defaultOpenFor(
@@ -187,8 +237,16 @@ export default function SectionGroup(props: SectionGroupProps): JSX.Element {
       data-testid={`section-group-${props.label}`}
       class="flex flex-col gap-4 rounded-lg bg-card p-4 text-card-foreground shadow-sm"
     >
-      <header class="flex items-baseline justify-between gap-2">
-        <h3 class="text-sm font-semibold text-foreground">{props.label}</h3>
+      <header class="flex items-start justify-between gap-2">
+        <div class="flex min-w-0 items-center gap-1.5">
+          <h3 class="text-sm font-semibold text-foreground">{props.label}</h3>
+          <HelpPopover
+            copy={sectionHelp(props.label)}
+            triggerTestId={`section-help-${props.label}`}
+            contentTestId={`section-help-content-${props.label}`}
+            label={props.label}
+          />
+        </div>
         <Show when={totalCount() > 0}>
           <span
             data-testid="section-group-counter"
@@ -237,45 +295,53 @@ export default function SectionGroup(props: SectionGroupProps): JSX.Element {
                 data-cached-hint={props.cachedHint ? "1" : undefined}
                 class="flex flex-col gap-2"
               >
-                <button
-                  type="button"
-                  data-testid={`slot-toggle-${slug}`}
-                  data-dimmed={slot().state === "pending" ? "true" : "false"}
-                  aria-expanded={isOpen() ? "true" : "false"}
-                  aria-controls={bodyId}
-                  onClick={toggle}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter" || event.key === " ") {
-                      event.preventDefault();
-                      toggle();
-                    }
-                  }}
-                  class={
-                    slot().state === "pending"
-                      ? "flex items-center justify-between gap-2 rounded-sm text-left text-[11px] font-semibold uppercase tracking-wide text-muted-foreground opacity-60 outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                      : "flex items-center justify-between gap-2 rounded-sm text-left text-[11px] font-semibold uppercase tracking-wide text-muted-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                  }
-                >
-                  <span
-                    data-testid={`slot-label-${slug}`}
+                <div class="flex items-center gap-2">
+                  <button
+                    type="button"
+                    data-testid={`slot-toggle-${slug}`}
                     data-dimmed={slot().state === "pending" ? "true" : "false"}
+                    aria-expanded={isOpen() ? "true" : "false"}
+                    aria-controls={bodyId}
+                    onClick={toggle}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        toggle();
+                      }
+                    }}
+                    class={
+                      slot().state === "pending"
+                        ? "flex min-w-0 flex-1 items-center justify-between gap-2 rounded-sm text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground opacity-60 outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                        : "flex min-w-0 flex-1 items-center justify-between gap-2 rounded-sm text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                    }
                   >
-                    {heading}
-                  </span>
-                  <span class="ml-auto flex items-center gap-2">
-                    <Show when={countLabel()}>
-                      {(label) => (
-                        <span
-                          data-testid={`slot-count-${slug}`}
-                          class="rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium normal-case tracking-normal text-muted-foreground"
-                        >
-                          {label()}
-                        </span>
-                      )}
-                    </Show>
-                    <ChevronIcon expanded={isOpen()} />
-                  </span>
-                </button>
+                    <span
+                      data-testid={`slot-label-${slug}`}
+                      data-dimmed={slot().state === "pending" ? "true" : "false"}
+                    >
+                      {heading}
+                    </span>
+                    <span class="ml-auto flex items-center gap-2">
+                      <Show when={countLabel()}>
+                        {(label) => (
+                          <span
+                            data-testid={`slot-count-${slug}`}
+                            class="rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium normal-case tracking-normal text-muted-foreground"
+                          >
+                            {label()}
+                          </span>
+                        )}
+                      </Show>
+                      <ChevronIcon expanded={isOpen()} />
+                    </span>
+                  </button>
+                  <HelpPopover
+                    copy={slotHelp(slug)}
+                    triggerTestId={`slot-help-${slug}`}
+                    contentTestId={`slot-help-content-${slug}`}
+                    label={heading}
+                  />
+                </div>
                 <Show when={isOpen()}>
                   <div id={bodyId}>
                     <Switch>
