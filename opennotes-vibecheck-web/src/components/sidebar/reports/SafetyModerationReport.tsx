@@ -1,12 +1,15 @@
 import { For, Show, createMemo } from "solid-js";
 import type { components } from "~/lib/generated-types";
 import ExpandableText from "../ExpandableText";
+import UtteranceRef from "../UtteranceRef";
 
 type HarmfulContentMatch = components["schemas"]["HarmfulContentMatch"];
 type HarmfulContentSource = HarmfulContentMatch["source"];
 
 export interface SafetyModerationReportProps {
   matches: HarmfulContentMatch[];
+  onUtteranceClick?: (id: string) => void;
+  canJumpToUtterance?: boolean;
 }
 
 function formatScore(score: number): string {
@@ -113,7 +116,17 @@ export default function SafetyModerationReport(
                           when={match.utterance_text?.trim()}
                           fallback={
                             <p class="mt-2 font-mono text-[11px] text-muted-foreground">
-                              utterance {match.utterance_id}
+                              utterance{" "}
+                              <UtteranceRef
+                                utteranceId={String(match.utterance_id)}
+                                label={String(match.utterance_id)}
+                                onClick={props.onUtteranceClick ?? (() => undefined)}
+                                disabled={
+                                  !props.canJumpToUtterance ||
+                                  !props.onUtteranceClick
+                                }
+                                testId="safety-utterance-ref"
+                              />
                             </p>
                           }
                         >

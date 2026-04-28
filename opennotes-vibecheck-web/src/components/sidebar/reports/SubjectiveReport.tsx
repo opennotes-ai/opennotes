@@ -1,11 +1,14 @@
 import { For, Show } from "solid-js";
 import type { components } from "~/lib/generated-types";
 import ExpandableText from "../ExpandableText";
+import UtteranceRef from "../UtteranceRef";
 
 type SubjectiveClaim = components["schemas"]["SubjectiveClaim"];
 
 export interface SubjectiveReportProps {
   claims: SubjectiveClaim[];
+  onUtteranceClick?: (id: string) => void;
+  canJumpToUtterance?: boolean;
 }
 
 export default function SubjectiveReport(props: SubjectiveReportProps) {
@@ -45,6 +48,20 @@ export default function SubjectiveReport(props: SubjectiveReportProps) {
                     class="text-foreground"
                   />
                 </div>
+                <Show when={claim.utterance_id}>
+                  {(utteranceId) => (
+                    <UtteranceRef
+                      utteranceId={String(utteranceId())}
+                      label={`turn ${utteranceId()}`}
+                      onClick={props.onUtteranceClick ?? (() => undefined)}
+                      disabled={
+                        !props.canJumpToUtterance || !props.onUtteranceClick
+                      }
+                      testId="subjective-claim-utterance-ref"
+                      class="mt-0.5 shrink-0"
+                    />
+                  )}
+                </Show>
               </li>
             )}
           </For>

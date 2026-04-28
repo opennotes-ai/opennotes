@@ -175,6 +175,13 @@ class HeadlineSummary(BaseModel):
     unavailable_inputs: list[str] = Field(default_factory=list)
 
 
+class UtteranceAnchor(BaseModel):
+    """Minimal position-to-id map for client-side transcript jumps."""
+
+    position: int = Field(description="1-indexed utterance position in the extracted thread.")
+    utterance_id: str = Field(description="Stable utterance id stored in vibecheck_job_utterances.")
+
+
 class SidebarPayload(BaseModel):
     """Top-level response for `POST /api/analyze`.
 
@@ -198,6 +205,10 @@ class SidebarPayload(BaseModel):
     image_moderation: ImageModerationSection = Field(default_factory=ImageModerationSection)
     video_moderation: VideoModerationSection = Field(default_factory=VideoModerationSection)
     headline: HeadlineSummary | None = None
+    utterances: list[UtteranceAnchor] = Field(
+        default_factory=list,
+        description="Minimal position-to-id anchors used by sidebar controls to jump into the archived transcript.",
+    )
 
 
 class JobState(BaseModel):
@@ -287,6 +298,7 @@ __all__ = [
     "SectionState",
     "SidebarPayload",
     "ToneDynamicsSection",
+    "UtteranceAnchor",
     "VideoModerationSection",
     "WebRiskSection",
 ]

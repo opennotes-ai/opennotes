@@ -966,6 +966,11 @@ export interface components {
             image_moderation?: components["schemas"]["ImageModerationSection"];
             video_moderation?: components["schemas"]["VideoModerationSection"];
             headline?: components["schemas"]["HeadlineSummary"] | null;
+            /**
+             * Utterances
+             * @description Minimal position-to-id anchors used by sidebar controls to jump into the archived transcript.
+             */
+            utterances?: components["schemas"]["UtteranceAnchor"][];
         };
         /**
          * SpeakerArc
@@ -1014,6 +1019,22 @@ export interface components {
             scd: components["schemas"]["SCDReport"];
             /** Flashpoint Matches */
             flashpoint_matches?: components["schemas"]["FlashpointMatch"][];
+        };
+        /**
+         * UtteranceAnchor
+         * @description Minimal position-to-id map for client-side transcript jumps.
+         */
+        UtteranceAnchor: {
+            /**
+             * Position
+             * @description 1-indexed utterance position in the extracted thread.
+             */
+            position: number;
+            /**
+             * Utterance Id
+             * @description Stable utterance id stored in vibecheck_job_utterances.
+             */
+            utterance_id: string;
         };
         /** ValidationError */
         ValidationError: {
@@ -1114,6 +1135,7 @@ export interface operations {
         parameters: {
             query: {
                 url: string;
+                job_id?: string | null;
                 generate?: boolean;
             };
             header?: never;

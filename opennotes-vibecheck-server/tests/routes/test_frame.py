@@ -339,6 +339,115 @@ class TestArchivePreview:
         assert "Archived preview" in resp.text
         assert "alert(1)" not in resp.text
 
+    def test_cached_html_with_matching_job_id_returns_annotated_html(
+        self, client: TestClient
+    ) -> None:
+        from src.cache.scrape_cache import CachedScrape
+        from src.utterances.schema import Utterance
+
+        class StubCache:
+            async def get(
+                self, url: str, *, tier: str = "scrape"
+            ) -> CachedScrape:
+                assert url == "https://example.com/article"
+                assert tier == "scrape"
+                return CachedScrape(html="<main><p>Alice opens calmly.</p></main>")
+
+        async def stub_lookup(
+            pool: object, job_id: object, requested_url: str
+        ) -> list[Utterance]:
+            assert pool is client.app.state.db_pool
+            assert requested_url == "https://example.com/article"
+            return [
+                Utterance(
+                    utterance_id="comment-0-aaa",
+                    kind="comment",
+                    text="Alice opens calmly.",
+                )
+            ]
+
+        client.app.state.db_pool = object()
+        try:
+            with (
+                patch("src.routes.frame.get_scrape_cache", return_value=StubCache()),
+                patch(
+                    "src.routes.frame.get_utterances_for_archive",
+                    side_effect=stub_lookup,
+                    create=True,
+                ),
+            ):
+                resp = client.get(
+                    "/api/archive-preview",
+                    params={
+                        "url": "https://example.com/article",
+                        "job_id": "11111111-1111-1111-1111-111111111111",
+                    },
+                )
+        finally:
+            del client.app.state.db_pool
+
+        assert resp.status_code == 200
+        assert 'data-utterance-id="comment-0-aaa"' in resp.text
+
+    def test_cached_html_without_job_id_preserves_unannotated_response(
+        self, client: TestClient
+    ) -> None:
+        from src.cache.scrape_cache import CachedScrape
+
+        class StubCache:
+            async def get(
+                self, url: str, *, tier: str = "scrape"
+            ) -> CachedScrape:
+                return CachedScrape(html="<main><p>Alice opens calmly.</p></main>")
+
+        with patch("src.routes.frame.get_scrape_cache", return_value=StubCache()):
+            resp = client.get(
+                "/api/archive-preview",
+                params={"url": "https://example.com/article"},
+            )
+
+        assert resp.status_code == 200
+        assert "data-utterance-id" not in resp.text
+
+    def test_cached_html_with_mismatched_job_url_stays_unannotated(
+        self, client: TestClient
+    ) -> None:
+        from src.cache.scrape_cache import CachedScrape
+
+        class StubCache:
+            async def get(
+                self, url: str, *, tier: str = "scrape"
+            ) -> CachedScrape:
+                return CachedScrape(html="<main><p>Alice opens calmly.</p></main>")
+
+        async def stub_lookup(
+            pool: object, job_id: object, requested_url: str
+        ) -> list[object]:
+            return []
+
+        client.app.state.db_pool = object()
+        try:
+            with (
+                patch("src.routes.frame.get_scrape_cache", return_value=StubCache()),
+                patch(
+                    "src.routes.frame.get_utterances_for_archive",
+                    side_effect=stub_lookup,
+                    create=True,
+                ),
+            ):
+                resp = client.get(
+                    "/api/archive-preview",
+                    params={
+                        "url": "https://example.com/article",
+                        "job_id": "11111111-1111-1111-1111-111111111111",
+                    },
+                )
+        finally:
+            del client.app.state.db_pool
+
+        assert resp.status_code == 200
+        assert "data-utterance-id" not in resp.text
+
     def test_cache_miss_without_generate_returns_archive_unavailable(
         self, client: TestClient
     ) -> None:
@@ -402,6 +511,75 @@ class TestArchivePreview:
         assert resp.text == "<article>Fresh archive</article>"
         assert cache.put_url == "https://example.com/fresh"
 
+    def test_generated_html_with_job_id_annotates_response_but_not_cache(
+        self, client: TestClient
+    ) -> None:
+        from src.cache.scrape_cache import CachedScrape
+        from src.firecrawl_client import ScrapeResult
+        from src.utterances.schema import Utterance
+
+        class StubCache:
+            def __init__(self) -> None:
+                self.stored_html: str | None = None
+
+            async def get(self, url: str, *, tier: str = "scrape") -> None:
+                return None
+
+            async def put(
+                self,
+                url: str,
+                scrape: ScrapeResult,
+                *,
+                tier: str = "scrape",
+            ) -> CachedScrape:
+                self.stored_html = scrape.html
+                return CachedScrape(html=scrape.html, metadata=scrape.metadata)
+
+        class StubClient:
+            async def scrape(
+                self, url: str, formats: list[str], *, only_main_content: bool = False
+            ) -> ScrapeResult:
+                return ScrapeResult(html="<article><p>Bob pushes back.</p></article>")
+
+        async def stub_lookup(
+            pool: object, job_id: object, requested_url: str
+        ) -> list[Utterance]:
+            return [
+                Utterance(
+                    utterance_id="comment-1-bbb",
+                    kind="comment",
+                    text="Bob pushes back.",
+                )
+            ]
+
+        cache = StubCache()
+        client.app.state.db_pool = object()
+        try:
+            with (
+                patch("src.routes.frame.get_scrape_cache", return_value=cache),
+                patch("src.routes.frame.get_firecrawl_client", return_value=StubClient()),
+                patch(
+                    "src.routes.frame.get_utterances_for_archive",
+                    side_effect=stub_lookup,
+                    create=True,
+                ),
+            ):
+                resp = client.get(
+                    "/api/archive-preview",
+                    params={
+                        "url": "https://example.com/fresh",
+                        "generate": "1",
+                        "job_id": "11111111-1111-1111-1111-111111111111",
+                    },
+                )
+        finally:
+            del client.app.state.db_pool
+
+        assert resp.status_code == 200
+        assert 'data-utterance-id="comment-1-bbb"' in resp.text
+        assert cache.stored_html == "<article><p>Bob pushes back.</p></article>"
+        assert "data-utterance-id" not in (cache.stored_html or "")
+
     def test_generate_timeout_returns_archive_unavailable_quickly(
         self, client: TestClient, monkeypatch: pytest.MonkeyPatch
     ) -> None:
@@ -432,6 +610,25 @@ class TestArchivePreview:
         resp = client.get("/api/archive-preview", params={"url": "file:///etc/passwd"})
         assert resp.status_code == 400
         assert resp.json() == {"detail": "URL must be an http(s) URL"}
+
+    def test_invalid_job_id_returns_400_before_cache_lookup(
+        self, client: TestClient
+    ) -> None:
+        class StubCache:
+            async def get(self, url: str, *, tier: str = "scrape") -> object:
+                raise AssertionError("cache should not be read for invalid job_id")
+
+        with patch("src.routes.frame.get_scrape_cache", return_value=StubCache()):
+            resp = client.get(
+                "/api/archive-preview",
+                params={
+                    "url": "https://example.com/article",
+                    "job_id": "not-a-uuid",
+                },
+            )
+
+        assert resp.status_code == 400
+        assert resp.json() == {"detail": "Invalid job_id"}
 
 
 class TestSSRFValidation:
