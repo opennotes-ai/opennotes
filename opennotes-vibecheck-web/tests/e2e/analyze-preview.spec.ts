@@ -300,27 +300,24 @@ test("permissive page keeps the original iframe by default", async ({
   await expect(page.locator('[data-testid="page-frame-screenshot"]')).toHaveCount(0);
 });
 
-test("CSP frame-ancestors blocks countdown then auto-switches to archive (chain B)", async ({
+test("CSP frame-ancestors auto-resolves to archive immediately, no countdown (TASK-1483.13.02)", async ({
   page,
 }) => {
   await page.goto(`${webBaseUrl}/analyze?job=${BLOCKED_WITH_ARCHIVE_JOB_ID}`);
 
-  // Deciding interstitial appears immediately (server reports blocking header).
-  await expect(page.locator('[data-testid="page-frame-deciding"]')).toBeVisible({
-    timeout: 2000,
-  });
-
-  // Within ~17s the countdown elapses and the archive iframe takes over.
-  await expect(page.locator('[data-testid="page-frame-archived-iframe"]')).toBeVisible({
-    timeout: 17_000,
-  });
-  await expect(page.locator('[data-testid="page-frame-deciding"]')).toHaveCount(0);
-  await expect(page.locator('[data-testid="page-frame-archived-iframe"]')).toHaveAttribute(
-    "sandbox",
-    "allow-same-origin",
+  // Server reports blocked → skip the deciding interstitial entirely and
+  // resolve straight to archive.
+  await expect(
+    page.locator('[data-testid="page-frame-archived-iframe"]'),
+  ).toBeVisible({ timeout: 5_000 });
+  await expect(page.locator('[data-testid="page-frame-deciding"]')).toHaveCount(
+    0,
   );
+  await expect(
+    page.locator('[data-testid="page-frame-archived-iframe"]'),
+  ).toHaveAttribute("sandbox", "allow-same-origin");
 
-  // Tab press follows the auto-switched mode (truthfulness invariant).
+  // Tab press follows the auto-resolved mode.
   await expect(
     page.getByRole("button", { name: "Archived" }),
   ).toHaveAttribute("aria-pressed", "true");
@@ -328,25 +325,32 @@ test("CSP frame-ancestors blocks countdown then auto-switches to archive (chain 
     page.getByRole("button", { name: "Original" }),
   ).toHaveAttribute("aria-pressed", "false");
 
+  // Original tab is soft-disabled (muted opacity, aria-describedby tooltip).
+  const original = page.getByTestId("preview-mode-original");
+  await expect(original).toHaveAttribute(
+    "aria-describedby",
+    "preview-mode-original-tip",
+  );
+  await expect(original).not.toHaveAttribute("aria-disabled", /.*/);
+  await expect(original).not.toHaveAttribute("disabled", /.*/);
+
   const archivedText = page
     .frameLocator('[data-testid="page-frame-archived-iframe"]')
     .locator("h1");
   await expect(archivedText).toHaveText("Archived preview fixture");
 });
 
-test("CSP frame-ancestors without archive countdown then auto-switches to screenshot", async ({
+test("CSP frame-ancestors auto-resolves to screenshot when no archive is available (TASK-1483.13.02)", async ({
   page,
 }) => {
   await page.goto(`${webBaseUrl}/analyze?job=${BLOCKED_WITHOUT_ARCHIVE_JOB_ID}`);
 
-  await expect(page.locator('[data-testid="page-frame-deciding"]')).toBeVisible({
-    timeout: 2000,
-  });
-
-  await expect(page.locator('[data-testid="page-frame-screenshot"]')).toBeVisible({
-    timeout: 17_000,
-  });
-  await expect(page.locator('[data-testid="page-frame-deciding"]')).toHaveCount(0);
+  await expect(
+    page.locator('[data-testid="page-frame-screenshot"]'),
+  ).toBeVisible({ timeout: 5_000 });
+  await expect(page.locator('[data-testid="page-frame-deciding"]')).toHaveCount(
+    0,
+  );
 
   await expect(
     page.getByRole("button", { name: "Screenshot" }),
@@ -356,25 +360,38 @@ test("CSP frame-ancestors without archive countdown then auto-switches to screen
   ).toHaveAttribute("aria-pressed", "false");
 });
 
-test("manual preview mode clicks switch visible previews without breaking width presets", async ({
+test("manual preview mode clicks switch visible previews; Original click re-arms deciding (escape hatch) (TASK-1483.13.02)", async ({
   page,
 }) => {
   await page.goto(`${webBaseUrl}/analyze?job=${BLOCKED_WITH_ARCHIVE_JOB_ID}`);
   await expect(page.getByTestId("preview-mode-selector")).toBeVisible();
   await expect(page.getByTestId("preview-size-selector")).toBeVisible();
 
+  // Initial render auto-resolves to Archived (no deciding).
+  await expect(
+    page.locator('[data-testid="page-frame-archived-iframe"]'),
+  ).toBeVisible();
+  await expect(page.locator('[data-testid="page-frame-deciding"]')).toHaveCount(
+    0,
+  );
+
   await page.getByRole("button", { name: "Screenshot" }).click();
-  await expect(page.locator('[data-testid="page-frame-screenshot"]')).toBeVisible();
+  await expect(
+    page.locator('[data-testid="page-frame-screenshot"]'),
+  ).toBeVisible();
 
   await page.getByRole("button", { name: "Archived" }).click();
-  await expect(page.locator('[data-testid="page-frame-archived-iframe"]')).toBeVisible();
+  await expect(
+    page.locator('[data-testid="page-frame-archived-iframe"]'),
+  ).toBeVisible();
 
-  // Clicking Original on a blocked fixture lands in the deciding state
-  // (countdown will eventually auto-switch back to Archived). The Original
-  // iframe is still mounted but `inert` + opacity-0 — assert against the
-  // visible interstitial rather than the hidden iframe.
+  // Escape hatch: clicking Original after a non-original mode re-arms the
+  // 15s deciding interstitial. The iframe is still mounted but inert +
+  // opacity-0 — assert against the visible interstitial.
   await page.getByRole("button", { name: "Original" }).click();
-  await expect(page.locator('[data-testid="page-frame-deciding"]')).toBeVisible();
+  await expect(
+    page.locator('[data-testid="page-frame-deciding"]'),
+  ).toBeVisible();
 
   // Width-preset assertion uses the section, not a possibly-hidden iframe.
   const sectionWidth = async () => {
@@ -392,29 +409,33 @@ test("archive 502 onError fires; auto-switch lands on Screenshot (AC #6 e2e)", a
 }) => {
   await page.goto(`${webBaseUrl}/analyze?job=${ARCHIVE_FAIL_JOB_ID}`);
 
-  // Countdown shows first.
-  await expect(page.locator('[data-testid="page-frame-deciding"]')).toBeVisible({
-    timeout: 2000,
-  });
-
-  // After ~15s the archive iframe is attempted; archive returns 502 + text/plain
-  // so iframe.onError fires immediately. PageFrame's archived-fail handler
-  // marks the archive failed; chain B then resolves to screenshot.
-  await expect(page.locator('[data-testid="page-frame-screenshot"]')).toBeVisible({
-    timeout: 20_000,
-  });
+  // Server reports blocked → PageFrame attempts the archive iframe immediately
+  // (no deciding). The archive returns 502 + text/plain, so iframe.onError
+  // fires; chain B then resolves to screenshot.
+  await expect(
+    page.locator('[data-testid="page-frame-screenshot"]'),
+  ).toBeVisible({ timeout: 10_000 });
+  await expect(page.locator('[data-testid="page-frame-deciding"]')).toHaveCount(
+    0,
+  );
   await expect(
     page.getByRole("button", { name: "Screenshot" }),
   ).toHaveAttribute("aria-pressed", "true");
 });
 
-test("tab aria-pressed never lies during the blocked-Original countdown", async ({
+test("tab aria-pressed never lies during the user-armed escape-hatch countdown (TASK-1483.13.02)", async ({
   page,
 }) => {
   await page.goto(`${webBaseUrl}/analyze?job=${BLOCKED_WITH_ARCHIVE_JOB_ID}`);
-  await expect(page.locator('[data-testid="page-frame-deciding"]')).toBeVisible({
-    timeout: 2000,
-  });
+  // Initial: archived shows immediately (auto-resolve). Then user clicks
+  // Original to re-arm the deciding window.
+  await expect(
+    page.locator('[data-testid="page-frame-archived-iframe"]'),
+  ).toBeVisible({ timeout: 5_000 });
+  await page.getByRole("button", { name: "Original" }).click();
+  await expect(
+    page.locator('[data-testid="page-frame-deciding"]'),
+  ).toBeVisible({ timeout: 2_000 });
 
   // While the deciding interstitial is up, the screenshot/archive testids
   // MUST NOT appear with Original still pressed. Poll the invariant for the
@@ -435,10 +456,10 @@ test("tab aria-pressed never lies during the blocked-Original countdown", async 
     await page.waitForTimeout(1000);
   }
 
-  // After the countdown, archive resolves and Archived tab is pressed.
-  await expect(page.locator('[data-testid="page-frame-archived-iframe"]')).toBeVisible({
-    timeout: 5_000,
-  });
+  // After the countdown, archive resolves again and Archived tab is pressed.
+  await expect(
+    page.locator('[data-testid="page-frame-archived-iframe"]'),
+  ).toBeVisible({ timeout: 5_000 });
   await expect(
     page.getByRole("button", { name: "Archived" }),
   ).toHaveAttribute("aria-pressed", "true");

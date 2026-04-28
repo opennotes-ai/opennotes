@@ -31,87 +31,76 @@ describe("<PageFrame />", () => {
     expect(screen.queryByTestId("page-frame-screenshot")).toBeNull();
   });
 
-  it("shows the screenshot first when the backend reports a blocking header", async () => {
-    vi.useFakeTimers();
-    try {
-      render(() => (
-        <PageFrame
-          url="https://example.com/article"
-          canIframe={false}
-          blockingHeader="content-security-policy: frame-ancestors 'none'"
-          screenshotUrl="https://cdn.example.com/shot.png"
-          previewMode="original"
-        />
-      ));
+  it("auto-resolves to screenshot immediately (no deciding) when canIframe=false and no archive (TASK-1483.13.02)", () => {
+    render(() => (
+      <PageFrame
+        url="https://example.com/article"
+        canIframe={false}
+        blockingHeader="content-security-policy: frame-ancestors 'none'"
+        screenshotUrl="https://cdn.example.com/shot.png"
+        previewMode="original"
+      />
+    ));
 
-      // Countdown interstitial renders first; advance past 15s to reach chain B.
-      expect(screen.getByTestId("page-frame-deciding")).not.toBeNull();
-      vi.advanceTimersByTime(15_000);
-      await Promise.resolve();
-
-      expect(screen.getByTestId("page-frame-screenshot")).not.toBeNull();
-      expect(
-        screen.getByTestId("page-frame-iframe").getAttribute("aria-hidden"),
-      ).toBe("true");
-    } finally {
-      vi.useRealTimers();
-    }
+    expect(screen.queryByTestId("page-frame-deciding")).toBeNull();
+    expect(screen.getByTestId("page-frame-screenshot")).not.toBeNull();
+    expect(
+      screen.getByTestId("page-frame-iframe").getAttribute("aria-hidden"),
+    ).toBe("true");
   });
 
-  it("falls back to the archive when Original is selected, iframe is blocked, and archive is available (chain B)", async () => {
-    vi.useFakeTimers();
-    try {
-      render(() => (
-        <PageFrame
-          url="https://example.com/article"
-          canIframe={false}
-          blockingHeader="content-security-policy: frame-ancestors 'none'"
-          archivedPreviewUrl="/api/archive-preview?url=https%3A%2F%2Fexample.com%2Farticle"
-          screenshotUrl="https://cdn.example.com/shot.png"
-          previewMode="original"
-        />
-      ));
+  it("auto-resolves to archive immediately (no deciding) when canIframe=false and archive is available (TASK-1483.13.02)", () => {
+    render(() => (
+      <PageFrame
+        url="https://example.com/article"
+        canIframe={false}
+        blockingHeader="content-security-policy: frame-ancestors 'none'"
+        archivedPreviewUrl="/api/archive-preview?url=https%3A%2F%2Fexample.com%2Farticle"
+        screenshotUrl="https://cdn.example.com/shot.png"
+        previewMode="original"
+      />
+    ));
 
-      // Countdown interstitial blocks chain B until ~15s elapse.
-      expect(screen.getByTestId("page-frame-deciding")).not.toBeNull();
-      vi.advanceTimersByTime(15_000);
-      await Promise.resolve();
-
-      const archived = screen.getByTestId(
-        "page-frame-archived-iframe",
-      ) as HTMLIFrameElement;
-      expect(archived.getAttribute("src")).toBe(
-        "/api/archive-preview?url=https%3A%2F%2Fexample.com%2Farticle",
-      );
-      expect(screen.queryByTestId("page-frame-screenshot")).toBeNull();
-    } finally {
-      vi.useRealTimers();
-    }
+    expect(screen.queryByTestId("page-frame-deciding")).toBeNull();
+    const archived = screen.getByTestId(
+      "page-frame-archived-iframe",
+    ) as HTMLIFrameElement;
+    expect(archived.getAttribute("src")).toBe(
+      "/api/archive-preview?url=https%3A%2F%2Fexample.com%2Farticle",
+    );
+    expect(screen.queryByTestId("page-frame-screenshot")).toBeNull();
   });
 
-  it("renders the archive when Original is blocked and no screenshot exists (chain B)", async () => {
-    vi.useFakeTimers();
-    try {
-      render(() => (
-        <PageFrame
-          url="https://example.com/article"
-          canIframe={false}
-          blockingHeader="content-security-policy: frame-ancestors 'none'"
-          archivedPreviewUrl="/api/archive-preview?url=https%3A%2F%2Fexample.com%2Farticle"
-          screenshotUrl={null}
-          previewMode="original"
-        />
-      ));
+  it("auto-resolves to archive immediately when canIframe=false and no screenshot exists", () => {
+    render(() => (
+      <PageFrame
+        url="https://example.com/article"
+        canIframe={false}
+        blockingHeader="content-security-policy: frame-ancestors 'none'"
+        archivedPreviewUrl="/api/archive-preview?url=https%3A%2F%2Fexample.com%2Farticle"
+        screenshotUrl={null}
+        previewMode="original"
+      />
+    ));
 
-      expect(screen.getByTestId("page-frame-deciding")).not.toBeNull();
-      vi.advanceTimersByTime(15_000);
-      await Promise.resolve();
+    expect(screen.queryByTestId("page-frame-deciding")).toBeNull();
+    expect(screen.getByTestId("page-frame-archived-iframe")).not.toBeNull();
+    expect(screen.queryByTestId("page-frame-unavailable")).toBeNull();
+  });
 
-      expect(screen.getByTestId("page-frame-archived-iframe")).not.toBeNull();
-      expect(screen.queryByTestId("page-frame-unavailable")).toBeNull();
-    } finally {
-      vi.useRealTimers();
-    }
+  it("auto-resolves to unavailable immediately when canIframe=false and neither archive nor screenshot exists", () => {
+    render(() => (
+      <PageFrame
+        url="https://example.com/article"
+        canIframe={false}
+        blockingHeader="content-security-policy: frame-ancestors 'none'"
+        screenshotUrl={null}
+        previewMode="original"
+      />
+    ));
+
+    expect(screen.queryByTestId("page-frame-deciding")).toBeNull();
+    expect(screen.getByTestId("page-frame-unavailable")).not.toBeNull();
   });
 
   it("shows the archived iframe when the user explicitly selects Archived", () => {
@@ -318,53 +307,47 @@ describe("<PageFrame />", () => {
     }
   });
 
-  it("falls back to the screenshot when blocking evidence arrives after the iframe verified as renderable", async () => {
-    vi.useFakeTimers();
-    try {
-      const [canIframe, setCanIframe] = createSignal(true);
-      const [blockingHeader, setBlockingHeader] = createSignal<string | null>(
-        null,
-      );
+  it("auto-resolves to screenshot immediately when blocking evidence arrives after the iframe verified as renderable (TASK-1483.13.02)", async () => {
+    const [canIframe, setCanIframe] = createSignal(true);
+    const [blockingHeader, setBlockingHeader] = createSignal<string | null>(
+      null,
+    );
 
-      const { unmount } = render(() => (
-        <PageFrame
-          url="https://example.com/article"
-          canIframe={canIframe()}
-          blockingHeader={blockingHeader()}
-          screenshotUrl="https://cdn.example.com/late.png"
-          previewMode="original"
-        />
-      ));
+    const { unmount } = render(() => (
+      <PageFrame
+        url="https://example.com/article"
+        canIframe={canIframe()}
+        blockingHeader={blockingHeader()}
+        screenshotUrl="https://cdn.example.com/late.png"
+        previewMode="original"
+      />
+    ));
 
-      const iframe = screen.getByTestId(
-        "page-frame-iframe",
-      ) as HTMLIFrameElement;
-      Object.defineProperty(iframe, "contentDocument", {
-        configurable: true,
-        value: {
-          location: { href: "https://example.com/article" },
-          body: { children: [{}], textContent: "Hello world" },
-          title: "Example",
-        },
-      });
-      iframe.dispatchEvent(new Event("load"));
+    const iframe = screen.getByTestId(
+      "page-frame-iframe",
+    ) as HTMLIFrameElement;
+    Object.defineProperty(iframe, "contentDocument", {
+      configurable: true,
+      value: {
+        location: { href: "https://example.com/article" },
+        body: { children: [{}], textContent: "Hello world" },
+        title: "Example",
+      },
+    });
+    iframe.dispatchEvent(new Event("load"));
 
-      setCanIframe(false);
-      setBlockingHeader("content-security-policy: frame-ancestors 'none'");
+    setCanIframe(false);
+    setBlockingHeader("content-security-policy: frame-ancestors 'none'");
+    await Promise.resolve();
 
-      // Late blocking evidence triggers the deciding interstitial; advance past 15s.
-      expect(screen.getByTestId("page-frame-deciding")).not.toBeNull();
-      vi.advanceTimersByTime(15_000);
-      await Promise.resolve();
-
-      const img = screen.getByTestId(
-        "page-frame-screenshot",
-      ) as HTMLImageElement;
-      expect(img.getAttribute("src")).toBe("https://cdn.example.com/late.png");
-      unmount();
-    } finally {
-      vi.useRealTimers();
-    }
+    // Server reports blocked → auto-resolve straight to screenshot, no
+    // deciding interstitial.
+    expect(screen.queryByTestId("page-frame-deciding")).toBeNull();
+    const img = screen.getByTestId(
+      "page-frame-screenshot",
+    ) as HTMLImageElement;
+    expect(img.getAttribute("src")).toBe("https://cdn.example.com/late.png");
+    unmount();
   });
 
   it("keeps the iframe when cross-origin access throws after load", async () => {
@@ -487,7 +470,7 @@ describe("<PageFrame />", () => {
   });
 });
 
-describe("countdown interstitial (TASK-1495.07)", () => {
+describe("countdown interstitial (TASK-1495.07 + TASK-1483.13.02 escape hatch)", () => {
   beforeEach(() => {
     vi.useFakeTimers();
   });
@@ -497,36 +480,43 @@ describe("countdown interstitial (TASK-1495.07)", () => {
     cleanup();
   });
 
-  it("renders the deciding interstitial when Original is blocked and countdown has not elapsed", () => {
+  it("renders the deciding interstitial on runtime iframe failure (canIframe=true → onError)", () => {
     render(() => (
       <PageFrame
         url="https://example.com/article"
-        canIframe={false}
-        blockingHeader="content-security-policy: frame-ancestors 'none'"
+        canIframe={true}
         archivedPreviewUrl="/api/archive-preview?url=https%3A%2F%2Fexample.com%2Farticle"
         screenshotUrl="https://cdn.example.com/shot.png"
         previewMode="original"
       />
     ));
+    const iframe = screen.getByTestId(
+      "page-frame-iframe",
+    ) as HTMLIFrameElement;
+    iframe.dispatchEvent(new Event("error"));
 
     expect(screen.getByTestId("page-frame-deciding")).not.toBeNull();
     expect(screen.queryByTestId("page-frame-archived-iframe")).toBeNull();
     expect(screen.queryByTestId("page-frame-screenshot")).toBeNull();
   });
 
-  it("auto-switches to archive after the countdown elapses (chain B has archive)", async () => {
+  it("auto-switches to archive after the countdown elapses on runtime failure (chain B has archive)", async () => {
     const onResolvedModeChange = vi.fn();
     render(() => (
       <PageFrame
         url="https://example.com/article"
-        canIframe={false}
-        blockingHeader="content-security-policy: frame-ancestors 'none'"
+        canIframe={true}
         archivedPreviewUrl="/api/archive-preview?url=https%3A%2F%2Fexample.com%2Farticle"
         screenshotUrl="https://cdn.example.com/shot.png"
         previewMode="original"
         onResolvedModeChange={onResolvedModeChange}
       />
     ));
+    const iframe = screen.getByTestId(
+      "page-frame-iframe",
+    ) as HTMLIFrameElement;
+    iframe.dispatchEvent(new Event("error"));
+
     expect(screen.getByTestId("page-frame-deciding")).not.toBeNull();
 
     vi.advanceTimersByTime(15_000);
@@ -537,26 +527,7 @@ describe("countdown interstitial (TASK-1495.07)", () => {
     expect(onResolvedModeChange).toHaveBeenCalledWith("archived");
   });
 
-  it("auto-switches to screenshot after countdown when no archive is present", async () => {
-    const onResolvedModeChange = vi.fn();
-    render(() => (
-      <PageFrame
-        url="https://example.com/article"
-        canIframe={false}
-        blockingHeader="content-security-policy: frame-ancestors 'none'"
-        screenshotUrl="https://cdn.example.com/shot.png"
-        previewMode="original"
-        onResolvedModeChange={onResolvedModeChange}
-      />
-    ));
-    vi.advanceTimersByTime(15_000);
-    await Promise.resolve();
-
-    expect(screen.getByTestId("page-frame-screenshot")).not.toBeNull();
-    expect(onResolvedModeChange).toHaveBeenCalledWith("screenshot");
-  });
-
-  it("cancels the countdown when the user overrides via previewMode prop change", async () => {
+  it("re-arms the deciding interstitial when the user clicks Original after a server-blocked auto-resolve (escape hatch)", async () => {
     const [mode, setMode] = createSignal<PreviewMode>("original");
     const onResolvedModeChange = vi.fn();
     render(() => (
@@ -570,6 +541,69 @@ describe("countdown interstitial (TASK-1495.07)", () => {
         onResolvedModeChange={onResolvedModeChange}
       />
     ));
+
+    // Initial render auto-resolves to archived; no deciding interstitial.
+    expect(screen.queryByTestId("page-frame-deciding")).toBeNull();
+    expect(screen.getByTestId("page-frame-archived-iframe")).not.toBeNull();
+    expect(onResolvedModeChange).toHaveBeenCalledWith("archived");
+
+    // Parent's handler would normally setPreviewMode("archived") at this point.
+    setMode("archived");
+    await Promise.resolve();
+
+    // User clicks Original — flip back to "original" re-arms the deciding window.
+    setMode("original");
+    await Promise.resolve();
+
+    expect(screen.getByTestId("page-frame-deciding")).not.toBeNull();
+
+    // After 15s the countdown elapses and chain B fires again.
+    vi.advanceTimersByTime(15_000);
+    await Promise.resolve();
+    expect(screen.queryByTestId("page-frame-deciding")).toBeNull();
+    expect(screen.getByTestId("page-frame-archived-iframe")).not.toBeNull();
+  });
+
+  it("auto-switches to screenshot after countdown when no archive is present (runtime failure)", async () => {
+    const onResolvedModeChange = vi.fn();
+    render(() => (
+      <PageFrame
+        url="https://example.com/article"
+        canIframe={true}
+        screenshotUrl="https://cdn.example.com/shot.png"
+        previewMode="original"
+        onResolvedModeChange={onResolvedModeChange}
+      />
+    ));
+    const iframe = screen.getByTestId(
+      "page-frame-iframe",
+    ) as HTMLIFrameElement;
+    iframe.dispatchEvent(new Event("error"));
+
+    vi.advanceTimersByTime(15_000);
+    await Promise.resolve();
+
+    expect(screen.getByTestId("page-frame-screenshot")).not.toBeNull();
+    expect(onResolvedModeChange).toHaveBeenCalledWith("screenshot");
+  });
+
+  it("cancels the countdown when the user overrides via previewMode prop change (runtime-failure path)", async () => {
+    const [mode, setMode] = createSignal<PreviewMode>("original");
+    const onResolvedModeChange = vi.fn();
+    render(() => (
+      <PageFrame
+        url="https://example.com/article"
+        canIframe={true}
+        archivedPreviewUrl="/api/archive-preview?url=https%3A%2F%2Fexample.com%2Farticle"
+        screenshotUrl="https://cdn.example.com/shot.png"
+        previewMode={mode()}
+        onResolvedModeChange={onResolvedModeChange}
+      />
+    ));
+    const iframe = screen.getByTestId(
+      "page-frame-iframe",
+    ) as HTMLIFrameElement;
+    iframe.dispatchEvent(new Event("error"));
     expect(screen.getByTestId("page-frame-deciding")).not.toBeNull();
 
     setMode("screenshot");
@@ -584,21 +618,25 @@ describe("countdown interstitial (TASK-1495.07)", () => {
     expect(onResolvedModeChange).toHaveBeenLastCalledWith("screenshot");
   });
 
-  it("does not emit 'deciding' to onResolvedModeChange (only resolved real modes)", () => {
+  it("never emits 'deciding' to onResolvedModeChange (only resolved real modes)", async () => {
     const onResolvedModeChange = vi.fn();
     render(() => (
       <PageFrame
         url="https://example.com/article"
-        canIframe={false}
-        blockingHeader="content-security-policy: frame-ancestors 'none'"
+        canIframe={true}
         archivedPreviewUrl="/api/archive-preview?url=https%3A%2F%2Fexample.com%2Farticle"
         screenshotUrl="https://cdn.example.com/shot.png"
         previewMode="original"
         onResolvedModeChange={onResolvedModeChange}
       />
     ));
+    const iframe = screen.getByTestId(
+      "page-frame-iframe",
+    ) as HTMLIFrameElement;
+    iframe.dispatchEvent(new Event("error"));
+    await Promise.resolve();
+
     expect(screen.getByTestId("page-frame-deciding")).not.toBeNull();
-    // Critical: callback fires for resolved modes, NEVER for "deciding".
     const calls = onResolvedModeChange.mock.calls.flat();
     expect(calls).not.toContain("deciding");
   });
@@ -607,13 +645,17 @@ describe("countdown interstitial (TASK-1495.07)", () => {
     render(() => (
       <PageFrame
         url="https://example.com/article"
-        canIframe={false}
-        blockingHeader="content-security-policy: frame-ancestors 'none'"
+        canIframe={true}
         archivedPreviewUrl="/api/archive-preview?url=https%3A%2F%2Fexample.com%2Farticle"
         screenshotUrl="https://cdn.example.com/shot.png"
         previewMode="original"
       />
     ));
+    const iframe = screen.getByTestId(
+      "page-frame-iframe",
+    ) as HTMLIFrameElement;
+    iframe.dispatchEvent(new Event("error"));
+
     const progress = screen.getByTestId(
       "page-frame-deciding-progress",
     ) as HTMLElement;

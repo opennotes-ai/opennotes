@@ -304,24 +304,44 @@ export default function AnalyzePage() {
                     >
                       <div class="inline-flex rounded-lg border border-border bg-muted/50 p-1">
                         <For each={PREVIEW_MODE_OPTIONS}>
-                          {(option, index) => (
-                            <button
-                              type="button"
-                              class={segmentClass(
-                                previewMode() === option.value,
-                                segmentCornerClass(
-                                  index(),
-                                  PREVIEW_MODE_OPTIONS.length,
-                                ),
-                              )}
-                              aria-pressed={previewMode() === option.value}
-                              onClick={() => setPreviewMode(option.value)}
-                            >
-                              {option.label}
-                            </button>
-                          )}
+                          {(option, index) => {
+                            const isOriginalBlocked = () =>
+                              option.value === "original" &&
+                              !frameCompat().canIframe;
+                            return (
+                              <button
+                                type="button"
+                                data-testid={`preview-mode-${option.value}`}
+                                class={`${segmentClass(
+                                  previewMode() === option.value,
+                                  segmentCornerClass(
+                                    index(),
+                                    PREVIEW_MODE_OPTIONS.length,
+                                  ),
+                                )}${isOriginalBlocked() ? " opacity-60" : ""}`}
+                                aria-pressed={previewMode() === option.value}
+                                aria-describedby={
+                                  isOriginalBlocked()
+                                    ? "preview-mode-original-tip"
+                                    : undefined
+                                }
+                                onClick={() => setPreviewMode(option.value)}
+                              >
+                                {option.label}
+                              </button>
+                            );
+                          }}
                         </For>
                       </div>
+                      <Show when={!frameCompat().canIframe}>
+                        <span
+                          id="preview-mode-original-tip"
+                          data-testid="preview-mode-original-tip"
+                          class="sr-only"
+                        >
+                          This page blocks framing — click to attempt anyway
+                        </span>
+                      </Show>
                     </div>
                     <div
                       data-testid="preview-size-selector"

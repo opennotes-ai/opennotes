@@ -679,3 +679,80 @@ describe("AnalyzePage route", () => {
     expect(screen.queryByTestId("cached-badge")).toBeNull();
   });
 });
+
+describe("AnalyzePage Original tab — soft-disabled when canIframe=false (TASK-1483.13.02)", () => {
+  function mockBlockedFrame() {
+    getFrameCompatMock.mockResolvedValue({
+      ok: true,
+      frameCompat: {
+        canIframe: false,
+        blockingHeader: "content-security-policy: frame-ancestors 'none'",
+        cspFrameAncestors: "'none'",
+        screenshotUrl: "https://cdn.example.com/shot.png",
+        archivedPreviewUrl:
+          "/api/archive-preview?url=https%3A%2F%2Fnypost.com%2Farticle",
+      },
+    } as never);
+  }
+
+  it("renders an aria-describedby tooltip on Original when the page blocks framing", async () => {
+    mockBlockedFrame();
+    renderAt("/analyze?job=job-blocked&url=https://nypost.com/article");
+
+    const original = await screen.findByTestId("preview-mode-original");
+    await waitFor(() => {
+      expect(original.getAttribute("aria-describedby")).toBe(
+        "preview-mode-original-tip",
+      );
+    });
+
+    const tip = screen.getByTestId("preview-mode-original-tip");
+    expect(tip.getAttribute("id")).toBe("preview-mode-original-tip");
+    expect(tip.textContent ?? "").toMatch(
+      /blocks framing.*click to attempt anyway/i,
+    );
+    expect((tip.getAttribute("class") ?? "").split(/\s+/)).toContain("sr-only");
+  });
+
+  it("uses muted opacity styling on Original when canIframe=false (no aria-disabled, no disabled attr)", async () => {
+    mockBlockedFrame();
+    renderAt("/analyze?job=job-blocked&url=https://nypost.com/article");
+
+    const original = await screen.findByTestId("preview-mode-original");
+    await waitFor(() => {
+      const cls = original.getAttribute("class") ?? "";
+      expect(cls).toMatch(/opacity-60/);
+    });
+    // AC #4: must NOT use aria-disabled, disabled, or pointer-events:none.
+    expect(original.hasAttribute("aria-disabled")).toBe(false);
+    expect(original.hasAttribute("disabled")).toBe(false);
+    expect(original.getAttribute("class") ?? "").not.toMatch(
+      /pointer-events-none/,
+    );
+  });
+
+  it("Original tab remains clickable as the escape hatch when canIframe=false", async () => {
+    mockBlockedFrame();
+    renderAt("/analyze?job=job-blocked&url=https://nypost.com/article");
+
+    const original = await screen.findByTestId("preview-mode-original");
+    await waitFor(() => {
+      // Auto-resolve flips the parent's previewMode off Original.
+      expect(original.getAttribute("aria-pressed")).toBe("false");
+    });
+    fireEvent.click(original);
+    expect(original.getAttribute("aria-pressed")).toBe("true");
+  });
+
+  it("does not render the tooltip span or the muted styling when canIframe=true", async () => {
+    // default mock returns canIframe: true
+    renderAt("/analyze?job=job-permissive&url=https://news.example.com/a");
+
+    const original = await screen.findByTestId("preview-mode-original");
+    await waitFor(() => {
+      expect(original.getAttribute("class") ?? "").not.toMatch(/opacity-60/);
+    });
+    expect(original.getAttribute("aria-describedby")).toBeNull();
+    expect(screen.queryByTestId("preview-mode-original-tip")).toBeNull();
+  });
+});

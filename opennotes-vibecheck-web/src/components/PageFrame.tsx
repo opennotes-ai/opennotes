@@ -23,11 +23,31 @@ export default function PageFrame(props: PageFrameProps) {
   const [archivedFailed, setArchivedFailed] = createSignal(false);
   const [archivedLoaded, setArchivedLoaded] = createSignal(false);
   const [countdownElapsed, setCountdownElapsed] = createSignal(false);
+  const [userArmedDeciding, setUserArmedDeciding] = createSignal(false);
 
   const hasBlockingHint = () =>
     !props.canIframe || !!props.blockingHeader || !!props.cspFrameAncestors;
   const requestedMode = () => props.previewMode;
   const hasArchive = () => !!props.archivedPreviewUrl && !archivedFailed();
+
+  let prevRequestedMode: PreviewMode = props.previewMode;
+  createEffect(() => {
+    const current = requestedMode();
+    // User-armed escape hatch: requestedMode flipped FROM a non-original tab
+    // TO "original" while the server reports the page can't be framed.
+    // A plain initial render with previewMode="original" doesn't qualify
+    // (prevRequestedMode === current, so no flip is detected).
+    if (
+      current === "original" &&
+      prevRequestedMode !== "original" &&
+      !props.canIframe
+    ) {
+      setUserArmedDeciding(true);
+    } else if (current !== "original") {
+      setUserArmedDeciding(false);
+    }
+    prevRequestedMode = current;
+  });
 
   const activePreview = (): PreviewMode | "deciding" | "unavailable" => {
     if (requestedMode() === "screenshot") {
@@ -41,9 +61,17 @@ export default function PageFrame(props: PageFrameProps) {
     if (!hasBlockingHint() && !iframeFailed()) {
       return "original";
     }
-    // Original blocked or failed — show the interstitial during the countdown
-    // window unless the user has already overridden by clicking a tab (which
-    // flips requestedMode out of "original" and bypasses this branch).
+    // SERVER-KNOWN blocked (canIframe=false) on initial / non-armed render:
+    // auto-resolve to chain B immediately and skip the deciding interstitial
+    // entirely. The user can re-arm deciding by clicking Original after the
+    // auto-resolve via the userArmedDeciding signal above.
+    if (!props.canIframe && !userArmedDeciding()) {
+      if (hasArchive()) return "archived";
+      if (props.screenshotUrl) return "screenshot";
+      return "unavailable";
+    }
+    // Runtime failure (canIframe=true → iframe.onError / blocked load) OR
+    // user-armed escape hatch: keep the existing 15s deciding window.
     if (!countdownElapsed()) {
       return "deciding";
     }
@@ -108,6 +136,7 @@ export default function PageFrame(props: PageFrameProps) {
       setArchivedFailed(false);
       setArchivedLoaded(false);
       setCountdownElapsed(false);
+      setUserArmedDeciding(false);
       startLoadTimeout();
     }
   });
@@ -126,13 +155,16 @@ export default function PageFrame(props: PageFrameProps) {
   });
 
   createEffect(() => {
-    // Countdown effect: arms a single timer when Original is the requested
-    // mode AND we have evidence (server hint or runtime failure) that the
-    // iframe cannot render. Resets/clears on any change to those inputs or
-    // when requestedMode flips (user override). Per AC #4/#8 the timer body
-    // only runs setState — it never reads from render predicates.
+    // Countdown effect: arms a single timer ONLY when we'd actually show the
+    // deciding interstitial — i.e., either (a) runtime iframe failure
+    // (canIframe was true but iframe.onError fired) or (b) the user-armed
+    // escape hatch on a server-known blocked frame. Initial render with
+    // canIframe=false now skips deciding entirely (TASK-1483.13.02), so we
+    // intentionally do NOT arm the timer in that case to avoid wasted work
+    // and stale-fire races.
     const decidingTriggerActive =
-      requestedMode() === "original" && (hasBlockingHint() || iframeFailed());
+      requestedMode() === "original" &&
+      (iframeFailed() || (!props.canIframe && userArmedDeciding()));
     if (!decidingTriggerActive) {
       setCountdownElapsed(false);
       return;
