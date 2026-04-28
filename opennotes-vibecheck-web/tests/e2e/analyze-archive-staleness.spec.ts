@@ -214,6 +214,24 @@ async function fastForward(page: Page, amount: string): Promise<void> {
   await page.clock.fastForward(amount);
 }
 
+async function expectInitialAnalyzeAndProbe(
+  jobId: string,
+  kind: FixtureKind,
+): Promise<void> {
+  await expect
+    .poll(() => analyzeCalls.get(jobId) ?? 0, {
+      intervals: [100],
+      timeout: PROBE_POLL_TIMEOUT_MS,
+    })
+    .toBeGreaterThanOrEqual(1);
+  await expect
+    .poll(() => frameCompatCalls.get(kind) ?? 0, {
+      intervals: [100],
+      timeout: PROBE_POLL_TIMEOUT_MS,
+    })
+    .toBeGreaterThanOrEqual(1);
+}
+
 async function installMainDocumentLoadSentinel(
   page: Page,
   storageKey: string,
@@ -501,6 +519,7 @@ test("terminal job waits through 10s grace before disabling Archived", async ({
   page,
 }) => {
   await installClockAndOpenJob(page, TERMINAL_GRACE_JOB_ID);
+  await expectInitialAnalyzeAndProbe(TERMINAL_GRACE_JOB_ID, "terminal-grace");
   await expectArchivedTabAvailable(page);
 
   await fastForward(page, "00:01");
@@ -522,6 +541,7 @@ test("300s wall-clock cap disables Archived for a still-analyzing job", async ({
   page,
 }) => {
   await installClockAndOpenJob(page, CAP_JOB_ID);
+  await expectInitialAnalyzeAndProbe(CAP_JOB_ID, "cap");
   await expectArchivedTabAvailable(page);
 
   await fastForward(page, "05:00");
