@@ -34,9 +34,17 @@ from src.services.gemini_agent import build_agent
 HEADLINE_SUMMARY_SYSTEM_PROMPT = """You synthesize a 1-2 sentence summation of one analyzed page.
 Inputs include the safety verdict, conversation dynamics, claims, and sentiment.
 Write a single perceptive opening line. Do not write like a tabloid headline.
-Do not list which signals were missing or absent. If inputs are minimal, be direct
-and brief. Output a HeadlineSummary with `kind` set to "synthesized" - the caller
-will overwrite kind anyway, but always set it."""
+Do not list which specific sections were missing or absent — never name slot
+identifiers like "scd" or "web_risk".
+
+When `unavailable_inputs` is non-empty, coverage was incomplete: your line
+MUST NOT claim everything is clear or that there is nothing of note. Describe
+what the available analyses surfaced, and frame the absence of flags as
+"in what was analyzed" rather than as a global all-clear.
+
+If inputs are minimal, be direct and brief. Output a HeadlineSummary with
+`kind` set to "synthesized" - the caller will overwrite kind anyway, but
+always set it."""
 
 
 _STOCK_PHRASES: tuple[str, ...] = (
@@ -46,6 +54,20 @@ _STOCK_PHRASES: tuple[str, ...] = (
     "Standard content; nothing remarkable.",
     "Quiet page; nothing to highlight.",
     "An ordinary page; not much to say.",
+)
+
+# Deterministic phrasing for the degraded-coverage path: every available
+# signal came back clear, but at least one section failed to report. We
+# must NOT claim global all-clear here, so the wording is qualified to
+# reflect partial coverage. Same hash-mod-len selection as the all-clear
+# pool so a given job_id is stable across re-polls.
+_DEGRADED_STOCK_PHRASES: tuple[str, ...] = (
+    "Coverage was incomplete; nothing flagged in the analyzed sections.",
+    "Partial analysis; the available checks did not surface anything.",
+    "Limited coverage this run; analyzed sections came back clean.",
+    "Some sections did not report; the rest are unremarkable.",
+    "Reduced coverage; the completed analyses are quiet.",
+    "Analysis was partial; what completed had nothing to flag.",
 )
 
 
@@ -87,8 +109,16 @@ def all_inputs_clear(inputs: HeadlineSummaryInputs) -> bool:
     # as a non-empty section, so the headline must as well.
     image_signal = bool(inputs.image_moderation_matches)
     video_signal = bool(inputs.video_moderation_matches)
-    scd_signal = (
-        inputs.scd is not None and not inputs.scd.insufficient_conversation
+    # Sidebar TONE_EMPTINESS only treats SCD as empty when
+    # insufficient_conversation is true AND tone_labels and
+    # per_speaker_notes are both empty. So insufficient_conversation alone
+    # is not enough — a report flagged insufficient that still carries
+    # legacy labels/notes renders the section in the sidebar and must be
+    # treated as a signal here.
+    scd_signal = inputs.scd is not None and (
+        not inputs.scd.insufficient_conversation
+        or bool(inputs.scd.tone_labels)
+        or bool(inputs.scd.per_speaker_notes)
     )
     claims_signal = (
         inputs.claims_report is not None
@@ -133,6 +163,17 @@ def pick_stock_phrase(job_id: UUID) -> str:
     """
     index = int(job_id.hex, 16) % len(_STOCK_PHRASES)
     return _STOCK_PHRASES[index]
+
+
+def pick_degraded_stock_phrase(job_id: UUID) -> str:
+    """Pick a deterministic degraded-coverage stock phrase for ``job_id``.
+
+    Same hash-mod-len selection as ``pick_stock_phrase`` so re-polls of
+    the same job render the same phrase, but drawn from the qualified
+    pool that does not claim global all-clear.
+    """
+    index = int(job_id.hex, 16) % len(_DEGRADED_STOCK_PHRASES)
+    return _DEGRADED_STOCK_PHRASES[index]
 
 
 def _serialize_inputs(inputs: HeadlineSummaryInputs) -> str:
@@ -182,18 +223,31 @@ async def run_headline_summary(
 ) -> HeadlineSummary:
     """Produce a ``HeadlineSummary`` for the analyzed page.
 
-    Short-circuits to a deterministic stock phrase (``kind="stock"``) only
-    when every input is empty/clear/neutral AND every section produced
-    coverage — a partial-failure job (non-empty ``unavailable_inputs``)
-    must never get a reassuring "Nothing of note" stock phrase, since the
-    backend can't claim all-clear when sections are missing. In that case
-    we fall through to the agent path so the model can synthesize a
-    coverage-aware line. Otherwise calls the synthesis agent and forces
-    ``kind="synthesized"`` plus the input-supplied ``unavailable_inputs``
-    so callers can trust the discriminator and the coverage list
-    regardless of what the model echoes back.
+    Three deterministic branches; the model is only called for the
+    third.
+
+    1. All signals empty/clear AND no missing coverage: pick from
+       ``_STOCK_PHRASES`` (the reassuring all-clear pool). ``kind="stock"``.
+    2. All signals empty/clear BUT coverage was incomplete: pick from
+       ``_DEGRADED_STOCK_PHRASES`` (qualified phrasing that does not
+       claim global all-clear). ``kind="stock"``. This branch is what
+       prevents the lying-about-coverage failure mode where every
+       analyzed section happened to be clear but the analysis itself
+       was partial.
+    3. Otherwise: call the synthesis agent. Force ``kind="synthesized"``
+       and the caller-supplied ``unavailable_inputs`` so callers can
+       trust the discriminator and the coverage list regardless of
+       what the model echoes back. The system prompt forbids slot-name
+       enumeration and forbids all-clear wording when
+       ``unavailable_inputs`` is non-empty.
     """
-    if all_inputs_clear(inputs) and not inputs.unavailable_inputs:
+    if all_inputs_clear(inputs):
+        if inputs.unavailable_inputs:
+            return HeadlineSummary(
+                text=pick_degraded_stock_phrase(job_id),
+                kind="stock",
+                unavailable_inputs=list(inputs.unavailable_inputs),
+            )
         return HeadlineSummary(
             text=pick_stock_phrase(job_id),
             kind="stock",

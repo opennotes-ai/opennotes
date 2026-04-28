@@ -25,10 +25,12 @@ from src.analyses.safety._schemas import (
 )
 from src.analyses.schemas import HeadlineSummary, PageKind
 from src.analyses.synthesis.headline_summary_agent import (
+    _DEGRADED_STOCK_PHRASES,
     _STOCK_PHRASES,
     HEADLINE_SUMMARY_SYSTEM_PROMPT,
     HeadlineSummaryInputs,
     all_inputs_clear,
+    pick_degraded_stock_phrase,
     pick_stock_phrase,
     run_headline_summary,
 )
@@ -432,21 +434,17 @@ async def test_run_headline_summary_serializes_inputs_for_agent(monkeypatch):
     assert payload["claims_report"]["total_claims"] == 1
 
 
-async def test_unavailable_inputs_block_stock_path_even_when_signals_clear(monkeypatch):
+async def test_unavailable_inputs_take_degraded_stock_path_when_signals_clear(monkeypatch):
     # Codex review: a partial-failure job where the available signals
-    # happen to be clear must NOT receive a "Nothing of note" stock
-    # phrase, since that lies about coverage. Fall through to the agent
-    # path so the model can synthesize a coverage-aware line.
-    agent = StubAgent(
-        HeadlineSummary(
-            text="With limited coverage, nothing else flagged.",
-            kind="synthesized",
-            unavailable_inputs=[],
-        )
-    )
+    # happen to be clear must NOT receive a reassuring "Nothing of note"
+    # phrase, since that lies about coverage. Take the deterministic
+    # degraded-coverage stock pool instead — same kind="stock", but the
+    # phrasing is qualified ("coverage was incomplete", "in the analyzed
+    # sections") so the line never claims global all-clear. Zero model
+    # call.
     monkeypatch.setattr(
         "src.analyses.synthesis.headline_summary_agent.build_agent",
-        lambda *args, **kwargs: agent,
+        lambda *args, **kwargs: ExplodingAgent(),
     )
     inputs = replace(
         _empty_inputs(),
@@ -457,11 +455,11 @@ async def test_unavailable_inputs_block_stock_path_even_when_signals_clear(monke
 
     result = await run_headline_summary(inputs, settings=settings, job_id=job_id)
 
-    assert result.kind == "synthesized"
-    # Caller forces unavailable_inputs onto the result regardless of model
-    # echo so the discriminator stays trustworthy.
+    assert result.kind == "stock"
+    assert result.text in _DEGRADED_STOCK_PHRASES
+    # The reassuring all-clear pool must NOT be reached on this path.
+    assert result.text not in _STOCK_PHRASES
     assert result.unavailable_inputs == ["web_risk", "video_moderation"]
-    assert agent.prompts, "agent must be called when unavailable_inputs is non-empty"
 
 
 async def test_unavailable_inputs_empty_takes_stock_path_when_clear(monkeypatch):
@@ -520,3 +518,149 @@ def test_stock_phrases_do_not_enumerate_signals():
                 f"Stock phrase {phrase!r} enumerates a missing signal "
                 f"via {forbidden!r}; rewrite it as a neutral nothing-to-flag line."
             )
+
+
+def test_degraded_stock_phrases_acknowledge_partial_coverage():
+    # The degraded-coverage pool must NOT claim global all-clear. Every
+    # phrase has to either acknowledge that coverage was partial OR
+    # explicitly scope the reassurance to "what was analyzed". Without
+    # this guard, a future edit could turn the degraded pool into a
+    # second copy of the all-clear pool and reintroduce the lying-about-
+    # coverage failure mode codex flagged.
+    qualifying_substrings = (
+        "partial",
+        "incomplete",
+        "limited",
+        "reduced",
+        "did not report",
+        "didn't report",
+        "analyzed sections",
+        "completed analyses",
+        "what completed",
+        "available checks",
+    )
+    for phrase in _DEGRADED_STOCK_PHRASES:
+        lowered = phrase.lower()
+        assert any(q in lowered for q in qualifying_substrings), (
+            f"Degraded-coverage phrase {phrase!r} reads as a global all-clear; "
+            "rewrite it to qualify the reassurance to what was actually analyzed."
+        )
+
+
+def test_pick_degraded_stock_phrase_deterministic():
+    job_id = UUID("01234567-89ab-cdef-0123-456789abcdef")
+    first = pick_degraded_stock_phrase(job_id)
+    for _ in range(5):
+        assert pick_degraded_stock_phrase(job_id) == first
+    assert first in _DEGRADED_STOCK_PHRASES
+
+
+def test_pick_degraded_stock_phrase_varies_across_jobs():
+    seen = {pick_degraded_stock_phrase(uuid4()) for _ in range(50)}
+    assert len(seen) >= 2
+
+
+# ---------------------------------------------------------------------------
+# Public-API behavior tests for run_headline_summary. These exercise the
+# end-to-end path (not just all_inputs_clear) so codex's review concern
+# about helper-only coverage is addressed.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("label", "field", "value"),
+    [
+        ("low-likelihood image", "image_moderation_matches", [_image_match(0.3)]),
+        ("low-likelihood video", "video_moderation_matches", [_video_match(0.3)]),
+        (
+            "neutral-only sentiment",
+            "sentiment_stats",
+            SentimentStatsReport(
+                per_utterance=[
+                    SentimentScore(utterance_id="u1", label="neutral", valence=0.0)
+                ],
+                positive_pct=0.0,
+                negative_pct=0.0,
+                neutral_pct=100.0,
+                mean_valence=0.0,
+            ),
+        ),
+        (
+            "scd insufficient_conversation with tone_label",
+            "scd",
+            SCDReport(
+                summary="placeholder",
+                insufficient_conversation=True,
+                tone_labels=["combative"],
+            ),
+        ),
+        (
+            "scd insufficient_conversation with per_speaker_notes",
+            "scd",
+            SCDReport(
+                summary="placeholder",
+                insufficient_conversation=True,
+                per_speaker_notes={"alice": "raised her voice"},
+            ),
+        ),
+    ],
+)
+async def test_run_headline_summary_takes_agent_path_for_sidebar_signals(
+    monkeypatch, label, field, value,
+):
+    """Public-API guard: any input shape the sidebar renders as non-empty
+    must reach the synthesizer, not the stock pool. Parametrized over the
+    edge cases codex flagged (low-likelihood media, neutral-only sentiment,
+    insufficient SCD reports that still carry tone labels or speaker
+    notes).
+    """
+    agent = StubAgent(
+        HeadlineSummary(
+            text="agent-synthesized line about " + label,
+            kind="stock",  # model echo — caller MUST overwrite to "synthesized"
+            unavailable_inputs=["model_echo_should_be_ignored"],
+        )
+    )
+    monkeypatch.setattr(
+        "src.analyses.synthesis.headline_summary_agent.build_agent",
+        lambda *args, **kwargs: agent,
+    )
+    inputs = replace(_empty_inputs(), **{field: value})
+    settings = cast(Settings, cast(object, SimpleNamespace()))
+    job_id = UUID("66666666-6666-6666-6666-666666666666")
+
+    result = await run_headline_summary(inputs, settings=settings, job_id=job_id)
+
+    assert result.kind == "synthesized", (
+        f"{label} must reach the agent path; got stock instead"
+    )
+    assert agent.prompts, f"{label} must invoke the agent at least once"
+    assert label in result.text
+    # Caller forces unavailable_inputs from inputs, never echoes the model's.
+    assert result.unavailable_inputs == []
+
+
+async def test_run_headline_summary_scd_clean_insufficient_takes_stock_path(monkeypatch):
+    """SCD report flagged insufficient_conversation with no tone labels
+    or speaker notes is the legitimate "no real conversation" case — the
+    sidebar treats it as empty (TONE_EMPTINESS in Sidebar.tsx) so the
+    headline must too. Stock path must fire here.
+    """
+    monkeypatch.setattr(
+        "src.analyses.synthesis.headline_summary_agent.build_agent",
+        lambda *args, **kwargs: ExplodingAgent(),
+    )
+    inputs = replace(
+        _empty_inputs(),
+        scd=SCDReport(
+            summary="(no conversation present)",
+            insufficient_conversation=True,
+        ),
+    )
+    settings = cast(Settings, cast(object, SimpleNamespace()))
+    job_id = UUID("77777777-7777-7777-7777-777777777777")
+
+    result = await run_headline_summary(inputs, settings=settings, job_id=job_id)
+
+    assert result.kind == "stock"
+    assert result.text in _STOCK_PHRASES
