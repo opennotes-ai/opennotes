@@ -18,6 +18,8 @@ COPY pnpm-workspace.yaml package.json pnpm-lock.yaml ./
 # expects; the --filter keeps the install scoped to opennotes-discord's graph.
 COPY packages/shared-types/package.json ./packages/shared-types/package.json
 COPY packages/test-utils/package.json ./packages/test-utils/package.json
+COPY packages/tokens/package.json ./packages/tokens/package.json
+COPY packages/ui/package.json ./packages/ui/package.json
 COPY opennotes-discord/package.json ./opennotes-discord/package.json
 COPY opennotes-playground/package.json ./opennotes-playground/package.json
 COPY opennotes-platform/package.json ./opennotes-platform/package.json
