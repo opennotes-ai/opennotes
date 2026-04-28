@@ -8,22 +8,27 @@ community review. Integrations wire Open Notes into your platform so that
 flagged content enters a bridging-based review loop, and consensus decisions
 flow back as moderation actions.
 
+```mermaid
+flowchart LR
+    A[User posts on platform] --> B[Integration submits to Open Notes API]
+    B --> C["Community review and bridging-based scoring"]
+    C --> D[Decision returned via webhook]
+    D --> E[Integration applies action on platform]
+```
+
 ## Who this is for
 
-<CardGroup cols={3}>
-  <Card title="Forum admin running Discourse" icon="discourse" href="/existing-integrations/discourse/overview">
-    You're installing, configuring, or troubleshooting the Open Notes plugin on
-    your Discourse forum. Jump to Existing Integrations → Discourse.
-  </Card>
-  <Card title="Engineer building a new integration" icon="plug" href="/integration-guide/overview">
-    You're wiring Open Notes into a new platform. Start with the Integration
-    Guide — concepts, onboarding, and the end-to-end walkthrough.
-  </Card>
-  <Card title="API consumer needing endpoint reference" icon="code" href="/api-reference/overview">
-    You already have a `platform:adapter` API key and need endpoint reference.
-    Head to the API Reference.
-  </Card>
-</CardGroup>
+Pick the path that matches what you are doing right now.
+
+- **Building a new integration?** Start with the [Integration Guide](/integration-guide/overview).
+  It walks through onboarding, concepts (auth, scopes, headers), and an
+  end-to-end content lifecycle. This is the primary path — most readers
+  arrive here.
+- **Running the Discourse plugin?** Jump straight to
+  [Existing Integrations → Discourse](/existing-integrations/discourse/overview)
+  for install, configure, upgrade, and troubleshoot guides.
+- **Already have a `platform:adapter` API key?** Skip to the
+  [API Reference](/api-reference/overview) for the full endpoint catalog.
 
 ## How it all fits together
 

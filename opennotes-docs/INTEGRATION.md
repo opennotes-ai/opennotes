@@ -162,33 +162,32 @@ element when the user picks dark mode. Our tokens follow the same convention
 — `packages/tokens/src/theme.css` defines colors under `:root` (light) and
 under `.dark` (dark), gated by `@custom-variant dark (&:is(.dark *));`.
 
-**Mapping:**
+**Reality on this site (verified by inspection + TASK-1515.03):** Mintlify
+only reads a narrow slice of `@opennotes/tokens`. The rest of the upstream
+palette (`--background`, `--foreground`, `--card`, `--popover`, `--muted`,
+`--accent`, `--ring`, `--input`, `--border`, `--destructive`, `--chart-*`,
+`--radius`) is **inert** here — Mintlify never references those variables.
+Importing the full `theme.css` only created a false sense of theming
+control; it has been removed.
 
-| Mintlify theme slot | Tokens variable (vendored) |
+**The actual Mintlify token contract for this site:**
+
+| Mintlify surface | Where it's set |
 |---|---|
-| light body background | `:root { --background }` |
-| light body text | `:root { --foreground }` |
-| dark body background | `.dark { --background }` |
-| dark body text | `.dark { --foreground }` |
-| accent / primary | `--primary` (auto-light/dark) |
-| muted / chrome | `--muted` / `--muted-foreground` |
-| border | `--border` |
-| destructive | `--destructive` |
+| Sidebar active link / focus ring / search highlight (light) | `style.css :root { --primary }` (RGB triplet) |
+| Same surfaces (dark) | `style.css .dark { --primary }` |
+| Search-highlight / sidebar tinted backgrounds | `--primary-light`, `--primary-dark` (RGB triplets) |
+| Internal widgets that don't read CSS vars | `docs.json#colors.primary/light/dark` (hex) |
+| Inline body-link accent (light) | `style.css :root { --primary-on-surface }` (RGB triplet) — added by TASK-1515.01 for WCAG AA contrast |
+| Syntax highlighting | `--mint-*` vars (Mintlify-owned; not currently overridden) |
 
-No remapping layer is required — Mintlify's dark toggle and our `.dark`
-selector already agree on the class name. The vendored `theme.css` becomes
-the authoritative palette source; any `docs.json > colors.primary` entries
-should be computed to match `--primary` (OKLCH `oklch(0.65 0.15 165)` in
-light, `oklch(0.70 0.15 165)` in dark) or dropped in favor of the CSS
-variable directly.
+The brand teal `oklch(0.65 0.15 165)` is approximated in `docs.json` as
+`#3EB489` and as the RGB triplet `0 171 120` in `style.css`. Keep the two in
+sync by eye (Mintlify does not interpolate OKLCH into hex).
 
-**Gotcha — OKLCH:** tokens are authored in OKLCH. Mintlify's default
-`docs.json` colors are hex. Do not try to mirror OKLCH into
-`docs.json > colors.*` by eye — set the `docs.json` primary to the nearest
-hex equivalent (`#3EB489`-ish for light primary) for Mintlify-internal
-constructs (search highlight, sidebar active), and let everything else flow
-from the CSS variables. The authoritative color is still the CSS var; hex
-is just a fallback Mintlify needs for widgets that don't read CSS vars.
+**Gotcha — OKLCH:** tokens are authored in OKLCH. Mintlify's `docs.json`
+colors are hex. Do not try to mirror OKLCH into `docs.json > colors.*` by
+eye — keep the documented hex equivalents above.
 
 ## 5. Font strategy
 
@@ -218,7 +217,8 @@ Reasons:
   privacy/bandwidth/CSP constraint emerges later.
 
 Implementation: the root `style.css` explicitly `@import`s
-`./styles/tokens/fonts-cdn.css` after `theme.css` (see section 6.3).
+`./styles/tokens/fonts-cdn.css` (alongside `animations.css`; see §6.3).
+`theme.css` is no longer imported — see TASK-1515.03 and §4 for why.
 
 ## 6. Concrete next action (mechanism (b) implementation spec)
 
@@ -248,37 +248,62 @@ CI-regenerated directory is always in sync with whatever
 
 ### 6.2 Vendor step (local dev or Mintlify-Cloud prebuild)
 
-Add to `opennotes-docs/package.json`:
+`opennotes-docs/package.json` ships only the CSS files Mintlify actually
+consumes — `animations.css` and `fonts-cdn.css` — into the vendored copy:
 
 ```json
 {
   "scripts": {
-    "vendor:tokens": "mkdir -p styles/tokens && cp ../packages/tokens/src/*.css styles/tokens/",
-    "prebuild": "pnpm run vendor:tokens",
-    "dev": "pnpm run vendor:tokens && mint dev",
-    "build": "mint build"
+    "vendor:tokens": "mkdir -p styles/tokens && cp ../packages/tokens/src/animations.css ../packages/tokens/src/fonts-cdn.css styles/tokens/",
+    "prevalidate": "pnpm run vendor:all",
+    "predev": "pnpm run vendor:all",
+    "prebroken-links": "pnpm run vendor:all"
   }
 }
 ```
 
-This runs automatically before `mint build` (via `prebuild`) and
-explicitly before `mint dev` (no built-in `predev` in Mintlify).
+`theme.css`, `index.css`, and `fonts-self-hosted.css` are deliberately not
+copied: Mintlify never consumes them on this site (see §4). Pruning the
+script keeps `styles/tokens/` honest — every vendored file is a file
+Mintlify reads. See TASK-1515.03 for the full rationale.
 
 ### 6.3 Root `style.css`
 
-`opennotes-docs/style.css` (committed; imports the vendored files):
+`opennotes-docs/style.css` is committed and imports only the consumed
+vendored files. The Mintlify-honored RGB triplets for `--primary*` live
+inline in the same file, alongside an a11y-fix override that swaps the
+`.prose a` border-bottom-color to a darker on-surface teal for WCAG AA
+on white. Sketch (see the live file for full comments):
 
 ```css
-/* Auto-loaded by Mintlify CLI on every page. Vendored tokens live in
-   styles/tokens/ (gitignored, populated by `pnpm run vendor:tokens`). */
-@import "./styles/tokens/theme.css";
 @import "./styles/tokens/animations.css";
 @import "./styles/tokens/fonts-cdn.css";
+
+:root {
+  --primary: 0 171 120;        /* brand teal — sidebar/badges/widgets */
+  --primary-light: 88 198 155;
+  --primary-dark: 0 137 96;
+  --primary-on-surface: 0 130 82; /* WCAG AA: ~4.87:1 vs white (TASK-1515.01) */
+}
+.dark { --primary: 0 187 135; }
+
+/* Override Mintlify's prose-anchor border-bottom-color for AA on white.
+   Selector mirrors Mintlify's own; style.css loads after the Mintlify
+   bundle so a matching-specificity rule wins. Dark mode keeps `--primary`
+   because the underline sits on near-black, not white. */
+.prose :where(a):not(:where([class~="not-prose"], [class~="not-prose"] *)) {
+  border-bottom-color: rgb(var(--primary-on-surface));
+}
+.dark .prose :where(a):not(:where([class~="not-prose"], [class~="not-prose"] *)) {
+  border-bottom-color: rgb(var(--primary));
+}
 ```
 
-`./styles/tokens/index.css` is not referenced because it only re-exports
-`theme.css` + `animations.css` without fonts; docs want fonts, so it imports
-the split files directly.
+`./styles/tokens/index.css` and `./styles/tokens/theme.css` are not
+referenced because Mintlify ignores everything in `theme.css` except the
+`--primary*` triplets, which are now declared inline in `style.css` for
+clarity. `fonts-self-hosted.css` is also unreferenced (CDN fonts only on
+this site — see §5).
 
 ### 6.4 Mintlify CI step (GitHub Actions, authoritative production build)
 
@@ -328,9 +353,9 @@ up automatically. Keep `docs.json` focused on theme, colors, and navigation:
 }
 ```
 
-The authoritative palette still comes from the CSS variables in
-`styles/tokens/theme.css`; `colors.*` in `docs.json` is the hex fallback
-for Mintlify-internal widgets that don't read CSS vars (see section 4).
+The authoritative `--primary*` triplets live in the root `style.css`
+(see §6.3); `colors.*` in `docs.json` is the hex fallback for
+Mintlify-internal widgets that don't read CSS vars (see §4).
 
 ### 6.6 Mintlify version target
 
@@ -352,9 +377,10 @@ the upgrade.
   package stays at `0.0.1` + `"private": true` throughout.
 - **Breaking change protocol:** if a token removal or rename is being
   considered, grep `opennotes-docs/` for the variable in the same PR that
-  removes it (same submodule, same `rg` invocation). The schema of a
-  "breaking" change for CSS variables is "did any consumer reference
-  `var(--foo)`".
+  removes it (same submodule, same `rg` invocation). Note that most
+  upstream tokens are not consumed by docs — only the `--primary*` family
+  (and indirectly `colors.*` in `docs.json`) actually ships to
+  `docs.opennotes.ai`. See §4 for the complete contract.
 
 ### After a hypothetical future switch to mechanism (a)
 

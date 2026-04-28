@@ -1,5 +1,5 @@
 ---
-title: Mint API keys
+title: Generate API keys
 description: Create a platform:adapter-scoped API key that your integration uses to call /api/public/v1.
 ---
 
@@ -30,7 +30,7 @@ Every call to `/api/public/v1` must be authenticated with an API key in the `Aut
 
 In addition to `platform:adapter`, the dashboard's **Discourse Plugin** scope template automatically selects: `requests:read`, `requests:write`, `notes:read`, `notes:write`, `ratings:write`, `profiles:read`, `community-servers:read`, `moderation-actions:read`.
 
-## Minting a key
+## Generating a key
 
 <Steps>
 
@@ -88,7 +88,7 @@ See [Headers and auth](/integration-guide/concepts/headers-and-auth) for the ful
 
 <Steps>
 
-### Mint a replacement key
+### Generate a replacement key
 
 Create a new key with the same name + ` (rotated YYYY-MM-DD)` suffix and the same scope set.
 

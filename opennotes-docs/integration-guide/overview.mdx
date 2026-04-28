@@ -41,20 +41,42 @@ gets scoring, community review, and decision delivery automatically.
 
 ### What an integration does
 
-<CardGroup cols={2}>
-  <Card title="Submit content" icon="upload">
-    Call `POST /api/public/v1/requests` with the content and platform context headers whenever a user posts or a moderator flags something.
-  </Card>
-  <Card title="Carry user identity" icon="user">
-    Send `X-Adapter-*` headers so Open Notes knows who submitted the content. The server uses this to weight rater influence and detect patterns.
-  </Card>
-  <Card title="Apply decisions" icon="gavel">
-    Listen for `moderation.decision` webhooks and apply the action on the source platform (hide, delete, flag, notify).
-  </Card>
-  <Card title="Record actions" icon="clipboard-list">
-    After applying a decision, call `POST /api/public/v1/moderation-actions` so the audit trail is complete.
-  </Card>
-</CardGroup>
+An integration handles four responsibilities, in order. Each one is a
+single API call (or webhook handler) — the contract is intentionally
+narrow.
+
+1. **Submit content for review.** When a user posts or a moderator flags
+   something, send the content plus the platform context to Open Notes.
+
+   ```http
+   POST /api/public/v1/requests
+   Authorization: Bearer <api_key>
+   X-Adapter-User-Id: <platform_user_id>
+   ```
+
+2. **Carry user identity.** Every call attaches `X-Adapter-*` headers so
+   Open Notes knows who submitted the content. The server uses this to
+   weight rater influence and detect coordinated patterns. See
+   [Headers and auth](/integration-guide/concepts/headers-and-auth).
+
+3. **Apply decisions when they arrive.** Open Notes notifies you over a
+   webhook when consensus lands. Apply the action on the source platform
+   (hide, delete, flag, notify).
+
+   ```http
+   POST <your-webhook-url>
+   X-OpenNotes-Event: moderation.decision
+   { "request_id": "...", "decision": "hide", "reason": "..." }
+   ```
+
+4. **Record what you did.** After applying a decision, post the action back
+   so the audit trail is complete. This closes the loop: Open Notes can
+   show end-users the full chain from request → decision → action.
+
+   ```http
+   POST /api/public/v1/moderation-actions
+   { "request_id": "...", "action": "hide", "applied_at": "..." }
+   ```
 
 ### What the server guarantees
 
@@ -70,7 +92,7 @@ gets scoring, community review, and decision delivery automatically.
 
 A minimal integration needs exactly three things:
 
-1. A `platform:adapter`-scoped API key (see [Mint API keys](/integration-guide/onboarding/api-keys)).
+1. A `platform:adapter`-scoped API key (see [Generate API keys](/integration-guide/onboarding/api-keys)).
 2. Logic to call `POST /api/public/v1/requests` when content should be reviewed.
 3. A webhook endpoint that receives `moderation.decision` events and applies the action.
 
