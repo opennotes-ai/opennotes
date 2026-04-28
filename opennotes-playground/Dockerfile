@@ -15,6 +15,8 @@ COPY opennotes-platform/package.json ./opennotes-platform/package.json
 COPY opennotes-discord/package.json ./opennotes-discord/package.json
 COPY packages/shared-types/package.json ./packages/shared-types/package.json
 COPY packages/test-utils/package.json ./packages/test-utils/package.json
+COPY packages/tokens/package.json ./packages/tokens/package.json
+COPY packages/ui/package.json ./packages/ui/package.json
 
 RUN pnpm install --frozen-lockfile --filter opennotes-playground...
 
