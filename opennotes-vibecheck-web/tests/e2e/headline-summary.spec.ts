@@ -85,26 +85,31 @@ test("headline summation renders above safety-recommendation with non-empty text
   ).not.toHaveAttribute("data-truncated", /.*/);
 
   // DOM order: headline-summary appears above safety-recommendation-report.
-  // We use compareDocumentPosition so the assertion is robust to wrappers
+  // We assert the safety-recommendation block is visible first so a
+  // regression that stops rendering it doesn't silently pass this spec.
+  // compareDocumentPosition keeps the order assertion robust to wrappers
   // and small layout refactors.
   const safetyRec = page.getByTestId("safety-recommendation-report");
-  if (await safetyRec.count()) {
-    const headlinePrecedesSafety = await page.evaluate(() => {
-      const h = document.querySelector('[data-testid="headline-summary"]');
-      const s = document.querySelector(
-        '[data-testid="safety-recommendation-report"]',
-      );
-      if (!h || !s) {
-        return false;
-      }
-      // Node.DOCUMENT_POSITION_FOLLOWING (4) means s comes after h.
-      return Boolean(
-        h.compareDocumentPosition(s) & Node.DOCUMENT_POSITION_FOLLOWING,
-      );
-    });
-    expect(
-      headlinePrecedesSafety,
-      "headline-summary must appear above safety-recommendation-report in the sidebar",
-    ).toBe(true);
-  }
+  await expect(
+    safetyRec,
+    "safety-recommendation-report must render alongside the headline so we can verify ordering",
+  ).toBeVisible({ timeout: 10_000 });
+
+  const headlinePrecedesSafety = await page.evaluate(() => {
+    const h = document.querySelector('[data-testid="headline-summary"]');
+    const s = document.querySelector(
+      '[data-testid="safety-recommendation-report"]',
+    );
+    if (!h || !s) {
+      return false;
+    }
+    // Node.DOCUMENT_POSITION_FOLLOWING (4) means s comes after h.
+    return Boolean(
+      h.compareDocumentPosition(s) & Node.DOCUMENT_POSITION_FOLLOWING,
+    );
+  });
+  expect(
+    headlinePrecedesSafety,
+    "headline-summary must appear above safety-recommendation-report in the sidebar",
+  ).toBe(true);
 });

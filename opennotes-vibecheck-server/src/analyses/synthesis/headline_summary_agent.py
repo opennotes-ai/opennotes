@@ -78,15 +78,15 @@ def all_inputs_clear(inputs: HeadlineSummaryInputs) -> bool:
 
     The headline agent is bypassed in this case in favour of a deterministic
     stock phrase. The thresholds below intentionally mirror what the UI
-    treats as "nothing to flag" so the stock-phrase short-circuit and the
-    rendered sidebar agree on emptiness.
+    treats as "nothing to flag" (see SAFETY_EMPTINESS / OPINIONS_EMPTINESS
+    in Sidebar.tsx) so the stock-phrase short-circuit and the rendered
+    sidebar agree on emptiness — a stock "Nothing of note" headline must
+    not coexist with a sidebar section the UI considers non-empty.
     """
-    image_signal = any(
-        match.max_likelihood > 0.5 for match in inputs.image_moderation_matches
-    )
-    video_signal = any(
-        match.max_likelihood > 0.5 for match in inputs.video_moderation_matches
-    )
+    # Sidebar treats any image/video match (regardless of max_likelihood)
+    # as a non-empty section, so the headline must as well.
+    image_signal = bool(inputs.image_moderation_matches)
+    video_signal = bool(inputs.video_moderation_matches)
     scd_signal = (
         inputs.scd is not None and not inputs.scd.insufficient_conversation
     )
@@ -94,9 +94,16 @@ def all_inputs_clear(inputs: HeadlineSummaryInputs) -> bool:
         inputs.claims_report is not None
         and bool(inputs.claims_report.deduped_claims)
     )
+    # Sidebar OPINIONS_EMPTINESS treats sentiment as non-empty when any of
+    # per_utterance, positive_pct, negative_pct, or mean_valence is set.
+    # An all-neutral page (per_utterance>0, neutral_pct=100) renders the
+    # section, so a stock all-clear headline above it would contradict
+    # what's on screen.
     sentiment_signal = inputs.sentiment_stats is not None and (
-        inputs.sentiment_stats.positive_pct > 0.0
+        bool(inputs.sentiment_stats.per_utterance)
+        or inputs.sentiment_stats.positive_pct > 0.0
         or inputs.sentiment_stats.negative_pct > 0.0
+        or inputs.sentiment_stats.mean_valence != 0.0
     )
     safety_signal = inputs.safety_recommendation is not None and (
         inputs.safety_recommendation.level != SafetyLevel.SAFE
@@ -175,13 +182,18 @@ async def run_headline_summary(
 ) -> HeadlineSummary:
     """Produce a ``HeadlineSummary`` for the analyzed page.
 
-    Short-circuits to a deterministic stock phrase (``kind="stock"``) when
-    every input is empty/clear/neutral; otherwise calls the synthesis
-    agent and forces ``kind="synthesized"`` plus the input-supplied
-    ``unavailable_inputs`` so callers can trust the discriminator and the
-    coverage list regardless of what the model echoes back.
+    Short-circuits to a deterministic stock phrase (``kind="stock"``) only
+    when every input is empty/clear/neutral AND every section produced
+    coverage — a partial-failure job (non-empty ``unavailable_inputs``)
+    must never get a reassuring "Nothing of note" stock phrase, since the
+    backend can't claim all-clear when sections are missing. In that case
+    we fall through to the agent path so the model can synthesize a
+    coverage-aware line. Otherwise calls the synthesis agent and forces
+    ``kind="synthesized"`` plus the input-supplied ``unavailable_inputs``
+    so callers can trust the discriminator and the coverage list
+    regardless of what the model echoes back.
     """
-    if all_inputs_clear(inputs):
+    if all_inputs_clear(inputs) and not inputs.unavailable_inputs:
         return HeadlineSummary(
             text=pick_stock_phrase(job_id),
             kind="stock",

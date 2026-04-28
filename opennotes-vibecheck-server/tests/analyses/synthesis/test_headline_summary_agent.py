@@ -215,17 +215,66 @@ def test_all_inputs_clear_true_when_sentiment_has_no_scored_utterances():
     assert all_inputs_clear(inputs) is True
 
 
-def test_all_inputs_clear_true_when_image_below_threshold():
+def test_all_inputs_clear_false_when_any_image_match_present():
+    # Sidebar treats any image match as a non-empty section regardless of
+    # max_likelihood (SAFETY_EMPTINESS in Sidebar.tsx). The headline path
+    # must agree so we never produce a stock "all clear" line above an
+    # expanded image-moderation section.
     inputs = replace(
         _empty_inputs(), image_moderation_matches=[_image_match(0.3)]
     )
-    assert all_inputs_clear(inputs) is True
+    assert all_inputs_clear(inputs) is False
 
 
-def test_all_inputs_clear_true_when_video_below_threshold():
+def test_all_inputs_clear_false_when_any_video_match_present():
     inputs = replace(
         _empty_inputs(), video_moderation_matches=[_video_match(0.3)]
     )
+    assert all_inputs_clear(inputs) is False
+
+
+def test_all_inputs_clear_false_when_sentiment_has_neutral_only_utterances():
+    # OPINIONS_EMPTINESS in Sidebar.tsx renders the section when
+    # per_utterance is non-empty even if positive_pct == negative_pct == 0
+    # (an all-neutral page). The headline must mirror that so a stock
+    # all-clear line doesn't appear above a rendered sentiment section.
+    sentiment = SentimentStatsReport(
+        per_utterance=[
+            SentimentScore(utterance_id="u1", label="neutral", valence=0.0)
+        ],
+        positive_pct=0.0,
+        negative_pct=0.0,
+        neutral_pct=100.0,
+        mean_valence=0.0,
+    )
+    inputs = replace(_empty_inputs(), sentiment_stats=sentiment)
+    assert all_inputs_clear(inputs) is False
+
+
+def test_all_inputs_clear_false_when_sentiment_mean_valence_nonzero():
+    sentiment = SentimentStatsReport(
+        per_utterance=[],
+        positive_pct=0.0,
+        negative_pct=0.0,
+        neutral_pct=100.0,
+        mean_valence=0.4,
+    )
+    inputs = replace(_empty_inputs(), sentiment_stats=sentiment)
+    assert all_inputs_clear(inputs) is False
+
+
+def test_all_inputs_clear_true_when_sentiment_is_truly_empty():
+    # The only sentiment shape that should still register as clear is the
+    # "extractor produced nothing" shape: empty per_utterance, all zero
+    # percents, and mean_valence == 0.
+    sentiment = SentimentStatsReport(
+        per_utterance=[],
+        positive_pct=0.0,
+        negative_pct=0.0,
+        neutral_pct=0.0,
+        mean_valence=0.0,
+    )
+    inputs = replace(_empty_inputs(), sentiment_stats=sentiment)
     assert all_inputs_clear(inputs) is True
 
 
@@ -383,10 +432,21 @@ async def test_run_headline_summary_serializes_inputs_for_agent(monkeypatch):
     assert payload["claims_report"]["total_claims"] == 1
 
 
-async def test_unavailable_inputs_preserved_through_stock_path(monkeypatch):
+async def test_unavailable_inputs_block_stock_path_even_when_signals_clear(monkeypatch):
+    # Codex review: a partial-failure job where the available signals
+    # happen to be clear must NOT receive a "Nothing of note" stock
+    # phrase, since that lies about coverage. Fall through to the agent
+    # path so the model can synthesize a coverage-aware line.
+    agent = StubAgent(
+        HeadlineSummary(
+            text="With limited coverage, nothing else flagged.",
+            kind="synthesized",
+            unavailable_inputs=[],
+        )
+    )
     monkeypatch.setattr(
         "src.analyses.synthesis.headline_summary_agent.build_agent",
-        lambda *args, **kwargs: ExplodingAgent(),
+        lambda *args, **kwargs: agent,
     )
     inputs = replace(
         _empty_inputs(),
@@ -397,8 +457,27 @@ async def test_unavailable_inputs_preserved_through_stock_path(monkeypatch):
 
     result = await run_headline_summary(inputs, settings=settings, job_id=job_id)
 
-    assert result.kind == "stock"
+    assert result.kind == "synthesized"
+    # Caller forces unavailable_inputs onto the result regardless of model
+    # echo so the discriminator stays trustworthy.
     assert result.unavailable_inputs == ["web_risk", "video_moderation"]
+    assert agent.prompts, "agent must be called when unavailable_inputs is non-empty"
+
+
+async def test_unavailable_inputs_empty_takes_stock_path_when_clear(monkeypatch):
+    monkeypatch.setattr(
+        "src.analyses.synthesis.headline_summary_agent.build_agent",
+        lambda *args, **kwargs: ExplodingAgent(),
+    )
+    inputs = _empty_inputs()  # empty signals, empty unavailable_inputs
+    settings = cast(Settings, cast(object, SimpleNamespace()))
+    job_id = UUID("44444444-4444-4444-4444-444444444444")
+
+    result = await run_headline_summary(inputs, settings=settings, job_id=job_id)
+
+    assert result.kind == "stock"
+    assert result.text in _STOCK_PHRASES
+    assert result.unavailable_inputs == []
 
 
 async def test_unavailable_inputs_preserved_through_synthesized_path(monkeypatch):
