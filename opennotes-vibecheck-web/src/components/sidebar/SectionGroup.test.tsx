@@ -104,14 +104,32 @@ describe("SectionGroup", () => {
     ));
 
     const counter = screen.getByTestId("section-group-counter");
-    expect(counter.textContent).toContain("Tone/dynamics");
-    expect(counter.textContent).toContain("0/2");
+    expect(counter.textContent ?? "").toBe("0/2");
+    expect(counter.getAttribute("aria-label")).toBe(
+      "Tone/dynamics 0 of 2 done",
+    );
 
     for (const slug of TONE_SLUGS) {
       const label = screen.getByTestId(`slot-label-${slug}`);
       expect(label.getAttribute("data-dimmed")).toBe("true");
       expect(screen.queryByTestId(`skeleton-${slug}`)).toBeNull();
     }
+  });
+
+  it("preserves the section label as a visible <h3> heading next to the counter", () => {
+    render(() => (
+      <SectionGroup
+        label="Tone/dynamics"
+        slugs={TONE_SLUGS}
+        sections={{}}
+        render={{}}
+      />
+    ));
+    const heading = screen.getByRole("heading", {
+      level: 3,
+      name: "Tone/dynamics",
+    });
+    expect(heading.textContent).toBe("Tone/dynamics");
   });
 
   it("renders a slug's content-shape skeleton when that slot is running", () => {
@@ -647,11 +665,21 @@ describe("Sidebar", () => {
     const counters = screen.getAllByTestId("section-group-counter");
     expect(counters).toHaveLength(4);
 
-    const texts = counters.map((n) => n.textContent ?? "");
-    expect(texts.some((t) => t.startsWith("Safety"))).toBe(true);
-    expect(texts.some((t) => t.startsWith("Tone/dynamics"))).toBe(true);
-    expect(texts.some((t) => t.startsWith("Facts/claims"))).toBe(true);
-    expect(texts.some((t) => t.startsWith("Opinions/sentiments"))).toBe(true);
+    const ariaLabels = counters.map(
+      (n) => n.getAttribute("aria-label") ?? "",
+    );
+    expect(
+      ariaLabels.some((t) => t.startsWith("Safety ")),
+    ).toBe(true);
+    expect(
+      ariaLabels.some((t) => t.startsWith("Tone/dynamics ")),
+    ).toBe(true);
+    expect(
+      ariaLabels.some((t) => t.startsWith("Facts/claims ")),
+    ).toBe(true);
+    expect(
+      ariaLabels.some((t) => t.startsWith("Opinions/sentiments ")),
+    ).toBe(true);
   });
 
   it("places aria-live on per-section status nodes only (not on the aside)", () => {
@@ -668,12 +696,14 @@ describe("Sidebar", () => {
     }
   });
 
-  it("uses middot separator and integer N/M in counter labels", () => {
+  it("renders just the bare N/M ratio in the visible counter (no duplicated label)", () => {
     render(() => <Sidebar sections={{}} />);
     const counters = screen.getAllByTestId("section-group-counter");
     for (const c of counters) {
       const text = c.textContent ?? "";
-      expect(text).toMatch(/\s·\s\d+\/\d+/);
+      expect(text).toMatch(/^\d+\/\d+$/);
+      const ariaLabel = c.getAttribute("aria-label") ?? "";
+      expect(ariaLabel).toMatch(/^.+\s\d+\sof\s\d+\sdone$/);
     }
   });
 
@@ -682,13 +712,14 @@ describe("Sidebar", () => {
     render(() => <Sidebar payload={payload} />);
 
     const counters = screen.getAllByTestId("section-group-counter");
-    const texts = counters.map((n) => n.textContent ?? "");
-    expect(texts.find((t) => t.startsWith("Safety"))).toContain("4/4");
-    expect(texts.find((t) => t.startsWith("Tone/dynamics"))).toContain("2/2");
-    expect(texts.find((t) => t.startsWith("Facts/claims"))).toContain("2/2");
-    expect(texts.find((t) => t.startsWith("Opinions/sentiments"))).toContain(
-      "2/2",
-    );
+    const byLabel = (label: string) =>
+      counters.find((n) =>
+        (n.getAttribute("aria-label") ?? "").startsWith(`${label} `),
+      );
+    expect(byLabel("Safety")?.textContent).toBe("4/4");
+    expect(byLabel("Tone/dynamics")?.textContent).toBe("2/2");
+    expect(byLabel("Facts/claims")?.textContent).toBe("2/2");
+    expect(byLabel("Opinions/sentiments")?.textContent).toBe("2/2");
 
     const ALL_SLUGS = [
       "safety__moderation",

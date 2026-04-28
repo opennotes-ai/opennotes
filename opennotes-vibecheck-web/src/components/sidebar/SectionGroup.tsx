@@ -151,8 +151,9 @@ export default function SectionGroup(props: SectionGroupProps): JSX.Element {
         <span
           data-testid="section-group-counter"
           class="font-mono text-[11px] tabular-nums text-muted-foreground"
+          aria-label={`${props.label} ${doneCount()} of ${totalCount()} done`}
         >
-          {props.label} &middot; {doneCount()}/{totalCount()}
+          {doneCount()}/{totalCount()}
         </span>
       </header>
 
