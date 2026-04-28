@@ -26,11 +26,11 @@ export function MarketingHero(props: MarketingHeroProps): JSX.Element {
           </p>
         </Show>
         <h1
-          class="text-foreground font-extrabold"
+          class="text-foreground font-bold"
           style={{
-            "font-size": "clamp(2.25rem, 4vw + 1rem, 4.5rem)",
-            "line-height": "1.05",
-            "letter-spacing": "-0.02em",
+            "font-size": "clamp(2.25rem, 3vw + 1rem, 3.5rem)",
+            "line-height": "1.1",
+            "letter-spacing": "-0.01em",
           }}
         >
           {local.headline}
