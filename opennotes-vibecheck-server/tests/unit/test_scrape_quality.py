@@ -11,7 +11,11 @@ never `INTERSTITIAL` (escalate). Each test exercises a single branch
 through the public `classify_scrape()` API with realistic fixture-shaped
 payloads; no internal helpers are mocked.
 """
+
 from __future__ import annotations
+
+import json
+from pathlib import Path
 
 import pytest
 
@@ -26,6 +30,14 @@ from src.jobs.scrape_quality import (
     ScrapeQuality,
     classify_scrape,
 )
+
+FIXTURES = Path(__file__).parent.parent / "fixtures" / "scrape_quality"
+
+
+def _load_fixture(name: str) -> ScrapeResult:
+    payload = json.loads((FIXTURES / name).read_text())
+    return ScrapeResult.model_validate(payload)
+
 
 # ---------------------------------------------------------------------------
 # OK — normal blog post.
@@ -85,21 +97,6 @@ def test_status_code_401_classifies_auth_wall() -> None:
     assert classify_scrape(result) is ScrapeQuality.AUTH_WALL
 
 
-def test_login_action_url_in_form_classifies_auth_wall() -> None:
-    result = ScrapeResult(
-        markdown="Welcome — please sign in.",
-        html=(
-            "<html><body>"
-            "<form action='https://example.com/login' method='post'>"
-            "<input type='text' name='username'>"
-            "</form></body></html>"
-        ),
-        metadata=ScrapeMetadata(status_code=200),
-    )
-
-    assert classify_scrape(result) is ScrapeQuality.AUTH_WALL
-
-
 # ---------------------------------------------------------------------------
 # AUTH_WALL priority — login wall under a CF interstitial.
 # ---------------------------------------------------------------------------
@@ -149,11 +146,7 @@ def test_cf_just_a_moment_marker_classifies_interstitial() -> None:
 def test_cf_browser_verification_class_classifies_interstitial() -> None:
     result = ScrapeResult(
         markdown="",
-        html=(
-            "<html><body>"
-            "<div class='cf-browser-verification'>verifying...</div>"
-            "</body></html>"
-        ),
+        html=("<html><body><div class='cf-browser-verification'>verifying...</div></body></html>"),
         metadata=ScrapeMetadata(status_code=200),
     )
 
@@ -263,6 +256,27 @@ def test_constants_are_exported_for_parameterization() -> None:
     assert 403 in AUTH_WALL_STATUS_CODES
 
 
+def test_bare_login_url_substrings_are_not_in_markers() -> None:
+    """Regression guard: bare URL substrings produce false positives.
+
+    Header navigation anchors like `<a href="/login">Sign in</a>` were
+    previously matched by `'/login"'` and friends, causing publicly
+    readable articles with login chrome to misclassify as AUTH_WALL.
+    """
+    bare_substring_markers = (
+        '/login"',
+        "/login'",
+        '/signin"',
+        "/signin'",
+        '/sign-in"',
+        "/sign-in'",
+    )
+    for marker in bare_substring_markers:
+        assert marker not in AUTH_WALL_HTML_MARKERS, (
+            f"{marker!r} matches benign header nav links — must not be a marker"
+        )
+
+
 @pytest.mark.parametrize("marker", INTERSTITIAL_MARKERS)
 def test_each_interstitial_marker_triggers_interstitial(marker: str) -> None:
     result = ScrapeResult(
@@ -309,3 +323,116 @@ def test_enum_string_values_are_stable() -> None:
     assert ScrapeQuality.INTERSTITIAL.value == "interstitial"
     assert ScrapeQuality.AUTH_WALL.value == "auth_wall"
     assert ScrapeQuality.LEGITIMATELY_EMPTY.value == "legitimately_empty"
+
+
+# ---------------------------------------------------------------------------
+# Real-world fixtures captured via Firecrawl /scrape (TASK-1488.22).
+#
+# The header-login-link false positive was discovered on
+# https://quizlet.com/blog/pride-month-2021 (job c79722c2-...). The
+# fixtures exercise the full Pydantic validation path the live scrape
+# ladder uses.
+# ---------------------------------------------------------------------------
+
+
+def test_quizlet_blog_with_login_link_chrome_classifies_ok() -> None:
+    """Regression test for the TASK-1488.22 Quizlet false positive.
+
+    The page is a public blog post (status 200, ~9.7k chars markdown).
+    Site chrome contains a `/login` anchor in the nav. Previously the
+    bare-URL substring `'/login"'` matched, classifying AUTH_WALL and
+    terminating the job; the user saw an extraction failure for a page
+    that was fully readable.
+    """
+    result = _load_fixture("quizlet_blog.json")
+
+    assert classify_scrape(result) is ScrapeQuality.OK
+
+
+def test_real_sparse_login_page_classifies_auth_wall() -> None:
+    """Genuine login wall: sparse body + password input -> AUTH_WALL.
+
+    Vimeo's `/log_in` page returns 200 with ~286 chars of markdown and
+    a `<input type="password">`. After tightening, AUTH_WALL still fires
+    because the sparse-body gate is satisfied and a password marker is
+    present — preserving the ToS-critical priority order.
+    """
+    result = _load_fixture("login_gated_sparse.json")
+
+    assert classify_scrape(result) is ScrapeQuality.AUTH_WALL
+
+
+def test_real_sparse_login_page_via_cached_scrape_classifies_auth_wall() -> None:
+    """Tier 2 (CachedScrape) path also classifies sparse + password as AUTH_WALL.
+
+    `_run_tier2` (orchestrator.py) re-runs `classify_scrape` on the
+    interact-tier bundle. A real auth wall must not slip through Tier 2
+    by being treated as OK — the sparse-body gate must still fire on
+    the cached-scrape subclass.
+    """
+    payload = json.loads((FIXTURES / "login_gated_sparse.json").read_text())
+    cached = CachedScrape.model_validate({**payload, "storage_key": "test-key.png"})
+
+    assert classify_scrape(cached) is ScrapeQuality.AUTH_WALL
+
+
+# ---------------------------------------------------------------------------
+# Long-body login pages — password input still fires AUTH_WALL even
+# when the page renders substantial supporting prose (privacy/terms
+# links, social-login boilerplate, "trouble logging in" copy).
+#
+# These tests close the regression Codex 5.5-high flagged on PR #438:
+# a 582-char login page returning OK is a ToS violation because Tier 2
+# /interact would then attempt to bypass real auth.
+# ---------------------------------------------------------------------------
+
+
+def test_long_login_page_with_password_classifies_auth_wall() -> None:
+    """Real-world login pages have substantive supporting copy.
+
+    Privacy/Terms links, "Sign in with Google/Apple/Facebook" buttons,
+    "Trouble logging in?" help text, and language selectors push the
+    markdown well past the old SPARSE_BODY_THRESHOLD = 500. A page
+    with `<input type="password">` is a login wall regardless of
+    body length.
+    """
+    boilerplate = (
+        "Sign in to your account. Sign in with Google. Sign in with Apple. "
+        "Sign in with Facebook. By continuing you agree to our Terms of "
+        "Service and Privacy Policy. Need help? Visit our help center for "
+        "assistance with login issues, account recovery, two-factor "
+        "authentication setup, security best practices, single sign-on "
+        "configuration, and more. Trouble logging in? Reset your password. "
+        "New user? Create an account. Trusted by millions of creators "
+        "worldwide. We support modern browsers including Chrome, Firefox, "
+        "Safari, and Edge. JavaScript and cookies must be enabled."
+    )
+    result = ScrapeResult(
+        markdown=boilerplate,
+        html=(
+            "<html><body><form action='/login' method='post'>"
+            "<input name='email' type='email'>"
+            "<input name='password' type='password'>"
+            "</form></body></html>"
+        ),
+        metadata=ScrapeMetadata(status_code=200),
+    )
+    # Sanity-check the fixture body length so the regression intent is
+    # explicit: this would have slipped through the SPARSE_BODY_THRESHOLD
+    # = 500 gate that was originally proposed.
+    assert len(result.markdown or "") > 500
+
+    assert classify_scrape(result) is ScrapeQuality.AUTH_WALL
+
+
+def test_real_long_login_page_fixture_classifies_auth_wall() -> None:
+    """WordPress.org login (2368 chars markdown + password input).
+
+    Real Firecrawl capture; locks in the long-body-login regression.
+    """
+    result = _load_fixture("login_gated_long.json")
+    assert len(result.markdown or "") > 500
+
+    assert classify_scrape(result) is ScrapeQuality.AUTH_WALL
+
+    assert classify_scrape(result) is ScrapeQuality.AUTH_WALL

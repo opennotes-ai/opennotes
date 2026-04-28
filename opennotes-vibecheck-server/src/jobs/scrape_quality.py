@@ -31,6 +31,7 @@ Constraints:
 - Fixed-string `in` checks only — no regex (avoids ReDoS risk on
   attacker-controlled markup).
 """
+
 from __future__ import annotations
 
 from enum import StrEnum
@@ -74,18 +75,20 @@ AUTH_WALL_HTML_MARKERS: tuple[str, ...] = (
     "action='/signin'",
     'action="/sign-in"',
     "action='/sign-in'",
-    "/login\"",
-    "/login'",
-    "/signin\"",
-    "/signin'",
-    "/sign-in\"",
-    "/sign-in'",
 )
 """Fixed-string substrings indicating a login form is present in the HTML.
 
-Both quote styles are listed so we never depend on quote normalization.
-The trailing-quote variants catch absolute URLs like
-`action="https://example.com/login"`.
+Each marker fires AUTH_WALL unconditionally — a `<input type="password">`
+or `<form action="/login">` is strong enough evidence on its own that
+the page is gating content. False positives on news/article pages are
+extremely rare in practice (those pages don't embed password inputs).
+
+TASK-1488.22 dropped six bare-URL substring markers (`/login"` and
+friends) because they matched header navigation anchors on every site
+that links to a login page — the Quizlet blog incident (job
+c79722c2-...) was a `<a href="/login">Sign in</a>` in chrome
+masquerading as a login form. The leading `action=` on the kept
+markers constrains matches to actual `<form>` elements.
 """
 
 INTERSTITIAL_MARKERS: tuple[str, ...] = (
@@ -165,6 +168,11 @@ def classify_scrape(result: ScrapeResult) -> ScrapeQuality:  # noqa: PLR0911
     body_text = f"{markdown}\n{html}"
 
     # Tier 1: AUTH_WALL — load-bearing priority (see module docstring).
+    # 401/403 status codes and any HTML marker (password input or
+    # `action="/login"` form) fire unconditionally. The header-anchor
+    # false positive (TASK-1488.22, Quizlet job c79722c2-...) is fixed
+    # by the marker set itself: bare-URL substrings like `'/login"'`
+    # were dropped because they matched nav anchors, not by gating.
     if status_code is not None and status_code in AUTH_WALL_STATUS_CODES:
         return ScrapeQuality.AUTH_WALL
     if _contains_any(html, AUTH_WALL_HTML_MARKERS):
