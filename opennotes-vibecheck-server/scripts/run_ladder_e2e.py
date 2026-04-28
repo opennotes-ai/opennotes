@@ -27,7 +27,6 @@ import tempfile
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -181,9 +180,7 @@ async def _run_one(
     # Budget accounting: Tier 1 always at most one call; Tier 2 may add up
     # to two attempts (max_attempts=2) for non-refusal upstream errors.
     consumed = 1
-    if any(t == "interact" for _, t in cache.puts):
-        consumed += 1
-    elif outcome == "terminal" and "tier 2" in detail.lower():
+    if any(t == "interact" for _, t in cache.puts) or (outcome == "terminal" and "tier 2" in detail.lower()):
         consumed += 1
     budget["remaining"] -= consumed
     print(f"    firecrawl calls (est.): {consumed} (remaining budget: {budget['remaining']})")

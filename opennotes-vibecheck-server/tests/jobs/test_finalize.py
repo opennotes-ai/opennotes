@@ -227,3 +227,55 @@ class TestAssemblePayloadWiresNewSafetySections:
         sidebar = _assemble_payload("https://test", self._sections_with_new_safety(), None)
 
         assert sidebar.safety.recommendation is None
+
+    def test_headline_summary_column_flows_into_sidebar_payload(self):
+        # TASK-1508.04.01: finalize inflates headline_summary onto SidebarPayload.
+        from src.jobs.finalize import _assemble_payload
+
+        sidebar = _assemble_payload(
+            "https://test",
+            self._sections_with_new_safety(),
+            None,
+            {
+                "text": "A perceptive opening line.",
+                "kind": "synthesized",
+                "unavailable_inputs": [],
+            },
+        )
+
+        assert sidebar.headline is not None
+        assert sidebar.headline.text == "A perceptive opening line."
+        assert sidebar.headline.kind == "synthesized"
+
+    def test_null_headline_summary_stays_none(self):
+        from src.jobs.finalize import _assemble_payload
+
+        sidebar = _assemble_payload(
+            "https://test", self._sections_with_new_safety(), None, None
+        )
+
+        assert sidebar.headline is None
+
+    def test_headline_summary_accepts_json_string(self):
+        # asyncpg may return the JSONB column as a raw string depending on codec
+        # configuration; finalize must json.loads strings before validating.
+        import json as _json
+
+        from src.jobs.finalize import _assemble_payload
+
+        sidebar = _assemble_payload(
+            "https://test",
+            self._sections_with_new_safety(),
+            None,
+            _json.dumps(
+                {
+                    "text": "Stock phrase.",
+                    "kind": "stock",
+                    "unavailable_inputs": ["scd"],
+                }
+            ),
+        )
+
+        assert sidebar.headline is not None
+        assert sidebar.headline.kind == "stock"
+        assert sidebar.headline.unavailable_inputs == ["scd"]

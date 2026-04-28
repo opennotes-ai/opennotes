@@ -143,6 +143,12 @@ ALTER TABLE vibecheck_jobs
 ALTER TABLE vibecheck_jobs
     ADD COLUMN IF NOT EXISTS safety_recommendation JSONB;
 
+-- TASK-1508.04.01: synthesized headline summation (1-2 sentence opening
+-- line) rendered above the safety recommendation. Nullable for old rows
+-- and optional-agent failure; finalize falls back to None when missing.
+ALTER TABLE vibecheck_jobs
+    ADD COLUMN IF NOT EXISTS headline_summary JSONB;
+
 -- TASK-1474.23.02: post-Gemini stage breadcrumb. The orchestrator updates
 -- `last_stage` synchronously at each stage boundary (persist_utterances,
 -- set_analyzing, run_sections, safety_recommendation, finalize) so a

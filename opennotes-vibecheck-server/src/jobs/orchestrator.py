@@ -66,13 +66,17 @@ from uuid import UUID, uuid4
 import asyncpg
 import logfire
 
+from src.analyses.claims._claims_schemas import ClaimsReport
+from src.analyses.claims._factcheck_schemas import FactCheckMatch
 from src.analyses.claims.dedupe_slot import run_claims_dedup
 from src.analyses.claims.facts_agent import run_facts_claims_known_misinfo
+from src.analyses.opinions._schemas import SentimentStatsReport, SubjectiveClaim
 from src.analyses.opinions.sentiment_slot import run_sentiment
 from src.analyses.opinions.subjective_slot import run_subjective
 from src.analyses.safety._schemas import (
     HarmfulContentMatch,
     ImageModerationMatch,
+    SafetyRecommendation,
     VideoModerationMatch,
     WebRiskFinding,
 )
@@ -84,7 +88,19 @@ from src.analyses.safety.recommendation_agent import (
 )
 from src.analyses.safety.video_moderation_worker import run_video_moderation
 from src.analyses.safety.web_risk_worker import run_web_risk
-from src.analyses.schemas import ErrorCode, SectionSlot, SectionSlug, SectionState
+from src.analyses.schemas import (
+    ErrorCode,
+    PageKind,
+    SectionSlot,
+    SectionSlug,
+    SectionState,
+)
+from src.analyses.synthesis.headline_summary_agent import (
+    HeadlineSummaryInputs,
+    run_headline_summary,
+)
+from src.analyses.tone._flashpoint_schemas import FlashpointMatch
+from src.analyses.tone._scd_schemas import SCDReport
 from src.analyses.tone.flashpoint_slot import run_flashpoint
 from src.analyses.tone.scd_slot import run_scd
 from src.cache.scrape_cache import CachedScrape, ScrapeTier, SupabaseScrapeCache
@@ -255,6 +271,36 @@ WHERE job_id = $1
   AND attempt_id = $3
 """
 
+# TASK-1508.04.03: load all section data plus the freshly-written safety
+# recommendation and page metadata so the headline summarizer can synthesize
+# from the structured outputs without re-reading raw utterances. The page
+# metadata LATERAL join mirrors finalize.py's load.
+_LOAD_HEADLINE_INPUTS_SQL = """
+SELECT
+    j.sections,
+    j.safety_recommendation,
+    meta.page_title AS page_title,
+    meta.page_kind AS page_kind
+FROM vibecheck_jobs j
+LEFT JOIN LATERAL (
+    SELECT u.page_title, u.page_kind
+    FROM vibecheck_job_utterances u
+    WHERE u.job_id = j.job_id
+    ORDER BY u.position
+    LIMIT 1
+) AS meta ON TRUE
+WHERE j.job_id = $1
+  AND j.attempt_id = $2
+"""
+
+_WRITE_HEADLINE_SUMMARY_SQL = """
+UPDATE vibecheck_jobs
+SET headline_summary = $2::jsonb,
+    updated_at = now()
+WHERE job_id = $1
+  AND attempt_id = $3
+"""
+
 # TASK-1474.23.02: post-Gemini stage breadcrumb. CAS on attempt_id so a
 # stale worker can't overwrite the marker after a fresh attempt rotated.
 _SET_LAST_STAGE_SQL = """
@@ -285,6 +331,7 @@ _STAGE_PERSIST_UTTERANCES = "persist_utterances"
 _STAGE_SET_ANALYZING = "set_analyzing"
 _STAGE_RUN_SECTIONS = "run_sections"
 _STAGE_SAFETY_RECOMMENDATION = "safety_recommendation"
+_STAGE_HEADLINE_SUMMARY = "headline_summary"
 _STAGE_FINALIZE = "finalize"
 
 
@@ -1259,6 +1306,175 @@ async def _run_safety_recommendation_step(
         )
 
 
+def _build_headline_summary_inputs(
+    sections: dict[str, Any],
+    safety_recommendation_raw: Any,
+    page_title: str | None,
+    page_kind_raw: str | None,
+) -> HeadlineSummaryInputs:
+    unavailable_inputs: list[str] = []
+    moderation_data = _done_slot_data(
+        sections, SectionSlug.SAFETY_MODERATION, unavailable_inputs, "moderation"
+    )
+    web_risk_data = _done_slot_data(
+        sections, SectionSlug.SAFETY_WEB_RISK, unavailable_inputs, "web_risk"
+    )
+    image_data = _done_slot_data(
+        sections,
+        SectionSlug.SAFETY_IMAGE_MODERATION,
+        unavailable_inputs,
+        "image_moderation",
+    )
+    video_data = _done_slot_data(
+        sections,
+        SectionSlug.SAFETY_VIDEO_MODERATION,
+        unavailable_inputs,
+        "video_moderation",
+    )
+    flashpoint_data = _done_slot_data(
+        sections, SectionSlug.TONE_DYNAMICS_FLASHPOINT, unavailable_inputs, "flashpoint"
+    )
+    scd_data = _done_slot_data(
+        sections, SectionSlug.TONE_DYNAMICS_SCD, unavailable_inputs, "scd"
+    )
+    dedup_data = _done_slot_data(
+        sections, SectionSlug.FACTS_CLAIMS_DEDUP, unavailable_inputs, "claims_dedup"
+    )
+    known_data = _done_slot_data(
+        sections,
+        SectionSlug.FACTS_CLAIMS_KNOWN_MISINFO,
+        unavailable_inputs,
+        "known_misinformation",
+    )
+    sentiment_data = _done_slot_data(
+        sections,
+        SectionSlug.OPINIONS_SENTIMENTS_SENTIMENT,
+        unavailable_inputs,
+        "sentiment",
+    )
+    subjective_data = _done_slot_data(
+        sections,
+        SectionSlug.OPINIONS_SENTIMENTS_SUBJECTIVE,
+        unavailable_inputs,
+        "subjective",
+    )
+
+    safety_recommendation: SafetyRecommendation | None = None
+    if safety_recommendation_raw is not None:
+        raw_payload = (
+            json.loads(safety_recommendation_raw)
+            if isinstance(safety_recommendation_raw, str)
+            else safety_recommendation_raw
+        )
+        safety_recommendation = SafetyRecommendation.model_validate(raw_payload)
+    else:
+        unavailable_inputs.append("safety_recommendation")
+
+    scd_report = (
+        SCDReport.model_validate(scd_data["scd"])
+        if scd_data and "scd" in scd_data
+        else None
+    )
+    claims_report = (
+        ClaimsReport.model_validate(dedup_data["claims_report"])
+        if dedup_data and "claims_report" in dedup_data
+        else None
+    )
+    sentiment_stats = (
+        SentimentStatsReport.model_validate(sentiment_data["sentiment_stats"])
+        if sentiment_data and "sentiment_stats" in sentiment_data
+        else None
+    )
+
+    try:
+        page_kind = PageKind(page_kind_raw) if page_kind_raw else PageKind.OTHER
+    except ValueError:
+        page_kind = PageKind.OTHER
+
+    return HeadlineSummaryInputs(
+        safety_recommendation=safety_recommendation,
+        harmful_content_matches=[
+            HarmfulContentMatch.model_validate(match)
+            for match in moderation_data.get("harmful_content_matches", [])
+        ],
+        web_risk_findings=[
+            WebRiskFinding.model_validate(finding)
+            for finding in web_risk_data.get("findings", [])
+        ],
+        image_moderation_matches=[
+            ImageModerationMatch.model_validate(match)
+            for match in image_data.get("matches", [])
+        ],
+        video_moderation_matches=[
+            VideoModerationMatch.model_validate(match)
+            for match in video_data.get("matches", [])
+        ],
+        flashpoint_matches=[
+            FlashpointMatch.model_validate(match)
+            for match in flashpoint_data.get("flashpoint_matches", [])
+        ],
+        scd=scd_report,
+        claims_report=claims_report,
+        known_misinformation=[
+            FactCheckMatch.model_validate(match)
+            for match in known_data.get("known_misinformation", [])
+        ],
+        sentiment_stats=sentiment_stats,
+        subjective_claims=[
+            SubjectiveClaim.model_validate(claim)
+            for claim in subjective_data.get("subjective_claims", [])
+        ],
+        page_title=page_title,
+        page_kind=page_kind,
+        unavailable_inputs=unavailable_inputs,
+    )
+
+
+async def _run_headline_summary_step(
+    pool: Any,
+    job_id: UUID,
+    task_attempt: UUID,
+    settings: Settings,
+) -> None:
+    """Synthesize the headline summary and persist it to vibecheck_jobs.
+
+    Mirrors `_run_safety_recommendation_step`: load section data with an
+    attempt-id guard, call the agent, write the result with another
+    attempt-id guard. Agent failure logs and returns without raising so a
+    bad summarization never fails the job — finalize will assemble
+    SidebarPayload with `headline=None` and the UI degrades gracefully.
+    """
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(_LOAD_HEADLINE_INPUTS_SQL, job_id, task_attempt)
+    if row is None:
+        return
+
+    try:
+        inputs = _build_headline_summary_inputs(
+            _parse_sections(row["sections"]),
+            row["safety_recommendation"],
+            row["page_title"],
+            row["page_kind"],
+        )
+        headline = await run_headline_summary(inputs, settings, job_id)
+    except Exception:
+        logger.exception(
+            "headline summary step failed for job %s attempt %s",
+            job_id,
+            task_attempt,
+        )
+        return
+
+    headline_json = json.dumps(headline.model_dump(mode="json"))
+    async with pool.acquire() as conn:
+        await conn.execute(
+            _WRITE_HEADLINE_SUMMARY_SQL,
+            job_id,
+            headline_json,
+            task_attempt,
+        )
+
+
 # ---------------------------------------------------------------------------
 # Pipeline body.
 # ---------------------------------------------------------------------------
@@ -1505,6 +1721,18 @@ async def _run_pipeline(
                     pool, job_id, task_attempt, _STAGE_SAFETY_RECOMMENDATION
                 )
                 await _run_safety_recommendation_step(
+                    pool, job_id, task_attempt, settings
+                )
+
+            with logfire.span(
+                "vibecheck.post_gemini.headline_summary",
+                job_id=str(job_id),
+                attempt_id=str(task_attempt),
+            ):
+                await _set_last_stage(
+                    pool, job_id, task_attempt, _STAGE_HEADLINE_SUMMARY
+                )
+                await _run_headline_summary_step(
                     pool, job_id, task_attempt, settings
                 )
 
