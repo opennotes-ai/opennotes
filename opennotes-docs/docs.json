@@ -5,7 +5,10 @@
   "colors": {
     "primary": "#3EB489",
     "light": "#3EB489",
-    "dark": "#3EB489"
+    "dark": "#00BB87"
+  },
+  "contextual": {
+    "options": ["copy", "view", "chatgpt", "claude"]
   },
   "fonts": {
     "family": "IBM Plex Sans"
@@ -163,6 +166,21 @@
   "footer": {
     "socials": {
       "github": "https://github.com/opennotes-ai/opennotes"
-    }
+    },
+    "links": [
+      {
+        "header": "Source",
+        "items": [
+          {
+            "label": "Edit these docs on GitHub",
+            "href": "https://github.com/opennotes-ai/opennotes/tree/main/opennotes-docs"
+          },
+          {
+            "label": "Open Notes monorepo",
+            "href": "https://github.com/opennotes-ai/opennotes"
+          }
+        ]
+      }
+    ]
   }
 }

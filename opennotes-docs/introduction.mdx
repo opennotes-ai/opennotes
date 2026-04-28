@@ -8,6 +8,14 @@ community review. Integrations wire Open Notes into your platform so that
 flagged content enters a bridging-based review loop, and consensus decisions
 flow back as moderation actions.
 
+```mermaid
+flowchart LR
+    A[User posts on platform] --> B[Integration submits to Open Notes API]
+    B --> C[Community review &amp; bridging-based scoring]
+    C --> D[Decision returned via webhook]
+    D --> E[Integration applies action on platform]
+```
+
 ## Who this is for
 
 <CardGroup cols={3}>
