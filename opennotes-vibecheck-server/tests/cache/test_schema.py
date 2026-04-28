@@ -31,6 +31,48 @@ class TestNewTablesExist:
         assert f"CREATE TABLE IF NOT EXISTS {table}" in schema_sql
 
 
+class TestExecSqlBootstrap:
+    def test_exec_sql_function_is_locked_to_service_role(self, schema_sql: str) -> None:
+        assert "CREATE OR REPLACE FUNCTION public.exec_sql(sql text)" in schema_sql
+        assert "SECURITY DEFINER" in schema_sql
+        assert "SET search_path = public, pg_temp" in schema_sql
+        assert "ALTER FUNCTION public.exec_sql(text) OWNER TO postgres" in schema_sql
+        assert (
+            "REVOKE ALL ON FUNCTION public.exec_sql(text) "
+            "FROM PUBLIC, anon, authenticated"
+        ) in schema_sql
+        assert (
+            "GRANT EXECUTE ON FUNCTION public.exec_sql(text) TO service_role"
+            in schema_sql
+        )
+        assert "GRANT EXECUTE ON FUNCTION public.exec_sql(text) TO authenticator" not in schema_sql
+
+    def test_schema_apply_uses_deterministic_advisory_lock_before_ddl(
+        self, schema_sql: str
+    ) -> None:
+        lock_index = schema_sql.index("SELECT pg_advisory_xact_lock(")
+        first_ddl_index = min(
+            index
+            for statement in (
+                "CREATE EXTENSION",
+                "CREATE TABLE",
+                "ALTER TABLE",
+            )
+            if (index := schema_sql.find(statement)) != -1
+        )
+
+        assert "hashtext('vibecheck_schema_apply')::bigint" in schema_sql
+        assert lock_index < first_ddl_index
+
+    def test_exec_sql_comment_documents_temporary_removal_criteria(
+        self, schema_sql: str
+    ) -> None:
+        assert "TEMPORARY exec_sql bootstrap" in schema_sql
+        assert "TASK-1490" in schema_sql
+        assert "opennotes-server merge" in schema_sql
+        assert "Alembic owns vibecheck schema changes" in schema_sql
+
+
 class TestRowLevelSecurityLockdown:
     @pytest.mark.parametrize(
         "table",

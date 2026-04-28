@@ -9,11 +9,16 @@ scrubber to surface token/signature query-param values to our callback.
 """
 from __future__ import annotations
 
+import logging
 from collections.abc import Iterator
+from pathlib import Path
+from typing import cast
 from unittest.mock import patch
 
 import pytest
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from supabase import Client
 
 
 @pytest.fixture
@@ -117,4 +122,79 @@ def test_metrics_endpoint_rejects_unauthenticated(
     # as a 200 with empty payload.
     assert "unauthorized" in str(body)
 
+    get_settings.cache_clear()
+
+
+class _FailingRpc:
+    def __init__(self, exc: BaseException) -> None:
+        self._exc = exc
+
+    def execute(self) -> None:
+        raise self._exc
+
+
+class _FailingPostgrest:
+    def __init__(self, exc: BaseException) -> None:
+        self._exc = exc
+
+    def rpc(self, _name: str, _params: dict[str, str]) -> _FailingRpc:
+        return _FailingRpc(self._exc)
+
+
+class _FailingClient:
+    def __init__(self, exc: BaseException) -> None:
+        self.postgrest = _FailingPostgrest(exc)
+
+
+def test_apply_schema_propagates_exec_sql_rpc_error(
+    caplog: pytest.LogCaptureFixture,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    from src import startup
+
+    schema_path = tmp_path / "schema.sql"
+    schema_path.write_text("SELECT 1;", encoding="utf-8")
+    monkeypatch.setattr(startup, "_SCHEMA_PATH", schema_path)
+    exc = RuntimeError("PGRST202: function public.exec_sql(sql text) does not exist")
+
+    with caplog.at_level(logging.ERROR), pytest.raises(RuntimeError) as raised:
+        startup._apply_schema(cast(Client, cast(object, _FailingClient(exc))))  # pyright: ignore[reportPrivateUsage]
+
+    assert raised.value is exc
+    assert any(
+        record.levelno == logging.ERROR
+        and record.exc_info is not None
+        and "vibecheck schema apply via exec_sql RPC failed" in record.getMessage()
+        for record in caplog.records
+    )
+
+
+def test_lifespan_propagates_apply_schema_failure(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    from src import startup
+    from src.config import get_settings
+
+    schema_path = tmp_path / "schema.sql"
+    schema_path.write_text("SELECT 1;", encoding="utf-8")
+    monkeypatch.setattr(startup, "_SCHEMA_PATH", schema_path)
+    monkeypatch.setattr(startup, "configure_logfire", lambda: None)
+    monkeypatch.setenv("VIBECHECK_SUPABASE_URL", "https://vibecheck-test.supabase.co")
+    monkeypatch.setenv("VIBECHECK_SUPABASE_SERVICE_ROLE_KEY", "service-role")
+    monkeypatch.delenv("VIBECHECK_SUPABASE_DB_PASSWORD", raising=False)
+    get_settings.cache_clear()
+    exc = RuntimeError("PGRST202: function public.exec_sql(sql text) does not exist")
+    monkeypatch.setattr(
+        startup,
+        "_build_supabase_client",
+        lambda _url, _key: _FailingClient(exc),
+    )
+
+    app = FastAPI(lifespan=startup.lifespan)
+    with pytest.raises(RuntimeError) as raised, TestClient(app):
+        pass
+
+    assert raised.value is exc
     get_settings.cache_clear()

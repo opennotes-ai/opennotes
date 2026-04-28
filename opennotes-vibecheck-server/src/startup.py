@@ -76,11 +76,9 @@ def _apply_schema(client: Client) -> None:
     sql = _SCHEMA_PATH.read_text()
     try:
         client.postgrest.rpc("exec_sql", {"sql": sql}).execute()
-    except Exception as exc:
-        logger.info(
-            "skipping in-app schema apply (run via supabase migration): %s",
-            exc,
-        )
+    except Exception:
+        logger.error("vibecheck schema apply via exec_sql RPC failed", exc_info=True)
+        raise
 
 
 _EXTRACTOR_TO_THREAD_CALL_SITES = 3
