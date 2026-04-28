@@ -29,7 +29,7 @@ function copyFor(
     case "upstream_error":
       return "The analyzer couldn't reach that page.";
     case "extraction_failed":
-      return "We couldn't extract content from that page.";
+      return "We couldn't read this page's content.";
     case "timeout":
       return "The analysis took too long and was cancelled.";
     case "rate_limited":
@@ -57,9 +57,9 @@ function detailFor(code: ErrorCode | null): string {
     case "unsupported_site":
       return "This site blocks automated readers.";
     case "upstream_error":
-      return "Try again in a moment — the page wasn't reachable.";
+      return "The site may be blocking automated readers, or it could be a temporary outage — try again in a moment.";
     case "extraction_failed":
-      return "We couldn't pull readable content from that page.";
+      return "This often happens when a site blocks automated readers (login walls, paywalls, captchas, or bot protection).";
     case "section_failure":
       return "Some analysis sections couldn't complete.";
     case "timeout":
