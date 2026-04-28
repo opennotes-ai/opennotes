@@ -1,37 +1,134 @@
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const appSource = readFileSync(resolve("src/app.tsx"), "utf8");
+const getUserMock = vi.fn<() => Promise<unknown>>();
 
-describe("global app shell", () => {
-  it("imports NavBar and ModeToggle from @opennotes/ui", () => {
-    expect(appSource).toContain('from "@opennotes/ui/components/nav-bar"');
-    expect(appSource).toContain('from "@opennotes/ui/components/mode-toggle"');
+vi.mock("~/lib/supabase-server", () => ({
+  getUser: () => getUserMock(),
+}));
+
+vi.mock("@solidjs/start/router", () => ({
+  FileRoutes: () => null,
+}));
+
+vi.mock("@opennotes/ui/components/mode-toggle", () => ({
+  default: () => (
+    <button type="button" aria-label="Toggle dark mode">
+      mode
+    </button>
+  ),
+}));
+
+import { render, screen, waitFor } from "@solidjs/testing-library";
+import { Router, query } from "@solidjs/router";
+import { RootLayout } from "./app";
+
+beforeEach(() => {
+  getUserMock.mockReset();
+  query.clear();
+});
+
+afterEach(() => {
+  document.body.innerHTML = "";
+});
+
+const renderWithRouter = () =>
+  render(() => (
+    <Router root={(props) => <RootLayout>{props.children}</RootLayout>} />
+  ));
+
+describe("RootLayout — anonymous state", () => {
+  it("renders Sign In link to /login when no user is signed in", async () => {
+    getUserMock.mockResolvedValue(null);
+
+    renderWithRouter();
+
+    const signIn = await screen.findByRole("link", { name: /sign in/i });
+    expect(signIn).toBeTruthy();
+    expect(signIn.getAttribute("href")).toBe("/login");
   });
 
-  it("renders the Open Notes logo image at h-9 w-auto", () => {
-    expect(appSource).toContain('src="/opennotes-logo.svg"');
-    expect(appSource).toContain('alt="Open Notes"');
-    expect(appSource).toContain('class="h-9 w-auto"');
+  it("does not render the Sign Out form when no user is signed in", async () => {
+    getUserMock.mockResolvedValue(null);
+
+    const { container } = renderWithRouter();
+    await screen.findByRole("link", { name: /sign in/i });
+
+    expect(
+      container.querySelector('form[action="/auth/signout"]'),
+    ).toBeNull();
   });
 
-  it("includes a Docs link to docs.opennotes.ai (same tab)", () => {
-    expect(appSource).toContain("https://docs.opennotes.ai");
-    expect(appSource).toContain('label: "Docs"');
-    expect(appSource).not.toContain('external: true');
+  it("renders ModeToggle in the anonymous state", async () => {
+    getUserMock.mockResolvedValue(null);
+
+    renderWithRouter();
+    await screen.findByRole("link", { name: /sign in/i });
+
+    const modeToggle = screen.getByRole("button", {
+      name: /toggle dark mode/i,
+    });
+    expect(modeToggle).toBeTruthy();
+  });
+});
+
+describe("RootLayout — signed-in state", () => {
+  it("renders a Sign Out form posting to /auth/signout", async () => {
+    getUserMock.mockResolvedValue({ id: "u1", email: "a@b.c" });
+
+    const { container } = renderWithRouter();
+
+    await waitFor(() => {
+      expect(
+        container.querySelector('form[action="/auth/signout"][method="post"]'),
+      ).not.toBeNull();
+    });
   });
 
-  it("renders Sign In CTA pointing at /login", () => {
-    expect(appSource).toContain('href="/login"');
-    expect(appSource).toContain("Sign In");
+  it("renders a submit button with text Sign Out when user is signed in", async () => {
+    getUserMock.mockResolvedValue({ id: "u1", email: "a@b.c" });
+
+    renderWithRouter();
+
+    const signOut = await screen.findByRole("button", { name: /sign out/i });
+    expect(signOut).toBeTruthy();
+    expect(signOut.getAttribute("type")).toBe("submit");
   });
 
-  it("renders mode-toggle in the actions slot", () => {
-    expect(appSource).toContain("<ModeToggle");
+  it("does not render a Sign In link when user is signed in", async () => {
+    getUserMock.mockResolvedValue({ id: "u1", email: "a@b.c" });
+
+    renderWithRouter();
+    await screen.findByRole("button", { name: /sign out/i });
+
+    expect(screen.queryByRole("link", { name: /sign in/i })).toBeNull();
   });
 
-  it("does not retain the legacy placeholder span", () => {
-    expect(appSource).not.toContain("Open Notes Platform</span>");
+  it("renders ModeToggle in the signed-in state", async () => {
+    getUserMock.mockResolvedValue({ id: "u1", email: "a@b.c" });
+
+    renderWithRouter();
+    await screen.findByRole("button", { name: /sign out/i });
+
+    const modeToggle = screen.getByRole("button", {
+      name: /toggle dark mode/i,
+    });
+    expect(modeToggle).toBeTruthy();
+  });
+
+  it("does not flash a Sign In link before the auth resource resolves", async () => {
+    let resolveUser!: (user: unknown) => void;
+    getUserMock.mockReturnValue(
+      new Promise((resolve) => {
+        resolveUser = resolve;
+      }),
+    );
+
+    const { container } = renderWithRouter();
+
+    expect(container.querySelector('a[href="/login"]')).toBeNull();
+    expect(screen.queryByRole("link", { name: /sign in/i })).toBeNull();
+
+    resolveUser({ id: "u1" });
+    await screen.findByRole("button", { name: /sign out/i });
   });
 });

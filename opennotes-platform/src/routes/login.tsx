@@ -1,11 +1,12 @@
-import { action, redirect, useSubmission, A } from "@solidjs/router";
+import { action, redirect, revalidate, useSubmission, A } from "@solidjs/router";
 import { Show } from "solid-js";
 import { getRequestEvent } from "solid-js/web";
 import { createClient } from "~/lib/supabase-server";
+import { NAV_USER_KEY } from "~/app";
 import { Button } from "@opennotes/ui/components/ui/button";
 import { Input } from "@opennotes/ui/components/ui/input";
 
-const loginAction = action(async (formData: FormData) => {
+export async function handleLogin(formData: FormData) {
   "use server";
   const email = String(formData.get("email") ?? "");
   const password = String(formData.get("password") ?? "");
@@ -24,8 +25,11 @@ const loginAction = action(async (formData: FormData) => {
     return error.message;
   }
 
+  await revalidate(NAV_USER_KEY);
   throw redirect("/dashboard");
-}, "login");
+}
+
+const loginAction = action(handleLogin, "login");
 
 export default function LoginPage() {
   const submission = useSubmission(loginAction);
