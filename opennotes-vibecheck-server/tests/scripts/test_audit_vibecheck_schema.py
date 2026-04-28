@@ -4,9 +4,14 @@ from typing import Any
 
 import pytest
 
+import asyncpg
+
 from scripts.audit_vibecheck_schema import (
     _audit,
+    _audit_cron,
+    _execute_grantees,
     _project_ref_from_url,
+    ExpectedSchema,
     extract_expected_schema,
 )
 
@@ -358,3 +363,72 @@ async def test_audit_reports_view_replacing_expected_table() -> None:
 def test_project_ref_from_url_rejects_vanity_hosts() -> None:
     with pytest.raises(ValueError, match=r"supabase\.co"):
         _project_ref_from_url("https://db.example.com")
+
+
+def test_function_drift_flags_null_proacl_with_public_default() -> None:
+    grantees = _execute_grantees(None, owner="postgres")
+    assert "PUBLIC" in grantees
+    assert "postgres" in grantees
+
+
+@pytest.mark.asyncio
+async def test_drop_policy_in_schema_flags_when_present_in_prod() -> None:
+    expected = extract_expected_schema(
+        """
+        CREATE TABLE public.vibecheck_analyses (id UUID PRIMARY KEY);
+        DROP POLICY IF EXISTS vibecheck_analyses_full_access ON public.vibecheck_analyses;
+        """
+    )
+    assert "vibecheck_analyses_full_access" in expected.dropped_policies.get("public.vibecheck_analyses", set())
+
+    conn = FakeConn(
+        tables=[
+            {"schema_name": "public", "table_name": "vibecheck_analyses", "relkind": "r"},
+        ],
+        columns=[
+            {
+                "schema_name": "public",
+                "table_name": "vibecheck_analyses",
+                "column_name": "id",
+                "ordinal_position": 1,
+                "definition": "UUID",
+            }
+        ],
+        policies=[
+            {
+                "schema_name": "public",
+                "table_name": "vibecheck_analyses",
+                "policy_name": "vibecheck_analyses_full_access",
+                "using_expr": None,
+                "with_check_expr": None,
+            }
+        ],
+    )
+
+    clean, report = await _audit(conn, expected)
+
+    assert clean is False
+    assert "`policy` `public.vibecheck_analyses.vibecheck_analyses_full_access`: **DRIFT**" in report
+
+
+@pytest.mark.asyncio
+async def test_audit_cron_inspection_failure_with_expected_jobs_is_drift() -> None:
+    expected = ExpectedSchema(cron_jobs={"vibecheck-orphan-sweep": "* * * * *"})
+    error_conn = FakeConn(cron=asyncpg.PostgresError())
+    report: list[str] = []
+
+    result = await _audit_cron(error_conn, expected, report)
+
+    assert result is False
+    assert any("DRIFT" in line for line in report)
+
+
+@pytest.mark.asyncio
+async def test_audit_cron_inspection_failure_with_no_expected_jobs_is_clean() -> None:
+    expected = ExpectedSchema(cron_jobs={})
+    error_conn = FakeConn(cron=asyncpg.PostgresError())
+    report: list[str] = []
+
+    result = await _audit_cron(error_conn, expected, report)
+
+    assert result is True

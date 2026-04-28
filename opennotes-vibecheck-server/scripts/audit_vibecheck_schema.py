@@ -116,6 +116,8 @@ class ExpectedSchema:
     rls_enabled: set[str] = field(default_factory=set)
     rls_forced: set[str] = field(default_factory=set)
     policies: dict[str, dict[str, PolicyExpectation]] = field(default_factory=dict)
+    dropped_policies: dict[str, set[str]] = field(default_factory=dict)
+    dropped_constraints: dict[str, set[str]] = field(default_factory=dict)
     cron_jobs: dict[str, str] = field(default_factory=dict)
     functions: dict[str, FunctionExpectation] = field(default_factory=dict)
     table_revokes: dict[str, set[str]] = field(default_factory=dict)
@@ -568,6 +570,36 @@ def _extract_revoke(statement: str, expected: ExpectedSchema) -> None:
     )
 
 
+def _extract_drop_policy(statement: str, expected: ExpectedSchema) -> None:
+    compact = _compact(statement)
+    match = re.search(
+        rf"DROP\s+POLICY\s+(?:IF\s+EXISTS\s+)?(?P<policy>{_IDENT})\s+ON\s+(?P<table>{_QUALIFIED})",
+        compact,
+        re.IGNORECASE,
+    )
+    if not match:
+        return
+    schema, table_name = _parse_name(match.group("table"))
+    table_key = _qualified(schema, table_name)
+    policy = _unquote(match.group("policy"))
+    expected.dropped_policies.setdefault(table_key, set()).add(policy)
+
+
+def _extract_drop_constraint(statement: str, expected: ExpectedSchema) -> None:
+    compact = _compact(statement)
+    match = re.search(
+        rf"ALTER\s+TABLE\s+(?P<table>{_QUALIFIED})\s+DROP\s+CONSTRAINT\s+(?:IF\s+EXISTS\s+)?(?P<constraint>{_IDENT})",
+        compact,
+        re.IGNORECASE,
+    )
+    if not match:
+        return
+    schema, table_name = _parse_name(match.group("table"))
+    table_key = _qualified(schema, table_name)
+    constraint = _unquote(match.group("constraint"))
+    expected.dropped_constraints.setdefault(table_key, set()).add(constraint)
+
+
 def _extract_cron(statement: str, expected: ExpectedSchema) -> None:
     compact = _compact(statement)
     for job, schedule in re.findall(
@@ -596,7 +628,10 @@ def extract_expected_schema(schema_sql: str) -> ExpectedSchema:
             _extract_function(statement, expected)
         elif first == "ALTER":
             _extract_alter_table(statement, expected)
+            _extract_drop_constraint(statement, expected)
             _extract_function(statement, expected)
+        elif first == "DROP":
+            _extract_drop_policy(statement, expected)
         elif compact.upper().startswith("REVOKE "):
             _extract_function(statement, expected)
             _extract_revoke(statement, expected)
@@ -867,6 +902,13 @@ async def _audit_policies(conn: Any, expected: ExpectedSchema, report: list[str]
                     and _normalize_expr(str(row.get("with_check_expr") or "")) == expectation.with_check
                 )
             clean &= _mark(report, "policy", key, ok)
+    for table, names in sorted(expected.dropped_policies.items()):
+        if table not in existing_tables:
+            continue
+        for name in sorted(names):
+            key = f"{table}.{name}"
+            still_exists = key in actual
+            clean &= _mark(report, "policy", key, not still_exists, "expected absent (DROP POLICY)" if still_exists else "")
     return clean
 
 
@@ -875,8 +917,9 @@ async def _audit_cron(conn: Any, expected: ExpectedSchema, report: list[str]) ->
     try:
         rows = await conn.fetch("/* AUDIT_CRON */ SELECT jobname, schedule FROM cron.job")
     except asyncpg.PostgresError as exc:
-        report.append(f"- `cron` `cron.job`: **WARN** - could not inspect cron.job: {exc.__class__.__name__}")
-        return True
+        label = "DRIFT" if expected.cron_jobs else "WARN"
+        report.append(f"- `cron` `cron.job`: **{label}** - could not inspect cron.job: {exc.__class__.__name__}")
+        return not expected.cron_jobs
     cron = {str(row["jobname"]): str(row["schedule"]) for row in rows}
     clean = True
     for name, schedule in sorted(expected.cron_jobs.items()):
@@ -910,7 +953,7 @@ async def _audit_functions(conn: Any, expected: ExpectedSchema, report: list[str
         row = actual.get(key)
         ok = row is not None
         if row is not None:
-            execute_grantees = _execute_grantees(row.get("proacl") or [])
+            execute_grantees = _execute_grantees(row.get("proacl"), owner=str(row["owner"]) if row.get("owner") else None)
             ok = (
                 (not expectation.owner or row["owner"] == expectation.owner)
                 and bool(row["security_definer"]) == expectation.security_definer
@@ -922,7 +965,12 @@ async def _audit_functions(conn: Any, expected: ExpectedSchema, report: list[str
     return clean
 
 
-def _execute_grantees(acl_items: Sequence[str]) -> set[str]:
+def _execute_grantees(acl_items: Sequence[str] | None, *, owner: str | None = None) -> set[str]:
+    if acl_items is None:
+        defaults: set[str] = {"PUBLIC"}
+        if owner:
+            defaults.add(owner)
+        return defaults
     grantees: set[str] = set()
     for item in acl_items:
         grant_part = item.split("/", 1)[0]
