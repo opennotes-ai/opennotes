@@ -968,6 +968,7 @@ describe("AnalyzePage archiveProbeState re-probe loop (TASK-1483.15.01)", () => 
     await vi.advanceTimersByTimeAsync(300_000);
 
     expect(probeState()).toBe("unavailable");
+    expect(screen.getByTestId("page-frame-unavailable")).not.toBeNull();
     expect(vi.getTimerCount()).toBe(0);
   });
 

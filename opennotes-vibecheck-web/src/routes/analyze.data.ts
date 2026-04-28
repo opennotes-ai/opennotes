@@ -57,6 +57,7 @@ function isFrameCompatResponse(value: unknown): value is FrameCompatResponse {
   const candidate = value as Partial<FrameCompatResponse>;
   return (
     typeof candidate.can_iframe === "boolean" &&
+    typeof candidate.has_archive === "boolean" &&
     isStringOrNullish(candidate.blocking_header) &&
     isStringOrNullish(candidate.csp_frame_ancestors)
   );

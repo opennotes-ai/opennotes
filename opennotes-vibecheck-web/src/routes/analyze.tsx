@@ -245,6 +245,11 @@ export default function AnalyzePage() {
     const stopUnavailableIfExpired = () => {
       if (hasTimedOut() || terminalGraceElapsed()) {
         setArchiveProbeState("unavailable");
+        setFrameCompatPending(false);
+        if (frameCompatUrl() !== url) {
+          setFrameCompat((current) => ({ ...current, canIframe: false }));
+        }
+        setFrameCompatUrl(url);
         stopLoop();
         return true;
       }

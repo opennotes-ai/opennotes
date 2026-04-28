@@ -493,6 +493,25 @@ describe("getArchiveProbe and getScreenshot split queries", () => {
     });
   });
 
+  it("getArchiveProbe treats malformed has_archive values as transient errors", async () => {
+    clientGetMock.mockResolvedValueOnce({
+      data: {
+        can_iframe: false,
+        blocking_header: "x-frame-options: DENY",
+        csp_frame_ancestors: null,
+        has_archive: "false",
+      },
+      error: null,
+    });
+
+    const { getArchiveProbe } = await import("./analyze.data");
+
+    expect(await getArchiveProbe("https://news.example.com/a")).toEqual({
+      ok: false,
+      kind: "transient_error",
+    });
+  });
+
   it("getScreenshot calls only /api/screenshot and returns null for invalid or failed requests", async () => {
     clientGetMock.mockResolvedValueOnce({
       data: { screenshot_url: "https://cdn.example.com/shot.png" },
