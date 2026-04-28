@@ -38,6 +38,15 @@ describe("HeadlineSummaryReport", () => {
     expect(text.textContent).toBe(SAMPLE_TEXT);
   });
 
+  it("exposes data-headline-kind on the section for telemetry/e2e", () => {
+    render(() => (
+      <HeadlineSummaryReport headline={makeHeadline({ kind: "stock" })} />
+    ));
+    expect(
+      screen.getByTestId("headline-summary").getAttribute("data-headline-kind"),
+    ).toBe("stock");
+  });
+
   it("renders identical text for kind='stock' and kind='synthesized'", () => {
     const { unmount } = render(() => (
       <HeadlineSummaryReport headline={makeHeadline({ kind: "stock" })} />

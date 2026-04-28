@@ -15,6 +15,7 @@ export default function HeadlineSummaryReport(
       {(h) => (
         <section
           data-testid="headline-summary"
+          data-headline-kind={h().kind}
           class="rounded-md border border-border bg-background/60 p-3"
         >
           <p
