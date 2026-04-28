@@ -7,7 +7,7 @@ vi.mock("~/lib/supabase-server", () => ({
   createClient: (...args: unknown[]) => createClientMock(...args),
 }));
 
-import { GET, POST } from "./signout";
+import { DELETE, GET, OPTIONS, PATCH, POST, PUT } from "./signout";
 
 afterEach(() => {
   signOutMock.mockReset();
@@ -99,9 +99,15 @@ describe("POST /auth/signout", () => {
   });
 });
 
-describe("GET /auth/signout", () => {
-  test("returns 405 Method Not Allowed with Allow: POST", async () => {
-    const response = await GET();
+describe("non-POST methods on /auth/signout", () => {
+  test.each([
+    ["GET", GET],
+    ["PUT", PUT],
+    ["PATCH", PATCH],
+    ["DELETE", DELETE],
+    ["OPTIONS", OPTIONS],
+  ])("%s returns 405 Method Not Allowed with Allow: POST", async (_name, handler) => {
+    const response = await handler();
 
     expect(response.status).toBe(405);
     expect(response.headers.get("Allow")).toBe("POST");
