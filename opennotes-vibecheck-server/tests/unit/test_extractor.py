@@ -13,6 +13,7 @@ runner so no network calls fire. We assert on state (the returned
 `UtterancesPayload`, the cache's recorded side-effects) rather than
 interaction patterns.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -38,7 +39,6 @@ from src.utterances.errors import (
 from src.utterances.extractor import (
     EXTRACTOR_SYSTEM_PROMPT,
     ExtractorDeps,
-    UtteranceExtractionError,
     ZeroUtterancesError,
     _get_html_impl,
     _get_screenshot_impl,
@@ -104,8 +104,7 @@ class _FakeScrapeCache:
         self.get_calls: list[str] = []
         self.put_calls: list[tuple[str, ScrapeResult]] = []
         self.signed_url_result: str | None = (
-            "https://storage.googleapis.com/test-vibecheck-screenshots/abc"
-            "?X-Goog-Expires=900"
+            "https://storage.googleapis.com/test-vibecheck-screenshots/abc?X-Goog-Expires=900"
         )
         self.signed_url_calls: list[CachedScrape | ScrapeResult] = []
 
@@ -137,9 +136,7 @@ class _FakeScrapeCache:
             storage_key=key,
         )
 
-    async def signed_screenshot_url(
-        self, scrape: CachedScrape | ScrapeResult
-    ) -> str | None:
+    async def signed_screenshot_url(self, scrape: CachedScrape | ScrapeResult) -> str | None:
         self.signed_url_calls.append(scrape)
         # Mirror the production contract — sign only when a storage_key is
         # attached to the passed-in scrape; bare ScrapeResults return None.
@@ -152,6 +149,10 @@ class _FakeScrapeCache:
 class _FakeRunResult:
     def __init__(self, output: UtterancesPayload) -> None:
         self.output = output
+
+
+class _FakeModel:
+    model_name = "gemini-fake-from-agent"
 
 
 @dataclass
@@ -168,6 +169,7 @@ class _FakeAgent:
     payload: UtterancesPayload
     prompts: list[str] = field(default_factory=list)
     tool_registrations: list[tuple[str, Any]] = field(default_factory=list)
+    model: Any = field(default_factory=_FakeModel)
 
     def tool(self, func: Any = None, /, **_kwargs: Any) -> Any:
         """Spy decorator. Supports both `@agent.tool` and `@agent.tool(...)`."""
@@ -251,13 +253,11 @@ def _payload(
     )
 
 
-def _stub_agent(
-    monkeypatch: pytest.MonkeyPatch, payload: UtterancesPayload
-) -> _FakeAgent:
+def _stub_agent(monkeypatch: pytest.MonkeyPatch, payload: UtterancesPayload) -> _FakeAgent:
     fake = _FakeAgent(payload=payload)
     monkeypatch.setattr(
         "src.utterances.extractor.build_agent",
-        lambda settings, output_type=None, system_prompt=None, name=None: fake,
+        lambda settings, output_type=None, system_prompt=None, name=None, tier="fast": fake,
     )
     return fake
 
@@ -471,12 +471,8 @@ async def test_blog_post_with_comments_produces_root_post_plus_comment_utterance
             page_kind=PageKind.BLOG_POST,
             utterances=[
                 Utterance(utterance_id=None, kind="post", text="root post"),
-                Utterance(
-                    utterance_id=None, kind="comment", text="c1", author="alice"
-                ),
-                Utterance(
-                    utterance_id=None, kind="comment", text="c2", author="bob"
-                ),
+                Utterance(utterance_id=None, kind="comment", text="c1", author="alice"),
+                Utterance(utterance_id=None, kind="comment", text="c2", author="bob"),
             ],
         ),
     )
@@ -501,9 +497,7 @@ async def test_forum_thread_sequential_posts_use_parent_ids(
         _payload(
             page_kind=PageKind.FORUM_THREAD,
             utterances=[
-                Utterance(
-                    utterance_id="op", kind="post", text="opening post", author="op"
-                ),
+                Utterance(utterance_id="op", kind="post", text="opening post", author="op"),
                 Utterance(
                     utterance_id="r1",
                     kind="reply",
@@ -648,11 +642,7 @@ async def test_scraped_at_is_overwritten_after_agent_run(
 def test_get_html_tool_returns_sanitized_html() -> None:
     """`<script>` contents are stripped; benign markup survives."""
     scrape = _scrape(
-        html=(
-            "<script>alert('x')</script>"
-            "<style>.a { color: red; }</style>"
-            "<p>keep me</p>"
-        )
+        html=("<script>alert('x')</script><style>.a { color: red; }</style><p>keep me</p>")
     )
     cache = _FakeScrapeCache()
     deps = ExtractorDeps(scrape=scrape, scrape_cache=cache)  # pyright: ignore[reportArgumentType]
@@ -787,12 +777,12 @@ async def test_extract_utterances_media_empty_when_no_html(
 # ---------------------------------------------------------------------------
 
 
-def _stub_agent_raising(
-    monkeypatch: pytest.MonkeyPatch, exc: BaseException
-) -> None:
+def _stub_agent_raising(monkeypatch: pytest.MonkeyPatch, exc: BaseException) -> None:
     """Replace `build_agent` with a fake whose `run` raises `exc`."""
 
     class _RaisingAgent:
+        model = type("_Model", (), {"model_name": "gemini-fake-from-agent"})()
+
         def tool(self, func: Any = None, /, **_kwargs: Any) -> Any:
             if func is None:
 
@@ -807,7 +797,9 @@ def _stub_agent_raising(
 
     monkeypatch.setattr(
         "src.utterances.extractor.build_agent",
-        lambda settings, output_type=None, system_prompt=None, name=None: _RaisingAgent(),
+        lambda settings, output_type=None, system_prompt=None, name=None, tier="fast": (
+            _RaisingAgent()
+        ),
     )
 
 
@@ -955,6 +947,8 @@ async def test_extract_utterances_still_raises_extraction_error_on_agent_excepti
     cache = _FakeScrapeCache()
 
     class _ExplodingAgent:
+        model = type("_Model", (), {"model_name": "gemini-fake-from-agent"})()
+
         def tool(self, func: Any = None, /, **_kwargs: Any) -> Any:
             if func is None:
                 return lambda f: f
@@ -965,7 +959,9 @@ async def test_extract_utterances_still_raises_extraction_error_on_agent_excepti
 
     monkeypatch.setattr(
         "src.utterances.extractor.build_agent",
-        lambda settings, output_type=None, system_prompt=None, name=None: _ExplodingAgent(),
+        lambda settings, output_type=None, system_prompt=None, name=None, tier="fast": (
+            _ExplodingAgent()
+        ),
     )
 
     with pytest.raises(UtteranceExtractionError):
@@ -1028,7 +1024,7 @@ async def test_extract_utterances_wraps_body_in_logfire_span(
     """
     from src.utterances import extractor as extractor_mod
 
-    recorded: dict[str, Any] = {"name": None, "attrs": {}, "set_attrs": {}}
+    recorded: list[dict[str, Any]] = []
 
     class _RecordingSpan:
         def __enter__(self) -> _RecordingSpan:
@@ -1038,11 +1034,10 @@ async def test_extract_utterances_wraps_body_in_logfire_span(
             return None
 
         def set_attribute(self, key: str, value: Any) -> None:
-            recorded["set_attrs"][key] = value
+            recorded[-1].setdefault("set_attrs", {})[key] = value
 
     def _fake_span(name: str, **attrs: Any) -> _RecordingSpan:
-        recorded["name"] = name
-        recorded["attrs"] = dict(attrs)
+        recorded.append({"name": name, "attrs": dict(attrs), "set_attrs": {}})
         return _RecordingSpan()
 
     monkeypatch.setattr(extractor_mod.logfire, "span", _fake_span)
@@ -1053,8 +1048,10 @@ async def test_extract_utterances_wraps_body_in_logfire_span(
 
     await _call(TARGET_URL, client, cache, settings)
 
-    assert recorded["name"] == "vibecheck.extract_utterances"
-    assert recorded["attrs"].get("url") == TARGET_URL
+    extractor_span = next(
+        span for span in recorded if span["name"] == "vibecheck.extract_utterances"
+    )
+    assert extractor_span["attrs"].get("url") == TARGET_URL
 
 
 @pytest.mark.asyncio
@@ -1097,6 +1094,7 @@ async def test_extract_utterances_sets_upstream_attrs_on_vertex_transient(
     assert set_attrs.get("upstream_provider") == "vertex"
     assert set_attrs.get("upstream_status_code") == 503
     assert set_attrs.get("upstream_status") == "UNAVAILABLE"
+    assert set_attrs.get("model_name") == "gemini-fake-from-agent"
     # Vertex-arm legacy compat — saved Logfire searches keyed on these.
     assert set_attrs.get("vertex_status_code") == 503
     assert set_attrs.get("vertex_status") == "UNAVAILABLE"

@@ -1,9 +1,11 @@
-
 from src.config import Settings, get_settings
 
 
 def test_defaults():
     s = Settings()
+    assert s.VERTEXAI_FAST_MODEL == "google-vertex:gemini-3-flash-preview"
+    assert s.VERTEXAI_MODEL == "google-vertex:gemini-3.1-pro-preview"
+    assert s.VERTEX_MAX_CONCURRENCY == 4
     assert s.MAX_IMAGES_MODERATED == 30
     assert s.MAX_VIDEOS_MODERATED == 5
     assert s.WEB_RISK_CACHE_TTL_HOURS == 6

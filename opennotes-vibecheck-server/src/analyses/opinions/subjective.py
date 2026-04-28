@@ -5,6 +5,7 @@ A subjective claim expresses an opinion, preference, evaluation, or stance
 (e.g. "The UI has 3 buttons") are excluded here; those are handled by the
 claims extractor in ``src/analyses/claims/``.
 """
+
 from __future__ import annotations
 
 from src.analyses.opinions._schemas import (
@@ -13,6 +14,7 @@ from src.analyses.opinions._schemas import (
 )
 from src.config import Settings, get_settings
 from src.services.gemini_agent import build_agent
+from src.services.vertex_limiter import vertex_slot
 from src.utterances.schema import Utterance
 
 _SYSTEM_PROMPT = (
@@ -34,8 +36,7 @@ def _utterance_id(utterance: Utterance, index: int = 0) -> str:
 
 
 _BULK_SYSTEM_PROMPT = (
-    _SYSTEM_PROMPT
-    + " You will receive a numbered list of utterances. Return one "
+    _SYSTEM_PROMPT + " You will receive a numbered list of utterances. Return one "
     "`_PerUtteranceSubjectiveClaims` per input utterance, matching the "
     "input index. Preserve order. Emit an empty `claims` list for "
     "utterances without subjective content."
@@ -89,7 +90,8 @@ async def extract_subjective_claims_bulk(
         system_prompt=_BULK_SYSTEM_PROMPT,
         name="vibecheck.subjective",
     )
-    result = await agent.run("Utterances:\n" + "\n".join(prompt_lines))
+    async with vertex_slot(settings):
+        result = await agent.run("Utterances:\n" + "\n".join(prompt_lines))
     parsed: _BulkSubjectiveClaimsLLM = result.output
 
     for entry in parsed.results:

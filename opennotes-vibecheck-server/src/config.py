@@ -7,8 +7,11 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     VERTEXAI_PROJECT: str = "open-notes-core"
     VERTEXAI_LOCATION: str = "global"
+    VERTEXAI_FAST_MODEL: str = "google-vertex:gemini-3-flash-preview"
     VERTEXAI_MODEL: str = "google-vertex:gemini-3.1-pro-preview"
     VERTEXAI_EMBEDDING_MODEL: str = "google-vertex:gemini-embedding-001"
+    # Conservative per-process cap while production Cloud Run max_instances=1.
+    VERTEX_MAX_CONCURRENCY: int = 4
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
@@ -114,9 +117,7 @@ class Settings(BaseSettings):
     @classmethod
     def _recent_cache_ttl_under_signed_url_validity(cls, value: int) -> int:
         if value < 0:
-            raise ValueError(
-                "VIBECHECK_RECENT_ANALYSES_CACHE_TTL_SECONDS must be >= 0"
-            )
+            raise ValueError("VIBECHECK_RECENT_ANALYSES_CACHE_TTL_SECONDS must be >= 0")
         if value >= 900:
             raise ValueError(
                 "VIBECHECK_RECENT_ANALYSES_CACHE_TTL_SECONDS must be < 900 "
@@ -124,10 +125,18 @@ class Settings(BaseSettings):
             )
         return value
 
+    @field_validator("VERTEX_MAX_CONCURRENCY")
+    @classmethod
+    def _vertex_max_concurrency_positive(cls, value: int) -> int:
+        if value <= 0:
+            raise ValueError("VERTEX_MAX_CONCURRENCY must be > 0")
+        return value
+
 
 @lru_cache
 def get_settings() -> Settings:
     return Settings()
+
 
 # --- Vertex AI settings (Gemini 3.1 Pro Preview is the primary LLM;
 #     OpenAI is only used for moderation).

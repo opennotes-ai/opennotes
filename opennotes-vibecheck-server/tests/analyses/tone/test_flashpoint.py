@@ -1,6 +1,8 @@
 """Tests for the flashpoint detection capability + service port."""
+
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from typing import Literal
 from unittest.mock import AsyncMock, MagicMock
@@ -9,6 +11,8 @@ import pytest
 
 from src.analyses.tone._flashpoint_schemas import FlashpointMatch, RiskLevel
 from src.analyses.tone.flashpoint import detect_flashpoint
+from src.config import Settings
+from src.services import flashpoint_service as flashpoint_service_module
 from src.services.flashpoint_service import (
     FlashpointDetectionService,
     parse_derailment_score,
@@ -37,7 +41,6 @@ def _utt(
 
 class TestDetectFlashpointCapability:
     """Capability: detect_flashpoint(utterance, context, service)."""
-
 
     @pytest.mark.asyncio
     async def test_returns_match_when_service_detects_flashpoint(self):
@@ -113,6 +116,25 @@ class TestDetectFlashpointCapability:
 class TestFlashpointDetectionService:
     """Service: FlashpointDetectionService.detect_flashpoint."""
 
+    def test_build_lm_uses_fast_vertex_model_setting(self, monkeypatch):
+        captured: dict[str, str] = {}
+
+        class _FakeDspy:
+            class LM:
+                def __init__(self, model: str, **_kwargs):
+                    captured["model"] = model
+
+        monkeypatch.setattr(flashpoint_service_module, "_import_dspy", lambda: _FakeDspy)
+        service = FlashpointDetectionService(
+            settings=Settings(
+                VERTEXAI_MODEL="google-vertex:gemini-3.1-pro-preview",
+                VERTEXAI_FAST_MODEL="google-vertex:gemini-3-flash-preview",
+            )
+        )
+
+        service._build_lm()
+
+        assert captured["model"] == "vertex_ai/gemini-3-flash-preview"
 
     @pytest.mark.asyncio
     async def test_returns_match_when_score_above_threshold(self, monkeypatch):
@@ -139,6 +161,35 @@ class TestFlashpointDetectionService:
         assert result.reasoning == "Escalation detected"
         assert result.context_messages == 2
         assert result.scan_type == "conversation_flashpoint"
+
+    @pytest.mark.asyncio
+    async def test_detector_execution_enters_vertex_limiter(self, monkeypatch):
+        service = FlashpointDetectionService()
+        entered_with: list[Settings] = []
+
+        @asynccontextmanager
+        async def _recording_slot(settings: Settings):
+            entered_with.append(settings)
+            yield
+
+        mock_prediction = MagicMock()
+        mock_prediction.derailment_score = 75
+        mock_prediction.risk_level = "Hostile"
+        mock_prediction.reasoning = "Escalation detected"
+        mock_detector = MagicMock(return_value=mock_prediction)
+
+        monkeypatch.setattr(service, "_get_detector", lambda: mock_detector)
+        monkeypatch.setattr(
+            flashpoint_service_module, "vertex_slot", _recording_slot, raising=False
+        )
+
+        result = await service.detect_flashpoint(
+            _utt("u-3", "You are wrong"),
+            [_utt("u-1", "First msg"), _utt("u-2", "Second msg")],
+        )
+
+        assert result is not None
+        assert entered_with == [service._settings]
 
     @pytest.mark.asyncio
     async def test_returns_none_when_score_below_threshold(self, monkeypatch):
@@ -187,9 +238,7 @@ class TestFlashpointDetectionService:
         mock_detector = MagicMock(side_effect=TimeoutError("timeout"))
         monkeypatch.setattr(service, "_get_detector", lambda: mock_detector)
 
-        result = await service.detect_flashpoint(
-            _utt("u-1", "msg"), [_utt("u-0", "prev")]
-        )
+        result = await service.detect_flashpoint(_utt("u-1", "msg"), [_utt("u-0", "prev")])
 
         assert result is None
 
@@ -201,9 +250,7 @@ class TestFlashpointDetectionService:
         monkeypatch.setattr(service, "_get_detector", lambda: mock_detector)
 
         with pytest.raises(RuntimeError, match="auth failure"):
-            await service.detect_flashpoint(
-                _utt("u-1", "msg"), [_utt("u-0", "prev")]
-            )
+            await service.detect_flashpoint(_utt("u-1", "msg"), [_utt("u-0", "prev")])
 
     @pytest.mark.asyncio
     async def test_max_context_truncates_to_recent(self, monkeypatch):
@@ -223,9 +270,7 @@ class TestFlashpointDetectionService:
         mock_detector = MagicMock(side_effect=_fake_detector)
         monkeypatch.setattr(service, "_get_detector", lambda: mock_detector)
 
-        context = [
-            _utt(f"u-{i}", f"msg {i}", author=f"user{i}") for i in range(10)
-        ]
+        context = [_utt(f"u-{i}", f"msg {i}", author=f"user{i}") for i in range(10)]
         result = await service.detect_flashpoint(
             _utt("u-trigger", "trigger", author="trigger_user"),
             context,
@@ -252,9 +297,7 @@ class TestFlashpointDetectionService:
         mock_detector = MagicMock(return_value=mock_prediction)
         monkeypatch.setattr(service, "_get_detector", lambda: mock_detector)
 
-        default_res = await service.detect_flashpoint(
-            _utt("u-2", "text"), [_utt("u-1", "prev")]
-        )
+        default_res = await service.detect_flashpoint(_utt("u-2", "text"), [_utt("u-1", "prev")])
         assert default_res is None
 
         low_res = await service.detect_flashpoint(
@@ -278,9 +321,7 @@ class TestFlashpointDetectionService:
         mock_detector = MagicMock(return_value=mock_prediction)
         monkeypatch.setattr(service, "_get_detector", lambda: mock_detector)
 
-        result = await service.detect_flashpoint(
-            _utt("u-2", "text"), [_utt("u-1", "prev")]
-        )
+        result = await service.detect_flashpoint(_utt("u-2", "text"), [_utt("u-1", "prev")])
 
         assert result is not None
         assert result.risk_level == RiskLevel.HOSTILE

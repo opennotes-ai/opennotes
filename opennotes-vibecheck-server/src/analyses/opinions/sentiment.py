@@ -4,7 +4,10 @@ POC uses the shared pydantic-ai Gemini agent. A sentence-level sentiment model
 (VADER, transformer-based, etc.) could replace the LLM path later without
 changing the public ``compute_sentiment_stats`` signature.
 """
+
 from __future__ import annotations
+
+import asyncio
 
 from src.analyses.opinions._schemas import (
     SentimentScore,
@@ -13,6 +16,7 @@ from src.analyses.opinions._schemas import (
 )
 from src.config import Settings, get_settings
 from src.services.gemini_agent import build_agent
+from src.services.vertex_limiter import vertex_slot
 from src.utterances.schema import Utterance
 
 _BATCH_SIZE = 10
@@ -85,24 +89,45 @@ async def compute_sentiment_stats(
         (_utterance_id(utt, idx), utt) for idx, utt in enumerate(utterances)
     ]
 
-    all_scores: list[SentimentScore] = []
-    for start in range(0, len(indexed), _BATCH_SIZE):
-        batch = indexed[start : start + _BATCH_SIZE]
+    async def _run_batch(batch: list[tuple[str, Utterance]]) -> list[SentimentScore]:
         prompt = _format_batch(batch)
-        result = await agent.run(prompt)
+        async with vertex_slot(settings):
+            result = await agent.run(prompt)
         parsed: _SentimentBatchLLM = result.output
         ids_in_order = [uid for uid, _ in batch]
         by_id = {s.utterance_id: s for s in parsed.scores}
+        scores: list[SentimentScore] = []
         for uid in ids_in_order:
             llm_score = by_id.get(uid)
             if llm_score is None:
                 continue
-            all_scores.append(
+            scores.append(
                 SentimentScore(
                     utterance_id=uid,
                     label=llm_score.label,
                     valence=llm_score.valence,
                 )
             )
+        return scores
+
+    batches = [
+        indexed[start : start + _BATCH_SIZE] for start in range(0, len(indexed), _BATCH_SIZE)
+    ]
+    tasks = [asyncio.create_task(_run_batch(batch)) for batch in batches]
+    try:
+        batch_scores = await asyncio.gather(*tasks)
+    except asyncio.CancelledError:
+        for task in tasks:
+            if not task.done():
+                task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+        raise
+    except Exception:
+        for task in tasks:
+            if not task.done():
+                task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+        raise
+    all_scores = [score for scores in batch_scores for score in scores]
 
     return _aggregate(all_scores)

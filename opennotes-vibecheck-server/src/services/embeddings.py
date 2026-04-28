@@ -11,6 +11,7 @@ import threading
 from pydantic_ai import Embedder
 
 from src.config import Settings
+from src.services.vertex_limiter import vertex_slot
 
 _embedder: Embedder | None = None
 _lock = threading.RLock()
@@ -34,5 +35,6 @@ async def embed_texts(texts: list[str], settings: Settings) -> list[list[float]]
     if not texts:
         return []
     embedder = get_embedder(settings)
-    result = await embedder.embed_documents(texts)
+    async with vertex_slot(settings):
+        result = await embedder.embed_documents(texts)
     return [list(v) for v in result.embeddings]
