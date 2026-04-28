@@ -1,21 +1,24 @@
 import { Show, createEffect, createSignal, onCleanup, onMount } from "solid-js";
 
 export type PreviewMode = "original" | "archived" | "screenshot";
+export type ResolvedPreviewMode = PreviewMode | "unavailable";
 
 export interface PageFrameProps {
   url: string;
+  loading?: boolean;
   canIframe: boolean;
   blockingHeader?: string | null;
   cspFrameAncestors?: string | null;
   archivedPreviewUrl?: string | null;
   screenshotUrl: string | null;
   previewMode: PreviewMode;
-  onResolvedModeChange?: (mode: PreviewMode | "unavailable") => void;
+  previewModeRequestId?: number;
+  onResolvedModeChange?: (mode: ResolvedPreviewMode) => void;
 }
 
 const IFRAME_LOAD_TIMEOUT_MS = 20_000;
 const ARCHIVE_LOAD_TIMEOUT_MS = 8_000;
-const FALLBACK_COUNTDOWN_MS = 15_000;
+export const FALLBACK_COUNTDOWN_MS = 15_000;
 
 export default function PageFrame(props: PageFrameProps) {
   const [iframeFailed, setIframeFailed] = createSignal(false);
@@ -23,13 +26,41 @@ export default function PageFrame(props: PageFrameProps) {
   const [archivedFailed, setArchivedFailed] = createSignal(false);
   const [archivedLoaded, setArchivedLoaded] = createSignal(false);
   const [countdownElapsed, setCountdownElapsed] = createSignal(false);
+  const [userArmedDeciding, setUserArmedDeciding] = createSignal(false);
 
   const hasBlockingHint = () =>
     !props.canIframe || !!props.blockingHeader || !!props.cspFrameAncestors;
+  const hasUrl = () => props.url.trim().length > 0;
   const requestedMode = () => props.previewMode;
   const hasArchive = () => !!props.archivedPreviewUrl && !archivedFailed();
 
-  const activePreview = (): PreviewMode | "deciding" | "unavailable" => {
+  let lastHandledPreviewModeRequestId = props.previewModeRequestId ?? 0;
+  createEffect(() => {
+    const requestId = props.previewModeRequestId ?? 0;
+    if (requestId === lastHandledPreviewModeRequestId) return;
+    lastHandledPreviewModeRequestId = requestId;
+    // User intent must come from an explicit parent click token. Inferring it
+    // from a previous previewMode value races Solid's parent feedback effects.
+    if (
+      requestId > 0 &&
+      requestedMode() === "original" &&
+      !props.canIframe &&
+      (hasArchive() || !!props.screenshotUrl)
+    ) {
+      setUserArmedDeciding(true);
+    } else if (requestedMode() !== "original") {
+      setUserArmedDeciding(false);
+    }
+  });
+
+  const isUserArmedDeciding = () => userArmedDeciding();
+
+  const activePreview = ():
+    | PreviewMode
+    | "deciding"
+    | "loading"
+    | "unavailable" => {
+    if (props.loading || !hasUrl()) return "loading";
     if (requestedMode() === "screenshot") {
       return props.screenshotUrl ? "screenshot" : "unavailable";
     }
@@ -41,9 +72,17 @@ export default function PageFrame(props: PageFrameProps) {
     if (!hasBlockingHint() && !iframeFailed()) {
       return "original";
     }
-    // Original blocked or failed — show the interstitial during the countdown
-    // window unless the user has already overridden by clicking a tab (which
-    // flips requestedMode out of "original" and bypasses this branch).
+    // SERVER-KNOWN blocked (canIframe=false) on initial / non-armed render:
+    // auto-resolve to chain B immediately and skip the deciding interstitial
+    // entirely. The user can re-arm deciding by clicking Original after the
+    // auto-resolve via the userArmedDeciding signal above.
+    if (!props.canIframe && !isUserArmedDeciding()) {
+      if (hasArchive()) return "archived";
+      if (props.screenshotUrl) return "screenshot";
+      return "unavailable";
+    }
+    // Runtime failure (canIframe=true → iframe.onError / blocked load) OR
+    // user-armed escape hatch: keep the existing 15s deciding window.
     if (!countdownElapsed()) {
       return "deciding";
     }
@@ -58,13 +97,14 @@ export default function PageFrame(props: PageFrameProps) {
   const showArchived = () => activePreview() === "archived";
   const showScreenshot = () => activePreview() === "screenshot";
   const showDeciding = () => activePreview() === "deciding";
+  const showLoading = () => activePreview() === "loading";
 
   let timeoutId: ReturnType<typeof setTimeout> | null = null;
-  let archiveTimeoutId: ReturnType<typeof setTimeout> | null = null;
   let iframeRef: HTMLIFrameElement | undefined;
   let archivedIframeRef: HTMLIFrameElement | undefined;
   let currentUrl = props.url;
   let currentArchiveUrl = props.archivedPreviewUrl ?? null;
+  let lastEmittedResolvedMode: ResolvedPreviewMode | null = null;
 
   const clearLoadTimeout = () => {
     if (timeoutId) {
@@ -82,20 +122,12 @@ export default function PageFrame(props: PageFrameProps) {
     }, IFRAME_LOAD_TIMEOUT_MS);
   };
 
-  const clearArchiveTimeout = () => {
-    if (archiveTimeoutId) {
-      clearTimeout(archiveTimeoutId);
-      archiveTimeoutId = null;
-    }
-  };
-
   onMount(() => {
-    startLoadTimeout();
+    if (hasUrl()) startLoadTimeout();
   });
 
   onCleanup(() => {
     clearLoadTimeout();
-    clearArchiveTimeout();
   });
 
   createEffect(() => {
@@ -108,31 +140,43 @@ export default function PageFrame(props: PageFrameProps) {
       setArchivedFailed(false);
       setArchivedLoaded(false);
       setCountdownElapsed(false);
-      startLoadTimeout();
+      setUserArmedDeciding(false);
+      lastHandledPreviewModeRequestId = props.previewModeRequestId ?? 0;
+      lastEmittedResolvedMode = null;
+      if (hasUrl()) startLoadTimeout();
     }
   });
 
   createEffect(() => {
     if (showArchived() && !archivedLoaded()) {
-      clearArchiveTimeout();
-      archiveTimeoutId = setTimeout(() => {
+      const archiveTimeoutId = setTimeout(() => {
         if (!archivedLoaded()) {
           setArchivedFailed(true);
         }
       }, ARCHIVE_LOAD_TIMEOUT_MS);
+      onCleanup(() => clearTimeout(archiveTimeoutId));
       return;
     }
-    clearArchiveTimeout();
   });
 
   createEffect(() => {
-    // Countdown effect: arms a single timer when Original is the requested
-    // mode AND we have evidence (server hint or runtime failure) that the
-    // iframe cannot render. Resets/clears on any change to those inputs or
-    // when requestedMode flips (user override). Per AC #4/#8 the timer body
-    // only runs setState — it never reads from render predicates.
+    // Countdown effect: arms a single timer EXACTLY when activePreview()
+    // would return "deciding" — i.e., (requestedMode==="original") AND
+    // (iframeFailed || hasBlockingHint) AND NOT the server-blocked
+    // auto-resolve path (canIframe=false and not user-armed).
+    //
+    // Equivalent simplified form: requestedMode==="original" AND
+    // (iframeFailed || hasBlockingHint) AND (canIframe || userArmedDeciding).
+    //
+    // The (canIframe || userArmedDeciding) clause is what makes the timer
+    // arm for the canIframe=true + cspFrameAncestors/blockingHeader case
+    // (regression caught in code review), while still skipping the timer
+    // on the canIframe=false initial-render auto-resolve path.
     const decidingTriggerActive =
-      requestedMode() === "original" && (hasBlockingHint() || iframeFailed());
+      hasUrl() &&
+      requestedMode() === "original" &&
+      (iframeFailed() || hasBlockingHint()) &&
+      (props.canIframe || isUserArmedDeciding());
     if (!decidingTriggerActive) {
       setCountdownElapsed(false);
       return;
@@ -150,7 +194,9 @@ export default function PageFrame(props: PageFrameProps) {
     // inside activePreview() or render predicates. Skip "deciding" so the
     // parent only sees real, renderable modes.
     const resolved = activePreview();
-    if (resolved === "deciding") return;
+    if (resolved === "deciding" || resolved === "loading") return;
+    if (resolved === lastEmittedResolvedMode) return;
+    lastEmittedResolvedMode = resolved;
     props.onResolvedModeChange?.(resolved);
   });
 
@@ -204,19 +250,16 @@ export default function PageFrame(props: PageFrameProps) {
       const title = doc?.title?.trim() ?? "";
       if (!bodyText && childCount === 0 && !title) {
         setArchivedFailed(true);
-        clearArchiveTimeout();
         return;
       }
     } catch {
       // If the browser denies inspection, keep the loaded archive visible.
     }
     setArchivedLoaded(true);
-    clearArchiveTimeout();
   };
 
   const handleArchivedError = () => {
     setArchivedFailed(true);
-    clearArchiveTimeout();
   };
 
   return (
@@ -224,7 +267,7 @@ export default function PageFrame(props: PageFrameProps) {
       aria-label="Page preview"
       class="relative flex h-full min-h-[60vh] w-full min-w-0 max-w-full flex-col overflow-hidden rounded-lg border border-border bg-card"
     >
-      <Show when={showIframe()}>
+      <Show when={hasUrl() && showIframe()}>
         <iframe
           data-testid="page-frame-iframe"
           src={props.url}
@@ -243,6 +286,19 @@ export default function PageFrame(props: PageFrameProps) {
               : "pointer-events-none absolute inset-0 h-full min-h-[60vh] w-full flex-1 border-0 bg-background opacity-0"
           }
         />
+      </Show>
+
+      <Show when={showLoading()}>
+        <div
+          data-testid="page-frame-loading"
+          role="status"
+          aria-live="polite"
+          class="flex min-h-[60vh] flex-1 items-center justify-center p-8 text-center"
+        >
+          <p class="text-sm text-muted-foreground">
+            Preparing analysis&hellip;
+          </p>
+        </div>
       </Show>
 
       <Show when={showArchived()}>
@@ -311,31 +367,33 @@ export default function PageFrame(props: PageFrameProps) {
 
       <div class="flex items-center justify-between gap-2 border-t border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
         <span class="min-w-0 flex-1 truncate" title={props.url}>
-          {props.url}
+          {props.url || "Preparing preview"}
         </span>
-        <a
-          href={props.url}
-          target="_blank"
-          rel="noreferrer noopener"
-          class="inline-flex items-center gap-1 rounded-md px-2 py-1 text-foreground hover:bg-accent hover:text-accent-foreground"
-        >
-          Open original
-          <svg
-            aria-hidden="true"
-            viewBox="0 0 16 16"
-            width="12"
-            height="12"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="1.6"
-            stroke-linecap="round"
-            stroke-linejoin="round"
+        <Show when={hasUrl()}>
+          <a
+            href={props.url}
+            target="_blank"
+            rel="noreferrer noopener"
+            class="inline-flex items-center gap-1 rounded-md px-2 py-1 text-foreground hover:bg-accent hover:text-accent-foreground"
           >
-            <path d="M6 3H3v10h10v-3" />
-            <path d="M10 2h4v4" />
-            <path d="M14 2l-6 6" />
-          </svg>
-        </a>
+            Open original
+            <svg
+              aria-hidden="true"
+              viewBox="0 0 16 16"
+              width="12"
+              height="12"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.6"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <path d="M6 3H3v10h10v-3" />
+              <path d="M10 2h4v4" />
+              <path d="M14 2l-6 6" />
+            </svg>
+          </a>
+        </Show>
       </div>
     </section>
   );

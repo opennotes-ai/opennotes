@@ -1,9 +1,7 @@
 import { afterEach, describe, it, expect } from "vitest";
 import { cleanup, render, screen } from "@solidjs/testing-library";
-import type { components } from "~/lib/generated-types";
+import type { ResolvedHeadline } from "~/lib/headline-fallback";
 import HeadlineSummaryReport from "./HeadlineSummaryReport";
-
-type HeadlineSummary = components["schemas"]["HeadlineSummary"];
 
 afterEach(() => {
   cleanup();
@@ -12,15 +10,28 @@ afterEach(() => {
 const SAMPLE_TEXT =
   "Conversation looks low-risk: no harmful content matches and tone is mostly neutral.";
 
+type ServerHeadline = Extract<ResolvedHeadline, { source: "server" }>;
+type FallbackHeadline = Extract<ResolvedHeadline, { source: "fallback" }>;
+
 function makeHeadline(
-  overrides: Partial<HeadlineSummary> = {},
-): HeadlineSummary {
+  overrides: Partial<ResolvedHeadline> = {},
+): ResolvedHeadline {
+  if (overrides.source === "fallback") {
+    return {
+      text: SAMPLE_TEXT,
+      kind: "stock",
+      source: "fallback",
+      unavailable_inputs: [],
+      ...overrides,
+    } as FallbackHeadline;
+  }
   return {
     text: SAMPLE_TEXT,
     kind: "synthesized",
+    source: "server",
     unavailable_inputs: [],
     ...overrides,
-  };
+  } as ServerHeadline;
 }
 
 describe("HeadlineSummaryReport", () => {
@@ -45,6 +56,32 @@ describe("HeadlineSummaryReport", () => {
     expect(
       screen.getByTestId("headline-summary").getAttribute("data-headline-kind"),
     ).toBe("stock");
+  });
+
+  it("exposes data-headline-source on the section for telemetry/e2e", () => {
+    render(() => (
+      <HeadlineSummaryReport
+        headline={makeHeadline({ kind: "stock", source: "server" })}
+      />
+    ));
+    expect(
+      screen
+        .getByTestId("headline-summary")
+        .getAttribute("data-headline-source"),
+    ).toBe("server");
+  });
+
+  it("exposes source='fallback' when rendering a fallback headline", () => {
+    render(() => (
+      <HeadlineSummaryReport
+        headline={makeHeadline({ kind: "stock", source: "fallback" })}
+      />
+    ));
+    expect(
+      screen
+        .getByTestId("headline-summary")
+        .getAttribute("data-headline-source"),
+    ).toBe("fallback");
   });
 
   it("renders identical text for kind='stock' and kind='synthesized'", () => {

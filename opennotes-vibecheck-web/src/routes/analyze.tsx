@@ -12,10 +12,15 @@ import { Title } from "@solidjs/meta";
 import CachedBadge from "~/components/CachedBadge";
 import JobFailureCard from "~/components/JobFailureCard";
 import PageFrame from "~/components/PageFrame";
-import type { PreviewMode } from "~/components/PageFrame";
+import type {
+  PreviewMode,
+  ResolvedPreviewMode,
+} from "~/components/PageFrame";
 import Sidebar from "~/components/sidebar/Sidebar";
+import { HeadlineSummaryReport } from "~/components/sidebar/reports";
 import type { ErrorCode, SectionSlug } from "~/lib/api-client.server";
 import { createPollingResource } from "~/lib/polling";
+import { resolveHeadline } from "~/lib/headline-fallback";
 import { getFrameCompat, type FrameCompatResult } from "./analyze.data";
 
 const ALL_ERROR_CODES: readonly ErrorCode[] = [
@@ -57,6 +62,9 @@ const DEFAULT_FRAME_COMPAT: FrameCompatResult = {
   screenshotUrl: null,
   archivedPreviewUrl: null,
 };
+const ORIGINAL_BLOCKED_TIP_ID = "preview-mode-original-tip";
+const ORIGINAL_BLOCKED_TIP_TEXT =
+  "This page blocks framing — click to attempt anyway";
 
 function asErrorCode(raw: string | undefined): ErrorCode | null {
   if (!raw) return null;
@@ -83,7 +91,16 @@ export default function AnalyzePage() {
     typeof searchParams.host === "string" ? searchParams.host : "";
   const cachedHint = () => searchParams.c === "1";
   const [previewMode, setPreviewMode] = createSignal<PreviewMode>("original");
+  const [resolvedPreviewMode, setResolvedPreviewMode] =
+    createSignal<ResolvedPreviewMode>("original");
+  const [selectedPreviewMode, setSelectedPreviewMode] =
+    createSignal<PreviewMode | null>(null);
+  const [previewModeRequestId, setPreviewModeRequestId] = createSignal(0);
   const [previewSize, setPreviewSize] = createSignal<PreviewSize>("regular");
+  const [isOriginalBlockedTipHovered, setIsOriginalBlockedTipHovered] =
+    createSignal(false);
+  const [isOriginalBlockedTipFocused, setIsOriginalBlockedTipFocused] =
+    createSignal(false);
   let previewModeJobId = jobId();
 
   onMount(() => {
@@ -102,6 +119,8 @@ export default function AnalyzePage() {
     if (currentJobId !== previewModeJobId) {
       previewModeJobId = currentJobId;
       setPreviewMode("original");
+      setResolvedPreviewMode("original");
+      setSelectedPreviewMode(null);
     }
   });
 
@@ -118,35 +137,56 @@ export default function AnalyzePage() {
   const jobUrl = createMemo(() => jobState()?.url ?? pendingUrl());
   const [frameCompat, setFrameCompat] =
     createSignal<FrameCompatResult>(DEFAULT_FRAME_COMPAT);
+  const [frameCompatPending, setFrameCompatPending] = createSignal(false);
+  const [frameCompatUrl, setFrameCompatUrl] = createSignal("");
   const [frameCompatError, setFrameCompatError] = createSignal<string | null>(
     null,
   );
 
   let frameCompatRequest = 0;
+  let frameCompatAbortController: AbortController | null = null;
   createEffect(() => {
     const url = jobUrl();
     const request = ++frameCompatRequest;
+    frameCompatAbortController?.abort();
+    frameCompatAbortController = null;
     setFrameCompat(DEFAULT_FRAME_COMPAT);
+    setFrameCompatUrl("");
     setFrameCompatError(null);
-    if (!url) return;
+    setFrameCompatPending(Boolean(url));
+    setResolvedPreviewMode(url ? "unavailable" : "original");
+    if (!url) {
+      setFrameCompatPending(false);
+      return;
+    }
 
-    void getFrameCompat(url)
+    const controller = new AbortController();
+    frameCompatAbortController = controller;
+    void getFrameCompat(url, controller.signal)
       .then((result) => {
         if (request !== frameCompatRequest) return;
+        setFrameCompatPending(false);
+        setFrameCompatUrl(url);
         if (result.ok) {
           setFrameCompat(result.frameCompat);
           return;
         }
         setFrameCompatError(result.message);
       })
-      .catch(() => {
+      .catch((error: unknown) => {
         if (request !== frameCompatRequest) return;
+        if (error instanceof DOMException && error.name === "AbortError") {
+          return;
+        }
+        setFrameCompatPending(false);
+        setFrameCompatUrl(url);
         setFrameCompat(DEFAULT_FRAME_COMPAT);
         setFrameCompatError("Preview checks unavailable.");
       });
   });
   onCleanup(() => {
     frameCompatRequest += 1;
+    frameCompatAbortController?.abort();
   });
 
   const transportError = () => polling.error();
@@ -205,6 +245,22 @@ export default function AnalyzePage() {
     }
   };
 
+  const selectPreviewMode = (mode: PreviewMode) => {
+    setPreviewMode(mode);
+    setSelectedPreviewMode(mode);
+    setPreviewModeRequestId((id) => id + 1);
+  };
+
+  const isPreviewModePressed = (mode: PreviewMode) =>
+    !isPreviewLoading() &&
+    resolvedPreviewMode() !== "unavailable" &&
+    (selectedPreviewMode() ?? resolvedPreviewMode()) === mode;
+  const isPreviewLoading = () =>
+    !jobUrl() || frameCompatPending() || frameCompatUrl() !== jobUrl();
+  const showOriginalBlockedTip = () =>
+    !frameCompat().canIframe &&
+    (isOriginalBlockedTipHovered() || isOriginalBlockedTipFocused());
+
   const mainClass = createMemo(() => {
     if (previewSize() === "max") {
       return "mx-auto flex min-h-screen w-full max-w-[min(100vw-2rem,1600px)] flex-col gap-6 px-4 py-8";
@@ -240,7 +296,7 @@ export default function AnalyzePage() {
   return (
     <>
       <Title>vibecheck — analyzing</Title>
-      <main class={mainClass()}>
+      <main data-testid="analyze-main" class={mainClass()}>
         <nav class="flex items-center justify-between">
           <A
             href="/"
@@ -279,34 +335,96 @@ export default function AnalyzePage() {
                 data-preview-size={previewSize()}
                 class={layoutClass()}
               >
-                <div class="flex min-h-[60vh] min-w-0 flex-col gap-4">
+                <div
+                  data-testid="analyze-left-column"
+                  class="flex min-w-0 flex-col gap-4"
+                >
+                  <Show when={jobStatus() === "done" || sidebarPayload()}>
+                    <HeadlineSummaryReport
+                      headline={resolveHeadline(
+                        sidebarPayload()?.headline ?? null,
+                        {
+                          url: jobUrl(),
+                          pageTitle: jobState()?.page_title,
+                          recommendation:
+                            sidebarPayload()?.safety?.recommendation ?? null,
+                        },
+                      )}
+                    />
+                  </Show>
                   <div class="flex flex-wrap items-center justify-between gap-2">
                     <div
                       data-testid="preview-mode-selector"
-                      class="flex items-center"
+                      class="relative flex items-center"
                       role="group"
                       aria-label="Preview mode"
                     >
                       <div class="inline-flex rounded-lg border border-border bg-muted/50 p-1">
                         <For each={PREVIEW_MODE_OPTIONS}>
-                          {(option, index) => (
-                            <button
-                              type="button"
-                              class={segmentClass(
-                                previewMode() === option.value,
-                                segmentCornerClass(
-                                  index(),
-                                  PREVIEW_MODE_OPTIONS.length,
-                                ),
-                              )}
-                              aria-pressed={previewMode() === option.value}
-                              onClick={() => setPreviewMode(option.value)}
-                            >
-                              {option.label}
-                            </button>
-                          )}
+                          {(option, index) => {
+                            const isOriginalBlocked = () =>
+                              option.value === "original" &&
+                              !frameCompat().canIframe;
+                            return (
+                              <button
+                                type="button"
+                                data-testid={`preview-mode-${option.value}`}
+                                class={`${segmentClass(
+                                  isPreviewModePressed(option.value),
+                                  segmentCornerClass(
+                                    index(),
+                                    PREVIEW_MODE_OPTIONS.length,
+                                  ),
+                                )}${isOriginalBlocked() ? " opacity-60" : ""}`}
+                                aria-pressed={isPreviewModePressed(
+                                  option.value,
+                                )}
+                                aria-describedby={
+                                  isOriginalBlocked()
+                                    ? ORIGINAL_BLOCKED_TIP_ID
+                                    : undefined
+                                }
+                                onMouseEnter={() => {
+                                  if (isOriginalBlocked()) {
+                                    setIsOriginalBlockedTipHovered(true);
+                                  }
+                                }}
+                                onMouseLeave={() => {
+                                  setIsOriginalBlockedTipHovered(false);
+                                }}
+                                onFocus={() => {
+                                  if (isOriginalBlocked()) {
+                                    setIsOriginalBlockedTipFocused(true);
+                                  }
+                                }}
+                                onBlur={() => {
+                                  setIsOriginalBlockedTipFocused(false);
+                                }}
+                                onClick={() => selectPreviewMode(option.value)}
+                              >
+                                {option.label}
+                              </button>
+                            );
+                          }}
                         </For>
                       </div>
+                      <Show when={!frameCompat().canIframe}>
+                        <span
+                          id={ORIGINAL_BLOCKED_TIP_ID}
+                          data-testid={ORIGINAL_BLOCKED_TIP_ID}
+                          role="tooltip"
+                          data-visible={
+                            showOriginalBlockedTip() ? "true" : "false"
+                          }
+                          class={
+                            showOriginalBlockedTip()
+                              ? "pointer-events-none absolute left-0 top-full z-20 mt-2 w-max max-w-64 rounded-md border border-border bg-popover px-2.5 py-1.5 text-xs font-medium text-popover-foreground shadow-md"
+                              : "sr-only"
+                          }
+                        >
+                          {ORIGINAL_BLOCKED_TIP_TEXT}
+                        </span>
+                      </Show>
                     </div>
                     <div
                       data-testid="preview-size-selector"
@@ -336,39 +454,31 @@ export default function AnalyzePage() {
                       </div>
                     </div>
                   </div>
-                  <Show
-                    when={jobUrl()}
-                    fallback={
-                      <div class="flex min-h-[60vh] flex-1 items-center justify-center rounded-lg border border-border bg-card text-sm text-muted-foreground">
-                        Preparing analysis&hellip;
-                      </div>
-                    }
-                  >
-                    {(url) => (
-                      <>
-                        <PageFrame
-                          url={url()}
-                          canIframe={frameCompat().canIframe}
-                          blockingHeader={frameCompat().blockingHeader}
-                          cspFrameAncestors={frameCompat().cspFrameAncestors}
-                          archivedPreviewUrl={frameCompat().archivedPreviewUrl}
-                          screenshotUrl={frameCompat().screenshotUrl}
-                          previewMode={previewMode()}
-                          onResolvedModeChange={(mode) => {
-                            if (mode !== "unavailable") setPreviewMode(mode);
-                          }}
-                        />
-                        <Show when={frameCompatError()}>
-                          {(message) => (
-                            <p
-                              data-testid="frame-compat-warning"
-                              class="text-xs text-muted-foreground"
-                            >
-                              {message()} Showing the page directly.
-                            </p>
-                          )}
-                        </Show>
-                      </>
+                  <PageFrame
+                    url={jobUrl()}
+                    loading={isPreviewLoading()}
+                    canIframe={frameCompat().canIframe}
+                    blockingHeader={frameCompat().blockingHeader}
+                    cspFrameAncestors={frameCompat().cspFrameAncestors}
+                    archivedPreviewUrl={frameCompat().archivedPreviewUrl}
+                    screenshotUrl={frameCompat().screenshotUrl}
+                    previewMode={previewMode()}
+                    previewModeRequestId={previewModeRequestId()}
+                    onResolvedModeChange={(mode) => {
+                      setResolvedPreviewMode(mode);
+                      if (mode !== selectedPreviewMode()) {
+                        setSelectedPreviewMode(null);
+                      }
+                    }}
+                  />
+                  <Show when={frameCompatError()}>
+                    {(message) => (
+                      <p
+                        data-testid="frame-compat-warning"
+                        class="text-xs text-muted-foreground"
+                      >
+                        {message()} Showing the page directly.
+                      </p>
                     )}
                   </Show>
                   <Show when={jobStatus() && jobStatus() !== "done"}>

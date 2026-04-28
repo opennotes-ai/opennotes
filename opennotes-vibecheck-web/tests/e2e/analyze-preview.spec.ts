@@ -7,6 +7,7 @@ import {
   type Server,
   type ServerResponse,
 } from "node:http";
+import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 
 const PERMISSIVE_JOB_ID = "66666666-6666-7666-8666-666666666666";
@@ -16,12 +17,45 @@ const ARCHIVE_FAIL_JOB_ID = "11111111-1111-7111-8111-111111111111";
 const ATTEMPT_ID = "88888888-8888-7888-8888-888888888888";
 const SCREENSHOT_URL =
   "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='2560' height='1800'%3E%3Crect width='2560' height='1800' fill='%23f8fafc'/%3E%3Ctext x='80' y='160' font-family='Arial' font-size='72' fill='%230f172a'%3EWide preview fallback%3C/text%3E%3C/svg%3E";
+const WEB_ROOT = fileURLToPath(new URL("../..", import.meta.url));
+const configuredPollAttempts = Number.parseInt(
+  process.env.ANALYZE_PREVIEW_POLL_ATTEMPTS ?? "14",
+  10,
+);
+const MAX_PREVIEW_POLL_ATTEMPTS = Number.isFinite(configuredPollAttempts)
+  ? Math.min(Math.max(configuredPollAttempts, 1), 14)
+  : 14;
+const PREVIEW_POLL_INTERVAL_MS = 1_250;
 
 let apiServer: Server;
 let apiBaseUrl = "";
 let webBaseUrl = "";
 let webProcess: ChildProcess | null = null;
 let webLogs = "";
+
+async function runWebCommand(args: string[], env: NodeJS.ProcessEnv): Promise<void> {
+  const child = spawn("pnpm", args, {
+    cwd: WEB_ROOT,
+    env,
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  let output = "";
+  child.stdout?.on("data", (chunk) => {
+    output += chunk.toString();
+  });
+  child.stderr?.on("data", (chunk) => {
+    output += chunk.toString();
+  });
+  const [code, signal] = (await once(child, "exit")) as [
+    number | null,
+    NodeJS.Signals | null,
+  ];
+  if (code !== 0) {
+    throw new Error(
+      `pnpm ${args.join(" ")} failed code=${code} signal=${signal}\n${output}`,
+    );
+  }
+}
 
 async function listenOnRandomPort(server: Server): Promise<number> {
   server.listen(0, "127.0.0.1");
@@ -41,22 +75,43 @@ async function findFreePort(): Promise<number> {
 }
 
 async function waitForHttpOk(url: string, timeoutMs = 60_000): Promise<void> {
-  const deadline = Date.now() + timeoutMs;
   let lastError: unknown = null;
-  while (Date.now() < deadline) {
-    try {
-      const response = await fetch(url);
-      if (response.ok) return;
-    } catch (error) {
-      lastError = error;
-    }
-    await new Promise((resolve) => setTimeout(resolve, 250));
+  await expect
+    .poll(
+      async () => {
+        try {
+          const response = await fetch(url);
+          return response.ok;
+        } catch (error) {
+          lastError = error;
+          return false;
+        }
+      },
+      {
+        intervals: [250],
+        timeout: timeoutMs,
+        message: `Timed out waiting for ${url}. Last error: ${
+          lastError instanceof Error ? lastError.message : String(lastError)
+        }\n${webLogs}`,
+      },
+    )
+    .toBe(true);
+}
+
+async function stopWebProcess(process: ChildProcess): Promise<void> {
+  if (process.exitCode !== null || process.signalCode !== null) return;
+
+  const exitPromise = once(process, "exit").then(() => undefined);
+  process.kill("SIGTERM");
+  const exited = await Promise.race([
+    exitPromise.then(() => true),
+    delay(5_000).then(() => false),
+  ]);
+
+  if (!exited && process.exitCode === null && process.signalCode === null) {
+    process.kill("SIGKILL");
+    await exitPromise;
   }
-  throw new Error(
-    `Timed out waiting for ${url}. Last error: ${
-      lastError instanceof Error ? lastError.message : String(lastError)
-    }\n${webLogs}`,
-  );
 }
 
 function writeJson(
@@ -91,7 +146,7 @@ function jobState(jobId: string) {
 }
 
 async function previewWidth(page: Page): Promise<number> {
-  const box = await page.locator('[data-testid="page-frame-iframe"]').boundingBox();
+  const box = await page.getByTestId("page-frame-iframe").boundingBox();
   if (!box) throw new Error("preview iframe has no box");
   return box.width;
 }
@@ -224,17 +279,21 @@ test.beforeAll(async () => {
 
   const webPort = await findFreePort();
   webBaseUrl = `http://127.0.0.1:${webPort}`;
+  const webEnv = {
+    ...process.env,
+    VIBECHECK_SERVER_URL: apiBaseUrl,
+    VIBECHECK_WEB_PORT: String(webPort),
+    HOST: "127.0.0.1",
+    PORT: String(webPort),
+  };
+
+  await runWebCommand(["run", "build"], webEnv);
   webProcess = spawn(
     "pnpm",
-    ["run", "dev", "--port", String(webPort), "--host", "127.0.0.1"],
+    ["run", "start", "--port", String(webPort), "--host", "127.0.0.1"],
     {
-      cwd: fileURLToPath(new URL("../..", import.meta.url)),
-      env: {
-        ...process.env,
-        VIBECHECK_SERVER_URL: apiBaseUrl,
-        VIBECHECK_WEB_PORT: String(webPort),
-        HOST: "127.0.0.1",
-      },
+      cwd: WEB_ROOT,
+      env: webEnv,
       stdio: ["ignore", "pipe", "pipe"],
     },
   );
@@ -253,8 +312,8 @@ test.beforeAll(async () => {
 });
 
 test.afterAll(async () => {
-  if (webProcess && !webProcess.killed) {
-    webProcess.kill("SIGTERM");
+  if (webProcess) {
+    await stopWebProcess(webProcess);
   }
   if (apiServer) {
     await new Promise<void>((resolve) => apiServer.close(() => resolve()));
@@ -265,12 +324,12 @@ test("preview size presets resize the frame and persist across reload", async ({
   page,
 }) => {
   await page.goto(`${webBaseUrl}/analyze?job=${PERMISSIVE_JOB_ID}`);
-  await expect(page.locator('[data-testid="page-frame-iframe"]')).toBeVisible();
-  await expect(page.locator('[data-testid="page-frame-screenshot"]')).toHaveCount(0);
+  await expect(page.getByTestId("page-frame-iframe")).toBeVisible();
+  await expect(page.getByTestId("page-frame-screenshot")).toHaveCount(0);
 
   const regularWidth = await previewWidth(page);
   await page.getByRole("button", { name: "Large" }).click();
-  await expect(page.locator('[data-testid="analyze-layout"]')).toHaveAttribute(
+  await expect(page.getByTestId("analyze-layout")).toHaveAttribute(
     "data-preview-size",
     "large",
   );
@@ -279,14 +338,14 @@ test("preview size presets resize the frame and persist across reload", async ({
     .toBeGreaterThan(regularWidth + 40);
 
   await page.reload();
-  await expect(page.locator('[data-testid="analyze-layout"]')).toHaveAttribute(
+  await expect(page.getByTestId("analyze-layout")).toHaveAttribute(
     "data-preview-size",
     "large",
   );
 
   await page.getByRole("button", { name: "Max width" }).click();
   const previewBox = await page.locator('[aria-label="Page preview"]').boundingBox();
-  const sidebarBox = await page.locator('[data-testid="analysis-sidebar"]').boundingBox();
+  const sidebarBox = await page.getByTestId("analysis-sidebar").boundingBox();
   if (!previewBox || !sidebarBox) throw new Error("layout boxes were not available");
   expect(sidebarBox.y).toBeGreaterThan(previewBox.y + previewBox.height - 1);
 });
@@ -295,32 +354,29 @@ test("permissive page keeps the original iframe by default", async ({
   page,
 }) => {
   await page.goto(`${webBaseUrl}/analyze?job=${PERMISSIVE_JOB_ID}`);
-  await expect(page.locator('[data-testid="page-frame-iframe"]')).toBeVisible();
-  await expect(page.locator('[data-testid="page-frame-archived-iframe"]')).toHaveCount(0);
-  await expect(page.locator('[data-testid="page-frame-screenshot"]')).toHaveCount(0);
+  await expect(page.getByTestId("page-frame-iframe")).toBeVisible();
+  await expect(page.getByTestId("page-frame-archived-iframe")).toHaveCount(0);
+  await expect(page.getByTestId("page-frame-screenshot")).toHaveCount(0);
 });
 
-test("CSP frame-ancestors blocks countdown then auto-switches to archive (chain B)", async ({
+test("CSP frame-ancestors auto-resolves to archive immediately, no countdown (TASK-1483.13.02)", async ({
   page,
 }) => {
   await page.goto(`${webBaseUrl}/analyze?job=${BLOCKED_WITH_ARCHIVE_JOB_ID}`);
 
-  // Deciding interstitial appears immediately (server reports blocking header).
-  await expect(page.locator('[data-testid="page-frame-deciding"]')).toBeVisible({
-    timeout: 2000,
-  });
-
-  // Within ~17s the countdown elapses and the archive iframe takes over.
-  await expect(page.locator('[data-testid="page-frame-archived-iframe"]')).toBeVisible({
-    timeout: 17_000,
-  });
-  await expect(page.locator('[data-testid="page-frame-deciding"]')).toHaveCount(0);
-  await expect(page.locator('[data-testid="page-frame-archived-iframe"]')).toHaveAttribute(
-    "sandbox",
-    "allow-same-origin",
+  // Server reports blocked → skip the deciding interstitial entirely and
+  // resolve straight to archive.
+  await expect(
+    page.getByTestId("page-frame-archived-iframe"),
+  ).toBeVisible({ timeout: 5_000 });
+  await expect(page.getByTestId("page-frame-deciding")).toHaveCount(
+    0,
   );
+  await expect(
+    page.getByTestId("page-frame-archived-iframe"),
+  ).toHaveAttribute("sandbox", "allow-same-origin");
 
-  // Tab press follows the auto-switched mode (truthfulness invariant).
+  // Tab press follows the auto-resolved mode.
   await expect(
     page.getByRole("button", { name: "Archived" }),
   ).toHaveAttribute("aria-pressed", "true");
@@ -328,25 +384,33 @@ test("CSP frame-ancestors blocks countdown then auto-switches to archive (chain 
     page.getByRole("button", { name: "Original" }),
   ).toHaveAttribute("aria-pressed", "false");
 
+  // Original tab is soft-disabled (muted opacity, aria-describedby tooltip).
+  const original = page.getByTestId("preview-mode-original");
+  await expect(original).toHaveAttribute(
+    "aria-describedby",
+    "preview-mode-original-tip",
+  );
+  expect(await original.getAttribute("aria-disabled")).toBeNull();
+  expect(await original.getAttribute("disabled")).toBeNull();
+
   const archivedText = page
-    .frameLocator('[data-testid="page-frame-archived-iframe"]')
+    .getByTestId("page-frame-archived-iframe")
+    .contentFrame()
     .locator("h1");
   await expect(archivedText).toHaveText("Archived preview fixture");
 });
 
-test("CSP frame-ancestors without archive countdown then auto-switches to screenshot", async ({
+test("CSP frame-ancestors auto-resolves to screenshot when no archive is available (TASK-1483.13.02)", async ({
   page,
 }) => {
   await page.goto(`${webBaseUrl}/analyze?job=${BLOCKED_WITHOUT_ARCHIVE_JOB_ID}`);
 
-  await expect(page.locator('[data-testid="page-frame-deciding"]')).toBeVisible({
-    timeout: 2000,
-  });
-
-  await expect(page.locator('[data-testid="page-frame-screenshot"]')).toBeVisible({
-    timeout: 17_000,
-  });
-  await expect(page.locator('[data-testid="page-frame-deciding"]')).toHaveCount(0);
+  await expect(
+    page.getByTestId("page-frame-screenshot"),
+  ).toBeVisible({ timeout: 5_000 });
+  await expect(page.getByTestId("page-frame-deciding")).toHaveCount(
+    0,
+  );
 
   await expect(
     page.getByRole("button", { name: "Screenshot" }),
@@ -356,25 +420,38 @@ test("CSP frame-ancestors without archive countdown then auto-switches to screen
   ).toHaveAttribute("aria-pressed", "false");
 });
 
-test("manual preview mode clicks switch visible previews without breaking width presets", async ({
+test("manual preview mode clicks switch visible previews; Original click re-arms deciding (escape hatch) (TASK-1483.13.02)", async ({
   page,
 }) => {
   await page.goto(`${webBaseUrl}/analyze?job=${BLOCKED_WITH_ARCHIVE_JOB_ID}`);
   await expect(page.getByTestId("preview-mode-selector")).toBeVisible();
   await expect(page.getByTestId("preview-size-selector")).toBeVisible();
 
+  // Initial render auto-resolves to Archived (no deciding).
+  await expect(
+    page.getByTestId("page-frame-archived-iframe"),
+  ).toBeVisible();
+  await expect(page.getByTestId("page-frame-deciding")).toHaveCount(
+    0,
+  );
+
   await page.getByRole("button", { name: "Screenshot" }).click();
-  await expect(page.locator('[data-testid="page-frame-screenshot"]')).toBeVisible();
+  await expect(
+    page.getByTestId("page-frame-screenshot"),
+  ).toBeVisible();
 
   await page.getByRole("button", { name: "Archived" }).click();
-  await expect(page.locator('[data-testid="page-frame-archived-iframe"]')).toBeVisible();
+  await expect(
+    page.getByTestId("page-frame-archived-iframe"),
+  ).toBeVisible();
 
-  // Clicking Original on a blocked fixture lands in the deciding state
-  // (countdown will eventually auto-switch back to Archived). The Original
-  // iframe is still mounted but `inert` + opacity-0 — assert against the
-  // visible interstitial rather than the hidden iframe.
+  // Escape hatch: clicking Original after a non-original mode re-arms the
+  // 15s deciding interstitial. The iframe is still mounted but inert +
+  // opacity-0 — assert against the visible interstitial.
   await page.getByRole("button", { name: "Original" }).click();
-  await expect(page.locator('[data-testid="page-frame-deciding"]')).toBeVisible();
+  await expect(
+    page.getByTestId("page-frame-deciding"),
+  ).toBeVisible();
 
   // Width-preset assertion uses the section, not a possibly-hidden iframe.
   const sectionWidth = async () => {
@@ -392,56 +469,84 @@ test("archive 502 onError fires; auto-switch lands on Screenshot (AC #6 e2e)", a
 }) => {
   await page.goto(`${webBaseUrl}/analyze?job=${ARCHIVE_FAIL_JOB_ID}`);
 
-  // Countdown shows first.
-  await expect(page.locator('[data-testid="page-frame-deciding"]')).toBeVisible({
-    timeout: 2000,
-  });
-
-  // After ~15s the archive iframe is attempted; archive returns 502 + text/plain
-  // so iframe.onError fires immediately. PageFrame's archived-fail handler
-  // marks the archive failed; chain B then resolves to screenshot.
-  await expect(page.locator('[data-testid="page-frame-screenshot"]')).toBeVisible({
-    timeout: 20_000,
-  });
+  // Server reports blocked → PageFrame attempts the archive iframe immediately
+  // (no deciding). The archive returns 502 + text/plain, so iframe.onError
+  // fires; chain B then resolves to screenshot.
+  await expect(
+    page.getByTestId("page-frame-screenshot"),
+  ).toBeVisible({ timeout: 10_000 });
+  await expect(page.getByTestId("page-frame-deciding")).toHaveCount(
+    0,
+  );
   await expect(
     page.getByRole("button", { name: "Screenshot" }),
   ).toHaveAttribute("aria-pressed", "true");
 });
 
-test("tab aria-pressed never lies during the blocked-Original countdown", async ({
+test("tab aria-pressed never lies during the user-armed escape-hatch countdown (TASK-1483.13.02)", async ({
   page,
 }) => {
   await page.goto(`${webBaseUrl}/analyze?job=${BLOCKED_WITH_ARCHIVE_JOB_ID}`);
-  await expect(page.locator('[data-testid="page-frame-deciding"]')).toBeVisible({
-    timeout: 2000,
-  });
-
-  // While the deciding interstitial is up, the screenshot/archive testids
-  // MUST NOT appear with Original still pressed. Poll the invariant for the
-  // full countdown window (16s).
-  for (let i = 0; i < 16; i++) {
-    const originalPressed = await page
-      .getByRole("button", { name: "Original" })
-      .getAttribute("aria-pressed");
-    const screenshotVisible = await page
-      .locator('[data-testid="page-frame-screenshot"]')
-      .count();
-    const archivedVisible = await page
-      .locator('[data-testid="page-frame-archived-iframe"]')
-      .count();
-    const divergent =
-      originalPressed === "true" && (screenshotVisible > 0 || archivedVisible > 0);
-    expect(divergent).toBe(false);
-    await page.waitForTimeout(1000);
-  }
-
-  // After the countdown, archive resolves and Archived tab is pressed.
-  await expect(page.locator('[data-testid="page-frame-archived-iframe"]')).toBeVisible({
-    timeout: 5_000,
-  });
+  // Initial: archived shows immediately (auto-resolve). Then user clicks
+  // Original to re-arm the deciding window.
   await expect(
-    page.getByRole("button", { name: "Archived" }),
-  ).toHaveAttribute("aria-pressed", "true");
+    page.getByTestId("page-frame-archived-iframe"),
+  ).toBeVisible({ timeout: 5_000 });
+  await page.getByRole("button", { name: "Original" }).click();
+  await expect(
+    page.getByTestId("page-frame-deciding"),
+  ).toBeVisible({ timeout: 2_000 });
+
+  // While the deciding interstitial is up, screenshot/archive previews MUST
+  // NOT be visible with Original still pressed. Poll until the countdown is
+  // over, with the attempt count capped so a bad state cannot burn the suite.
+  let attempts = 0;
+  let sawDivergence = false;
+  await expect
+    .poll(
+      async () => {
+        attempts += 1;
+        const decidingVisible = await page
+          .getByTestId("page-frame-deciding")
+          .isVisible();
+        if (!decidingVisible) return sawDivergence ? "diverged" : "done";
+
+        const originalPressed = await page
+          .getByRole("button", { name: "Original" })
+          .getAttribute("aria-pressed");
+        const screenshotVisible = await page
+          .getByTestId("page-frame-screenshot")
+          .isVisible();
+        const archivedVisible = await page
+          .getByTestId("page-frame-archived-iframe")
+          .isVisible();
+        sawDivergence ||= originalPressed === "true" && (
+          screenshotVisible ||
+          archivedVisible
+        );
+
+        const archivedPressed = await page
+          .getByRole("button", { name: "Archived" })
+          .getAttribute("aria-pressed");
+        if (sawDivergence) return "diverged";
+        if (archivedPressed === "true" && archivedVisible) return "done";
+        if (attempts >= MAX_PREVIEW_POLL_ATTEMPTS) return "attempt-limit";
+        return "waiting";
+      },
+      {
+        intervals: Array(MAX_PREVIEW_POLL_ATTEMPTS).fill(
+          PREVIEW_POLL_INTERVAL_MS,
+        ),
+        timeout:
+          MAX_PREVIEW_POLL_ATTEMPTS * PREVIEW_POLL_INTERVAL_MS +
+          PREVIEW_POLL_INTERVAL_MS,
+      },
+    )
+    .toBe("done");
+
+  await expect(
+    page.getByTestId("page-frame-archived-iframe"),
+  ).toBeVisible({ timeout: 5_000 });
 });
 
 test("wide screenshot scrolls inside the section, never expands the layout (containment)", async ({
@@ -451,14 +556,14 @@ test("wide screenshot scrolls inside the section, never expands the layout (cont
   // to display the wide SCREENSHOT_URL fixture inside the section.
   await page.goto(`${webBaseUrl}/analyze?job=${PERMISSIVE_JOB_ID}`);
   await page.getByRole("button", { name: "Screenshot" }).click();
-  await expect(page.locator('[data-testid="page-frame-screenshot"]')).toBeVisible();
+  await expect(page.getByTestId("page-frame-screenshot")).toBeVisible();
 
   // The <section aria-label="Page preview"> has overflow-hidden so its
   // scrollWidth === clientWidth. The actual scroll container is the div
   // wrapper around the screenshot img (PageFrame.tsx, overflow-auto). Target
   // that wrapper directly via the screenshot's parent element.
   const wrapperMetrics = await page
-    .locator('[data-testid="page-frame-screenshot"]')
+    .getByTestId("page-frame-screenshot")
     .evaluate((img: Element) => {
       const parent = (img as HTMLElement).parentElement as HTMLElement;
       return {
@@ -474,7 +579,7 @@ test("wide screenshot scrolls inside the section, never expands the layout (cont
   expect(wrapperMetrics.scrollWidth).toBeGreaterThan(wrapperMetrics.clientWidth);
 
   // Outer layout MUST NOT overflow — analyze-layout's scroll dims equal client dims.
-  const layout = page.locator('[data-testid="analyze-layout"]');
+  const layout = page.getByTestId("analyze-layout");
   const layoutMetrics = await layout.evaluate((el: Element) => ({
     scrollWidth: (el as HTMLElement).scrollWidth,
     clientWidth: (el as HTMLElement).clientWidth,

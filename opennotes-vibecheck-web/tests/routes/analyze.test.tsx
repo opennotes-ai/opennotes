@@ -1,4 +1,12 @@
-import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
+import {
+  describe,
+  it,
+  expect,
+  vi,
+  afterAll,
+  afterEach,
+  beforeEach,
+} from "vitest";
 import {
   render,
   screen,
@@ -13,13 +21,31 @@ import {
   createMemoryHistory,
 } from "@solidjs/router";
 import { createSignal } from "solid-js";
-import type { JobState } from "~/lib/api-client.server";
+import type { JobState, SidebarPayload } from "~/lib/api-client.server";
 
 type PollingHandle = {
   state: () => JobState | null;
   error: () => Error | null;
   refetch: () => void;
 };
+
+type MockFrameCompat = {
+  canIframe: boolean;
+  blockingHeader: string | null;
+  cspFrameAncestors: string | null;
+  screenshotUrl: string | null;
+  archivedPreviewUrl: string | null;
+};
+
+type MockFrameCompatQueryResult = {
+  ok: true;
+  frameCompat: MockFrameCompat;
+};
+
+type GetFrameCompatMock = (
+  url: string,
+  signal?: AbortSignal,
+) => Promise<MockFrameCompatQueryResult>;
 
 const { pollingHandles, refetchSpy } = vi.hoisted(() => ({
   pollingHandles: [] as Array<{
@@ -47,7 +73,7 @@ vi.mock("~/lib/polling", () => {
 });
 
 const { getFrameCompatMock, retrySectionActionMock } = vi.hoisted(() => ({
-  getFrameCompatMock: vi.fn(async () => ({
+  getFrameCompatMock: vi.fn<GetFrameCompatMock>(async () => ({
     ok: true,
     frameCompat: {
       canIframe: true,
@@ -98,6 +124,10 @@ vi.mock("~/routes/analyze.data", () => {
 });
 
 const localStorageValues = new Map<string, string>();
+const originalLocalStorageDescriptor = Object.getOwnPropertyDescriptor(
+  window,
+  "localStorage",
+);
 Object.defineProperty(window, "localStorage", {
   configurable: true,
   value: {
@@ -116,7 +146,7 @@ Object.defineProperty(window, "localStorage", {
 
 import AnalyzePage from "../../src/routes/analyze";
 
-beforeEach(() => {
+function resetTestEnv() {
   getFrameCompatMock.mockReset();
   getFrameCompatMock.mockImplementation(async () => ({
     ok: true,
@@ -128,14 +158,27 @@ beforeEach(() => {
         archivedPreviewUrl: null,
       },
     }));
-});
-
-afterEach(() => {
-  cleanup();
   window.localStorage.clear();
   pollingHandles.length = 0;
   refetchSpy.current.mockReset();
   retrySectionActionMock.mockReset();
+}
+
+beforeEach(() => {
+  resetTestEnv();
+});
+
+afterEach(() => {
+  cleanup();
+  resetTestEnv();
+});
+
+afterAll(() => {
+  if (originalLocalStorageDescriptor) {
+    Object.defineProperty(window, "localStorage", originalLocalStorageDescriptor);
+  } else {
+    delete (window as unknown as { localStorage?: Storage }).localStorage;
+  }
 });
 
 function setPolledJobState(value: JobState | null) {
@@ -143,15 +186,46 @@ function setPolledJobState(value: JobState | null) {
 }
 
 function renderAt(path: string) {
+  return renderAtWithHistory(path);
+}
+
+function renderAtWithHistory(path: string) {
   const history = createMemoryHistory();
   history.set({ value: path, scroll: false, replace: true });
-  return render(() => (
+  const rendered = render(() => (
     <MetaProvider>
       <MemoryRouter history={history}>
         <Route path="/analyze" component={AnalyzePage} />
       </MemoryRouter>
     </MetaProvider>
   ));
+  return { ...rendered, history };
+}
+
+function frameCompatResult(
+  overrides: Partial<MockFrameCompat> = {},
+): MockFrameCompatQueryResult {
+  return {
+    ok: true,
+    frameCompat: {
+      canIframe: true,
+      blockingHeader: null,
+      cspFrameAncestors: null,
+      screenshotUrl: null,
+      archivedPreviewUrl: null,
+      ...overrides,
+    },
+  };
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
 }
 
 function makeJobState(overrides: Partial<JobState> = {}): JobState {
@@ -167,6 +241,51 @@ function makeJobState(overrides: Partial<JobState> = {}): JobState {
     utterance_count: 0,
     ...overrides,
   } as JobState;
+}
+
+function makeSidebarPayload(
+  overrides: Partial<SidebarPayload> = {},
+): SidebarPayload {
+  return {
+    source_url: "https://news.example.com/a",
+    page_title: null,
+    page_kind: "article",
+    scraped_at: "2026-04-22T00:00:00Z",
+    cached: false,
+    cached_at: null,
+    safety: { harmful_content_matches: [] },
+    tone_dynamics: {
+      scd: {
+        summary: "",
+        tone_labels: [],
+        per_speaker_notes: {},
+        insufficient_conversation: true,
+      },
+      flashpoint_matches: [],
+    },
+    facts_claims: {
+      claims_report: {
+        deduped_claims: [],
+        total_claims: 0,
+        total_unique: 0,
+      },
+      known_misinformation: [],
+    },
+    opinions_sentiments: {
+      opinions_report: {
+        sentiment_stats: {
+          per_utterance: [],
+          positive_pct: 0,
+          negative_pct: 0,
+          neutral_pct: 0,
+          mean_valence: 0,
+        },
+        subjective_claims: [],
+      },
+    },
+    headline: null,
+    ...overrides,
+  } as SidebarPayload;
 }
 
 describe("AnalyzePage route", () => {
@@ -677,5 +796,415 @@ describe("AnalyzePage route", () => {
     );
 
     expect(screen.queryByTestId("cached-badge")).toBeNull();
+  });
+});
+
+describe("AnalyzePage left column min-h floor (TASK-1483.13.03)", () => {
+  it("left column wrapper does not enforce min-h-[60vh] so it sizes to actual content", async () => {
+    renderAt("/analyze?job=job-left-col&url=https://news.example.com/a");
+
+    const leftColumn = await screen.findByTestId("analyze-left-column");
+    const cls = leftColumn.getAttribute("class") ?? "";
+    expect(cls).not.toMatch(/min-h-\[60vh\]/);
+    // Sanity: surrounding flex/min-w invariants preserved.
+    expect(cls).toMatch(/\bflex\b/);
+    expect(cls).toMatch(/\bmin-w-0\b/);
+  });
+});
+
+describe("AnalyzePage headline summary mount (TASK-1483.13.10)", () => {
+  it("does not render headline-summary before sidebarPayload arrives", async () => {
+    renderAt("/analyze?job=job-headline-pending&url=https://news.example.com/a");
+
+    await waitFor(() => {
+      expect(pollingHandles.length).toBeGreaterThan(0);
+    });
+
+    setPolledJobState(makeJobState({ status: "analyzing" }));
+
+    await waitFor(() => {
+      expect(screen.queryByTestId("preview-mode-selector")).not.toBeNull();
+    });
+    expect(screen.queryByTestId("headline-summary")).toBeNull();
+  });
+
+  it("renders fallback headline text when sidebarPayload has headline=null", async () => {
+    renderAt(
+      "/analyze?job=job-headline-fallback&url=https://news.example.com/a",
+    );
+
+    await waitFor(() => {
+      expect(pollingHandles.length).toBeGreaterThan(0);
+    });
+
+    setPolledJobState(
+      makeJobState({
+        status: "analyzing",
+        page_title: "Investigative dispatch",
+        sidebar_payload: makeSidebarPayload({ headline: null }),
+      }),
+    );
+
+    const headline = await screen.findByTestId("headline-summary");
+    expect(headline.getAttribute("data-headline-source")).toBe("fallback");
+    expect(screen.getByTestId("headline-summary-text").textContent).toBe(
+      "news.example.com — Investigative dispatch",
+    );
+  });
+
+  it("renders real headline text when payload.headline.text is non-empty", async () => {
+    renderAt("/analyze?job=job-headline-real&url=https://news.example.com/a");
+
+    await waitFor(() => {
+      expect(pollingHandles.length).toBeGreaterThan(0);
+    });
+
+    setPolledJobState(
+      makeJobState({
+        status: "analyzing",
+        sidebar_payload: makeSidebarPayload({
+          headline: {
+            text: "Verified article headline from the analysis payload.",
+            kind: "synthesized",
+            unavailable_inputs: [],
+          },
+        }),
+      }),
+    );
+
+    const headline = await screen.findByTestId("headline-summary");
+    expect(headline.getAttribute("data-headline-source")).toBe("server");
+    expect(screen.getByTestId("headline-summary-text").textContent).toBe(
+      "Verified article headline from the analysis payload.",
+    );
+  });
+
+  it("places headline-summary before preview-mode-selector inside analyze-left-column", async () => {
+    renderAt("/analyze?job=job-headline-order&url=https://news.example.com/a");
+
+    await waitFor(() => {
+      expect(pollingHandles.length).toBeGreaterThan(0);
+    });
+
+    setPolledJobState(
+      makeJobState({
+        status: "analyzing",
+        sidebar_payload: makeSidebarPayload({
+          headline: {
+            text: "Headline appears above preview controls.",
+            kind: "stock",
+            unavailable_inputs: [],
+          },
+        }),
+      }),
+    );
+
+    const leftColumn = await screen.findByTestId("analyze-left-column");
+    const headline = screen.getByTestId("headline-summary");
+    const previewMode = screen.getByTestId("preview-mode-selector");
+
+    expect(headline.closest("[data-testid='analyze-left-column']")).toBe(
+      leftColumn,
+    );
+    expect(previewMode.closest("[data-testid='analyze-left-column']")).toBe(
+      leftColumn,
+    );
+    expect(
+      headline.compareDocumentPosition(previewMode) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+});
+
+describe("AnalyzePage Original tab — soft-disabled when canIframe=false (TASK-1483.13.02)", () => {
+  function mockBlockedFrame() {
+    getFrameCompatMock.mockResolvedValue({
+      ok: true,
+      frameCompat: {
+        canIframe: false,
+        blockingHeader: "content-security-policy: frame-ancestors 'none'",
+        cspFrameAncestors: "'none'",
+        screenshotUrl: "https://cdn.example.com/shot.png",
+        archivedPreviewUrl:
+          "/api/archive-preview?url=https%3A%2F%2Fnypost.com%2Farticle",
+      },
+    } as never);
+  }
+
+  it("renders an aria-describedby tooltip on Original when the page blocks framing", async () => {
+    mockBlockedFrame();
+    renderAt("/analyze?job=job-blocked&url=https://nypost.com/article");
+
+    const original = await screen.findByTestId("preview-mode-original");
+    await waitFor(() => {
+      expect(original.getAttribute("aria-describedby")).toBe(
+        "preview-mode-original-tip",
+      );
+    });
+
+    const tip = screen.getByTestId("preview-mode-original-tip");
+    expect(tip.getAttribute("id")).toBe("preview-mode-original-tip");
+    expect(tip.textContent ?? "").toMatch(
+      /blocks framing.*click to attempt anyway/i,
+    );
+    expect((tip.getAttribute("class") ?? "").split(/\s+/)).toContain("sr-only");
+    expect(tip.getAttribute("role")).toBe("tooltip");
+    expect(tip.getAttribute("data-visible")).toBe("false");
+  });
+
+  it("surfaces the Original blocked-frame tooltip on hover and focus", async () => {
+    mockBlockedFrame();
+    renderAt("/analyze?job=job-blocked&url=https://nypost.com/article");
+
+    const original = await screen.findByTestId("preview-mode-original");
+    await waitFor(() => {
+      expect(original.getAttribute("aria-describedby")).toBe(
+        "preview-mode-original-tip",
+      );
+    });
+
+    const tip = screen.getByTestId("preview-mode-original-tip");
+    expect(tip.getAttribute("role")).toBe("tooltip");
+    expect(tip.getAttribute("data-visible")).toBe("false");
+
+    fireEvent.mouseEnter(original);
+    expect(tip.getAttribute("data-visible")).toBe("true");
+    expect(tip.textContent ?? "").toMatch(
+      /blocks framing.*click to attempt anyway/i,
+    );
+
+    fireEvent.mouseLeave(original);
+    expect(tip.getAttribute("data-visible")).toBe("false");
+
+    fireEvent.focus(original);
+    expect(tip.getAttribute("data-visible")).toBe("true");
+  });
+
+  it("keeps the Original blocked-frame tooltip visible after mouse leave while focused", async () => {
+    mockBlockedFrame();
+    renderAt("/analyze?job=job-blocked&url=https://nypost.com/article");
+
+    const original = await screen.findByTestId("preview-mode-original");
+    await waitFor(() => {
+      expect(original.getAttribute("aria-describedby")).toBe(
+        "preview-mode-original-tip",
+      );
+    });
+
+    const tip = screen.getByRole("tooltip");
+
+    fireEvent.focus(original);
+    expect(tip.getAttribute("data-visible")).toBe("true");
+
+    fireEvent.mouseLeave(original);
+    expect(tip.getAttribute("data-visible")).toBe("true");
+
+    fireEvent.blur(original);
+    expect(tip.getAttribute("data-visible")).toBe("false");
+  });
+
+  it("uses muted opacity styling on Original when canIframe=false (no aria-disabled, no disabled attr)", async () => {
+    mockBlockedFrame();
+    renderAt("/analyze?job=job-blocked&url=https://nypost.com/article");
+
+    const original = await screen.findByTestId("preview-mode-original");
+    await waitFor(() => {
+      const cls = original.getAttribute("class") ?? "";
+      expect(cls).toMatch(/opacity-60/);
+    });
+    // AC #4: must NOT use aria-disabled, disabled, or pointer-events:none.
+    expect(original.hasAttribute("aria-disabled")).toBe(false);
+    expect(original.hasAttribute("disabled")).toBe(false);
+    expect(original.getAttribute("class") ?? "").not.toMatch(
+      /pointer-events-none/,
+    );
+  });
+
+  it("Original tab remains clickable as the escape hatch when canIframe=false", async () => {
+    mockBlockedFrame();
+    renderAt("/analyze?job=job-blocked&url=https://nypost.com/article");
+
+    const original = await screen.findByTestId("preview-mode-original");
+    await waitFor(() => {
+      // Auto-resolve flips the parent's previewMode off Original.
+      expect(original.getAttribute("aria-pressed")).toBe("false");
+    });
+    fireEvent.click(original);
+    expect(original.getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getByTestId("page-frame-deciding")).not.toBeNull();
+  });
+
+  it("does not show Original pressed before frame compatibility resolves", async () => {
+    const pendingCompat = deferred<ReturnType<typeof frameCompatResult>>();
+    getFrameCompatMock.mockReturnValueOnce(pendingCompat.promise);
+
+    renderAt("/analyze?job=job-pending-compat&url=https://nypost.com/article");
+
+    const original = await screen.findByTestId("preview-mode-original");
+    expect(original.getAttribute("aria-pressed")).toBe("false");
+    expect(screen.getByTestId("page-frame-loading")).not.toBeNull();
+
+    pendingCompat.resolve(
+      frameCompatResult({
+        canIframe: false,
+        blockingHeader: "content-security-policy: frame-ancestors 'none'",
+        cspFrameAncestors: "'none'",
+        screenshotUrl: "https://cdn.example.com/shot.png",
+        archivedPreviewUrl:
+          "/api/archive-preview?url=https%3A%2F%2Fnypost.com%2Farticle",
+      }),
+    );
+
+    await waitFor(() => {
+      expect(
+        screen.getByTestId("preview-mode-archived").getAttribute("aria-pressed"),
+      ).toBe("true");
+    });
+    expect(original.getAttribute("aria-pressed")).toBe("false");
+  });
+
+  it("clears the Original blocked-frame tooltip from any preview tab leave or blur", async () => {
+    mockBlockedFrame();
+    renderAt(
+      "/analyze?job=job-blocked-tooltip-clear&url=https://nypost.com/article",
+    );
+
+    const original = await screen.findByTestId("preview-mode-original");
+    await waitFor(() => {
+      expect(original.getAttribute("aria-describedby")).toBe(
+        "preview-mode-original-tip",
+      );
+    });
+    const archived = screen.getByTestId("preview-mode-archived");
+    const tip = screen.getByTestId("preview-mode-original-tip");
+
+    fireEvent.mouseEnter(original);
+    expect(tip.getAttribute("data-visible")).toBe("true");
+    fireEvent.mouseLeave(archived);
+    expect(tip.getAttribute("data-visible")).toBe("false");
+
+    fireEvent.focus(original);
+    expect(tip.getAttribute("data-visible")).toBe("true");
+    fireEvent.blur(archived);
+    expect(tip.getAttribute("data-visible")).toBe("false");
+  });
+
+  it("clears pressed preview state when a resolvable preview transitions to unavailable", async () => {
+    getFrameCompatMock
+      .mockResolvedValueOnce(
+        frameCompatResult({
+          canIframe: false,
+          blockingHeader: "content-security-policy: frame-ancestors 'none'",
+          cspFrameAncestors: "'none'",
+          screenshotUrl: "https://cdn.example.com/first.png",
+          archivedPreviewUrl: null,
+        }),
+      )
+      .mockResolvedValueOnce(
+        frameCompatResult({
+          canIframe: false,
+          blockingHeader: "content-security-policy: frame-ancestors 'none'",
+          cspFrameAncestors: "'none'",
+          screenshotUrl: null,
+          archivedPreviewUrl: null,
+        }),
+      );
+
+    renderAt(
+      "/analyze?job=job-preview-transition&url=https://news.example.com/a",
+    );
+
+    await waitFor(() => {
+      expect(
+        screen
+          .getByTestId("preview-mode-screenshot")
+          .getAttribute("aria-pressed"),
+      ).toBe("true");
+    });
+
+    setPolledJobState(
+      makeJobState({
+        status: "analyzing",
+        url: "https://news.example.com/b",
+      }),
+    );
+
+    expect(await screen.findByTestId("page-frame-unavailable")).not.toBeNull();
+    for (const testId of [
+      "preview-mode-original",
+      "preview-mode-archived",
+      "preview-mode-screenshot",
+    ]) {
+      expect(screen.getByTestId(testId).getAttribute("aria-pressed")).toBe(
+        "false",
+      );
+    }
+  });
+
+  it("clears all preview tab pressed states when no preview is available", async () => {
+    getFrameCompatMock.mockResolvedValue({
+      ok: true,
+      frameCompat: {
+        canIframe: false,
+        blockingHeader: "content-security-policy: frame-ancestors 'none'",
+        cspFrameAncestors: "'none'",
+        screenshotUrl: null,
+        archivedPreviewUrl: null,
+      },
+    } as never);
+    renderAt("/analyze?job=job-unavailable&url=https://nypost.com/article");
+
+    expect(await screen.findByTestId("page-frame-unavailable")).not.toBeNull();
+
+    for (const testId of [
+      "preview-mode-original",
+      "preview-mode-archived",
+      "preview-mode-screenshot",
+    ]) {
+      expect(screen.getByTestId(testId).getAttribute("aria-pressed")).toBe(
+        "false",
+      );
+    }
+  });
+
+  it("keeps all preview tabs unpressed when clicking the requested tab while preview is unavailable", async () => {
+    getFrameCompatMock.mockResolvedValue({
+      ok: true,
+      frameCompat: {
+        canIframe: false,
+        blockingHeader: "content-security-policy: frame-ancestors 'none'",
+        cspFrameAncestors: "'none'",
+        screenshotUrl: null,
+        archivedPreviewUrl: null,
+      },
+    } as never);
+    renderAt("/analyze?job=job-unavailable&url=https://nypost.com/article");
+
+    expect(await screen.findByTestId("page-frame-unavailable")).not.toBeNull();
+
+    fireEvent.click(screen.getByTestId("preview-mode-original"));
+
+    expect(screen.getByTestId("page-frame-unavailable")).not.toBeNull();
+    for (const testId of [
+      "preview-mode-original",
+      "preview-mode-archived",
+      "preview-mode-screenshot",
+    ]) {
+      expect(screen.getByTestId(testId).getAttribute("aria-pressed")).toBe(
+        "false",
+      );
+    }
+  });
+
+  it("does not render the tooltip span or the muted styling when canIframe=true", async () => {
+    // default mock returns canIframe: true
+    renderAt("/analyze?job=job-permissive&url=https://news.example.com/a");
+
+    const original = await screen.findByTestId("preview-mode-original");
+    await waitFor(() => {
+      expect(original.getAttribute("class") ?? "").not.toMatch(/opacity-60/);
+    });
+    expect(original.getAttribute("aria-describedby")).toBeNull();
+    expect(screen.queryByTestId("preview-mode-original-tip")).toBeNull();
   });
 });

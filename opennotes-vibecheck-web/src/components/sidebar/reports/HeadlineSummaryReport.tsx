@@ -1,10 +1,8 @@
 import { Show, type JSX } from "solid-js";
-import type { components } from "~/lib/generated-types";
-
-type HeadlineSummary = components["schemas"]["HeadlineSummary"];
+import type { ResolvedHeadline } from "~/lib/headline-fallback";
 
 export interface HeadlineSummaryReportProps {
-  headline: HeadlineSummary | null;
+  headline: ResolvedHeadline | null;
 }
 
 export default function HeadlineSummaryReport(
@@ -16,6 +14,7 @@ export default function HeadlineSummaryReport(
         <section
           data-testid="headline-summary"
           data-headline-kind={h().kind}
+          data-headline-source={h().source}
           class="rounded-md border border-border bg-background/60 p-3"
         >
           <p

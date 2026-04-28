@@ -5,6 +5,7 @@ import {
   screen,
   fireEvent,
   waitFor,
+  within,
 } from "@solidjs/testing-library";
 import { createSignal } from "solid-js";
 import { readFileSync } from "node:fs";
@@ -104,14 +105,157 @@ describe("SectionGroup", () => {
     ));
 
     const counter = screen.getByTestId("section-group-counter");
-    expect(counter.textContent).toContain("Tone/dynamics");
-    expect(counter.textContent).toContain("0/2");
+    expect(counter.textContent ?? "").toBe("0/2");
+    expect(counter.getAttribute("aria-label")).toBe(
+      "Tone/dynamics: 0 of 2 sections complete",
+    );
+    expect(counter.getAttribute("role")).toBeNull();
 
     for (const slug of TONE_SLUGS) {
       const label = screen.getByTestId(`slot-label-${slug}`);
       expect(label.getAttribute("data-dimmed")).toBe("true");
       expect(screen.queryByTestId(`skeleton-${slug}`)).toBeNull();
     }
+  });
+
+  it("preserves the section label as a visible <h3> heading next to the counter", () => {
+    render(() => (
+      <SectionGroup
+        label="Tone/dynamics"
+        slugs={TONE_SLUGS}
+        sections={{}}
+        render={{}}
+      />
+    ));
+    const heading = screen.getByRole("heading", {
+      level: 3,
+      name: "Tone/dynamics",
+    });
+    expect(heading.textContent).toBe("Tone/dynamics");
+  });
+
+  it("does not render the counter when the group has no slots", () => {
+    render(() => (
+      <SectionGroup label="Empty" slugs={[]} sections={{}} render={{}} />
+    ));
+
+    expect(screen.queryByTestId("section-group-counter")).toBeNull();
+  });
+
+  it("keeps only the dedicated hidden announcement node live", () => {
+    render(() => (
+      <SectionGroup
+        label="Tone/dynamics"
+        slugs={TONE_SLUGS}
+        sections={{}}
+        render={{}}
+      />
+    ));
+
+    const counter = screen.getByTestId("section-group-counter");
+    expect(counter.getAttribute("role")).toBeNull();
+    expect(counter.getAttribute("aria-live")).toBeNull();
+
+    const announce = screen.getByTestId("section-group-announce-Tone/dynamics");
+    expect(announce.getAttribute("role")).toBe("status");
+    expect(announce.getAttribute("aria-live")).toBe("polite");
+  });
+
+  it("does not announce done slots that are already complete on initial mount", () => {
+    render(() => (
+      <SectionGroup
+        label="Tone/dynamics"
+        slugs={TONE_SLUGS}
+        sections={{
+          tone_dynamics__flashpoint: {
+            state: "done",
+            attempt_id: "cached-a1",
+            data: { flashpoint_matches: [] },
+          },
+        }}
+        render={{}}
+      />
+    ));
+
+    expect(
+      screen.getByTestId("section-group-announce-Tone/dynamics").textContent,
+    ).toBe("");
+  });
+
+  it("announces a slot that completes after initial mount", () => {
+    const [sections, setSections] = createSignal<SlugToSlots>({
+      tone_dynamics__flashpoint: { state: "pending", attempt_id: "" },
+    });
+    render(() => (
+      <SectionGroup
+        label="Tone/dynamics"
+        slugs={TONE_SLUGS}
+        sections={sections()}
+        render={{}}
+      />
+    ));
+
+    expect(
+      screen.getByTestId("section-group-announce-Tone/dynamics").textContent,
+    ).toBe("");
+
+    setSections({
+      tone_dynamics__flashpoint: {
+        state: "done",
+        attempt_id: "a1",
+        data: { flashpoint_matches: [] },
+      },
+    });
+
+    expect(
+      screen.getByTestId("section-group-announce-Tone/dynamics").textContent,
+    ).toBe("Flashpoint complete");
+  });
+
+  it("clears announcement history when jobId changes", () => {
+    const [jobId, setJobId] = createSignal("job-a");
+    const [sections, setSections] = createSignal<SlugToSlots>({
+      tone_dynamics__flashpoint: { state: "pending", attempt_id: "" },
+    });
+    render(() => (
+      <SectionGroup
+        label="Tone/dynamics"
+        slugs={TONE_SLUGS}
+        sections={sections()}
+        render={{}}
+        jobId={jobId()}
+      />
+    ));
+
+    setSections({
+      tone_dynamics__flashpoint: {
+        state: "done",
+        attempt_id: "attempt-1",
+        data: { flashpoint_matches: [] },
+      },
+    });
+    expect(
+      screen.getByTestId("section-group-announce-Tone/dynamics").textContent,
+    ).toBe("Flashpoint complete");
+
+    setJobId("job-b");
+    setSections({
+      tone_dynamics__flashpoint: { state: "pending", attempt_id: "" },
+    });
+    expect(
+      screen.getByTestId("section-group-announce-Tone/dynamics").textContent,
+    ).toBe("");
+
+    setSections({
+      tone_dynamics__flashpoint: {
+        state: "done",
+        attempt_id: "attempt-1",
+        data: { flashpoint_matches: [] },
+      },
+    });
+    expect(
+      screen.getByTestId("section-group-announce-Tone/dynamics").textContent,
+    ).toBe("Flashpoint complete");
   });
 
   it("renders a slug's content-shape skeleton when that slot is running", () => {
@@ -647,11 +791,12 @@ describe("Sidebar", () => {
     const counters = screen.getAllByTestId("section-group-counter");
     expect(counters).toHaveLength(4);
 
-    const texts = counters.map((n) => n.textContent ?? "");
-    expect(texts.some((t) => t.startsWith("Safety"))).toBe(true);
-    expect(texts.some((t) => t.startsWith("Tone/dynamics"))).toBe(true);
-    expect(texts.some((t) => t.startsWith("Facts/claims"))).toBe(true);
-    expect(texts.some((t) => t.startsWith("Opinions/sentiments"))).toBe(true);
+    expect(screen.getByTestId("section-group-Safety")).toBeDefined();
+    expect(screen.getByTestId("section-group-Tone/dynamics")).toBeDefined();
+    expect(screen.getByTestId("section-group-Facts/claims")).toBeDefined();
+    expect(
+      screen.getByTestId("section-group-Opinions/sentiments"),
+    ).toBeDefined();
   });
 
   it("places aria-live on per-section status nodes only (not on the aside)", () => {
@@ -668,12 +813,17 @@ describe("Sidebar", () => {
     }
   });
 
-  it("uses middot separator and integer N/M in counter labels", () => {
+  it("renders just the bare N/M ratio in the visible counter (no duplicated label)", () => {
     render(() => <Sidebar sections={{}} />);
     const counters = screen.getAllByTestId("section-group-counter");
     for (const c of counters) {
       const text = c.textContent ?? "";
-      expect(text).toMatch(/\s·\s\d+\/\d+/);
+      expect(text).toMatch(/^\d+\/\d+$/);
+      const ariaLabel = c.getAttribute("aria-label") ?? "";
+      expect(ariaLabel).toMatch(
+        /^(Safety|Tone\/dynamics|Facts\/claims|Opinions\/sentiments): \d+\sof\s\d+\ssections complete$/,
+      );
+      expect(c.getAttribute("role")).toBeNull();
     }
   });
 
@@ -681,14 +831,14 @@ describe("Sidebar", () => {
     const payload = makeTonePayload();
     render(() => <Sidebar payload={payload} />);
 
-    const counters = screen.getAllByTestId("section-group-counter");
-    const texts = counters.map((n) => n.textContent ?? "");
-    expect(texts.find((t) => t.startsWith("Safety"))).toContain("4/4");
-    expect(texts.find((t) => t.startsWith("Tone/dynamics"))).toContain("2/2");
-    expect(texts.find((t) => t.startsWith("Facts/claims"))).toContain("2/2");
-    expect(texts.find((t) => t.startsWith("Opinions/sentiments"))).toContain(
-      "2/2",
-    );
+    const byLabel = (label: string) =>
+      within(screen.getByTestId(`section-group-${label}`)).getByTestId(
+        "section-group-counter",
+      );
+    expect(byLabel("Safety")?.textContent).toBe("4/4");
+    expect(byLabel("Tone/dynamics")?.textContent).toBe("2/2");
+    expect(byLabel("Facts/claims")?.textContent).toBe("2/2");
+    expect(byLabel("Opinions/sentiments")?.textContent).toBe("2/2");
 
     const ALL_SLUGS = [
       "safety__moderation",
