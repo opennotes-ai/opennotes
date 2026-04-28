@@ -5,6 +5,7 @@ import {
   screen,
   fireEvent,
   waitFor,
+  within,
 } from "@solidjs/testing-library";
 import { createSignal } from "solid-js";
 import { readFileSync } from "node:fs";
@@ -105,9 +106,8 @@ describe("SectionGroup", () => {
 
     const counter = screen.getByTestId("section-group-counter");
     expect(counter.textContent ?? "").toBe("0/2");
-    expect(counter.getAttribute("aria-label")).toBe(
-      "Tone/dynamics 0 of 2 done",
-    );
+    expect(counter.getAttribute("aria-label")).toBe("0 of 2 done");
+    expect(counter.getAttribute("role")).toBe("status");
 
     for (const slug of TONE_SLUGS) {
       const label = screen.getByTestId(`slot-label-${slug}`);
@@ -665,21 +665,12 @@ describe("Sidebar", () => {
     const counters = screen.getAllByTestId("section-group-counter");
     expect(counters).toHaveLength(4);
 
-    const ariaLabels = counters.map(
-      (n) => n.getAttribute("aria-label") ?? "",
-    );
+    expect(screen.getByTestId("section-group-Safety")).toBeDefined();
+    expect(screen.getByTestId("section-group-Tone/dynamics")).toBeDefined();
+    expect(screen.getByTestId("section-group-Facts/claims")).toBeDefined();
     expect(
-      ariaLabels.some((t) => t.startsWith("Safety ")),
-    ).toBe(true);
-    expect(
-      ariaLabels.some((t) => t.startsWith("Tone/dynamics ")),
-    ).toBe(true);
-    expect(
-      ariaLabels.some((t) => t.startsWith("Facts/claims ")),
-    ).toBe(true);
-    expect(
-      ariaLabels.some((t) => t.startsWith("Opinions/sentiments ")),
-    ).toBe(true);
+      screen.getByTestId("section-group-Opinions/sentiments"),
+    ).toBeDefined();
   });
 
   it("places aria-live on per-section status nodes only (not on the aside)", () => {
@@ -703,7 +694,8 @@ describe("Sidebar", () => {
       const text = c.textContent ?? "";
       expect(text).toMatch(/^\d+\/\d+$/);
       const ariaLabel = c.getAttribute("aria-label") ?? "";
-      expect(ariaLabel).toMatch(/^.+\s\d+\sof\s\d+\sdone$/);
+      expect(ariaLabel).toMatch(/^\d+\sof\s\d+\sdone$/);
+      expect(c.getAttribute("role")).toBe("status");
     }
   });
 
@@ -711,10 +703,9 @@ describe("Sidebar", () => {
     const payload = makeTonePayload();
     render(() => <Sidebar payload={payload} />);
 
-    const counters = screen.getAllByTestId("section-group-counter");
     const byLabel = (label: string) =>
-      counters.find((n) =>
-        (n.getAttribute("aria-label") ?? "").startsWith(`${label} `),
+      within(screen.getByTestId(`section-group-${label}`)).getByTestId(
+        "section-group-counter",
       );
     expect(byLabel("Safety")?.textContent).toBe("4/4");
     expect(byLabel("Tone/dynamics")?.textContent).toBe("2/2");
