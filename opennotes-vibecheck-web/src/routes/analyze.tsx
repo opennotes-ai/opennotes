@@ -6,8 +6,9 @@ import {
   createSignal,
   onCleanup,
   onMount,
+  untrack,
 } from "solid-js";
-import { useSearchParams, A, useNavigate } from "@solidjs/router";
+import { useSearchParams, A, useNavigate, revalidate } from "@solidjs/router";
 import { Title } from "@solidjs/meta";
 import CachedBadge from "~/components/CachedBadge";
 import JobFailureCard from "~/components/JobFailureCard";
@@ -21,7 +22,12 @@ import { HeadlineSummaryReport } from "~/components/sidebar/reports";
 import type { ErrorCode, SectionSlug } from "~/lib/api-client.server";
 import { createPollingResource } from "~/lib/polling";
 import { resolveHeadline } from "~/lib/headline-fallback";
-import { getFrameCompat, type FrameCompatResult } from "./analyze.data";
+import {
+  getArchiveProbe,
+  getScreenshot,
+  type ArchiveProbeResult,
+  type FrameCompatResult,
+} from "./analyze.data";
 
 const ALL_ERROR_CODES: readonly ErrorCode[] = [
   "invalid_url",
@@ -36,6 +42,7 @@ const ALL_ERROR_CODES: readonly ErrorCode[] = [
 ];
 
 type PreviewSize = "regular" | "large" | "max";
+type ArchiveProbeState = "pending" | "available" | "unavailable";
 
 const PREVIEW_SIZE_KEY = "vibecheck:preview-size";
 const PREVIEW_MODE_OPTIONS: ReadonlyArray<{
@@ -65,6 +72,10 @@ const DEFAULT_FRAME_COMPAT: FrameCompatResult = {
 const ORIGINAL_BLOCKED_TIP_ID = "preview-mode-original-tip";
 const ORIGINAL_BLOCKED_TIP_TEXT =
   "This page blocks framing — click to attempt anyway";
+const ARCHIVE_PROBE_INTERVAL_MS = 5_000;
+const ARCHIVE_PROBE_CAP_MS = 300_000;
+const ARCHIVE_PROBE_TERMINAL_GRACE_MS = 10_000;
+const TERMINAL_JOB_STATUSES = new Set(["done", "partial", "failed"]);
 
 function asErrorCode(raw: string | undefined): ErrorCode | null {
   if (!raw) return null;
@@ -142,17 +153,63 @@ export default function AnalyzePage() {
   const [frameCompatError, setFrameCompatError] = createSignal<string | null>(
     null,
   );
+  const [archiveProbeState, setArchiveProbeState] =
+    createSignal<ArchiveProbeState>("pending");
 
   let frameCompatRequest = 0;
-  let frameCompatAbortController: AbortController | null = null;
+  let archiveTerminalAt: number | null = null;
+  let archiveTerminalUrl = "";
+  createEffect(() => {
+    const url = jobUrl();
+    const status = jobStatus();
+    if (!url) {
+      archiveTerminalAt = null;
+      archiveTerminalUrl = "";
+      return;
+    }
+    if (archiveTerminalUrl !== url) {
+      archiveTerminalUrl = url;
+      archiveTerminalAt = null;
+    }
+    if (TERMINAL_JOB_STATUSES.has(status ?? "")) {
+      archiveTerminalAt ??= Date.now();
+    } else {
+      archiveTerminalAt = null;
+    }
+  });
+
+  const applyArchiveProbeResult = (
+    result: ArchiveProbeResult,
+    url: string,
+  ) => {
+    setFrameCompatPending(false);
+    setFrameCompatUrl(url);
+    if (result.ok) {
+      setFrameCompat((current) => ({
+        ...current,
+        canIframe: result.can_iframe,
+        blockingHeader: result.blocking_header,
+        cspFrameAncestors: result.csp_frame_ancestors,
+        archivedPreviewUrl: result.archived_preview_url,
+      }));
+      if (result.has_archive) {
+        setArchiveProbeState("available");
+      }
+      return;
+    }
+    if (result.kind === "invalid_url") {
+      setFrameCompatError("Preview checks unavailable.");
+      setArchiveProbeState("unavailable");
+    }
+  };
+
   createEffect(() => {
     const url = jobUrl();
     const request = ++frameCompatRequest;
-    frameCompatAbortController?.abort();
-    frameCompatAbortController = null;
     setFrameCompat(DEFAULT_FRAME_COMPAT);
     setFrameCompatUrl("");
     setFrameCompatError(null);
+    setArchiveProbeState("pending");
     setFrameCompatPending(Boolean(url));
     setResolvedPreviewMode(url ? "unavailable" : "original");
     if (!url) {
@@ -160,33 +217,107 @@ export default function AnalyzePage() {
       return;
     }
 
-    const controller = new AbortController();
-    frameCompatAbortController = controller;
-    void getFrameCompat(url, controller.signal)
-      .then((result) => {
-        if (request !== frameCompatRequest) return;
-        setFrameCompatPending(false);
-        setFrameCompatUrl(url);
-        if (result.ok) {
-          setFrameCompat(result.frameCompat);
-          return;
-        }
-        setFrameCompatError(result.message);
+    let stopped = false;
+    let inFlight = false;
+    let interval: ReturnType<typeof setInterval> | null = null;
+    const startedAt = Date.now();
+    const initialStatus = untrack(jobStatus);
+    archiveTerminalUrl = url;
+    archiveTerminalAt = TERMINAL_JOB_STATUSES.has(initialStatus ?? "")
+      ? Date.now()
+      : null;
+
+    const clearProbeInterval = () => {
+      if (interval !== null) {
+        clearInterval(interval);
+        interval = null;
+      }
+    };
+    const stopLoop = () => {
+      stopped = true;
+      clearProbeInterval();
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
+    const hasTimedOut = () => Date.now() - startedAt >= ARCHIVE_PROBE_CAP_MS;
+    const terminalGraceElapsed = () =>
+      archiveTerminalAt !== null &&
+      Date.now() - archiveTerminalAt >= ARCHIVE_PROBE_TERMINAL_GRACE_MS;
+    const stopUnavailableIfExpired = () => {
+      if (hasTimedOut() || terminalGraceElapsed()) {
+        setArchiveProbeState("unavailable");
+        stopLoop();
+        return true;
+      }
+      return false;
+    };
+    const probeArchive = async (ignoreVisibility = false) => {
+      if (stopped || inFlight) return;
+      if (
+        !ignoreVisibility &&
+        typeof document !== "undefined" &&
+        document.visibilityState === "hidden"
+      ) {
+        return;
+      }
+      if (stopUnavailableIfExpired()) return;
+
+      inFlight = true;
+      let result: ArchiveProbeResult = { ok: false, kind: "transient_error" };
+      try {
+        await revalidate(getArchiveProbe.keyFor(url));
+        if (stopped || request !== frameCompatRequest) return;
+        result = await getArchiveProbe(url);
+      } catch (error: unknown) {
+        console.warn("vibecheck archive probe failed:", error);
+      } finally {
+        inFlight = false;
+      }
+      if (stopped || request !== frameCompatRequest) return;
+
+      applyArchiveProbeResult(result, url);
+      if (result.ok && result.has_archive) {
+        stopLoop();
+        return;
+      }
+      if (result.ok || result.kind === "transient_error") {
+        stopUnavailableIfExpired();
+      } else if (result.kind === "invalid_url") {
+        stopLoop();
+      }
+    };
+    const scheduleProbeInterval = () => {
+      clearProbeInterval();
+      interval = setInterval(() => {
+        void probeArchive();
+      }, ARCHIVE_PROBE_INTERVAL_MS);
+    };
+    function onVisibilityChange() {
+      if (document.visibilityState === "hidden") {
+        clearProbeInterval();
+        return;
+      }
+      void probeArchive();
+      scheduleProbeInterval();
+    }
+
+    void getScreenshot(url)
+      .then((screenshotUrl) => {
+        if (stopped || request !== frameCompatRequest) return;
+        setFrameCompat((current) => ({ ...current, screenshotUrl }));
       })
       .catch((error: unknown) => {
         if (request !== frameCompatRequest) return;
-        if (error instanceof DOMException && error.name === "AbortError") {
-          return;
-        }
-        setFrameCompatPending(false);
-        setFrameCompatUrl(url);
-        setFrameCompat(DEFAULT_FRAME_COMPAT);
-        setFrameCompatError("Preview checks unavailable.");
+        console.warn("vibecheck screenshot fetch failed:", error);
       });
+
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    void probeArchive(true);
+    scheduleProbeInterval();
+
+    onCleanup(stopLoop);
   });
   onCleanup(() => {
     frameCompatRequest += 1;
-    frameCompatAbortController?.abort();
   });
 
   const transportError = () => polling.error();
@@ -296,7 +427,11 @@ export default function AnalyzePage() {
   return (
     <>
       <Title>vibecheck — analyzing</Title>
-      <main data-testid="analyze-main" class={mainClass()}>
+      <main
+        data-testid="analyze-main"
+        data-archive-probe-state={archiveProbeState()}
+        class={mainClass()}
+      >
         <nav class="flex items-center justify-between">
           <A
             href="/"

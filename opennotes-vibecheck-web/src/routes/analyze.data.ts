@@ -12,6 +12,10 @@ interface ScreenshotResponse {
   screenshot_url: string;
 }
 
+type VibecheckClient = ReturnType<
+  typeof import("~/lib/api-client.server").getClient
+>;
+
 export interface FrameCompatResult {
   canIframe: boolean;
   blockingHeader: string | null;
@@ -24,6 +28,17 @@ export type FrameCompatQueryResult =
   | { ok: true; frameCompat: FrameCompatResult }
   | { ok: false; message: string };
 
+export type ArchiveProbeResult =
+  | {
+      ok: true;
+      has_archive: boolean;
+      archived_preview_url: string | null;
+      can_iframe: boolean;
+      blocking_header: string | null;
+      csp_frame_ancestors: string | null;
+    }
+  | { ok: false; kind: "transient_error" | "invalid_url" };
+
 function isHttpUrl(candidate: string): boolean {
   try {
     const parsed = new URL(candidate);
@@ -33,6 +48,83 @@ function isHttpUrl(candidate: string): boolean {
   }
 }
 
+async function fetchArchiveProbe(
+  client: VibecheckClient,
+  targetUrl: string,
+): Promise<ArchiveProbeResult> {
+  try {
+    const { data, error } = await client.GET("/api/frame-compat", {
+      params: { query: { url: targetUrl } },
+    });
+    if (error || !data) {
+      return { ok: false, kind: "transient_error" };
+    }
+    const frameProbe = data as unknown as FrameCompatResponse;
+    const hasArchive = Boolean(frameProbe.has_archive);
+    return {
+      ok: true,
+      has_archive: hasArchive,
+      archived_preview_url: hasArchive
+        ? `/api/archive-preview?url=${encodeURIComponent(targetUrl)}`
+        : null,
+      can_iframe: frameProbe.can_iframe,
+      blocking_header: frameProbe.blocking_header,
+      csp_frame_ancestors: frameProbe.csp_frame_ancestors ?? null,
+    };
+  } catch (err: unknown) {
+    console.warn("vibecheck frame-compat probe failed:", err);
+    return { ok: false, kind: "transient_error" };
+  }
+}
+
+async function fetchScreenshot(
+  client: VibecheckClient,
+  targetUrl: string,
+): Promise<string | null> {
+  try {
+    const { data, error } = await client.GET("/api/screenshot", {
+      params: { query: { url: targetUrl } },
+    });
+    if (!error && data) {
+      return (data as unknown as ScreenshotResponse).screenshot_url ?? null;
+    }
+    return null;
+  } catch (err: unknown) {
+    console.warn("vibecheck screenshot fetch failed:", err);
+    return null;
+  }
+}
+
+const getArchiveProbeQuery = query(
+  async (targetUrl: string): Promise<ArchiveProbeResult> => {
+    "use server";
+    if (!targetUrl || !isHttpUrl(targetUrl)) {
+      return { ok: false, kind: "invalid_url" };
+    }
+    const { getClient } = await import("~/lib/api-client.server");
+    const client = getClient();
+    return fetchArchiveProbe(client, targetUrl);
+  },
+  "vibecheck-archive-probe",
+);
+
+export const getArchiveProbe = getArchiveProbeQuery;
+
+const getScreenshotQuery = query(
+  async (targetUrl: string): Promise<string | null> => {
+    "use server";
+    if (!targetUrl || !isHttpUrl(targetUrl)) {
+      return null;
+    }
+    const { getClient } = await import("~/lib/api-client.server");
+    const client = getClient();
+    return fetchScreenshot(client, targetUrl);
+  },
+  "vibecheck-screenshot",
+);
+
+export const getScreenshot = getScreenshotQuery;
+
 const getFrameCompatQuery = query(
   async (targetUrl: string): Promise<FrameCompatQueryResult> => {
     "use server";
@@ -41,56 +133,30 @@ const getFrameCompatQuery = query(
     }
     const { getClient } = await import("~/lib/api-client.server");
     const client = getClient();
-    const frameTask = (async (): Promise<FrameCompatResponse> => {
-      try {
-        const { data, error } = await client.GET("/api/frame-compat", {
-          params: { query: { url: targetUrl } },
-        });
-        if (error || !data) {
-          return {
+    const [archiveProbe, screenshotUrl] = await Promise.all([
+      fetchArchiveProbe(client, targetUrl),
+      fetchScreenshot(client, targetUrl),
+    ]);
+    if (!archiveProbe.ok && archiveProbe.kind === "invalid_url") {
+      return { ok: false, message: "invalid url" };
+    }
+    const frameProbe =
+      archiveProbe.ok
+        ? archiveProbe
+        : {
             can_iframe: true,
             blocking_header: null,
             csp_frame_ancestors: null,
+            archived_preview_url: null,
           };
-        }
-        return data as unknown as FrameCompatResponse;
-      } catch (err: unknown) {
-        console.warn("vibecheck frame-compat probe failed:", err);
-        return {
-          can_iframe: true,
-          blocking_header: null,
-          csp_frame_ancestors: null,
-        };
-      }
-    })();
-    const screenshotTask = (async (): Promise<string | null> => {
-      try {
-        const { data, error } = await client.GET("/api/screenshot", {
-          params: { query: { url: targetUrl } },
-        });
-        if (!error && data) {
-          return (data as unknown as ScreenshotResponse).screenshot_url ?? null;
-        }
-        return null;
-      } catch (err: unknown) {
-        console.warn("vibecheck screenshot fetch failed:", err);
-        return null;
-      }
-    })();
-    const [frameProbe, screenshotUrl] = await Promise.all([
-      frameTask,
-      screenshotTask,
-    ]);
     return {
       ok: true,
       frameCompat: {
         canIframe: frameProbe.can_iframe,
         blockingHeader: frameProbe.blocking_header,
-        cspFrameAncestors: frameProbe.csp_frame_ancestors ?? null,
+        cspFrameAncestors: frameProbe.csp_frame_ancestors,
         screenshotUrl,
-        archivedPreviewUrl: frameProbe.has_archive
-          ? `/api/archive-preview?url=${encodeURIComponent(targetUrl)}`
-          : null,
+        archivedPreviewUrl: frameProbe.archived_preview_url,
       },
     };
   },
