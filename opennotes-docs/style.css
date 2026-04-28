@@ -19,10 +19,30 @@
    highlights, inline link accents) consume `--primary` via
    `rgb(var(--primary) / <alpha>)`, which only parses an "R G B" triplet. */
 :root {
-  --primary: 0 171 120;       /* oklch(0.65 0.15 165) */
+  --primary: 0 171 120;       /* oklch(0.65 0.15 165) — #3EB489 brand teal */
   --primary-light: 88 198 155; /* oklch(0.75 0.12 165) — matches our --accent */
   --primary-dark: 0 137 96;    /* oklch(0.55 0.15 165) */
+  /* WCAG-AA-passing teal for body-text accents on white surfaces. The brand
+     teal `--primary` is ~2.6:1 on white, which fails AA for inline body links.
+     This token darkens the same hue (oklch 0.52 0.15 165) to ~4.9:1 on white
+     and is mapped onto Mintlify's `.prose a` border-bottom-color below.
+     Sidebar/badges/search-highlights keep `--primary` because they sit on
+     tinted backgrounds where the brighter teal still reads as the brand. */
+  --primary-on-surface: 0 130 82; /* oklch(0.52 0.15 165) — ~4.87:1 vs white */
 }
 .dark {
   --primary: 0 187 135;       /* oklch(0.70 0.15 165) */
+}
+
+/* Override Mintlify's default `.prose a` border-bottom (which uses
+   rgb(var(--primary)) and fails AA on white) with the darker on-surface
+   teal. Selector mirrors Mintlify's own `.prose :where(a):not(:where(...))`
+   so specificity matches; `style.css` loads after Mintlify's bundle so a
+   matching-specificity rule wins the cascade. Dark mode keeps the brand
+   `--primary` underline because it sits on near-black, not white. */
+.prose :where(a):not(:where([class~="not-prose"], [class~="not-prose"] *)) {
+  border-bottom-color: rgb(var(--primary-on-surface));
+}
+.dark .prose :where(a):not(:where([class~="not-prose"], [class~="not-prose"] *)) {
+  border-bottom-color: rgb(var(--primary));
 }
