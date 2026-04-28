@@ -251,7 +251,9 @@ export default function AnalyzePage() {
       return false;
     };
     const probeArchive = async (ignoreVisibility = false) => {
-      if (stopped || inFlight) return;
+      if (stopped) return;
+      if (stopUnavailableIfExpired()) return;
+      if (inFlight) return;
       if (
         !ignoreVisibility &&
         typeof document !== "undefined" &&
@@ -259,7 +261,6 @@ export default function AnalyzePage() {
       ) {
         return;
       }
-      if (stopUnavailableIfExpired()) return;
 
       inFlight = true;
       let result: ArchiveProbeResult = { ok: false, kind: "transient_error" };
@@ -388,8 +389,22 @@ export default function AnalyzePage() {
     !isPreviewLoading() &&
     resolvedPreviewMode() !== "unavailable" &&
     (selectedPreviewMode() ?? resolvedPreviewMode()) === mode;
+  const isArchiveFallbackPending = () => {
+    const compat = frameCompat();
+    return (
+      archiveProbeState() === "pending" &&
+      (!compat.canIframe ||
+        Boolean(compat.blockingHeader) ||
+        Boolean(compat.cspFrameAncestors)) &&
+      !compat.archivedPreviewUrl &&
+      !compat.screenshotUrl
+    );
+  };
   const isPreviewLoading = () =>
-    !jobUrl() || frameCompatPending() || frameCompatUrl() !== jobUrl();
+    !jobUrl() ||
+    frameCompatPending() ||
+    frameCompatUrl() !== jobUrl() ||
+    isArchiveFallbackPending();
   const showOriginalBlockedTip = () =>
     !frameCompat().canIframe &&
     (isOriginalBlockedTipHovered() || isOriginalBlockedTipFocused());

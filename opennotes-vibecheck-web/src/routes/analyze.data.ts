@@ -48,6 +48,20 @@ function isHttpUrl(candidate: string): boolean {
   }
 }
 
+function isStringOrNullish(value: unknown): value is string | null | undefined {
+  return value == null || typeof value === "string";
+}
+
+function isFrameCompatResponse(value: unknown): value is FrameCompatResponse {
+  if (!value || typeof value !== "object") return false;
+  const candidate = value as Partial<FrameCompatResponse>;
+  return (
+    typeof candidate.can_iframe === "boolean" &&
+    isStringOrNullish(candidate.blocking_header) &&
+    isStringOrNullish(candidate.csp_frame_ancestors)
+  );
+}
+
 async function fetchArchiveProbe(
   client: VibecheckClient,
   targetUrl: string,
@@ -59,7 +73,10 @@ async function fetchArchiveProbe(
     if (error || !data) {
       return { ok: false, kind: "transient_error" };
     }
-    const frameProbe = data as unknown as FrameCompatResponse;
+    if (!isFrameCompatResponse(data)) {
+      return { ok: false, kind: "transient_error" };
+    }
+    const frameProbe = data;
     const hasArchive = Boolean(frameProbe.has_archive);
     return {
       ok: true,

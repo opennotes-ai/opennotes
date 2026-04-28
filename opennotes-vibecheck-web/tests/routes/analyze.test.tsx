@@ -956,6 +956,47 @@ describe("AnalyzePage archiveProbeState re-probe loop (TASK-1483.15.01)", () => 
     expect(getArchiveProbeMock).toHaveBeenCalledTimes(callsAtCap);
   });
 
+  it("archiveProbeState enforces the 300s cap while a probe is still in flight", async () => {
+    const hungProbe = deferred<MockArchiveProbeResult>();
+    getArchiveProbeMock.mockReturnValueOnce(hungProbe.promise);
+
+    renderAt(`/analyze?job=job-archive-hung&url=${encodeURIComponent(url)}`);
+    await flushMicrotasks();
+    expect(getArchiveProbeMock).toHaveBeenCalledTimes(1);
+    expect(probeState()).toBe("pending");
+
+    await vi.advanceTimersByTimeAsync(300_000);
+
+    expect(probeState()).toBe("unavailable");
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("archiveProbeState keeps a blocked no-screenshot page loading while archive availability is pending", async () => {
+    getArchiveProbeMock.mockResolvedValue(
+      frameCompatResult({
+        canIframe: false,
+        blockingHeader: "content-security-policy: frame-ancestors 'none'",
+        cspFrameAncestors: "'none'",
+        archivedPreviewUrl: null,
+      }),
+    );
+    getScreenshotMock.mockResolvedValue(null);
+
+    renderAt(
+      `/analyze?job=job-archive-pending-loading&url=${encodeURIComponent(url)}`,
+    );
+    await flushMicrotasks();
+
+    expect(probeState()).toBe("pending");
+    expect(screen.queryByTestId("page-frame-unavailable")).toBeNull();
+    expect(screen.getByTestId("page-frame-loading")).not.toBeNull();
+
+    await vi.advanceTimersByTimeAsync(300_000);
+
+    expect(probeState()).toBe("unavailable");
+    expect(screen.getByTestId("page-frame-unavailable")).not.toBeNull();
+  });
+
   it("archiveProbeState becomes unavailable after terminal status plus 10s grace", async () => {
     renderAt(`/analyze?job=job-archive-terminal&url=${encodeURIComponent(url)}`);
     await flushMicrotasks();
@@ -1351,59 +1392,57 @@ describe("AnalyzePage Original tab — soft-disabled when canIframe=false (TASK-
   });
 
   it("clears pressed preview state when a resolvable preview transitions to unavailable", async () => {
-    getArchiveProbeMock
-      .mockResolvedValueOnce(
-        frameCompatResult({
-          canIframe: false,
-          blockingHeader: "content-security-policy: frame-ancestors 'none'",
-          cspFrameAncestors: "'none'",
-          archivedPreviewUrl: null,
-        }),
-      )
-      .mockResolvedValueOnce(
-        frameCompatResult({
-          canIframe: false,
-          blockingHeader: "content-security-policy: frame-ancestors 'none'",
-          cspFrameAncestors: "'none'",
-          archivedPreviewUrl: null,
-        }),
-      );
+    vi.useFakeTimers();
+    getArchiveProbeMock.mockResolvedValue(
+      frameCompatResult({
+        canIframe: false,
+        blockingHeader: "content-security-policy: frame-ancestors 'none'",
+        cspFrameAncestors: "'none'",
+        archivedPreviewUrl: null,
+      }),
+    );
     getScreenshotMock
       .mockResolvedValueOnce("https://cdn.example.com/first.png")
       .mockResolvedValueOnce(null);
 
-    renderAt(
-      "/analyze?job=job-preview-transition&url=https://news.example.com/a",
-    );
+    try {
+      renderAt(
+        "/analyze?job=job-preview-transition&url=https://news.example.com/a",
+      );
+      await flushMicrotasks();
 
-    await waitFor(() => {
       expect(
         screen
           .getByTestId("preview-mode-screenshot")
           .getAttribute("aria-pressed"),
       ).toBe("true");
-    });
 
-    setPolledJobState(
-      makeJobState({
-        status: "analyzing",
-        url: "https://news.example.com/b",
-      }),
-    );
-
-    expect(await screen.findByTestId("page-frame-unavailable")).not.toBeNull();
-    for (const testId of [
-      "preview-mode-original",
-      "preview-mode-archived",
-      "preview-mode-screenshot",
-    ]) {
-      expect(screen.getByTestId(testId).getAttribute("aria-pressed")).toBe(
-        "false",
+      setPolledJobState(
+        makeJobState({
+          status: "done",
+          url: "https://news.example.com/b",
+        }),
       );
+      await flushMicrotasks();
+      await vi.advanceTimersByTimeAsync(10_000);
+
+      expect(screen.getByTestId("page-frame-unavailable")).not.toBeNull();
+      for (const testId of [
+        "preview-mode-original",
+        "preview-mode-archived",
+        "preview-mode-screenshot",
+      ]) {
+        expect(screen.getByTestId(testId).getAttribute("aria-pressed")).toBe(
+          "false",
+        );
+      }
+    } finally {
+      vi.useRealTimers();
     }
   });
 
   it("clears all preview tab pressed states when no preview is available", async () => {
+    vi.useFakeTimers();
     getArchiveProbeMock.mockResolvedValue(
       frameCompatResult({
         canIframe: false,
@@ -1413,22 +1452,33 @@ describe("AnalyzePage Original tab — soft-disabled when canIframe=false (TASK-
       }),
     );
     getScreenshotMock.mockResolvedValue(null);
-    renderAt("/analyze?job=job-unavailable&url=https://nypost.com/article");
+    try {
+      renderAt("/analyze?job=job-unavailable&url=https://nypost.com/article");
+      await flushMicrotasks();
 
-    expect(await screen.findByTestId("page-frame-unavailable")).not.toBeNull();
-
-    for (const testId of [
-      "preview-mode-original",
-      "preview-mode-archived",
-      "preview-mode-screenshot",
-    ]) {
-      expect(screen.getByTestId(testId).getAttribute("aria-pressed")).toBe(
-        "false",
+      setPolledJobState(
+        makeJobState({ status: "done", url: "https://nypost.com/article" }),
       );
+      await flushMicrotasks();
+      await vi.advanceTimersByTimeAsync(10_000);
+
+      expect(screen.getByTestId("page-frame-unavailable")).not.toBeNull();
+      for (const testId of [
+        "preview-mode-original",
+        "preview-mode-archived",
+        "preview-mode-screenshot",
+      ]) {
+        expect(screen.getByTestId(testId).getAttribute("aria-pressed")).toBe(
+          "false",
+        );
+      }
+    } finally {
+      vi.useRealTimers();
     }
   });
 
   it("keeps all preview tabs unpressed when clicking the requested tab while preview is unavailable", async () => {
+    vi.useFakeTimers();
     getArchiveProbeMock.mockResolvedValue(
       frameCompatResult({
         canIframe: false,
@@ -1438,21 +1488,32 @@ describe("AnalyzePage Original tab — soft-disabled when canIframe=false (TASK-
       }),
     );
     getScreenshotMock.mockResolvedValue(null);
-    renderAt("/analyze?job=job-unavailable&url=https://nypost.com/article");
+    try {
+      renderAt("/analyze?job=job-unavailable&url=https://nypost.com/article");
+      await flushMicrotasks();
 
-    expect(await screen.findByTestId("page-frame-unavailable")).not.toBeNull();
-
-    fireEvent.click(screen.getByTestId("preview-mode-original"));
-
-    expect(screen.getByTestId("page-frame-unavailable")).not.toBeNull();
-    for (const testId of [
-      "preview-mode-original",
-      "preview-mode-archived",
-      "preview-mode-screenshot",
-    ]) {
-      expect(screen.getByTestId(testId).getAttribute("aria-pressed")).toBe(
-        "false",
+      setPolledJobState(
+        makeJobState({ status: "done", url: "https://nypost.com/article" }),
       );
+      await flushMicrotasks();
+      await vi.advanceTimersByTimeAsync(10_000);
+
+      expect(screen.getByTestId("page-frame-unavailable")).not.toBeNull();
+
+      fireEvent.click(screen.getByTestId("preview-mode-original"));
+
+      expect(screen.getByTestId("page-frame-unavailable")).not.toBeNull();
+      for (const testId of [
+        "preview-mode-original",
+        "preview-mode-archived",
+        "preview-mode-screenshot",
+      ]) {
+        expect(screen.getByTestId(testId).getAttribute("aria-pressed")).toBe(
+          "false",
+        );
+      }
+    } finally {
+      vi.useRealTimers();
     }
   });
 
