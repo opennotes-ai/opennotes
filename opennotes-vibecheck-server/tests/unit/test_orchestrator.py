@@ -289,6 +289,9 @@ def _stub_pre_gemini(monkeypatch: pytest.MonkeyPatch) -> None:
 
     monkeypatch.setattr(orchestrator, "_build_scrape_cache", lambda s: MagicMock())
     monkeypatch.setattr(orchestrator, "_build_firecrawl_client", lambda s: MagicMock())
+    monkeypatch.setattr(
+        orchestrator, "_build_firecrawl_tier1_client", lambda s: MagicMock()
+    )
 
     async def stub_scrape_step(*args, **kwargs):
         return MagicMock(metadata=None)
@@ -422,6 +425,9 @@ def _stub_extract_arm_only(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(orchestrator, "_build_scrape_cache", lambda s: MagicMock())
     monkeypatch.setattr(
         orchestrator, "_build_firecrawl_client", lambda s: MagicMock()
+    )
+    monkeypatch.setattr(
+        orchestrator, "_build_firecrawl_tier1_client", lambda s: MagicMock()
     )
 
     async def stub_scrape_step(*args, **kwargs):

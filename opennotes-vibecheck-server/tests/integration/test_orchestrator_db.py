@@ -50,6 +50,9 @@ def _stub_extract_arm_only(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         orchestrator, "_build_firecrawl_client", lambda s: MagicMock()
     )
+    monkeypatch.setattr(
+        orchestrator, "_build_firecrawl_tier1_client", lambda s: MagicMock()
+    )
 
     async def stub_scrape_step(*args: Any, **kwargs: Any) -> Any:
         return MagicMock(metadata=None)
