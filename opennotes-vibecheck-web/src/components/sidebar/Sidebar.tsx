@@ -16,6 +16,7 @@ import SectionGroup, { type SlugToSlots } from "./SectionGroup";
 import ExtractingIndicator from "./ExtractingIndicator";
 import { sectionDisplayName } from "./display";
 import {
+  HeadlineSummaryReport,
   SafetyModerationReport,
   SafetyRecommendationReport,
   WebRiskReport,
@@ -30,6 +31,7 @@ import {
 } from "./reports";
 
 type HarmfulContentMatch = components["schemas"]["HarmfulContentMatch"];
+type HeadlineSummary = components["schemas"]["HeadlineSummary"];
 type SafetyRecommendation = components["schemas"]["SafetyRecommendation"];
 type WebRiskFinding = components["schemas"]["WebRiskFinding"];
 type ImageModerationMatch = components["schemas"]["ImageModerationMatch"];
@@ -364,6 +366,9 @@ export default function Sidebar(props: SidebarProps) {
   const safetyRecommendation = createMemo<SafetyRecommendation | null>(() =>
     props.payload?.safety?.recommendation ?? null,
   );
+  const headline = createMemo<HeadlineSummary | null>(
+    () => props.payload?.headline ?? null,
+  );
 
   return (
     <aside
@@ -385,6 +390,7 @@ export default function Sidebar(props: SidebarProps) {
         </div>
       </Show>
       <section class="flex flex-col gap-3">
+        <HeadlineSummaryReport headline={headline()} />
         <Show when={safetyRecommendation()}>
           {(recommendation) => (
             <SafetyRecommendationReport recommendation={recommendation()} />

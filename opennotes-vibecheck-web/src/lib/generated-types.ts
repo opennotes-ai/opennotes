@@ -551,6 +551,26 @@ export interface components {
             source: "openai" | "gcp";
         };
         /**
+         * HeadlineSummary
+         * @description 1-2 sentence synthesis rendered above the safety recommendation.
+         *
+         *     `kind` discriminates the deterministic stock-phrase short-circuit (when
+         *     every input section is empty/clear/neutral) from the model-generated
+         *     synthesis path. `unavailable_inputs` mirrors the SafetyRecommendation
+         *     pattern so the UI can later annotate degraded coverage.
+         */
+        HeadlineSummary: {
+            /** Text */
+            text: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "stock" | "synthesized";
+            /** Unavailable Inputs */
+            unavailable_inputs?: string[];
+        };
+        /**
          * ImageModerationMatch
          * @description GCP Vision SafeSearch result for a single image.
          */
@@ -945,6 +965,7 @@ export interface components {
             web_risk?: components["schemas"]["WebRiskSection"];
             image_moderation?: components["schemas"]["ImageModerationSection"];
             video_moderation?: components["schemas"]["VideoModerationSection"];
+            headline?: components["schemas"]["HeadlineSummary"] | null;
         };
         /**
          * SpeakerArc
