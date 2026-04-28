@@ -37,15 +37,22 @@ type MockFrameCompat = {
   archivedPreviewUrl: string | null;
 };
 
-type MockFrameCompatQueryResult = {
-  ok: true;
-  frameCompat: MockFrameCompat;
-};
+type MockArchiveProbeResult =
+  | {
+      ok: true;
+      has_archive: boolean;
+      archived_preview_url: string | null;
+      can_iframe: boolean;
+      blocking_header: string | null;
+      csp_frame_ancestors: string | null;
+    }
+  | { ok: false; kind: "transient_error" | "invalid_url" };
 
-type GetFrameCompatMock = (
+type GetArchiveProbeMock = (
   url: string,
-  signal?: AbortSignal,
-) => Promise<MockFrameCompatQueryResult>;
+) => Promise<MockArchiveProbeResult>;
+
+type GetScreenshotMock = (url: string) => Promise<string | null>;
 
 const { pollingHandles, refetchSpy } = vi.hoisted(() => ({
   pollingHandles: [] as Array<{
@@ -72,17 +79,22 @@ vi.mock("~/lib/polling", () => {
   };
 });
 
-const { getFrameCompatMock, retrySectionActionMock } = vi.hoisted(() => ({
-  getFrameCompatMock: vi.fn<GetFrameCompatMock>(async () => ({
+const {
+  getArchiveProbeMock,
+  getScreenshotMock,
+  revalidateMock,
+  retrySectionActionMock,
+} = vi.hoisted(() => ({
+  getArchiveProbeMock: vi.fn<GetArchiveProbeMock>(async () => ({
     ok: true,
-    frameCompat: {
-      canIframe: true,
-      blockingHeader: null,
-      cspFrameAncestors: null,
-      screenshotUrl: null,
-      archivedPreviewUrl: null,
-    },
+    has_archive: false,
+    archived_preview_url: null,
+    can_iframe: true,
+    blocking_header: null,
+    csp_frame_ancestors: null,
   })),
+  getScreenshotMock: vi.fn<GetScreenshotMock>(async () => null),
+  revalidateMock: vi.fn(async () => undefined),
   retrySectionActionMock: vi.fn(),
 }));
 
@@ -92,6 +104,7 @@ vi.mock("@solidjs/router", async () => {
   );
   return {
     ...actual,
+    revalidate: revalidateMock,
     useAction: (action: unknown) => {
       void action;
       return retrySectionActionMock;
@@ -100,9 +113,13 @@ vi.mock("@solidjs/router", async () => {
 });
 
 vi.mock("~/routes/analyze.data", () => {
-  const getFrameCompatStub = Object.assign(getFrameCompatMock, {
-    keyFor: () => "vibecheck-frame-compat",
-    key: "vibecheck-frame-compat",
+  const getArchiveProbeStub = Object.assign(getArchiveProbeMock, {
+    keyFor: (url: string) => `vibecheck-archive-probe:${url}`,
+    key: "vibecheck-archive-probe",
+  });
+  const getScreenshotStub = Object.assign(getScreenshotMock, {
+    keyFor: (url: string) => `vibecheck-screenshot:${url}`,
+    key: "vibecheck-screenshot",
   });
   const analyzeActionStub = Object.assign(vi.fn(), {
     base: "/__mock_analyze_action",
@@ -116,7 +133,8 @@ vi.mock("~/routes/analyze.data", () => {
   });
   const pollStub = vi.fn();
   return {
-    getFrameCompat: getFrameCompatStub,
+    getArchiveProbe: getArchiveProbeStub,
+    getScreenshot: getScreenshotStub,
     retrySectionAction: retryStub,
     analyzeAction: analyzeActionStub,
     pollJobState: pollStub,
@@ -147,17 +165,19 @@ Object.defineProperty(window, "localStorage", {
 import AnalyzePage from "../../src/routes/analyze";
 
 function resetTestEnv() {
-  getFrameCompatMock.mockReset();
-  getFrameCompatMock.mockImplementation(async () => ({
+  getArchiveProbeMock.mockReset();
+  getArchiveProbeMock.mockImplementation(async () => ({
     ok: true,
-      frameCompat: {
-        canIframe: true,
-        blockingHeader: null,
-        cspFrameAncestors: null,
-        screenshotUrl: null,
-        archivedPreviewUrl: null,
-      },
-    }));
+    has_archive: false,
+    archived_preview_url: null,
+    can_iframe: true,
+    blocking_header: null,
+    csp_frame_ancestors: null,
+  }));
+  getScreenshotMock.mockReset();
+  getScreenshotMock.mockImplementation(async () => null);
+  revalidateMock.mockReset();
+  revalidateMock.mockImplementation(async () => undefined);
   window.localStorage.clear();
   pollingHandles.length = 0;
   refetchSpy.current.mockReset();
@@ -204,18 +224,28 @@ function renderAtWithHistory(path: string) {
 
 function frameCompatResult(
   overrides: Partial<MockFrameCompat> = {},
-): MockFrameCompatQueryResult {
+): MockArchiveProbeResult {
+  const frameCompat = {
+    canIframe: true,
+    blockingHeader: null,
+    cspFrameAncestors: null,
+    screenshotUrl: null,
+    archivedPreviewUrl: null,
+    ...overrides,
+  };
   return {
     ok: true,
-    frameCompat: {
-      canIframe: true,
-      blockingHeader: null,
-      cspFrameAncestors: null,
-      screenshotUrl: null,
-      archivedPreviewUrl: null,
-      ...overrides,
-    },
+    has_archive: Boolean(frameCompat.archivedPreviewUrl),
+    archived_preview_url: frameCompat.archivedPreviewUrl,
+    can_iframe: frameCompat.canIframe,
+    blocking_header: frameCompat.blockingHeader,
+    csp_frame_ancestors: frameCompat.cspFrameAncestors,
   };
+}
+
+async function flushMicrotasks() {
+  await Promise.resolve();
+  await Promise.resolve();
 }
 
 function deferred<T>() {
@@ -307,7 +337,7 @@ describe("AnalyzePage route", () => {
   });
 
   it("keeps the analyze layout mounted when the frame compatibility probe fails", async () => {
-    getFrameCompatMock.mockRejectedValueOnce(new Error("frame probe down"));
+    getArchiveProbeMock.mockRejectedValueOnce(new Error("frame probe down"));
 
     renderAt("/analyze?job=job-probe&url=https://news.example.com/a");
 
@@ -698,21 +728,24 @@ describe("AnalyzePage route", () => {
   });
 
   it("manual preview mode selection is session-scoped and resets for a new job", async () => {
-    getFrameCompatMock.mockResolvedValue({
-      ok: true,
-      frameCompat: {
+    getArchiveProbeMock.mockResolvedValue(
+      frameCompatResult({
         canIframe: true,
         blockingHeader: null,
         cspFrameAncestors: null,
-        screenshotUrl: "https://cdn.example.com/shot.png",
-        archivedPreviewUrl: "/api/archive-preview?url=https%3A%2F%2Fnews.example.com%2Fa",
-      },
-    } as never);
+        archivedPreviewUrl:
+          "/api/archive-preview?url=https%3A%2F%2Fnews.example.com%2Fa",
+      }),
+    );
+    getScreenshotMock.mockResolvedValue("https://cdn.example.com/shot.png");
 
     renderAt("/analyze?job=job-preview-a&url=https://news.example.com/a");
 
     await waitFor(() => {
       expect(screen.queryByTestId("analyze-layout")).not.toBeNull();
+    });
+    await waitFor(() => {
+      expect(screen.queryByTestId("page-frame-loading")).toBeNull();
     });
 
     fireEvent.click(screen.getByRole("button", { name: "Screenshot" }));
@@ -809,6 +842,321 @@ describe("AnalyzePage left column min-h floor (TASK-1483.13.03)", () => {
     // Sanity: surrounding flex/min-w invariants preserved.
     expect(cls).toMatch(/\bflex\b/);
     expect(cls).toMatch(/\bmin-w-0\b/);
+  });
+});
+
+describe("AnalyzePage archiveProbeState re-probe loop (TASK-1483.15.01)", () => {
+  const url = "https://news.example.com/a";
+  const archiveUrl = `/api/archive-preview?url=${encodeURIComponent(url)}`;
+  const originalVisibilityDescriptor = Object.getOwnPropertyDescriptor(
+    document,
+    "visibilityState",
+  );
+  let visibilityState: DocumentVisibilityState = "visible";
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    visibilityState = "visible";
+    Object.defineProperty(document, "visibilityState", {
+      configurable: true,
+      get: () => visibilityState,
+    });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    if (originalVisibilityDescriptor) {
+      Object.defineProperty(
+        document,
+        "visibilityState",
+        originalVisibilityDescriptor,
+      );
+    } else {
+      delete (document as unknown as { visibilityState?: unknown })
+        .visibilityState;
+    }
+  });
+
+  const probeState = () =>
+    screen
+      .getByTestId("analyze-main")
+      .getAttribute("data-archive-probe-state");
+
+  it("archiveProbeState fires the first probe immediately and revalidates before each 5s probe", async () => {
+    renderAt(`/analyze?job=job-archive-immediate&url=${encodeURIComponent(url)}`);
+    await flushMicrotasks();
+
+    expect(getArchiveProbeMock).toHaveBeenCalledTimes(1);
+    expect(getArchiveProbeMock).toHaveBeenNthCalledWith(1, url);
+    expect(revalidateMock).toHaveBeenNthCalledWith(
+      1,
+      `vibecheck-archive-probe:${url}`,
+    );
+    expect(
+      revalidateMock.mock.invocationCallOrder[0],
+    ).toBeLessThan(getArchiveProbeMock.mock.invocationCallOrder[0]);
+    expect(getScreenshotMock).toHaveBeenCalledTimes(1);
+    expect(probeState()).toBe("pending");
+
+    await vi.advanceTimersByTimeAsync(5_000);
+
+    expect(getArchiveProbeMock).toHaveBeenCalledTimes(2);
+    expect(revalidateMock).toHaveBeenNthCalledWith(
+      2,
+      `vibecheck-archive-probe:${url}`,
+    );
+    expect(
+      revalidateMock.mock.invocationCallOrder[1],
+    ).toBeLessThan(getArchiveProbeMock.mock.invocationCallOrder[1]);
+    expect(getScreenshotMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not probe archive availability on pending-error failure pages", async () => {
+    renderAt(
+      `/analyze?pending_error=rate_limited&url=${encodeURIComponent(url)}`,
+    );
+
+    expect(await screen.findByTestId("job-failure-card")).not.toBeNull();
+    await flushMicrotasks();
+    await vi.advanceTimersByTimeAsync(300_000);
+
+    expect(getArchiveProbeMock).not.toHaveBeenCalled();
+    expect(getScreenshotMock).not.toHaveBeenCalled();
+  });
+
+  it("archiveProbeState stays pending until a later probe finds an archive, then becomes available", async () => {
+    getArchiveProbeMock
+      .mockResolvedValueOnce(
+        frameCompatResult({
+          canIframe: false,
+          blockingHeader: "content-security-policy: frame-ancestors 'none'",
+          cspFrameAncestors: "'none'",
+          archivedPreviewUrl: null,
+        }),
+      )
+      .mockResolvedValueOnce(
+        frameCompatResult({
+          canIframe: false,
+          blockingHeader: "content-security-policy: frame-ancestors 'none'",
+          cspFrameAncestors: "'none'",
+          archivedPreviewUrl: archiveUrl,
+        }),
+      );
+    getScreenshotMock.mockResolvedValue("https://cdn.example.com/shot.png");
+
+    renderAt(`/analyze?job=job-archive-later&url=${encodeURIComponent(url)}`);
+    await flushMicrotasks();
+    expect(probeState()).toBe("pending");
+
+    await vi.advanceTimersByTimeAsync(5_000);
+
+    expect(probeState()).toBe("available");
+    expect(screen.getByTestId("page-frame-archived-iframe")).not.toBeNull();
+  });
+
+  it("archiveProbeState becomes unavailable at the 300s wall-clock cap and stops probing", async () => {
+    renderAt(`/analyze?job=job-archive-cap&url=${encodeURIComponent(url)}`);
+    await flushMicrotasks();
+    expect(probeState()).toBe("pending");
+
+    await vi.advanceTimersByTimeAsync(300_000);
+
+    expect(probeState()).toBe("unavailable");
+    const callsAtCap = getArchiveProbeMock.mock.calls.length;
+
+    await vi.advanceTimersByTimeAsync(10_000);
+
+    expect(getArchiveProbeMock).toHaveBeenCalledTimes(callsAtCap);
+  });
+
+  it("archiveProbeState enforces the 300s cap while a probe is still in flight", async () => {
+    const hungProbe = deferred<MockArchiveProbeResult>();
+    getArchiveProbeMock.mockReturnValueOnce(hungProbe.promise);
+
+    renderAt(`/analyze?job=job-archive-hung&url=${encodeURIComponent(url)}`);
+    await flushMicrotasks();
+    expect(getArchiveProbeMock).toHaveBeenCalledTimes(1);
+    expect(probeState()).toBe("pending");
+
+    await vi.advanceTimersByTimeAsync(300_000);
+
+    expect(probeState()).toBe("unavailable");
+    expect(screen.getByTestId("page-frame-unavailable")).not.toBeNull();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("archiveProbeState keeps a blocked no-screenshot page loading while archive availability is pending", async () => {
+    getArchiveProbeMock.mockResolvedValue(
+      frameCompatResult({
+        canIframe: false,
+        blockingHeader: "content-security-policy: frame-ancestors 'none'",
+        cspFrameAncestors: "'none'",
+        archivedPreviewUrl: null,
+      }),
+    );
+    getScreenshotMock.mockResolvedValue(null);
+
+    renderAt(
+      `/analyze?job=job-archive-pending-loading&url=${encodeURIComponent(url)}`,
+    );
+    await flushMicrotasks();
+
+    expect(probeState()).toBe("pending");
+    expect(screen.queryByTestId("page-frame-unavailable")).toBeNull();
+    expect(screen.getByTestId("page-frame-loading")).not.toBeNull();
+
+    await vi.advanceTimersByTimeAsync(300_000);
+
+    expect(probeState()).toBe("unavailable");
+    expect(screen.getByTestId("page-frame-unavailable")).not.toBeNull();
+  });
+
+  it("archiveProbeState becomes unavailable after terminal status plus 10s grace", async () => {
+    renderAt(`/analyze?job=job-archive-terminal&url=${encodeURIComponent(url)}`);
+    await flushMicrotasks();
+
+    setPolledJobState(makeJobState({ status: "done", url }));
+    await flushMicrotasks();
+
+    await vi.advanceTimersByTimeAsync(9_999);
+    expect(probeState()).toBe("pending");
+
+    await vi.advanceTimersByTimeAsync(1);
+    expect(probeState()).toBe("unavailable");
+  });
+
+  it("archiveProbeState performs a final probe at terminal grace before marking unavailable", async () => {
+    getArchiveProbeMock
+      .mockResolvedValueOnce(
+        frameCompatResult({
+          canIframe: false,
+          blockingHeader: "content-security-policy: frame-ancestors 'none'",
+          cspFrameAncestors: "'none'",
+          archivedPreviewUrl: null,
+        }),
+      )
+      .mockResolvedValueOnce(
+        frameCompatResult({
+          canIframe: false,
+          blockingHeader: "content-security-policy: frame-ancestors 'none'",
+          cspFrameAncestors: "'none'",
+          archivedPreviewUrl: archiveUrl,
+        }),
+      );
+
+    renderAt(`/analyze?job=job-archive-terminal-final&url=${encodeURIComponent(url)}`);
+    await flushMicrotasks();
+
+    setPolledJobState(makeJobState({ status: "done", url }));
+    await flushMicrotasks();
+
+    await vi.advanceTimersByTimeAsync(10_000);
+
+    expect(getArchiveProbeMock).toHaveBeenCalledTimes(2);
+    expect(probeState()).toBe("available");
+    expect(screen.getByTestId("page-frame-archived-iframe")).not.toBeNull();
+  });
+
+  it("archiveProbeState retries transient errors without marking unavailable", async () => {
+    getArchiveProbeMock
+      .mockResolvedValueOnce({ ok: false, kind: "transient_error" })
+      .mockResolvedValueOnce(
+        frameCompatResult({
+          canIframe: false,
+          blockingHeader: "content-security-policy: frame-ancestors 'none'",
+          cspFrameAncestors: "'none'",
+          archivedPreviewUrl: archiveUrl,
+        }),
+      );
+
+    renderAt(`/analyze?job=job-archive-transient&url=${encodeURIComponent(url)}`);
+    await flushMicrotasks();
+
+    expect(probeState()).toBe("pending");
+
+    await vi.advanceTimersByTimeAsync(5_000);
+
+    expect(getArchiveProbeMock).toHaveBeenCalledTimes(2);
+    expect(probeState()).toBe("available");
+  });
+
+  it("archiveProbeState drops stale prior-generation probe responses silently", async () => {
+    const oldProbe = deferred<MockArchiveProbeResult>();
+    getArchiveProbeMock
+      .mockReturnValueOnce(oldProbe.promise)
+      .mockResolvedValueOnce(
+        frameCompatResult({
+          canIframe: false,
+          blockingHeader: "content-security-policy: frame-ancestors 'none'",
+          cspFrameAncestors: "'none'",
+          archivedPreviewUrl:
+            "/api/archive-preview?url=https%3A%2F%2Fnews.example.com%2Fb",
+        }),
+      );
+
+    renderAt(`/analyze?job=job-archive-stale&url=${encodeURIComponent(url)}`);
+    await flushMicrotasks();
+
+    setPolledJobState(makeJobState({ url: "https://news.example.com/b" }));
+    await flushMicrotasks();
+
+    oldProbe.resolve(
+      frameCompatResult({
+        canIframe: false,
+        blockingHeader: "content-security-policy: frame-ancestors 'none'",
+        cspFrameAncestors: "'none'",
+        archivedPreviewUrl:
+          "/api/archive-preview?url=https%3A%2F%2Fnews.example.com%2Fold",
+      }),
+    );
+    await flushMicrotasks();
+
+    expect(probeState()).toBe("available");
+    expect(
+      screen
+        .getByTestId("page-frame-archived-iframe")
+        .getAttribute("src"),
+    ).toContain("news.example.com%2Fb");
+  });
+
+  it("archiveProbeState pauses interval ticks while hidden and probes immediately when visible again", async () => {
+    renderAt(`/analyze?job=job-archive-visibility&url=${encodeURIComponent(url)}`);
+    await flushMicrotasks();
+    expect(getArchiveProbeMock).toHaveBeenCalledTimes(1);
+
+    visibilityState = "hidden";
+    document.dispatchEvent(new Event("visibilitychange"));
+    await vi.advanceTimersByTimeAsync(20_000);
+    expect(getArchiveProbeMock).toHaveBeenCalledTimes(1);
+
+    visibilityState = "visible";
+    document.dispatchEvent(new Event("visibilitychange"));
+    await flushMicrotasks();
+    expect(getArchiveProbeMock).toHaveBeenCalledTimes(2);
+
+    await vi.advanceTimersByTimeAsync(4_999);
+    expect(getArchiveProbeMock).toHaveBeenCalledTimes(2);
+
+    await vi.advanceTimersByTimeAsync(1);
+    expect(getArchiveProbeMock).toHaveBeenCalledTimes(3);
+  });
+
+  it("archiveProbeState does not recreate an interval when hidden-tab resume hits the 300s cap", async () => {
+    renderAt(`/analyze?job=job-archive-hidden-cap&url=${encodeURIComponent(url)}`);
+    await flushMicrotasks();
+    expect(getArchiveProbeMock).toHaveBeenCalledTimes(1);
+
+    visibilityState = "hidden";
+    document.dispatchEvent(new Event("visibilitychange"));
+    await vi.advanceTimersByTimeAsync(300_000);
+    expect(getArchiveProbeMock).toHaveBeenCalledTimes(1);
+
+    visibilityState = "visible";
+    document.dispatchEvent(new Event("visibilitychange"));
+    await flushMicrotasks();
+
+    expect(probeState()).toBe("unavailable");
+    expect(vi.getTimerCount()).toBe(0);
   });
 });
 
@@ -916,19 +1264,136 @@ describe("AnalyzePage headline summary mount (TASK-1483.13.10)", () => {
   });
 });
 
-describe("AnalyzePage Original tab — soft-disabled when canIframe=false (TASK-1483.13.02)", () => {
-  function mockBlockedFrame() {
-    getFrameCompatMock.mockResolvedValue({
-      ok: true,
-      frameCompat: {
+describe("AnalyzePage Archived tab availability (TASK-1483.15.02)", () => {
+  const url = "https://news.example.com/a";
+
+  function getPreviewModeButton(mode: "original" | "archived" | "screenshot") {
+    return screen.getByTestId(`preview-mode-${mode}`) as HTMLButtonElement;
+  }
+
+  function mockBlockedNoFallbacks() {
+    getArchiveProbeMock.mockResolvedValue(
+      frameCompatResult({
         canIframe: false,
         blockingHeader: "content-security-policy: frame-ancestors 'none'",
         cspFrameAncestors: "'none'",
-        screenshotUrl: "https://cdn.example.com/shot.png",
+        archivedPreviewUrl: null,
+      }),
+    );
+    getScreenshotMock.mockResolvedValue(null);
+  }
+
+  it("keeps Archived enabled without a title while archiveProbeState is pending", async () => {
+    vi.useFakeTimers();
+    mockBlockedNoFallbacks();
+
+    try {
+      renderAt(
+        `/analyze?job=job-archive-pending-tab&url=${encodeURIComponent(url)}`,
+      );
+      await flushMicrotasks();
+
+      const archived = getPreviewModeButton("archived");
+      expect(screen.getByTestId("page-frame-loading")).not.toBeNull();
+      expect(
+        screen
+          .getByTestId("analyze-main")
+          .getAttribute("data-archive-probe-state"),
+      ).toBe("pending");
+      expect(archived.disabled).toBe(false);
+      expect(archived.hasAttribute("disabled")).toBe(false);
+      expect(archived.hasAttribute("title")).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps Archived enabled without a title while archiveProbeState is available", async () => {
+    const archiveUrl = `/api/archive-preview?url=${encodeURIComponent(url)}`;
+    getArchiveProbeMock.mockResolvedValue(
+      frameCompatResult({
+        canIframe: false,
+        blockingHeader: "content-security-policy: frame-ancestors 'none'",
+        cspFrameAncestors: "'none'",
+        archivedPreviewUrl: archiveUrl,
+      }),
+    );
+    getScreenshotMock.mockResolvedValue(null);
+
+    renderAt(
+      `/analyze?job=job-archive-available-tab&url=${encodeURIComponent(url)}`,
+    );
+    await flushMicrotasks();
+
+    const archived = getPreviewModeButton("archived");
+    expect(
+      screen
+        .getByTestId("analyze-main")
+        .getAttribute("data-archive-probe-state"),
+    ).toBe("available");
+    expect(archived.disabled).toBe(false);
+    expect(archived.hasAttribute("disabled")).toBe(false);
+    expect(archived.hasAttribute("title")).toBe(false);
+
+    fireEvent.click(archived);
+    expect(archived.getAttribute("aria-pressed")).toBe("true");
+  });
+
+  it("disables Archived with a title when archiveProbeState is unavailable without affecting Original or Screenshot", async () => {
+    vi.useFakeTimers();
+    mockBlockedNoFallbacks();
+
+    try {
+      renderAt(
+        `/analyze?job=job-archive-unavailable-tab&url=${encodeURIComponent(url)}`,
+      );
+      await flushMicrotasks();
+
+      setPolledJobState(makeJobState({ status: "done", url }));
+      await flushMicrotasks();
+      await vi.advanceTimersByTimeAsync(10_000);
+
+      const original = getPreviewModeButton("original");
+      const archived = getPreviewModeButton("archived");
+      const screenshot = getPreviewModeButton("screenshot");
+
+      expect(
+        screen
+          .getByTestId("analyze-main")
+          .getAttribute("data-archive-probe-state"),
+      ).toBe("unavailable");
+      expect(archived.disabled).toBe(true);
+      expect(archived.getAttribute("title")).toBe(
+        "No archive available for this page",
+      );
+      expect(archived.getAttribute("aria-pressed")).toBe("false");
+
+      expect(original.disabled).toBe(false);
+      expect(original.hasAttribute("title")).toBe(false);
+      expect(screenshot.disabled).toBe(false);
+      expect(screenshot.hasAttribute("title")).toBe(false);
+
+      fireEvent.click(archived);
+      expect(archived.getAttribute("aria-pressed")).toBe("false");
+      expect(screen.getByTestId("page-frame-unavailable")).not.toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe("AnalyzePage Original tab — soft-disabled when canIframe=false (TASK-1483.13.02)", () => {
+  function mockBlockedFrame() {
+    getArchiveProbeMock.mockResolvedValue(
+      frameCompatResult({
+        canIframe: false,
+        blockingHeader: "content-security-policy: frame-ancestors 'none'",
+        cspFrameAncestors: "'none'",
         archivedPreviewUrl:
           "/api/archive-preview?url=https%3A%2F%2Fnypost.com%2Farticle",
-      },
-    } as never);
+      }),
+    );
+    getScreenshotMock.mockResolvedValue("https://cdn.example.com/shot.png");
   }
 
   it("renders an aria-describedby tooltip on Original when the page blocks framing", async () => {
@@ -1035,8 +1500,9 @@ describe("AnalyzePage Original tab — soft-disabled when canIframe=false (TASK-
   });
 
   it("does not show Original pressed before frame compatibility resolves", async () => {
-    const pendingCompat = deferred<ReturnType<typeof frameCompatResult>>();
-    getFrameCompatMock.mockReturnValueOnce(pendingCompat.promise);
+    const pendingCompat = deferred<MockArchiveProbeResult>();
+    getArchiveProbeMock.mockReturnValueOnce(pendingCompat.promise);
+    getScreenshotMock.mockResolvedValue("https://cdn.example.com/shot.png");
 
     renderAt("/analyze?job=job-pending-compat&url=https://nypost.com/article");
 
@@ -1090,109 +1556,128 @@ describe("AnalyzePage Original tab — soft-disabled when canIframe=false (TASK-
   });
 
   it("clears pressed preview state when a resolvable preview transitions to unavailable", async () => {
-    getFrameCompatMock
-      .mockResolvedValueOnce(
-        frameCompatResult({
-          canIframe: false,
-          blockingHeader: "content-security-policy: frame-ancestors 'none'",
-          cspFrameAncestors: "'none'",
-          screenshotUrl: "https://cdn.example.com/first.png",
-          archivedPreviewUrl: null,
-        }),
-      )
-      .mockResolvedValueOnce(
-        frameCompatResult({
-          canIframe: false,
-          blockingHeader: "content-security-policy: frame-ancestors 'none'",
-          cspFrameAncestors: "'none'",
-          screenshotUrl: null,
-          archivedPreviewUrl: null,
-        }),
-      );
-
-    renderAt(
-      "/analyze?job=job-preview-transition&url=https://news.example.com/a",
+    vi.useFakeTimers();
+    getArchiveProbeMock.mockResolvedValue(
+      frameCompatResult({
+        canIframe: false,
+        blockingHeader: "content-security-policy: frame-ancestors 'none'",
+        cspFrameAncestors: "'none'",
+        archivedPreviewUrl: null,
+      }),
     );
+    getScreenshotMock
+      .mockResolvedValueOnce("https://cdn.example.com/first.png")
+      .mockResolvedValueOnce(null);
 
-    await waitFor(() => {
+    try {
+      renderAt(
+        "/analyze?job=job-preview-transition&url=https://news.example.com/a",
+      );
+      await flushMicrotasks();
+
       expect(
         screen
           .getByTestId("preview-mode-screenshot")
           .getAttribute("aria-pressed"),
       ).toBe("true");
-    });
 
-    setPolledJobState(
-      makeJobState({
-        status: "analyzing",
-        url: "https://news.example.com/b",
-      }),
-    );
-
-    expect(await screen.findByTestId("page-frame-unavailable")).not.toBeNull();
-    for (const testId of [
-      "preview-mode-original",
-      "preview-mode-archived",
-      "preview-mode-screenshot",
-    ]) {
-      expect(screen.getByTestId(testId).getAttribute("aria-pressed")).toBe(
-        "false",
+      setPolledJobState(
+        makeJobState({
+          status: "done",
+          url: "https://news.example.com/b",
+        }),
       );
+      await flushMicrotasks();
+      await vi.advanceTimersByTimeAsync(10_000);
+
+      expect(screen.getByTestId("page-frame-unavailable")).not.toBeNull();
+      for (const testId of [
+        "preview-mode-original",
+        "preview-mode-archived",
+        "preview-mode-screenshot",
+      ]) {
+        expect(screen.getByTestId(testId).getAttribute("aria-pressed")).toBe(
+          "false",
+        );
+      }
+    } finally {
+      vi.useRealTimers();
     }
   });
 
   it("clears all preview tab pressed states when no preview is available", async () => {
-    getFrameCompatMock.mockResolvedValue({
-      ok: true,
-      frameCompat: {
+    vi.useFakeTimers();
+    getArchiveProbeMock.mockResolvedValue(
+      frameCompatResult({
         canIframe: false,
         blockingHeader: "content-security-policy: frame-ancestors 'none'",
         cspFrameAncestors: "'none'",
-        screenshotUrl: null,
         archivedPreviewUrl: null,
-      },
-    } as never);
-    renderAt("/analyze?job=job-unavailable&url=https://nypost.com/article");
+      }),
+    );
+    getScreenshotMock.mockResolvedValue(null);
+    try {
+      renderAt("/analyze?job=job-unavailable&url=https://nypost.com/article");
+      await flushMicrotasks();
 
-    expect(await screen.findByTestId("page-frame-unavailable")).not.toBeNull();
-
-    for (const testId of [
-      "preview-mode-original",
-      "preview-mode-archived",
-      "preview-mode-screenshot",
-    ]) {
-      expect(screen.getByTestId(testId).getAttribute("aria-pressed")).toBe(
-        "false",
+      setPolledJobState(
+        makeJobState({ status: "done", url: "https://nypost.com/article" }),
       );
+      await flushMicrotasks();
+      await vi.advanceTimersByTimeAsync(10_000);
+
+      expect(screen.getByTestId("page-frame-unavailable")).not.toBeNull();
+      for (const testId of [
+        "preview-mode-original",
+        "preview-mode-archived",
+        "preview-mode-screenshot",
+      ]) {
+        expect(screen.getByTestId(testId).getAttribute("aria-pressed")).toBe(
+          "false",
+        );
+      }
+    } finally {
+      vi.useRealTimers();
     }
   });
 
   it("keeps all preview tabs unpressed when clicking the requested tab while preview is unavailable", async () => {
-    getFrameCompatMock.mockResolvedValue({
-      ok: true,
-      frameCompat: {
+    vi.useFakeTimers();
+    getArchiveProbeMock.mockResolvedValue(
+      frameCompatResult({
         canIframe: false,
         blockingHeader: "content-security-policy: frame-ancestors 'none'",
         cspFrameAncestors: "'none'",
-        screenshotUrl: null,
         archivedPreviewUrl: null,
-      },
-    } as never);
-    renderAt("/analyze?job=job-unavailable&url=https://nypost.com/article");
+      }),
+    );
+    getScreenshotMock.mockResolvedValue(null);
+    try {
+      renderAt("/analyze?job=job-unavailable&url=https://nypost.com/article");
+      await flushMicrotasks();
 
-    expect(await screen.findByTestId("page-frame-unavailable")).not.toBeNull();
-
-    fireEvent.click(screen.getByTestId("preview-mode-original"));
-
-    expect(screen.getByTestId("page-frame-unavailable")).not.toBeNull();
-    for (const testId of [
-      "preview-mode-original",
-      "preview-mode-archived",
-      "preview-mode-screenshot",
-    ]) {
-      expect(screen.getByTestId(testId).getAttribute("aria-pressed")).toBe(
-        "false",
+      setPolledJobState(
+        makeJobState({ status: "done", url: "https://nypost.com/article" }),
       );
+      await flushMicrotasks();
+      await vi.advanceTimersByTimeAsync(10_000);
+
+      expect(screen.getByTestId("page-frame-unavailable")).not.toBeNull();
+
+      fireEvent.click(screen.getByTestId("preview-mode-original"));
+
+      expect(screen.getByTestId("page-frame-unavailable")).not.toBeNull();
+      for (const testId of [
+        "preview-mode-original",
+        "preview-mode-archived",
+        "preview-mode-screenshot",
+      ]) {
+        expect(screen.getByTestId(testId).getAttribute("aria-pressed")).toBe(
+          "false",
+        );
+      }
+    } finally {
+      vi.useRealTimers();
     }
   });
 

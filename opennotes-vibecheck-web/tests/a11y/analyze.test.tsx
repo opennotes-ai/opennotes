@@ -44,20 +44,24 @@ vi.mock("~/lib/polling", () => ({
 }));
 
 vi.mock("~/routes/analyze.data", () => {
-  const getFrameCompatStub = Object.assign(
+  const getArchiveProbeStub = Object.assign(
     vi.fn(async () => ({
       ok: true,
-      frameCompat: {
-        canIframe: true,
-        blockingHeader: null,
-        screenshotUrl: null,
-      },
+      has_archive: false,
+      archived_preview_url: null,
+      can_iframe: true,
+      blocking_header: null,
+      csp_frame_ancestors: null,
     })),
     {
-      keyFor: () => "vibecheck-frame-compat",
-      key: "vibecheck-frame-compat",
+      keyFor: (url: string) => `vibecheck-archive-probe:${url}`,
+      key: "vibecheck-archive-probe",
     },
   );
+  const getScreenshotStub = Object.assign(vi.fn(async () => null), {
+    keyFor: (url: string) => `vibecheck-screenshot:${url}`,
+    key: "vibecheck-screenshot",
+  });
   const analyzeActionStub = Object.assign(vi.fn(), {
     base: "/__mock_analyze_action",
     url: "/__mock_analyze_action",
@@ -70,7 +74,8 @@ vi.mock("~/routes/analyze.data", () => {
   });
   const pollStub = vi.fn();
   return {
-    getFrameCompat: getFrameCompatStub,
+    getArchiveProbe: getArchiveProbeStub,
+    getScreenshot: getScreenshotStub,
     retrySectionAction: retryStub,
     analyzeAction: analyzeActionStub,
     pollJobState: pollStub,

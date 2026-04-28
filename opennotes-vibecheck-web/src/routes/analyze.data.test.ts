@@ -415,3 +415,123 @@ describe("getFrameCompat", () => {
     expect(clientGetMock).not.toHaveBeenCalled();
   });
 });
+
+describe("getArchiveProbe and getScreenshot split queries", () => {
+  beforeEach(() => {
+    analyzeUrlMock.mockReset();
+    retrySectionMock.mockReset();
+    clientGetMock.mockReset();
+    vi.resetModules();
+  });
+
+  it("getArchiveProbe calls only /api/frame-compat and returns the tri-state archive payload", async () => {
+    clientGetMock.mockImplementation(async (path: string) => {
+      if (path === "/api/frame-compat") {
+        return {
+          data: {
+            can_iframe: false,
+            blocking_header: "x-frame-options: DENY",
+            csp_frame_ancestors: null,
+            has_archive: true,
+          },
+          error: null,
+        };
+      }
+      throw new Error(`unexpected path ${path}`);
+    });
+
+    const { getArchiveProbe } = await import("./analyze.data");
+    const result = await getArchiveProbe("https://news.example.com/a?x=1");
+
+    expect(result).toEqual({
+      ok: true,
+      has_archive: true,
+      archived_preview_url:
+        "/api/archive-preview?url=https%3A%2F%2Fnews.example.com%2Fa%3Fx%3D1",
+      can_iframe: false,
+      blocking_header: "x-frame-options: DENY",
+      csp_frame_ancestors: null,
+    });
+    expect(clientGetMock).toHaveBeenCalledTimes(1);
+    expect(clientGetMock).toHaveBeenCalledWith("/api/frame-compat", {
+      params: { query: { url: "https://news.example.com/a?x=1" } },
+    });
+  });
+
+  it("getArchiveProbe distinguishes invalid URLs from transient frame-compat failures", async () => {
+    const { getArchiveProbe } = await import("./analyze.data");
+
+    expect(await getArchiveProbe("javascript:alert(1)")).toEqual({
+      ok: false,
+      kind: "invalid_url",
+    });
+    expect(clientGetMock).not.toHaveBeenCalled();
+
+    clientGetMock.mockResolvedValueOnce({ data: null, error: "boom" });
+    expect(await getArchiveProbe("https://news.example.com/a")).toEqual({
+      ok: false,
+      kind: "transient_error",
+    });
+  });
+
+  it("getArchiveProbe treats malformed frame-compat payloads as transient errors", async () => {
+    clientGetMock.mockResolvedValueOnce({
+      data: {
+        can_iframe: "false",
+        blocking_header: ["x-frame-options: DENY"],
+        csp_frame_ancestors: null,
+        has_archive: true,
+      },
+      error: null,
+    });
+
+    const { getArchiveProbe } = await import("./analyze.data");
+
+    expect(await getArchiveProbe("https://news.example.com/a")).toEqual({
+      ok: false,
+      kind: "transient_error",
+    });
+  });
+
+  it("getArchiveProbe treats malformed has_archive values as transient errors", async () => {
+    clientGetMock.mockResolvedValueOnce({
+      data: {
+        can_iframe: false,
+        blocking_header: "x-frame-options: DENY",
+        csp_frame_ancestors: null,
+        has_archive: "false",
+      },
+      error: null,
+    });
+
+    const { getArchiveProbe } = await import("./analyze.data");
+
+    expect(await getArchiveProbe("https://news.example.com/a")).toEqual({
+      ok: false,
+      kind: "transient_error",
+    });
+  });
+
+  it("getScreenshot calls only /api/screenshot and returns null for invalid or failed requests", async () => {
+    clientGetMock.mockResolvedValueOnce({
+      data: { screenshot_url: "https://cdn.example.com/shot.png" },
+      error: null,
+    });
+
+    const { getScreenshot } = await import("./analyze.data");
+
+    expect(await getScreenshot("https://news.example.com/a")).toBe(
+      "https://cdn.example.com/shot.png",
+    );
+    expect(clientGetMock).toHaveBeenCalledWith("/api/screenshot", {
+      params: { query: { url: "https://news.example.com/a" } },
+    });
+
+    clientGetMock.mockClear();
+    expect(await getScreenshot("not-a-url")).toBeNull();
+    expect(clientGetMock).not.toHaveBeenCalled();
+
+    clientGetMock.mockResolvedValueOnce({ data: null, error: "down" });
+    expect(await getScreenshot("https://news.example.com/b")).toBeNull();
+  });
+});
