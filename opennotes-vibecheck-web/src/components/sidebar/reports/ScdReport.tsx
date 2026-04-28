@@ -1,9 +1,11 @@
 import { For, Show, type JSX } from "solid-js";
 import type { components } from "~/lib/generated-types";
 import ExpandableText from "../ExpandableText";
+import UtteranceRef from "../UtteranceRef";
 
 type SCDReport = components["schemas"]["SCDReport"];
 type SpeakerArc = components["schemas"]["SpeakerArc"];
+type UtteranceAnchor = components["schemas"]["UtteranceAnchor"];
 
 const INSUFFICIENT_COPY =
   "Not enough back-and-forth to read the room here.";
@@ -17,6 +19,9 @@ function formatRange(range: number[] | null | undefined): string | null {
 
 export interface ScdReportProps {
   scd: SCDReport;
+  utterances?: UtteranceAnchor[];
+  onUtteranceClick?: (id: string) => void;
+  canJumpToUtterance?: boolean;
 }
 
 export default function ScdReport(props: ScdReportProps): JSX.Element {
@@ -27,6 +32,9 @@ export default function ScdReport(props: ScdReportProps): JSX.Element {
   };
   const toneLabels = (): string[] => props.scd.tone_labels ?? [];
   const speakerArcs = (): SpeakerArc[] => props.scd.speaker_arcs ?? [];
+  const utteranceIdForPosition = (position: number): string | null =>
+    props.utterances?.find((anchor) => anchor.position === position)
+      ?.utterance_id ?? null;
 
   return (
     <div data-testid="report-tone_dynamics__scd" class="space-y-3">
@@ -70,6 +78,11 @@ export default function ScdReport(props: ScdReportProps): JSX.Element {
             <For each={speakerArcs()}>
               {(arc) => {
                 const rangeLabel = formatRange(arc.utterance_id_range);
+                const startPosition = arc.utterance_id_range?.[0];
+                const startUtteranceId =
+                  typeof startPosition === "number"
+                    ? utteranceIdForPosition(startPosition)
+                    : null;
                 return (
                   <li
                     data-testid="scd-speaker-arc"
@@ -81,13 +94,19 @@ export default function ScdReport(props: ScdReportProps): JSX.Element {
                     <span class="text-muted-foreground"> &mdash; {arc.note}</span>
                     <Show when={rangeLabel}>
                       {(label) => (
-                        <span
-                          data-testid="scd-arc-range"
-                          aria-label={label()}
-                          class="ml-1 inline-flex items-center rounded-full bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground"
-                        >
-                          {label()}
-                        </span>
+                        <UtteranceRef
+                          utteranceId={startUtteranceId ?? ""}
+                          label={label()}
+                          onClick={props.onUtteranceClick ?? (() => undefined)}
+                          disabled={
+                            !startUtteranceId ||
+                            !props.canJumpToUtterance ||
+                            !props.onUtteranceClick
+                          }
+                          testId="scd-arc-range"
+                          ariaLabel={label()}
+                          class="ml-1"
+                        />
                       )}
                     </Show>
                   </li>

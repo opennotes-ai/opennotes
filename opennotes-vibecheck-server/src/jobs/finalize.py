@@ -41,6 +41,7 @@ from src.analyses.schemas import (
     SectionState,
     SidebarPayload,
     ToneDynamicsSection,
+    UtteranceAnchor,
     VideoModerationSection,
     WebRiskSection,
 )
@@ -124,6 +125,13 @@ WHERE job_id = $1
   AND status IN ('pending', 'extracting', 'analyzing')
 """
 
+_LOAD_UTTERANCE_ANCHORS_SQL = """
+SELECT position + 1 AS position, utterance_id
+FROM vibecheck_job_utterances
+WHERE job_id = $1 AND utterance_id IS NOT NULL
+ORDER BY position
+"""
+
 _NON_TERMINAL_STATUSES = frozenset({"pending", "extracting", "analyzing"})
 _TERMINAL_SLOT_STATES = frozenset({SectionState.DONE, SectionState.FAILED})
 _FINALIZED_STATUSES = frozenset({JobStatus.DONE.value, JobStatus.PARTIAL.value})
@@ -152,6 +160,7 @@ def _assemble_payload(
     sections: dict[SectionSlug, SectionSlot],
     safety_recommendation: Any | None = None,
     headline_summary: Any | None = None,
+    utterances: list[UtteranceAnchor] | None = None,
 ) -> SidebarPayload:
     """Compose SidebarPayload from slot fragments.
 
@@ -264,6 +273,7 @@ def _assemble_payload(
         facts_claims=facts,
         opinions_sentiments=opinions,
         headline=headline,
+        utterances=utterances or [],
     )
 
 
@@ -336,11 +346,17 @@ async def maybe_finalize_job(  # noqa: PLR0911
             else None
         )
 
+        utterance_anchors = [
+            UtteranceAnchor(position=row["position"], utterance_id=row["utterance_id"])
+            for row in await conn.fetch(_LOAD_UTTERANCE_ANCHORS_SQL, job_id)
+        ]
+
         payload = _assemble_payload(
             row["url"],
             sections,
             row["safety_recommendation"],
             row["headline_summary"],
+            utterance_anchors,
         )
         ctx = DerivationContext(
             page_title=row["page_title_meta"],

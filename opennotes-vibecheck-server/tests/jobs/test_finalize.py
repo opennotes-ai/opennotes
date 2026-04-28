@@ -279,3 +279,21 @@ class TestAssemblePayloadWiresNewSafetySections:
         assert sidebar.headline is not None
         assert sidebar.headline.kind == "stock"
         assert sidebar.headline.unavailable_inputs == ["scd"]
+
+    def test_utterance_anchors_flow_into_sidebar_payload(self):
+        from src.analyses.schemas import UtteranceAnchor
+        from src.jobs.finalize import _assemble_payload
+
+        sidebar = _assemble_payload(
+            "https://test",
+            self._sections_with_new_safety(),
+            utterances=[
+                UtteranceAnchor(position=1, utterance_id="comment-0-aaa"),
+                UtteranceAnchor(position=2, utterance_id="comment-1-bbb"),
+            ],
+        )
+
+        assert [anchor.utterance_id for anchor in sidebar.utterances] == [
+            "comment-0-aaa",
+            "comment-1-bbb",
+        ]

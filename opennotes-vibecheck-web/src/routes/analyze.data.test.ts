@@ -361,7 +361,10 @@ describe("getFrameCompat", () => {
     });
 
     const { getFrameCompat } = await import("./analyze.data");
-    const result = await getFrameCompat("https://news.example.com/a?x=1");
+    const result = await getFrameCompat(
+      "https://news.example.com/a?x=1",
+      "11111111-1111-1111-1111-111111111111",
+    );
 
     expect(result).toEqual({
       ok: true,
@@ -371,9 +374,39 @@ describe("getFrameCompat", () => {
         cspFrameAncestors: "frame-ancestors 'none'",
         screenshotUrl: "https://cdn.example.com/shot.png",
         archivedPreviewUrl:
-          "/api/archive-preview?url=https%3A%2F%2Fnews.example.com%2Fa%3Fx%3D1",
+          "/api/archive-preview?url=https%3A%2F%2Fnews.example.com%2Fa%3Fx%3D1&job_id=11111111-1111-1111-1111-111111111111",
       },
     });
+  });
+
+  it("builds an archivedPreviewUrl without job_id when no job id is supplied", async () => {
+    clientGetMock.mockImplementation(async (path: string) => {
+      if (path === "/api/frame-compat") {
+        return {
+          data: {
+            can_iframe: false,
+            blocking_header: "x-frame-options: DENY",
+            csp_frame_ancestors: null,
+            has_archive: true,
+          },
+          error: null,
+        };
+      }
+      if (path === "/api/screenshot") {
+        return { data: { screenshot_url: null }, error: null };
+      }
+      throw new Error(`unexpected path ${path}`);
+    });
+
+    const { getFrameCompat } = await import("./analyze.data");
+    const result = await getFrameCompat("https://news.example.com/no-job");
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.frameCompat.archivedPreviewUrl).toBe(
+        "/api/archive-preview?url=https%3A%2F%2Fnews.example.com%2Fno-job",
+      );
+    }
   });
 
   it("returns null archivedPreviewUrl when has_archive=false", async () => {

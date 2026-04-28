@@ -14,6 +14,7 @@ export interface PageFrameProps {
   previewMode: PreviewMode;
   previewModeRequestId?: number;
   onResolvedModeChange?: (mode: ResolvedPreviewMode) => void;
+  onArchivedIframeReady?: (iframe: HTMLIFrameElement) => void;
 }
 
 const IFRAME_LOAD_TIMEOUT_MS = 20_000;
@@ -200,6 +201,11 @@ export default function PageFrame(props: PageFrameProps) {
     props.onResolvedModeChange?.(resolved);
   });
 
+  createEffect(() => {
+    if (!showArchived() || !archivedLoaded() || !archivedIframeRef) return;
+    props.onArchivedIframeReady?.(archivedIframeRef);
+  });
+
   const classifyLoadedIframe = (): "blocked" | "rendered" | "unknown" => {
     if (!iframeRef) return "unknown";
     try {
@@ -256,6 +262,9 @@ export default function PageFrame(props: PageFrameProps) {
       // If the browser denies inspection, keep the loaded archive visible.
     }
     setArchivedLoaded(true);
+    if (archivedIframeRef) {
+      props.onArchivedIframeReady?.(archivedIframeRef);
+    }
   };
 
   const handleArchivedError = () => {

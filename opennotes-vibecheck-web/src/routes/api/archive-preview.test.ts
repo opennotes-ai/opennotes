@@ -92,6 +92,39 @@ describe("GET /api/archive-preview", () => {
     expect(await response.text()).toContain("<html>hi</html>");
   });
 
+  it("forwards job_id to the backend archive-preview route", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(new Response("<html>hi</html>", { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const event = buildEvent(
+      "http://localhost:3000/api/archive-preview?url=https%3A%2F%2Fexample.com&job_id=11111111-1111-1111-1111-111111111111",
+    );
+    await GET(event);
+
+    const backendUrl = fetchMock.mock.calls[0]?.[0] as URL;
+    expect(backendUrl.searchParams.get("url")).toBe("https://example.com");
+    expect(backendUrl.searchParams.get("job_id")).toBe(
+      "11111111-1111-1111-1111-111111111111",
+    );
+  });
+
+  it("omits job_id when the frontend request does not include one", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(new Response("<html>hi</html>", { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const event = buildEvent(
+      "http://localhost:3000/api/archive-preview?url=https%3A%2F%2Fexample.com",
+    );
+    await GET(event);
+
+    const backendUrl = fetchMock.mock.calls[0]?.[0] as URL;
+    expect(backendUrl.searchParams.has("job_id")).toBe(false);
+  });
+
   it("returns 400 application/json for non-http target URL", async () => {
     const event = buildEvent(
       "http://localhost:3000/api/archive-preview?url=javascript:alert(1)",

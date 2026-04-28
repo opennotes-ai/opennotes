@@ -66,6 +66,7 @@ function isFrameCompatResponse(value: unknown): value is FrameCompatResponse {
 async function fetchArchiveProbe(
   client: VibecheckClient,
   targetUrl: string,
+  jobId?: string,
 ): Promise<ArchiveProbeResult> {
   try {
     const { data, error } = await client.GET("/api/frame-compat", {
@@ -79,11 +80,13 @@ async function fetchArchiveProbe(
     }
     const frameProbe = data;
     const hasArchive = Boolean(frameProbe.has_archive);
+    const archiveParams = new URLSearchParams({ url: targetUrl });
+    if (jobId) archiveParams.set("job_id", jobId);
     return {
       ok: true,
       has_archive: hasArchive,
       archived_preview_url: hasArchive
-        ? `/api/archive-preview?url=${encodeURIComponent(targetUrl)}`
+        ? `/api/archive-preview?${archiveParams.toString()}`
         : null,
       can_iframe: frameProbe.can_iframe,
       blocking_header: frameProbe.blocking_header,
@@ -114,14 +117,14 @@ async function fetchScreenshot(
 }
 
 const getArchiveProbeQuery = query(
-  async (targetUrl: string): Promise<ArchiveProbeResult> => {
+  async (targetUrl: string, jobId?: string): Promise<ArchiveProbeResult> => {
     "use server";
     if (!targetUrl || !isHttpUrl(targetUrl)) {
       return { ok: false, kind: "invalid_url" };
     }
     const { getClient } = await import("~/lib/api-client.server");
     const client = getClient();
-    return fetchArchiveProbe(client, targetUrl);
+    return fetchArchiveProbe(client, targetUrl, jobId);
   },
   "vibecheck-archive-probe",
 );
@@ -144,7 +147,7 @@ const getScreenshotQuery = query(
 export const getScreenshot = getScreenshotQuery;
 
 const getFrameCompatQuery = query(
-  async (targetUrl: string): Promise<FrameCompatQueryResult> => {
+  async (targetUrl: string, jobId?: string): Promise<FrameCompatQueryResult> => {
     "use server";
     if (!targetUrl || !isHttpUrl(targetUrl)) {
       return { ok: false, message: "invalid url" };
@@ -152,7 +155,7 @@ const getFrameCompatQuery = query(
     const { getClient } = await import("~/lib/api-client.server");
     const client = getClient();
     const [archiveProbe, screenshotUrl] = await Promise.all([
-      fetchArchiveProbe(client, targetUrl),
+      fetchArchiveProbe(client, targetUrl, jobId),
       fetchScreenshot(client, targetUrl),
     ]);
     if (!archiveProbe.ok && archiveProbe.kind === "invalid_url") {
@@ -188,15 +191,20 @@ function abortError(): DOMException {
 export const getFrameCompat = Object.assign(
   (
     targetUrl: string,
-    signal?: AbortSignal,
+    signalOrJobId?: AbortSignal | string,
+    jobId?: string,
   ): Promise<FrameCompatQueryResult> => {
-    if (!signal) return getFrameCompatQuery(targetUrl);
+    const signal =
+      typeof signalOrJobId === "string" ? undefined : signalOrJobId;
+    const archiveJobId =
+      typeof signalOrJobId === "string" ? signalOrJobId : jobId;
+    if (!signal) return getFrameCompatQuery(targetUrl, archiveJobId);
     if (signal.aborted) return Promise.reject(abortError());
 
     return new Promise<FrameCompatQueryResult>((resolve, reject) => {
       const onAbort = () => reject(abortError());
       signal.addEventListener("abort", onAbort, { once: true });
-      void getFrameCompatQuery(targetUrl)
+      void getFrameCompatQuery(targetUrl, archiveJobId)
         .then(resolve, reject)
         .finally(() => {
           signal.removeEventListener("abort", onAbort);

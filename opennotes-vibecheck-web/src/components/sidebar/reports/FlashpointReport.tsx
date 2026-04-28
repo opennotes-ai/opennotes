@@ -1,6 +1,7 @@
 import { For, Show, type JSX } from "solid-js";
 import type { components } from "~/lib/generated-types";
 import ExpandableText from "../ExpandableText";
+import UtteranceRef from "../UtteranceRef";
 
 type FlashpointMatch = components["schemas"]["FlashpointMatch"];
 type RiskLevel = components["schemas"]["RiskLevel"];
@@ -36,6 +37,8 @@ function formatScore(score: number): string {
 
 export interface FlashpointReportProps {
   matches: FlashpointMatch[];
+  onUtteranceClick?: (id: string) => void;
+  canJumpToUtterance?: boolean;
 }
 
 export default function FlashpointReport(
@@ -64,8 +67,15 @@ export default function FlashpointReport(
                   data-testid="flashpoint-headline"
                   class="text-xs text-foreground"
                 >
-                  {phraseFor(match.risk_level)} around turn{" "}
-                  {match.utterance_id} &mdash; {qualifierFor(match.risk_level)}.
+                  {phraseFor(match.risk_level)} around{" "}
+                  <UtteranceRef
+                    utteranceId={String(match.utterance_id)}
+                    label={`turn ${match.utterance_id}`}
+                    onClick={props.onUtteranceClick ?? (() => undefined)}
+                    disabled={!props.canJumpToUtterance || !props.onUtteranceClick}
+                    testId="flashpoint-utterance-ref"
+                  />{" "}
+                  &mdash; {qualifierFor(match.risk_level)}.
                 </p>
                 <p
                   data-testid="flashpoint-score"

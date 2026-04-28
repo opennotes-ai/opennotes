@@ -152,6 +152,32 @@ describe("<PageFrame />", () => {
     expect(screen.queryByTestId("page-frame-screenshot")).toBeNull();
   });
 
+  it("notifies when the archived iframe finishes loading", () => {
+    const onArchivedIframeReady = vi.fn();
+    render(() => (
+      <PageFrame
+        url="https://example.com/article"
+        canIframe={false}
+        archivedPreviewUrl="/api/archive-preview?url=https%3A%2F%2Fexample.com%2Farticle"
+        screenshotUrl={null}
+        previewMode="archived"
+        onArchivedIframeReady={onArchivedIframeReady}
+      />
+    ));
+
+    const archived = screen.getByTestId(
+      "page-frame-archived-iframe",
+    ) as HTMLIFrameElement;
+    const restoreContentDocument = stubContentDocument(archived, {
+      body: { children: [{}], textContent: "Archived body" },
+      title: "Archived",
+    });
+    archived.dispatchEvent(new Event("load"));
+
+    expect(onArchivedIframeReady).toHaveBeenCalledWith(archived);
+    restoreContentDocument();
+  });
+
   it("falls from archived iframe to screenshot when archived errors and Archived was explicitly selected", async () => {
     render(() => (
       <PageFrame

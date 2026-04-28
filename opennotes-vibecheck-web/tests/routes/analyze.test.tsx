@@ -50,6 +50,7 @@ type MockArchiveProbeResult =
 
 type GetArchiveProbeMock = (
   url: string,
+  jobId?: string,
 ) => Promise<MockArchiveProbeResult>;
 
 type GetScreenshotMock = (url: string) => Promise<string | null>;
@@ -141,6 +142,14 @@ vi.mock("~/routes/analyze.data", () => {
   };
 });
 
+const { scrollToUtteranceMock } = vi.hoisted(() => ({
+  scrollToUtteranceMock: vi.fn(() => true),
+}));
+
+vi.mock("~/lib/utterance-scroll", () => ({
+  scrollToUtterance: scrollToUtteranceMock,
+}));
+
 const localStorageValues = new Map<string, string>();
 const originalLocalStorageDescriptor = Object.getOwnPropertyDescriptor(
   window,
@@ -182,6 +191,8 @@ function resetTestEnv() {
   pollingHandles.length = 0;
   refetchSpy.current.mockReset();
   retrySectionActionMock.mockReset();
+  scrollToUtteranceMock.mockReset();
+  scrollToUtteranceMock.mockReturnValue(true);
 }
 
 beforeEach(() => {
@@ -887,7 +898,11 @@ describe("AnalyzePage archiveProbeState re-probe loop (TASK-1483.15.01)", () => 
     await flushMicrotasks();
 
     expect(getArchiveProbeMock).toHaveBeenCalledTimes(1);
-    expect(getArchiveProbeMock).toHaveBeenNthCalledWith(1, url);
+    expect(getArchiveProbeMock).toHaveBeenNthCalledWith(
+      1,
+      url,
+      "job-archive-immediate",
+    );
     expect(revalidateMock).toHaveBeenNthCalledWith(
       1,
       `vibecheck-archive-probe:${url}`,
@@ -1379,6 +1394,98 @@ describe("AnalyzePage Archived tab availability (TASK-1483.15.02)", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+describe("AnalyzePage utterance refs", () => {
+  const url = "https://news.example.com/a";
+  const archiveUrl = `/api/archive-preview?url=${encodeURIComponent(url)}&job_id=job-utterance-scroll`;
+
+  function jobWithFlashpoint(): JobState {
+    return makeJobState({
+      job_id: "job-utterance-scroll",
+      status: "done",
+      url,
+      sidebar_payload: makeSidebarPayload({
+        tone_dynamics: {
+          scd: {
+            narrative: "",
+            summary: "",
+            tone_labels: [],
+            per_speaker_notes: {},
+            insufficient_conversation: true,
+          },
+          flashpoint_matches: [
+            {
+              scan_type: "conversation_flashpoint",
+              utterance_id: "comment-0-aaa",
+              derailment_score: 64,
+              risk_level: "Heated",
+              reasoning: "rising tension",
+              context_messages: 2,
+            },
+          ],
+        },
+      }),
+    });
+  }
+
+  it("queues a ref click from Original mode and scrolls after the archived iframe loads", async () => {
+    getArchiveProbeMock.mockResolvedValue(
+      frameCompatResult({
+        canIframe: true,
+        archivedPreviewUrl: archiveUrl,
+      }),
+    );
+    renderAt(
+      `/analyze?job=job-utterance-scroll&url=${encodeURIComponent(url)}`,
+    );
+    setPolledJobState(jobWithFlashpoint());
+    await flushMicrotasks();
+
+    fireEvent.click(await screen.findByTestId("flashpoint-utterance-ref"));
+    await waitFor(() => {
+      expect(
+        screen.getByTestId("preview-mode-archived").getAttribute("aria-pressed"),
+      ).toBe("true");
+    });
+    expect(scrollToUtteranceMock).not.toHaveBeenCalled();
+
+    const archived = screen.getByTestId(
+      "page-frame-archived-iframe",
+    ) as HTMLIFrameElement;
+    Object.defineProperty(archived, "contentDocument", {
+      configurable: true,
+      value: document.implementation.createHTMLDocument("Archived"),
+    });
+    archived.contentDocument?.body.append(document.createElement("p"));
+    archived.dispatchEvent(new Event("load"));
+
+    await waitFor(() => {
+      expect(scrollToUtteranceMock).toHaveBeenCalledWith(
+        archived,
+        "comment-0-aaa",
+        expect.objectContaining({ lastHighlightedId: null }),
+      );
+    });
+  });
+
+  it("renders utterance refs disabled when no archive URL is available", async () => {
+    getArchiveProbeMock.mockResolvedValue(
+      frameCompatResult({
+        canIframe: true,
+        archivedPreviewUrl: null,
+      }),
+    );
+    renderAt("/analyze?job=job-no-archive");
+    setPolledJobState(jobWithFlashpoint());
+    await flushMicrotasks();
+
+    expect(
+      (await screen.findByTestId("flashpoint-utterance-ref")).getAttribute(
+        "aria-disabled",
+      ),
+    ).toBe("true");
   });
 });
 
