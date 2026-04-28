@@ -24,6 +24,7 @@ import {
  *   - data-testid="headline-summary"        (the section element)
  *   - data-testid="headline-summary-text"   (the inner <p>)
  *   - data-headline-kind                    ("stock" | "synthesized")
+ *   - data-headline-source                  ("server" | "fallback")
  */
 test("headline summation renders above safety-recommendation with non-empty text", async ({
   page,
@@ -77,6 +78,12 @@ test("headline summation renders above safety-recommendation with non-empty text
     kind,
     `data-headline-kind must be 'stock' or 'synthesized' (got: ${JSON.stringify(kind)})`,
   ).toMatch(/^(stock|synthesized)$/);
+
+  const source = await headline.getAttribute("data-headline-source");
+  expect(
+    source,
+    `data-headline-source must be 'server' after finalize (got: ${JSON.stringify(source)})`,
+  ).toBe("server");
 
   // No ExpandableText affordance — the headline is plain text.
   await expect(

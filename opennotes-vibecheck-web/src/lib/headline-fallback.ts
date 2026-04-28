@@ -3,6 +3,11 @@ import type { components } from "./generated-types";
 type HeadlineSummary = components["schemas"]["HeadlineSummary"];
 type SafetyRecommendation = components["schemas"]["SafetyRecommendation"];
 type SafetyLevel = SafetyRecommendation["level"];
+type HeadlineSource = "server" | "fallback";
+
+export type ResolvedHeadline = HeadlineSummary & {
+  source: HeadlineSource;
+};
 
 export interface HeadlineFallbackInput {
   url: string;
@@ -41,7 +46,7 @@ function titleFromUrl(url: URL): string | null {
 
 export function buildHeadlineFallback(
   input: HeadlineFallbackInput,
-): HeadlineSummary {
+): ResolvedHeadline {
   let domain = "";
   let pathTitle: string | null = null;
   try {
@@ -60,15 +65,15 @@ export function buildHeadlineFallback(
     text = `${text} — ${SAFETY_VERB[input.recommendation.level]}`;
   }
 
-  return { text, kind: "stock" };
+  return { text, kind: "stock", source: "fallback" };
 }
 
 export function resolveHeadline(
   payloadHeadline: HeadlineSummary | null | undefined,
   fallbackInput: HeadlineFallbackInput,
-): HeadlineSummary {
+): ResolvedHeadline {
   if (payloadHeadline && payloadHeadline.text.trim().length > 0) {
-    return payloadHeadline;
+    return { ...payloadHeadline, source: "server" };
   }
   return buildHeadlineFallback(fallbackInput);
 }

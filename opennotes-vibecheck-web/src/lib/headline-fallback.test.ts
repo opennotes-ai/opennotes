@@ -26,6 +26,7 @@ describe("buildHeadlineFallback", () => {
     });
     expect(result.text).toBe("nypost.com — Headline of the Article");
     expect(result.kind).toBe("stock");
+    expect(result.source).toBe("fallback");
   });
 
   it("falls back to the cleaned URL last path segment when pageTitle is null", () => {
@@ -118,7 +119,9 @@ describe("resolveHeadline", () => {
       pageTitle: "fallback title",
       recommendation: null,
     });
-    expect(result).toBe(real);
+    expect(result.text).toBe(real.text);
+    expect(result.kind).toBe(real.kind);
+    expect(result.source).toBe("server");
   });
 
   it("returns the fallback when payloadHeadline is null", () => {
@@ -129,6 +132,7 @@ describe("resolveHeadline", () => {
     });
     expect(result.text).toBe("example.com — Fallback Title");
     expect(result.kind).toBe("stock");
+    expect(result.source).toBe("fallback");
   });
 
   it("returns the fallback when payloadHeadline is undefined", () => {
