@@ -11,7 +11,11 @@ never `INTERSTITIAL` (escalate). Each test exercises a single branch
 through the public `classify_scrape()` API with realistic fixture-shaped
 payloads; no internal helpers are mocked.
 """
+
 from __future__ import annotations
+
+import json
+from pathlib import Path
 
 import pytest
 
@@ -23,9 +27,18 @@ from src.jobs.scrape_quality import (
     INTERSTITIAL_MARKERS,
     LEGITIMATELY_EMPTY_MARKERS,
     MIN_BODY_CHARS,
+    SPARSE_BODY_THRESHOLD,
     ScrapeQuality,
     classify_scrape,
 )
+
+FIXTURES = Path(__file__).parent.parent / "fixtures" / "scrape_quality"
+
+
+def _load_fixture(name: str) -> ScrapeResult:
+    payload = json.loads((FIXTURES / name).read_text())
+    return ScrapeResult.model_validate(payload)
+
 
 # ---------------------------------------------------------------------------
 # OK — normal blog post.
@@ -85,21 +98,6 @@ def test_status_code_401_classifies_auth_wall() -> None:
     assert classify_scrape(result) is ScrapeQuality.AUTH_WALL
 
 
-def test_login_action_url_in_form_classifies_auth_wall() -> None:
-    result = ScrapeResult(
-        markdown="Welcome — please sign in.",
-        html=(
-            "<html><body>"
-            "<form action='https://example.com/login' method='post'>"
-            "<input type='text' name='username'>"
-            "</form></body></html>"
-        ),
-        metadata=ScrapeMetadata(status_code=200),
-    )
-
-    assert classify_scrape(result) is ScrapeQuality.AUTH_WALL
-
-
 # ---------------------------------------------------------------------------
 # AUTH_WALL priority — login wall under a CF interstitial.
 # ---------------------------------------------------------------------------
@@ -149,11 +147,7 @@ def test_cf_just_a_moment_marker_classifies_interstitial() -> None:
 def test_cf_browser_verification_class_classifies_interstitial() -> None:
     result = ScrapeResult(
         markdown="",
-        html=(
-            "<html><body>"
-            "<div class='cf-browser-verification'>verifying...</div>"
-            "</body></html>"
-        ),
+        html=("<html><body><div class='cf-browser-verification'>verifying...</div></body></html>"),
         metadata=ScrapeMetadata(status_code=200),
     )
 
@@ -258,9 +252,31 @@ def test_constants_are_exported_for_parameterization() -> None:
     assert isinstance(LEGITIMATELY_EMPTY_MARKERS, tuple)
     assert isinstance(AUTH_WALL_STATUS_CODES, frozenset)
     assert MIN_BODY_CHARS > 0
+    assert SPARSE_BODY_THRESHOLD > MIN_BODY_CHARS
     assert "Just a moment" in INTERSTITIAL_MARKERS
     assert 401 in AUTH_WALL_STATUS_CODES
     assert 403 in AUTH_WALL_STATUS_CODES
+
+
+def test_bare_login_url_substrings_are_not_in_markers() -> None:
+    """Regression guard: bare URL substrings produce false positives.
+
+    Header navigation anchors like `<a href="/login">Sign in</a>` were
+    previously matched by `'/login"'` and friends, causing publicly
+    readable articles with login chrome to misclassify as AUTH_WALL.
+    """
+    bare_substring_markers = (
+        '/login"',
+        "/login'",
+        '/signin"',
+        "/signin'",
+        '/sign-in"',
+        "/sign-in'",
+    )
+    for marker in bare_substring_markers:
+        assert marker not in AUTH_WALL_HTML_MARKERS, (
+            f"{marker!r} matches benign header nav links — must not be a marker"
+        )
 
 
 @pytest.mark.parametrize("marker", INTERSTITIAL_MARKERS)
@@ -309,3 +325,118 @@ def test_enum_string_values_are_stable() -> None:
     assert ScrapeQuality.INTERSTITIAL.value == "interstitial"
     assert ScrapeQuality.AUTH_WALL.value == "auth_wall"
     assert ScrapeQuality.LEGITIMATELY_EMPTY.value == "legitimately_empty"
+
+
+# ---------------------------------------------------------------------------
+# Real-world fixtures captured via Firecrawl /scrape (TASK-1488.22).
+#
+# The header-login-link false positive was discovered on
+# https://quizlet.com/blog/pride-month-2021 (job c79722c2-...). The
+# fixtures exercise the full Pydantic validation path the live scrape
+# ladder uses.
+# ---------------------------------------------------------------------------
+
+
+def test_quizlet_blog_with_login_link_chrome_classifies_ok() -> None:
+    """Regression test for the TASK-1488.22 Quizlet false positive.
+
+    The page is a public blog post (status 200, ~9.7k chars markdown).
+    Site chrome contains a `/login` anchor in the nav. Previously the
+    bare-URL substring `'/login"'` matched, classifying AUTH_WALL and
+    terminating the job; the user saw an extraction failure for a page
+    that was fully readable.
+    """
+    result = _load_fixture("quizlet_blog.json")
+
+    assert classify_scrape(result) is ScrapeQuality.OK
+
+
+def test_real_sparse_login_page_classifies_auth_wall() -> None:
+    """Genuine login wall: sparse body + password input -> AUTH_WALL.
+
+    Vimeo's `/log_in` page returns 200 with ~286 chars of markdown and
+    a `<input type="password">`. After tightening, AUTH_WALL still fires
+    because the sparse-body gate is satisfied and a password marker is
+    present — preserving the ToS-critical priority order.
+    """
+    result = _load_fixture("login_gated_sparse.json")
+
+    assert classify_scrape(result) is ScrapeQuality.AUTH_WALL
+
+
+def test_real_sparse_login_page_via_cached_scrape_classifies_auth_wall() -> None:
+    """Tier 2 (CachedScrape) path also classifies sparse + password as AUTH_WALL.
+
+    `_run_tier2` (orchestrator.py) re-runs `classify_scrape` on the
+    interact-tier bundle. A real auth wall must not slip through Tier 2
+    by being treated as OK — the sparse-body gate must still fire on
+    the cached-scrape subclass.
+    """
+    payload = json.loads((FIXTURES / "login_gated_sparse.json").read_text())
+    cached = CachedScrape.model_validate({**payload, "storage_key": "test-key.png"})
+
+    assert classify_scrape(cached) is ScrapeQuality.AUTH_WALL
+
+
+# ---------------------------------------------------------------------------
+# Sparseness-gate behavior — password / login-form markers no longer
+# fire on substantive bodies (the new gate).
+# ---------------------------------------------------------------------------
+
+
+def test_substantive_article_with_password_input_classifies_ok() -> None:
+    """Article body with embedded login chrome -> OK, not AUTH_WALL.
+
+    Some article pages embed a hidden newsletter signup or login modal
+    in their HTML. As long as the markdown body is above the sparseness
+    threshold, the password marker is treated as chrome rather than
+    gating signal.
+    """
+    body = "This is a real article paragraph that has substantive content. " * 20
+    result = ScrapeResult(
+        markdown=f"# An Article With A Hidden Login Modal\n\n{body}",
+        html=(
+            f"<html><body><article><p>{body}</p></article>"
+            "<div hidden><form action='/login'>"
+            "<input type='password' name='password'>"
+            "</form></div></body></html>"
+        ),
+        metadata=ScrapeMetadata(status_code=200),
+    )
+    assert len(result.markdown or "") > SPARSE_BODY_THRESHOLD
+
+    assert classify_scrape(result) is ScrapeQuality.OK
+
+
+def test_substantive_article_with_login_form_action_classifies_ok() -> None:
+    """Same gate applies to `action="/login"` form-action markers."""
+    body = "Long-form journalism content that scrapes to full markdown. " * 20
+    result = ScrapeResult(
+        markdown=f"# News Article\n\n{body}",
+        html=(
+            f"<html><body><article><p>{body}</p></article>"
+            "<form action='/login' method='post'>"
+            "<input type='text' name='username'>"
+            "</form></body></html>"
+        ),
+        metadata=ScrapeMetadata(status_code=200),
+    )
+    assert len(result.markdown or "") > SPARSE_BODY_THRESHOLD
+
+    assert classify_scrape(result) is ScrapeQuality.OK
+
+
+def test_sparse_body_with_form_action_login_classifies_auth_wall() -> None:
+    """Sparse body + form-action="/login" -> AUTH_WALL via the gate."""
+    result = ScrapeResult(
+        markdown="Sign in to your account",
+        html=(
+            "<html><body><form action='/login' method='post'>"
+            "<input type='text' name='email'>"
+            "<button>Continue</button></form></body></html>"
+        ),
+        metadata=ScrapeMetadata(status_code=200),
+    )
+    assert len(result.markdown or "") < SPARSE_BODY_THRESHOLD
+
+    assert classify_scrape(result) is ScrapeQuality.AUTH_WALL

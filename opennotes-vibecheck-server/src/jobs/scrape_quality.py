@@ -31,6 +31,7 @@ Constraints:
 - Fixed-string `in` checks only — no regex (avoids ReDoS risk on
   attacker-controlled markup).
 """
+
 from __future__ import annotations
 
 from enum import StrEnum
@@ -74,18 +75,18 @@ AUTH_WALL_HTML_MARKERS: tuple[str, ...] = (
     "action='/signin'",
     'action="/sign-in"',
     "action='/sign-in'",
-    "/login\"",
-    "/login'",
-    "/signin\"",
-    "/signin'",
-    "/sign-in\"",
-    "/sign-in'",
 )
 """Fixed-string substrings indicating a login form is present in the HTML.
 
-Both quote styles are listed so we never depend on quote normalization.
-The trailing-quote variants catch absolute URLs like
-`action="https://example.com/login"`.
+These markers are gated by the sparse-body check — see
+:data:`SPARSE_BODY_THRESHOLD`. A login form embedded in a fully
+rendered article (newsletter modal, signup CTA) is chrome, not gating.
+
+TASK-1488.22 dropped six bare-URL substring markers (`/login"` and
+friends) because they matched header navigation anchors on every site
+that links to a login page, producing false positives like the Quizlet
+blog incident (job c79722c2-...). Form-action variants stay because
+the leading `action=` constrains the match to actual `<form>` elements.
 """
 
 INTERSTITIAL_MARKERS: tuple[str, ...] = (
@@ -138,6 +139,16 @@ Tuned conservatively — a real article that scrapes to <32 chars is
 almost certainly behind a wall, not a stub.
 """
 
+SPARSE_BODY_THRESHOLD: int = 500
+"""Markdown char count below which login-form markers gate AUTH_WALL.
+
+Tuned at "a few tweets worth" (~2 full tweets at 280 chars) — generous
+enough that any real article exceeds it, tight enough that login-only
+pages with their typical "Sign in to continue / Welcome back" prose
+stay under it. Above this threshold a login-form marker is treated as
+chrome (newsletter signup, footer login modal) rather than gating.
+"""
+
 
 # ---------------------------------------------------------------------------
 # Public classifier.
@@ -165,9 +176,13 @@ def classify_scrape(result: ScrapeResult) -> ScrapeQuality:  # noqa: PLR0911
     body_text = f"{markdown}\n{html}"
 
     # Tier 1: AUTH_WALL — load-bearing priority (see module docstring).
+    # 401/403 fire unconditionally. Login-form markers only fire when the
+    # body is sparse — TASK-1488.22 — to avoid false positives on
+    # publicly readable articles that link to a login page from chrome.
     if status_code is not None and status_code in AUTH_WALL_STATUS_CODES:
         return ScrapeQuality.AUTH_WALL
-    if _contains_any(html, AUTH_WALL_HTML_MARKERS):
+    body_chars = len(markdown.strip())
+    if body_chars < SPARSE_BODY_THRESHOLD and _contains_any(html, AUTH_WALL_HTML_MARKERS):
         return ScrapeQuality.AUTH_WALL
 
     # Tier 2: INTERSTITIAL — CF / JS-required markers in markdown OR html.
