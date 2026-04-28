@@ -1,8 +1,35 @@
 import { describe, it, expect, afterEach, beforeEach, vi } from "vitest";
 import { render, screen, cleanup, waitFor } from "@solidjs/testing-library";
 import { createSignal } from "solid-js";
-import PageFrame from "../../src/components/PageFrame";
+import PageFrame, {
+  FALLBACK_COUNTDOWN_MS,
+} from "../../src/components/PageFrame";
 import type { PreviewMode } from "../../src/components/PageFrame";
+
+function stubContentDocument(
+  iframe: HTMLIFrameElement,
+  value:
+    | Pick<Document, "title">
+    | {
+        location?: { href?: string };
+        body?: { children?: unknown[]; textContent?: string };
+        title?: string;
+      },
+): () => void {
+  const descriptor = Object.getOwnPropertyDescriptor(iframe, "contentDocument");
+  Object.defineProperty(iframe, "contentDocument", {
+    configurable: true,
+    value,
+  });
+  return () => {
+    if (descriptor) {
+      Object.defineProperty(iframe, "contentDocument", descriptor);
+    } else {
+      delete (iframe as unknown as { contentDocument?: Document })
+        .contentDocument;
+    }
+  };
+}
 
 afterEach(() => {
   cleanup();
@@ -162,12 +189,9 @@ describe("<PageFrame />", () => {
     const archived = screen.getByTestId(
       "page-frame-archived-iframe",
     ) as HTMLIFrameElement;
-    Object.defineProperty(archived, "contentDocument", {
-      configurable: true,
-      value: {
-        body: { children: [], textContent: "" },
-        title: "",
-      },
+    const restoreContentDocument = stubContentDocument(archived, {
+      body: { children: [], textContent: "" },
+      title: "",
     });
     archived.dispatchEvent(new Event("load"));
 
@@ -176,6 +200,7 @@ describe("<PageFrame />", () => {
     )) as HTMLImageElement;
     expect(img.getAttribute("src")).toBe("https://cdn.example.com/shot.png");
     expect(screen.queryByTestId("page-frame-archived-iframe")).toBeNull();
+    restoreContentDocument();
   });
 
   it("manual screenshot mode renders the screenshot immediately", () => {
@@ -215,8 +240,7 @@ describe("<PageFrame />", () => {
 
       // Runtime failure triggers the deciding interstitial; advance past 15s.
       expect(screen.getByTestId("page-frame-deciding")).not.toBeNull();
-      vi.advanceTimersByTime(15_000);
-      await Promise.resolve();
+      await vi.advanceTimersByTimeAsync(FALLBACK_COUNTDOWN_MS);
 
       const img = screen.getByTestId(
         "page-frame-screenshot",
@@ -243,20 +267,16 @@ describe("<PageFrame />", () => {
       const iframe = screen.getByTestId(
         "page-frame-iframe",
       ) as HTMLIFrameElement;
-      Object.defineProperty(iframe, "contentDocument", {
-        configurable: true,
-        value: {
-          location: { href: "about:blank" },
-          body: { children: [], textContent: "" },
-          title: "",
-        },
+      stubContentDocument(iframe, {
+        location: { href: "about:blank" },
+        body: { children: [], textContent: "" },
+        title: "",
       });
       iframe.dispatchEvent(new Event("load"));
 
       // Blocked classification triggers the deciding interstitial; advance past 15s.
       expect(screen.getByTestId("page-frame-deciding")).not.toBeNull();
-      vi.advanceTimersByTime(15_000);
-      await Promise.resolve();
+      await vi.advanceTimersByTimeAsync(FALLBACK_COUNTDOWN_MS);
 
       const img = screen.getByTestId(
         "page-frame-screenshot",
@@ -284,20 +304,16 @@ describe("<PageFrame />", () => {
       ));
 
       const iframe = screen.getByTestId("page-frame-iframe") as HTMLIFrameElement;
-      Object.defineProperty(iframe, "contentDocument", {
-        configurable: true,
-        value: {
-          location: { href: "about:blank" },
-          body: { children: [], textContent: "" },
-          title: "",
-        },
+      stubContentDocument(iframe, {
+        location: { href: "about:blank" },
+        body: { children: [], textContent: "" },
+        title: "",
       });
       iframe.dispatchEvent(new Event("load"));
 
       // Deciding interstitial first, then chain-B fall-through to screenshot.
       expect(screen.getByTestId("page-frame-deciding")).not.toBeNull();
-      vi.advanceTimersByTime(15_000);
-      await Promise.resolve();
+      await vi.advanceTimersByTimeAsync(FALLBACK_COUNTDOWN_MS);
 
       // After blocked classification + countdown, the screenshot is shown (chain-B
       // fall-through resolves "original blocked + no archive" → "screenshot").
@@ -326,19 +342,18 @@ describe("<PageFrame />", () => {
     const iframe = screen.getByTestId(
       "page-frame-iframe",
     ) as HTMLIFrameElement;
-    Object.defineProperty(iframe, "contentDocument", {
-      configurable: true,
-      value: {
-        location: { href: "https://example.com/article" },
-        body: { children: [{}], textContent: "Hello world" },
-        title: "Example",
-      },
+    stubContentDocument(iframe, {
+      location: { href: "https://example.com/article" },
+      body: { children: [{}], textContent: "Hello world" },
+      title: "Example",
     });
     iframe.dispatchEvent(new Event("load"));
 
     setCanIframe(false);
     setBlockingHeader("content-security-policy: frame-ancestors 'none'");
-    await Promise.resolve();
+    await waitFor(() => {
+      expect(screen.queryByTestId("page-frame-deciding")).toBeNull();
+    });
 
     // Server reports blocked → auto-resolve straight to screenshot, no
     // deciding interstitial.
@@ -505,8 +520,7 @@ describe("countdown interstitial (TASK-1495.07 + TASK-1483.13.02 escape hatch)",
     expect(screen.getByTestId("page-frame-deciding")).not.toBeNull();
 
     // The countdown timer MUST arm — after 15s, chain B fires.
-    vi.advanceTimersByTime(15_000);
-    await Promise.resolve();
+    await vi.advanceTimersByTimeAsync(FALLBACK_COUNTDOWN_MS);
 
     expect(screen.queryByTestId("page-frame-deciding")).toBeNull();
     expect(screen.getByTestId("page-frame-archived-iframe")).not.toBeNull();
@@ -552,8 +566,7 @@ describe("countdown interstitial (TASK-1495.07 + TASK-1483.13.02 escape hatch)",
 
     expect(screen.getByTestId("page-frame-deciding")).not.toBeNull();
 
-    vi.advanceTimersByTime(15_000);
-    await Promise.resolve();
+    await vi.advanceTimersByTimeAsync(FALLBACK_COUNTDOWN_MS);
 
     expect(screen.queryByTestId("page-frame-deciding")).toBeNull();
     expect(screen.getByTestId("page-frame-archived-iframe")).not.toBeNull();
@@ -562,6 +575,7 @@ describe("countdown interstitial (TASK-1495.07 + TASK-1483.13.02 escape hatch)",
 
   it("re-arms the deciding interstitial when the user clicks Original after a server-blocked auto-resolve (escape hatch)", async () => {
     const [mode, setMode] = createSignal<PreviewMode>("original");
+    const [requestId, setRequestId] = createSignal(0);
     const onResolvedModeChange = vi.fn();
     render(() => (
       <PageFrame
@@ -571,6 +585,7 @@ describe("countdown interstitial (TASK-1495.07 + TASK-1483.13.02 escape hatch)",
         archivedPreviewUrl="/api/archive-preview?url=https%3A%2F%2Fexample.com%2Farticle"
         screenshotUrl="https://cdn.example.com/shot.png"
         previewMode={mode()}
+        previewModeRequestId={requestId()}
         onResolvedModeChange={onResolvedModeChange}
       />
     ));
@@ -582,30 +597,26 @@ describe("countdown interstitial (TASK-1495.07 + TASK-1483.13.02 escape hatch)",
 
     // Parent's handler would normally setPreviewMode("archived") at this point.
     setMode("archived");
-    await Promise.resolve();
+    await waitFor(() => {
+      expect(screen.getByTestId("page-frame-archived-iframe")).not.toBeNull();
+    });
 
-    // User clicks Original — flip back to "original" re-arms the deciding window.
+    // User clicks Original: only the explicit request id makes this an escape hatch.
     setMode("original");
-    await Promise.resolve();
+    setRequestId((id) => id + 1);
 
     expect(screen.getByTestId("page-frame-deciding")).not.toBeNull();
 
     // After 15s the countdown elapses and chain B fires again.
-    vi.advanceTimersByTime(15_000);
-    await Promise.resolve();
+    await vi.advanceTimersByTimeAsync(FALLBACK_COUNTDOWN_MS);
     expect(screen.queryByTestId("page-frame-deciding")).toBeNull();
     expect(screen.getByTestId("page-frame-archived-iframe")).not.toBeNull();
   });
 
-  it("does not let parent auto-resolve feedback cancel a user-armed Original escape hatch", async () => {
+  it("does not emit late auto-resolve feedback that would cancel a user-armed Original escape hatch", async () => {
     const [mode, setMode] = createSignal<PreviewMode>("original");
-    const onResolvedModeChange = vi.fn(
-      (resolved: PreviewMode | "unavailable") => {
-        if (resolved !== "unavailable") {
-          setMode(resolved);
-        }
-      },
-    );
+    const [requestId, setRequestId] = createSignal(0);
+    const onResolvedModeChange = vi.fn();
 
     render(() => (
       <PageFrame
@@ -615,20 +626,60 @@ describe("countdown interstitial (TASK-1495.07 + TASK-1483.13.02 escape hatch)",
         archivedPreviewUrl="/api/archive-preview?url=https%3A%2F%2Fexample.com%2Farticle"
         screenshotUrl="https://cdn.example.com/shot.png"
         previewMode={mode()}
+        previewModeRequestId={requestId()}
         onResolvedModeChange={onResolvedModeChange}
       />
     ));
 
-    await waitFor(() => expect(mode()).toBe("archived"));
+    expect(onResolvedModeChange).toHaveBeenCalledWith("archived");
+    setMode("archived");
+    await waitFor(() => {
+      expect(screen.getByTestId("page-frame-archived-iframe")).not.toBeNull();
+    });
     expect(screen.queryByTestId("page-frame-deciding")).toBeNull();
-    expect(screen.getByTestId("page-frame-archived-iframe")).not.toBeNull();
 
+    const callCountBeforeUserClick = onResolvedModeChange.mock.calls.length;
     setMode("original");
-    await Promise.resolve();
+    setRequestId((id) => id + 1);
 
     expect(mode()).toBe("original");
     expect(screen.getByTestId("page-frame-deciding")).not.toBeNull();
     expect(screen.queryByTestId("page-frame-archived-iframe")).toBeNull();
+
+    await vi.advanceTimersByTimeAsync(FALLBACK_COUNTDOWN_MS / 2);
+    expect(onResolvedModeChange).toHaveBeenCalledTimes(callCountBeforeUserClick);
+  });
+
+  it("does not spuriously arm deciding when url and previewMode reset together for a new blocked job", async () => {
+    const [url, setUrl] = createSignal("https://example.com/first");
+    const [mode, setMode] = createSignal<PreviewMode>("original");
+    const onResolvedModeChange = vi.fn();
+
+    render(() => (
+      <PageFrame
+        url={url()}
+        canIframe={false}
+        blockingHeader="content-security-policy: frame-ancestors 'none'"
+        archivedPreviewUrl={`/api/archive-preview?url=${encodeURIComponent(url())}`}
+        screenshotUrl="https://cdn.example.com/shot.png"
+        previewMode={mode()}
+        onResolvedModeChange={onResolvedModeChange}
+      />
+    ));
+
+    expect(screen.getByTestId("page-frame-archived-iframe")).not.toBeNull();
+    setMode("archived");
+    await waitFor(() => {
+      expect(screen.queryByTestId("page-frame-deciding")).toBeNull();
+    });
+
+    setUrl("https://example.com/second");
+    setMode("original");
+
+    await waitFor(() => {
+      expect(screen.queryByTestId("page-frame-deciding")).toBeNull();
+      expect(screen.getByTestId("page-frame-archived-iframe")).not.toBeNull();
+    });
   });
 
   it("auto-switches to screenshot after countdown when no archive is present (runtime failure)", async () => {
@@ -647,8 +698,7 @@ describe("countdown interstitial (TASK-1495.07 + TASK-1483.13.02 escape hatch)",
     ) as HTMLIFrameElement;
     iframe.dispatchEvent(new Event("error"));
 
-    vi.advanceTimersByTime(15_000);
-    await Promise.resolve();
+    await vi.advanceTimersByTimeAsync(FALLBACK_COUNTDOWN_MS);
 
     expect(screen.getByTestId("page-frame-screenshot")).not.toBeNull();
     expect(onResolvedModeChange).toHaveBeenCalledWith("screenshot");
@@ -674,14 +724,15 @@ describe("countdown interstitial (TASK-1495.07 + TASK-1483.13.02 escape hatch)",
     expect(screen.getByTestId("page-frame-deciding")).not.toBeNull();
 
     setMode("screenshot");
-    await Promise.resolve();
+    await waitFor(() => {
+      expect(screen.queryByTestId("page-frame-deciding")).toBeNull();
+    });
 
     expect(screen.queryByTestId("page-frame-deciding")).toBeNull();
     expect(screen.getByTestId("page-frame-screenshot")).not.toBeNull();
 
     // Advancing past 15s after the override must NOT trigger any stale switch.
-    vi.advanceTimersByTime(20_000);
-    await Promise.resolve();
+    await vi.advanceTimersByTimeAsync(FALLBACK_COUNTDOWN_MS + 5_000);
     expect(onResolvedModeChange).toHaveBeenLastCalledWith("screenshot");
   });
 
@@ -701,7 +752,6 @@ describe("countdown interstitial (TASK-1495.07 + TASK-1483.13.02 escape hatch)",
       "page-frame-iframe",
     ) as HTMLIFrameElement;
     iframe.dispatchEvent(new Event("error"));
-    await Promise.resolve();
 
     expect(screen.getByTestId("page-frame-deciding")).not.toBeNull();
     const calls = onResolvedModeChange.mock.calls.flat();
@@ -729,6 +779,6 @@ describe("countdown interstitial (TASK-1495.07 + TASK-1483.13.02 escape hatch)",
     expect(progress).not.toBeNull();
     const style = progress.getAttribute("style") ?? "";
     expect(style).toMatch(/pageFrameDecidingProgress/);
-    expect(style).toMatch(/15000ms/);
+    expect(style).toContain(`${FALLBACK_COUNTDOWN_MS}ms`);
   });
 });

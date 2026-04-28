@@ -33,7 +33,7 @@ function isHttpUrl(candidate: string): boolean {
   }
 }
 
-export const getFrameCompat = query(
+const getFrameCompatQuery = query(
   async (targetUrl: string): Promise<FrameCompatQueryResult> => {
     "use server";
     if (!targetUrl || !isHttpUrl(targetUrl)) {
@@ -95,6 +95,31 @@ export const getFrameCompat = query(
     };
   },
   "vibecheck-frame-compat",
+);
+
+function abortError(): DOMException {
+  return new DOMException("Frame compatibility request aborted", "AbortError");
+}
+
+export const getFrameCompat = Object.assign(
+  (
+    targetUrl: string,
+    signal?: AbortSignal,
+  ): Promise<FrameCompatQueryResult> => {
+    if (!signal) return getFrameCompatQuery(targetUrl);
+    if (signal.aborted) return Promise.reject(abortError());
+
+    return new Promise<FrameCompatQueryResult>((resolve, reject) => {
+      const onAbort = () => reject(abortError());
+      signal.addEventListener("abort", onAbort, { once: true });
+      void getFrameCompatQuery(targetUrl)
+        .then(resolve, reject)
+        .finally(() => {
+          signal.removeEventListener("abort", onAbort);
+        });
+    });
+  },
+  getFrameCompatQuery,
 );
 
 function redirectParams(params: Record<string, string | undefined>): string {

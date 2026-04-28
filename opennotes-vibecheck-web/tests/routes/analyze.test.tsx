@@ -1,4 +1,12 @@
-import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
+import {
+  describe,
+  it,
+  expect,
+  vi,
+  afterAll,
+  afterEach,
+  beforeEach,
+} from "vitest";
 import {
   render,
   screen,
@@ -20,6 +28,24 @@ type PollingHandle = {
   error: () => Error | null;
   refetch: () => void;
 };
+
+type MockFrameCompat = {
+  canIframe: boolean;
+  blockingHeader: string | null;
+  cspFrameAncestors: string | null;
+  screenshotUrl: string | null;
+  archivedPreviewUrl: string | null;
+};
+
+type MockFrameCompatQueryResult = {
+  ok: true;
+  frameCompat: MockFrameCompat;
+};
+
+type GetFrameCompatMock = (
+  url: string,
+  signal?: AbortSignal,
+) => Promise<MockFrameCompatQueryResult>;
 
 const { pollingHandles, refetchSpy } = vi.hoisted(() => ({
   pollingHandles: [] as Array<{
@@ -47,7 +73,7 @@ vi.mock("~/lib/polling", () => {
 });
 
 const { getFrameCompatMock, retrySectionActionMock } = vi.hoisted(() => ({
-  getFrameCompatMock: vi.fn(async () => ({
+  getFrameCompatMock: vi.fn<GetFrameCompatMock>(async () => ({
     ok: true,
     frameCompat: {
       canIframe: true,
@@ -98,6 +124,10 @@ vi.mock("~/routes/analyze.data", () => {
 });
 
 const localStorageValues = new Map<string, string>();
+const originalLocalStorageDescriptor = Object.getOwnPropertyDescriptor(
+  window,
+  "localStorage",
+);
 Object.defineProperty(window, "localStorage", {
   configurable: true,
   value: {
@@ -116,7 +146,7 @@ Object.defineProperty(window, "localStorage", {
 
 import AnalyzePage from "../../src/routes/analyze";
 
-beforeEach(() => {
+function resetTestEnv() {
   getFrameCompatMock.mockReset();
   getFrameCompatMock.mockImplementation(async () => ({
     ok: true,
@@ -128,14 +158,27 @@ beforeEach(() => {
         archivedPreviewUrl: null,
       },
     }));
-});
-
-afterEach(() => {
-  cleanup();
   window.localStorage.clear();
   pollingHandles.length = 0;
   refetchSpy.current.mockReset();
   retrySectionActionMock.mockReset();
+}
+
+beforeEach(() => {
+  resetTestEnv();
+});
+
+afterEach(() => {
+  cleanup();
+  resetTestEnv();
+});
+
+afterAll(() => {
+  if (originalLocalStorageDescriptor) {
+    Object.defineProperty(window, "localStorage", originalLocalStorageDescriptor);
+  } else {
+    delete (window as unknown as { localStorage?: Storage }).localStorage;
+  }
 });
 
 function setPolledJobState(value: JobState | null) {
@@ -143,15 +186,46 @@ function setPolledJobState(value: JobState | null) {
 }
 
 function renderAt(path: string) {
+  return renderAtWithHistory(path);
+}
+
+function renderAtWithHistory(path: string) {
   const history = createMemoryHistory();
   history.set({ value: path, scroll: false, replace: true });
-  return render(() => (
+  const rendered = render(() => (
     <MetaProvider>
       <MemoryRouter history={history}>
         <Route path="/analyze" component={AnalyzePage} />
       </MemoryRouter>
     </MetaProvider>
   ));
+  return { ...rendered, history };
+}
+
+function frameCompatResult(
+  overrides: Partial<MockFrameCompat> = {},
+): MockFrameCompatQueryResult {
+  return {
+    ok: true,
+    frameCompat: {
+      canIframe: true,
+      blockingHeader: null,
+      cspFrameAncestors: null,
+      screenshotUrl: null,
+      archivedPreviewUrl: null,
+      ...overrides,
+    },
+  };
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
 }
 
 function makeJobState(overrides: Partial<JobState> = {}): JobState {
@@ -957,6 +1031,114 @@ describe("AnalyzePage Original tab — soft-disabled when canIframe=false (TASK-
     });
     fireEvent.click(original);
     expect(original.getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getByTestId("page-frame-deciding")).not.toBeNull();
+  });
+
+  it("does not show Original pressed before frame compatibility resolves", async () => {
+    const pendingCompat = deferred<ReturnType<typeof frameCompatResult>>();
+    getFrameCompatMock.mockReturnValueOnce(pendingCompat.promise);
+
+    renderAt("/analyze?job=job-pending-compat&url=https://nypost.com/article");
+
+    const original = await screen.findByTestId("preview-mode-original");
+    expect(original.getAttribute("aria-pressed")).toBe("false");
+    expect(screen.getByTestId("page-frame-loading")).not.toBeNull();
+
+    pendingCompat.resolve(
+      frameCompatResult({
+        canIframe: false,
+        blockingHeader: "content-security-policy: frame-ancestors 'none'",
+        cspFrameAncestors: "'none'",
+        screenshotUrl: "https://cdn.example.com/shot.png",
+        archivedPreviewUrl:
+          "/api/archive-preview?url=https%3A%2F%2Fnypost.com%2Farticle",
+      }),
+    );
+
+    await waitFor(() => {
+      expect(
+        screen.getByTestId("preview-mode-archived").getAttribute("aria-pressed"),
+      ).toBe("true");
+    });
+    expect(original.getAttribute("aria-pressed")).toBe("false");
+  });
+
+  it("clears the Original blocked-frame tooltip from any preview tab leave or blur", async () => {
+    mockBlockedFrame();
+    renderAt(
+      "/analyze?job=job-blocked-tooltip-clear&url=https://nypost.com/article",
+    );
+
+    const original = await screen.findByTestId("preview-mode-original");
+    await waitFor(() => {
+      expect(original.getAttribute("aria-describedby")).toBe(
+        "preview-mode-original-tip",
+      );
+    });
+    const archived = screen.getByTestId("preview-mode-archived");
+    const tip = screen.getByTestId("preview-mode-original-tip");
+
+    fireEvent.mouseEnter(original);
+    expect(tip.getAttribute("data-visible")).toBe("true");
+    fireEvent.mouseLeave(archived);
+    expect(tip.getAttribute("data-visible")).toBe("false");
+
+    fireEvent.focus(original);
+    expect(tip.getAttribute("data-visible")).toBe("true");
+    fireEvent.blur(archived);
+    expect(tip.getAttribute("data-visible")).toBe("false");
+  });
+
+  it("clears pressed preview state when a resolvable preview transitions to unavailable", async () => {
+    getFrameCompatMock
+      .mockResolvedValueOnce(
+        frameCompatResult({
+          canIframe: false,
+          blockingHeader: "content-security-policy: frame-ancestors 'none'",
+          cspFrameAncestors: "'none'",
+          screenshotUrl: "https://cdn.example.com/first.png",
+          archivedPreviewUrl: null,
+        }),
+      )
+      .mockResolvedValueOnce(
+        frameCompatResult({
+          canIframe: false,
+          blockingHeader: "content-security-policy: frame-ancestors 'none'",
+          cspFrameAncestors: "'none'",
+          screenshotUrl: null,
+          archivedPreviewUrl: null,
+        }),
+      );
+
+    renderAt(
+      "/analyze?job=job-preview-transition&url=https://news.example.com/a",
+    );
+
+    await waitFor(() => {
+      expect(
+        screen
+          .getByTestId("preview-mode-screenshot")
+          .getAttribute("aria-pressed"),
+      ).toBe("true");
+    });
+
+    setPolledJobState(
+      makeJobState({
+        status: "analyzing",
+        url: "https://news.example.com/b",
+      }),
+    );
+
+    expect(await screen.findByTestId("page-frame-unavailable")).not.toBeNull();
+    for (const testId of [
+      "preview-mode-original",
+      "preview-mode-archived",
+      "preview-mode-screenshot",
+    ]) {
+      expect(screen.getByTestId(testId).getAttribute("aria-pressed")).toBe(
+        "false",
+      );
+    }
   });
 
   it("clears all preview tab pressed states when no preview is available", async () => {

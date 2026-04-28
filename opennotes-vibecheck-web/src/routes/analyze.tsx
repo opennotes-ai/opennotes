@@ -12,7 +12,10 @@ import { Title } from "@solidjs/meta";
 import CachedBadge from "~/components/CachedBadge";
 import JobFailureCard from "~/components/JobFailureCard";
 import PageFrame from "~/components/PageFrame";
-import type { PreviewMode } from "~/components/PageFrame";
+import type {
+  PreviewMode,
+  ResolvedPreviewMode,
+} from "~/components/PageFrame";
 import Sidebar from "~/components/sidebar/Sidebar";
 import { HeadlineSummaryReport } from "~/components/sidebar/reports";
 import type { ErrorCode, SectionSlug } from "~/lib/api-client.server";
@@ -33,7 +36,6 @@ const ALL_ERROR_CODES: readonly ErrorCode[] = [
 ];
 
 type PreviewSize = "regular" | "large" | "max";
-type ResolvedPreviewMode = PreviewMode | "unavailable";
 
 const PREVIEW_SIZE_KEY = "vibecheck:preview-size";
 const PREVIEW_MODE_OPTIONS: ReadonlyArray<{
@@ -91,6 +93,9 @@ export default function AnalyzePage() {
   const [previewMode, setPreviewMode] = createSignal<PreviewMode>("original");
   const [resolvedPreviewMode, setResolvedPreviewMode] =
     createSignal<ResolvedPreviewMode>("original");
+  const [selectedPreviewMode, setSelectedPreviewMode] =
+    createSignal<PreviewMode | null>(null);
+  const [previewModeRequestId, setPreviewModeRequestId] = createSignal(0);
   const [previewSize, setPreviewSize] = createSignal<PreviewSize>("regular");
   const [isOriginalBlockedTipHovered, setIsOriginalBlockedTipHovered] =
     createSignal(false);
@@ -115,6 +120,7 @@ export default function AnalyzePage() {
       previewModeJobId = currentJobId;
       setPreviewMode("original");
       setResolvedPreviewMode("original");
+      setSelectedPreviewMode(null);
     }
   });
 
@@ -131,35 +137,56 @@ export default function AnalyzePage() {
   const jobUrl = createMemo(() => jobState()?.url ?? pendingUrl());
   const [frameCompat, setFrameCompat] =
     createSignal<FrameCompatResult>(DEFAULT_FRAME_COMPAT);
+  const [frameCompatPending, setFrameCompatPending] = createSignal(false);
+  const [frameCompatUrl, setFrameCompatUrl] = createSignal("");
   const [frameCompatError, setFrameCompatError] = createSignal<string | null>(
     null,
   );
 
   let frameCompatRequest = 0;
+  let frameCompatAbortController: AbortController | null = null;
   createEffect(() => {
     const url = jobUrl();
     const request = ++frameCompatRequest;
+    frameCompatAbortController?.abort();
+    frameCompatAbortController = null;
     setFrameCompat(DEFAULT_FRAME_COMPAT);
+    setFrameCompatUrl("");
     setFrameCompatError(null);
-    if (!url) return;
+    setFrameCompatPending(Boolean(url));
+    setResolvedPreviewMode(url ? "unavailable" : "original");
+    if (!url) {
+      setFrameCompatPending(false);
+      return;
+    }
 
-    void getFrameCompat(url)
+    const controller = new AbortController();
+    frameCompatAbortController = controller;
+    void getFrameCompat(url, controller.signal)
       .then((result) => {
         if (request !== frameCompatRequest) return;
+        setFrameCompatPending(false);
+        setFrameCompatUrl(url);
         if (result.ok) {
           setFrameCompat(result.frameCompat);
           return;
         }
         setFrameCompatError(result.message);
       })
-      .catch(() => {
+      .catch((error: unknown) => {
         if (request !== frameCompatRequest) return;
+        if (error instanceof DOMException && error.name === "AbortError") {
+          return;
+        }
+        setFrameCompatPending(false);
+        setFrameCompatUrl(url);
         setFrameCompat(DEFAULT_FRAME_COMPAT);
         setFrameCompatError("Preview checks unavailable.");
       });
   });
   onCleanup(() => {
     frameCompatRequest += 1;
+    frameCompatAbortController?.abort();
   });
 
   const transportError = () => polling.error();
@@ -220,10 +247,16 @@ export default function AnalyzePage() {
 
   const selectPreviewMode = (mode: PreviewMode) => {
     setPreviewMode(mode);
+    setSelectedPreviewMode(mode);
+    setPreviewModeRequestId((id) => id + 1);
   };
 
   const isPreviewModePressed = (mode: PreviewMode) =>
-    resolvedPreviewMode() !== "unavailable" && previewMode() === mode;
+    !isPreviewLoading() &&
+    resolvedPreviewMode() !== "unavailable" &&
+    (selectedPreviewMode() ?? resolvedPreviewMode()) === mode;
+  const isPreviewLoading = () =>
+    !jobUrl() || frameCompatPending() || frameCompatUrl() !== jobUrl();
   const showOriginalBlockedTip = () =>
     !frameCompat().canIframe &&
     (isOriginalBlockedTipHovered() || isOriginalBlockedTipFocused());
@@ -263,7 +296,7 @@ export default function AnalyzePage() {
   return (
     <>
       <Title>vibecheck — analyzing</Title>
-      <main class={mainClass()}>
+      <main data-testid="analyze-main" class={mainClass()}>
         <nav class="flex items-center justify-between">
           <A
             href="/"
@@ -357,9 +390,7 @@ export default function AnalyzePage() {
                                   }
                                 }}
                                 onMouseLeave={() => {
-                                  if (option.value === "original") {
-                                    setIsOriginalBlockedTipHovered(false);
-                                  }
+                                  setIsOriginalBlockedTipHovered(false);
                                 }}
                                 onFocus={() => {
                                   if (isOriginalBlocked()) {
@@ -367,9 +398,7 @@ export default function AnalyzePage() {
                                   }
                                 }}
                                 onBlur={() => {
-                                  if (option.value === "original") {
-                                    setIsOriginalBlockedTipFocused(false);
-                                  }
+                                  setIsOriginalBlockedTipFocused(false);
                                 }}
                                 onClick={() => selectPreviewMode(option.value)}
                               >
@@ -425,40 +454,31 @@ export default function AnalyzePage() {
                       </div>
                     </div>
                   </div>
-                  <Show
-                    when={jobUrl()}
-                    fallback={
-                      <div class="flex min-h-[60vh] flex-1 items-center justify-center rounded-lg border border-border bg-card text-sm text-muted-foreground">
-                        Preparing analysis&hellip;
-                      </div>
-                    }
-                  >
-                    {(url) => (
-                      <>
-                        <PageFrame
-                          url={url()}
-                          canIframe={frameCompat().canIframe}
-                          blockingHeader={frameCompat().blockingHeader}
-                          cspFrameAncestors={frameCompat().cspFrameAncestors}
-                          archivedPreviewUrl={frameCompat().archivedPreviewUrl}
-                          screenshotUrl={frameCompat().screenshotUrl}
-                          previewMode={previewMode()}
-                          onResolvedModeChange={(mode) => {
-                            setResolvedPreviewMode(mode);
-                            if (mode !== "unavailable") setPreviewMode(mode);
-                          }}
-                        />
-                        <Show when={frameCompatError()}>
-                          {(message) => (
-                            <p
-                              data-testid="frame-compat-warning"
-                              class="text-xs text-muted-foreground"
-                            >
-                              {message()} Showing the page directly.
-                            </p>
-                          )}
-                        </Show>
-                      </>
+                  <PageFrame
+                    url={jobUrl()}
+                    loading={isPreviewLoading()}
+                    canIframe={frameCompat().canIframe}
+                    blockingHeader={frameCompat().blockingHeader}
+                    cspFrameAncestors={frameCompat().cspFrameAncestors}
+                    archivedPreviewUrl={frameCompat().archivedPreviewUrl}
+                    screenshotUrl={frameCompat().screenshotUrl}
+                    previewMode={previewMode()}
+                    previewModeRequestId={previewModeRequestId()}
+                    onResolvedModeChange={(mode) => {
+                      setResolvedPreviewMode(mode);
+                      if (mode !== selectedPreviewMode()) {
+                        setSelectedPreviewMode(null);
+                      }
+                    }}
+                  />
+                  <Show when={frameCompatError()}>
+                    {(message) => (
+                      <p
+                        data-testid="frame-compat-warning"
+                        class="text-xs text-muted-foreground"
+                      >
+                        {message()} Showing the page directly.
+                      </p>
                     )}
                   </Show>
                   <Show when={jobStatus() && jobStatus() !== "done"}>
