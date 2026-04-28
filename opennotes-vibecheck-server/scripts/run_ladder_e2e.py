@@ -77,7 +77,7 @@ class InMemoryScrapeCache:
         self.store[(url, tier)] = cached
         return cached
 
-    async def evict(self, url: str, *, tier: str | None = None) -> None:
+    async def evict(self, _url: str, *, _tier: str | None = None) -> None:
         return None
 
 

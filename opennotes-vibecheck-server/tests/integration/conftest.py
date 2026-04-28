@@ -45,13 +45,12 @@ from testcontainers.postgres import PostgresContainer
 
 from src.cache.scrape_cache import CachedScrape
 from src.firecrawl_client import ScrapeMetadata, ScrapeResult
-
-ScrapeOutcome = ScrapeResult | BaseException | Callable[[], ScrapeResult]
-"""Per-URL outcome a recording client can serve: a fixed result, a raised
-exception (e.g. `FirecrawlBlocked`), or a no-arg factory for state-dependent
-tests."""
 from src.main import app
 from src.routes import analyze as analyze_route
+
+ScrapeOutcome = ScrapeResult | BaseException | Callable[[], ScrapeResult]
+# Per-URL outcome a recording client can serve: a fixed result, a raised
+# exception, or a no-arg factory for state-dependent tests.
 
 _REAL_GETADDRINFO = socket.getaddrinfo
 
@@ -61,9 +60,11 @@ _REAL_GETADDRINFO = socket.getaddrinfo
 # ---------------------------------------------------------------------------
 
 # We mirror src/cache/schema.sql for the tables the orchestrator + slot
-# writers + analyze route + sweeper touch. pg_cron and RLS are out of scope
-# for an integration test — the sweeper function is exercised by direct
-# SQL invocation, not by a scheduled cron job.
+# writers + analyze route + sweeper touch. pg_cron, RLS, and the TASK-1490
+# exec_sql/advisory-lock bootstrap are out of scope for an integration test:
+# fixtures apply DDL directly and TASK-1490.03 audits production drift against
+# the canonical schema.sql. The sweeper function is exercised by direct SQL
+# invocation, not by a scheduled cron job.
 INTEGRATION_DDL = """
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
@@ -525,16 +526,18 @@ async def http_client(
     web_risk_worker_module.check_urls = no_findings  # type: ignore[assignment]
 
     transport = httpx.ASGITransport(app=app)
-    async with httpx.AsyncClient(
-        transport=transport, base_url="http://test"
-    ) as c:
-        yield c
-    app.state.db_pool = None
-    analyze_route.limiter.reset()
-    analyze_route.enqueue_job = original  # type: ignore[assignment]
-    analyze_route.check_urls = original_check_urls  # type: ignore[assignment]
-    web_risk_module.check_urls = original_check_urls_module  # type: ignore[assignment]
-    web_risk_worker_module.check_urls = original_check_urls_worker  # type: ignore[assignment]
+    try:
+        async with httpx.AsyncClient(
+            transport=transport, base_url="http://test"
+        ) as c:
+            yield c
+    finally:
+        app.state.db_pool = None
+        analyze_route.limiter.reset()
+        analyze_route.enqueue_job = original  # type: ignore[assignment]
+        analyze_route.check_urls = original_check_urls  # type: ignore[assignment]
+        web_risk_module.check_urls = original_check_urls_module  # type: ignore[assignment]
+        web_risk_worker_module.check_urls = original_check_urls_worker  # type: ignore[assignment]
 
 
 # ---------------------------------------------------------------------------

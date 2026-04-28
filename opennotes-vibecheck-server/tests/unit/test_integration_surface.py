@@ -328,6 +328,9 @@ async def test_extract_transient_backstop_first_delivery_increments_counter_and_
     monkeypatch.setattr(
         orchestrator, "_build_firecrawl_client", lambda s: MagicMock()
     )
+    monkeypatch.setattr(
+        orchestrator, "_build_firecrawl_tier1_client", lambda s: MagicMock()
+    )
 
     async def _stub_scrape(*args: Any, **kwargs: Any) -> Any:
         return MagicMock(metadata=None)
@@ -389,6 +392,9 @@ async def test_extract_transient_backstop_second_delivery_escalates_to_terminal(
     )
     monkeypatch.setattr(
         orchestrator, "_build_firecrawl_client", lambda s: MagicMock()
+    )
+    monkeypatch.setattr(
+        orchestrator, "_build_firecrawl_tier1_client", lambda s: MagicMock()
     )
 
     async def _stub_scrape(*args: Any, **kwargs: Any) -> Any:

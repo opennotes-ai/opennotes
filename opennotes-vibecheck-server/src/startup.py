@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import re
 from collections.abc import AsyncIterator
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
@@ -19,15 +20,14 @@ logger = get_logger(__name__)
 
 _SCHEMA_PATH = Path(__file__).parent / "cache" / "schema.sql"
 
-# Supavisor (transaction-mode pooler) host for the vibecheck Supabase project.
-# The hostname encodes the project's region — see infrastructure
-# `supabase-projects.tf::supabase_project.vibecheck.region` (currently us-east-1).
-# Override via VIBECHECK_DATABASE_HOST when the project moves regions or when
-# pointing at a session-mode pooler / direct host. Transaction pooler requires
-# `statement_cache_size=0` because asyncpg's prepared-statement reuse is invalid
-# across connection swaps in transaction-pooled mode.
-_DEFAULT_POOLER_HOST = "aws-1-us-east-1.pooler.supabase.com"
+# Supavisor (transaction-mode pooler) requires `statement_cache_size=0` because
+# asyncpg prepared-statement reuse is invalid across connection swaps.
 _DEFAULT_POOLER_PORT = 6543
+_DEFAULT_POOLER_HOST = "aws-1-us-east-1.pooler.supabase.com"
+_SUPABASE_PROJECT_URL_RE = re.compile(
+    r"(?:https://)?[a-z0-9-]+\.supabase\.co",
+    re.IGNORECASE,
+)
 
 
 def _build_supabase_client(url: str, key: str) -> Client:
@@ -77,10 +77,18 @@ def _apply_schema(client: Client) -> None:
     try:
         client.postgrest.rpc("exec_sql", {"sql": sql}).execute()
     except Exception as exc:
-        logger.info(
-            "skipping in-app schema apply (run via supabase migration): %s",
-            exc,
+
+        def _redact(match: re.Match[str]) -> str:
+            prefix = "https://" if match.group(0).lower().startswith("https://") else ""
+            return f"{prefix}<supabase-project>.supabase.co"
+
+        redacted_message = _SUPABASE_PROJECT_URL_RE.sub(_redact, str(exc))
+        logger.error(
+            "vibecheck schema apply via exec_sql RPC failed: %s",
+            redacted_message,
+            exc_info=True,
         )
+        raise RuntimeError(redacted_message) from exc
 
 
 _EXTRACTOR_TO_THREAD_CALL_SITES = 3
@@ -152,16 +160,22 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         # error_code="internal" when this is missing, so a deploy without the
         # right Supabase credentials is loud rather than silently broken.
         if settings.VIBECHECK_SUPABASE_URL and settings.VIBECHECK_SUPABASE_DB_PASSWORD:
+            db_host = settings.VIBECHECK_DATABASE_HOST or _DEFAULT_POOLER_HOST
+            if not settings.VIBECHECK_DATABASE_HOST:
+                logger.warning(
+                    "VIBECHECK_DATABASE_HOST unset; falling back to default pooler host %s",
+                    _DEFAULT_POOLER_HOST,
+                )
             try:
                 app.state.db_pool = await _create_db_pool(
                     supabase_url=settings.VIBECHECK_SUPABASE_URL,
                     db_password=settings.VIBECHECK_SUPABASE_DB_PASSWORD,
-                    host=settings.VIBECHECK_DATABASE_HOST or _DEFAULT_POOLER_HOST,
+                    host=db_host,
                     port=settings.VIBECHECK_DATABASE_PORT or _DEFAULT_POOLER_PORT,
                 )
                 logger.info(
                     "vibecheck db pool initialized (host=%s port=%s)",
-                    settings.VIBECHECK_DATABASE_HOST or _DEFAULT_POOLER_HOST,
+                    db_host,
                     settings.VIBECHECK_DATABASE_PORT or _DEFAULT_POOLER_PORT,
                 )
             except Exception as exc:
