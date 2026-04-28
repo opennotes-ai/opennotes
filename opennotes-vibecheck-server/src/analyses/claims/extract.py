@@ -8,6 +8,7 @@ Two entry points:
 - `extract_claims(utterance, settings)` — thin wrapper around the bulk path
   for backwards compatibility (one-element batch).
 """
+
 from __future__ import annotations
 
 from src.analyses.claims._claims_schemas import (
@@ -17,6 +18,7 @@ from src.analyses.claims._claims_schemas import (
 )
 from src.config import Settings
 from src.services.gemini_agent import build_agent
+from src.services.vertex_limiter import vertex_slot
 from src.utterances.schema import Utterance
 
 _SYSTEM_PROMPT = (
@@ -36,9 +38,7 @@ _SYSTEM_PROMPT = (
 
 
 _BULK_SYSTEM_PROMPT = (
-    _SYSTEM_PROMPT
-    + "\n\n"
-    + "You will receive a NUMBERED list of utterances. For each utterance, "
+    _SYSTEM_PROMPT + "\n\n" + "You will receive a NUMBERED list of utterances. For each utterance, "
     "return a `_PerUtteranceClaims` object whose `utterance_index` matches "
     "the index in the input and whose `claims` list contains the extracted "
     "claims from that utterance (empty list if none). Always emit one entry "
@@ -52,9 +52,7 @@ async def extract_claims(utterance: Utterance, settings: Settings) -> list[Claim
     return results[0] if results else []
 
 
-async def extract_claims_bulk(
-    utterances: list[Utterance], settings: Settings
-) -> list[list[Claim]]:
+async def extract_claims_bulk(utterances: list[Utterance], settings: Settings) -> list[list[Claim]]:
     """Extract verifiable claims for every utterance in ONE LLM call.
 
     Returns a list of claim-lists index-aligned with `utterances`. Utterances
@@ -85,7 +83,8 @@ async def extract_claims_bulk(
         name="vibecheck.claims_extract",
     )
     prompt = "Utterances:\n" + "\n".join(prompt_lines)
-    result = await agent.run(prompt)
+    async with vertex_slot(settings):
+        result = await agent.run(prompt)
     response = result.output
     if not isinstance(response, BulkClaimExtractionResponse):
         raise TypeError(

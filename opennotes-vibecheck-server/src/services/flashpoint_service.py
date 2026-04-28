@@ -13,6 +13,7 @@ two substantive changes:
 
 The DSPy module artifact format is unchanged; only the LM backend differs.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -24,6 +25,8 @@ from typing import TYPE_CHECKING, Any
 
 from src.config import Settings, get_settings
 from src.monitoring import get_logger
+from src.services.gemini_agent import google_vertex_model_name
+from src.services.vertex_limiter import vertex_slot
 from src.utterances.schema import Utterance
 
 if TYPE_CHECKING:
@@ -83,9 +86,7 @@ def parse_derailment_score(value: Any) -> int:  # noqa: PLR0911
     try:
         return max(DERAILMENT_SCORE_MIN, min(DERAILMENT_SCORE_MAX, int(value)))
     except (TypeError, ValueError):
-        logger.warning(
-            "parse_derailment_score: unrecognized type %s", type(value).__name__
-        )
+        logger.warning("parse_derailment_score: unrecognized type %s", type(value).__name__)
         return 0
 
 
@@ -227,9 +228,10 @@ class FlashpointDetectionService:
 
     def _build_lm(self) -> dspy.LM:
         dspy = _import_dspy()
-        _, _, model_name = self._settings.VERTEXAI_MODEL.partition(":")
-        if not model_name:
-            model_name = self._settings.VERTEXAI_MODEL
+        model_name = google_vertex_model_name(
+            self._settings.VERTEXAI_FAST_MODEL,
+            setting_name="VERTEXAI_FAST_MODEL",
+        )
         return dspy.LM(
             f"vertex_ai/{model_name}",
             vertex_project=self._settings.VERTEXAI_PROJECT,
@@ -254,9 +256,7 @@ class FlashpointDetectionService:
 
             optimized_path = self._optimized_path or self._get_default_optimized_path()
             if optimized_path.exists():
-                logger.info(
-                    "Loading optimized flashpoint detector from %s", optimized_path
-                )
+                logger.info("Loading optimized flashpoint detector from %s", optimized_path)
                 self._detector.load(str(optimized_path))
             else:
                 logger.info(
@@ -319,18 +319,17 @@ class FlashpointDetectionService:
             current_msg = self._format_line(utterance)
 
             detector = self._get_detector()
-            result = await asyncio.to_thread(
-                self._run_detector, detector, context_str, current_msg
-            )
+            async with vertex_slot(self._settings):
+                result = await asyncio.to_thread(
+                    self._run_detector, detector, context_str, current_msg
+                )
 
             derailment_score = parse_derailment_score(result.derailment_score)
 
             if derailment_score < score_threshold:
                 return None
 
-            risk_level_str = parse_risk_level(
-                getattr(result, "risk_level", ""), derailment_score
-            )
+            risk_level_str = parse_risk_level(getattr(result, "risk_level", ""), derailment_score)
             return FlashpointMatch(
                 utterance_id=utterance.utterance_id or "",
                 derailment_score=derailment_score,

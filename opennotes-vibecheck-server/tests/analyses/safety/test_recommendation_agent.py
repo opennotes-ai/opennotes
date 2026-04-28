@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 from types import SimpleNamespace
-from typing import cast
 
 import pytest
 
@@ -40,15 +39,15 @@ async def test_run_safety_recommendation_serializes_inputs_for_agent(monkeypatch
     )
     build_calls = []
 
-    def fake_build_agent(settings, *, output_type, system_prompt, name=None):
-        build_calls.append((settings, output_type, system_prompt, name))
+    def fake_build_agent(settings, *, output_type, system_prompt, name=None, tier="fast"):
+        build_calls.append((settings, output_type, system_prompt, name, tier))
         return agent
 
     monkeypatch.setattr(
         "src.analyses.safety.recommendation_agent.build_agent",
         fake_build_agent,
     )
-    settings = cast(Settings, cast(object, SimpleNamespace()))
+    settings = Settings()
 
     result = await run_safety_recommendation(
         SafetyRecommendationInputs(
@@ -73,7 +72,13 @@ async def test_run_safety_recommendation_serializes_inputs_for_agent(monkeypatch
 
     assert result.level == SafetyLevel.CAUTION
     assert build_calls == [
-        (settings, SafetyRecommendation, RECOMMENDATION_SYSTEM_PROMPT, "vibecheck.safety_recommendation")
+        (
+            settings,
+            SafetyRecommendation,
+            RECOMMENDATION_SYSTEM_PROMPT,
+            "vibecheck.safety_recommendation",
+            "synthesis",
+        )
     ]
     payload = json.loads(agent.prompts[0])
     assert payload["harmful_content_matches"][0]["source"] == "gcp"
@@ -92,7 +97,7 @@ async def test_video_sampling_sentinel_is_marked_inconclusive(monkeypatch):
         "src.analyses.safety.recommendation_agent.build_agent",
         lambda *args, **kwargs: agent,
     )
-    settings = cast(Settings, cast(object, SimpleNamespace()))
+    settings = Settings()
 
     result = await run_safety_recommendation(
         SafetyRecommendationInputs(
@@ -169,7 +174,7 @@ async def test_agent_output_level_is_returned(monkeypatch, inputs, expected):
 
     result = await run_safety_recommendation(
         inputs,
-        settings=cast(Settings, cast(object, SimpleNamespace())),
+        settings=Settings(),
     )
 
     assert result.level == expected

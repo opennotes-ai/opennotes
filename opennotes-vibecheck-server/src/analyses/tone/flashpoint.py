@@ -14,6 +14,7 @@ Two entry points:
 Bulk path assumes the ordered utterance list IS the conversation context:
 utterances[:i] is the prior context for utterances[i].
 """
+
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
@@ -26,6 +27,7 @@ from src.analyses.tone._flashpoint_schemas import (
 from src.config import Settings
 from src.monitoring import get_logger
 from src.services.gemini_agent import build_agent
+from src.services.vertex_limiter import vertex_slot
 from src.utterances.schema import Utterance
 
 if TYPE_CHECKING:
@@ -89,7 +91,8 @@ async def detect_flashpoints_bulk(
         name="vibecheck.flashpoint",
     )
     try:
-        result = await agent.run("Conversation:\n" + "\n".join(numbered))
+        async with vertex_slot(settings):
+            result = await agent.run("Conversation:\n" + "\n".join(numbered))
     except Exception as exc:
         logger.warning("bulk flashpoint detection failed: %s", exc)
         return out

@@ -29,6 +29,7 @@ inside a long-running agent run. When no screenshot was persisted the tool
 returns None; callers in the agent's tool surface receive that None and
 proceed from markdown alone.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -45,6 +46,7 @@ from src.cache.scrape_cache import CachedScrape, SupabaseScrapeCache
 from src.config import Settings, get_settings
 from src.firecrawl_client import FirecrawlClient
 from src.services.gemini_agent import build_agent
+from src.services.vertex_limiter import vertex_slot
 from src.utils.html_sanitize import strip_noise
 from src.utterances.errors import (
     TransientExtractionError,
@@ -153,9 +155,7 @@ async def extract_utterances(
 
     with logfire.span("vibecheck.extract_utterances", url=url) as span:
         if scrape is None:
-            scrape = await _get_or_scrape(
-                url, client, scrape_cache, span=span
-            )
+            scrape = await _get_or_scrape(url, client, scrape_cache, span=span)
         markdown = scrape.markdown
         if not markdown or not markdown.strip():
             raise UtteranceExtractionError("firecrawl scrape returned no markdown")
@@ -169,21 +169,16 @@ async def extract_utterances(
         _register_tools(agent)
         deps = ExtractorDeps(scrape=scrape, scrape_cache=scrape_cache)
 
-        # Strip the `google-vertex:` prefix `build_agent` strips before
-        # constructing GoogleModel so the span attr matches the
-        # ModelHTTPError.model_name that pydantic-ai surfaces from the
-        # provider — keeps Logfire saved searches consistent.
-        model_name = settings.VERTEXAI_MODEL.removeprefix("google-vertex:")
+        model_name = agent.model.model_name
         try:
-            result = await agent.run(markdown, deps=deps)  # pyright: ignore[reportArgumentType]
+            async with vertex_slot(settings):
+                result = await agent.run(markdown, deps=deps)  # pyright: ignore[reportArgumentType]
         except Exception as exc:
             transient = classify_pydantic_ai_error(exc, model_name=model_name)
             if transient is not None:
                 _set_upstream_span_attrs(span, transient)
                 raise transient from exc
-            raise UtteranceExtractionError(
-                f"Gemini extraction failed: {exc}"
-            ) from exc
+            raise UtteranceExtractionError(f"Gemini extraction failed: {exc}") from exc
 
         payload = cast(UtterancesPayload, cast(object, result.output))
         if not payload.utterances:
@@ -340,7 +335,5 @@ def _assign_stable_ids(payload: UtterancesPayload) -> None:
     for i, utterance in enumerate(payload.utterances):
         uid = utterance.utterance_id
         if not uid or uid in seen:
-            utterance.utterance_id = (
-                f"{utterance.kind}-{i}-{hash(utterance.text) & 0xFFFFFFFF:08x}"
-            )
+            utterance.utterance_id = f"{utterance.kind}-{i}-{hash(utterance.text) & 0xFFFFFFFF:08x}"
         seen.add(utterance.utterance_id or "")

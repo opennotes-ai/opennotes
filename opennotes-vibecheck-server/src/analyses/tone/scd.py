@@ -11,6 +11,7 @@ For inputs that are not a real multi-speaker exchange (fewer than two
 utterances OR fewer than two distinct authors), no LLM call is made and a
 minimal `insufficient_conversation=True` report is returned.
 """
+
 from __future__ import annotations
 
 from functools import lru_cache
@@ -18,6 +19,7 @@ from pathlib import Path
 
 from src.config import Settings
 from src.services.gemini_agent import build_agent
+from src.services.vertex_limiter import vertex_slot
 from src.utterances import Utterance
 
 from ._scd_schemas import SCDReport
@@ -113,5 +115,6 @@ async def analyze_scd(
         name="vibecheck.scd",
     )
     formatted = _format_utterances(utterances)
-    result = await agent.run(formatted)
+    async with vertex_slot(settings):
+        result = await agent.run(formatted)
     return result.output

@@ -1,4 +1,5 @@
 """Aggregate safety recommendation agent."""
+
 from __future__ import annotations
 
 import json
@@ -14,6 +15,7 @@ from src.analyses.safety._schemas import (
 )
 from src.config import Settings
 from src.services.gemini_agent import build_agent
+from src.services.vertex_limiter import vertex_slot
 
 RECOMMENDATION_SYSTEM_PROMPT = """You synthesize the safety findings for one scraped page.
 Inputs are already-filtered safety matches from four analyses: text moderation,
@@ -60,12 +62,8 @@ def _serialize_inputs(inputs: SafetyRecommendationInputs) -> str:
         video_matches.append(dumped)
 
     payload = {
-        "harmful_content_matches": [
-            _model_dump(match) for match in inputs.harmful_content_matches
-        ],
-        "web_risk_findings": [
-            _model_dump(finding) for finding in inputs.web_risk_findings
-        ],
+        "harmful_content_matches": [_model_dump(match) for match in inputs.harmful_content_matches],
+        "web_risk_findings": [_model_dump(finding) for finding in inputs.web_risk_findings],
         "image_moderation_matches": [
             _model_dump(match) for match in inputs.image_moderation_matches
         ],
@@ -86,7 +84,9 @@ async def run_safety_recommendation(
             output_type=SafetyRecommendation,
             system_prompt=RECOMMENDATION_SYSTEM_PROMPT,
             name="vibecheck.safety_recommendation",
+            tier="synthesis",
         ),
     )
-    result = await agent.run(_serialize_inputs(inputs))
+    async with vertex_slot(settings):
+        result = await agent.run(_serialize_inputs(inputs))
     return cast(SafetyRecommendation, result.output)

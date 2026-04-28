@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from dataclasses import replace
 from types import SimpleNamespace
-from typing import Any, cast
+from typing import Any
 from uuid import UUID, uuid4
 
 import pytest
@@ -158,9 +158,7 @@ def _factcheck() -> FactCheckMatch:
 def _sentiment(positive_pct: float, negative_pct: float) -> SentimentStatsReport:
     neutral_pct = max(0.0, 100.0 - positive_pct - negative_pct)
     return SentimentStatsReport(
-        per_utterance=[
-            SentimentScore(utterance_id="u1", label="positive", valence=0.5)
-        ]
+        per_utterance=[SentimentScore(utterance_id="u1", label="positive", valence=0.5)]
         if positive_pct or negative_pct
         else [],
         positive_pct=positive_pct,
@@ -222,16 +220,12 @@ def test_all_inputs_clear_false_when_any_image_match_present():
     # max_likelihood (SAFETY_EMPTINESS in Sidebar.tsx). The headline path
     # must agree so we never produce a stock "all clear" line above an
     # expanded image-moderation section.
-    inputs = replace(
-        _empty_inputs(), image_moderation_matches=[_image_match(0.3)]
-    )
+    inputs = replace(_empty_inputs(), image_moderation_matches=[_image_match(0.3)])
     assert all_inputs_clear(inputs) is False
 
 
 def test_all_inputs_clear_false_when_any_video_match_present():
-    inputs = replace(
-        _empty_inputs(), video_moderation_matches=[_video_match(0.3)]
-    )
+    inputs = replace(_empty_inputs(), video_moderation_matches=[_video_match(0.3)])
     assert all_inputs_clear(inputs) is False
 
 
@@ -241,9 +235,7 @@ def test_all_inputs_clear_false_when_sentiment_has_neutral_only_utterances():
     # (an all-neutral page). The headline must mirror that so a stock
     # all-clear line doesn't appear above a rendered sentiment section.
     sentiment = SentimentStatsReport(
-        per_utterance=[
-            SentimentScore(utterance_id="u1", label="neutral", valence=0.0)
-        ],
+        per_utterance=[SentimentScore(utterance_id="u1", label="neutral", valence=0.0)],
         positive_pct=0.0,
         negative_pct=0.0,
         neutral_pct=100.0,
@@ -328,7 +320,7 @@ async def test_run_headline_summary_all_clear_returns_stock_kind(monkeypatch):
         "src.analyses.synthesis.headline_summary_agent.build_agent",
         fake_build_agent,
     )
-    settings = cast(Settings, cast(object, SimpleNamespace()))
+    settings = Settings()
     job_id = UUID("11111111-1111-1111-1111-111111111111")
 
     result = await run_headline_summary(_empty_inputs(), settings=settings, job_id=job_id)
@@ -348,15 +340,15 @@ async def test_run_headline_summary_signal_calls_agent_and_overrides_kind(monkey
     )
     build_calls: list[tuple[Any, ...]] = []
 
-    def fake_build_agent(settings, *, output_type, system_prompt, name=None):
-        build_calls.append((settings, output_type, system_prompt, name))
+    def fake_build_agent(settings, *, output_type, system_prompt, name=None, tier="fast"):
+        build_calls.append((settings, output_type, system_prompt, name, tier))
         return agent
 
     monkeypatch.setattr(
         "src.analyses.synthesis.headline_summary_agent.build_agent",
         fake_build_agent,
     )
-    settings = cast(Settings, cast(object, SimpleNamespace()))
+    settings = Settings()
     inputs = replace(
         _empty_inputs(),
         harmful_content_matches=[_harmful_match()],
@@ -375,14 +367,13 @@ async def test_run_headline_summary_signal_calls_agent_and_overrides_kind(monkey
             HeadlineSummary,
             HEADLINE_SUMMARY_SYSTEM_PROMPT,
             "vibecheck.headline_summary",
+            "synthesis",
         )
     ]
 
 
 async def test_run_headline_summary_serializes_inputs_for_agent(monkeypatch):
-    agent = StubAgent(
-        HeadlineSummary(text="ok", kind="synthesized", unavailable_inputs=[])
-    )
+    agent = StubAgent(HeadlineSummary(text="ok", kind="synthesized", unavailable_inputs=[]))
     monkeypatch.setattr(
         "src.analyses.synthesis.headline_summary_agent.build_agent",
         lambda *args, **kwargs: agent,
@@ -403,7 +394,7 @@ async def test_run_headline_summary_serializes_inputs_for_agent(monkeypatch):
         page_kind=PageKind.ARTICLE,
         unavailable_inputs=["video_moderation"],
     )
-    settings = cast(Settings, cast(object, SimpleNamespace()))
+    settings = Settings()
     job_id = UUID("33333333-3333-3333-3333-333333333333")
 
     await run_headline_summary(inputs, settings=settings, job_id=job_id)
@@ -450,7 +441,7 @@ async def test_unavailable_inputs_take_degraded_stock_path_when_signals_clear(mo
         _empty_inputs(),
         unavailable_inputs=["web_risk", "video_moderation"],
     )
-    settings = cast(Settings, cast(object, SimpleNamespace()))
+    settings = Settings()
     job_id = UUID("44444444-4444-4444-4444-444444444444")
 
     result = await run_headline_summary(inputs, settings=settings, job_id=job_id)
@@ -468,7 +459,7 @@ async def test_unavailable_inputs_empty_takes_stock_path_when_clear(monkeypatch)
         lambda *args, **kwargs: ExplodingAgent(),
     )
     inputs = _empty_inputs()  # empty signals, empty unavailable_inputs
-    settings = cast(Settings, cast(object, SimpleNamespace()))
+    settings = Settings()
     job_id = UUID("44444444-4444-4444-4444-444444444444")
 
     result = await run_headline_summary(inputs, settings=settings, job_id=job_id)
@@ -495,7 +486,7 @@ async def test_unavailable_inputs_preserved_through_synthesized_path(monkeypatch
         flashpoint_matches=[_flashpoint()],
         unavailable_inputs=["web_risk"],
     )
-    settings = cast(Settings, cast(object, SimpleNamespace()))
+    settings = Settings()
     job_id = UUID("55555555-5555-5555-5555-555555555555")
 
     result = await run_headline_summary(inputs, settings=settings, job_id=job_id)
@@ -576,9 +567,7 @@ def test_pick_degraded_stock_phrase_varies_across_jobs():
             "neutral-only sentiment",
             "sentiment_stats",
             SentimentStatsReport(
-                per_utterance=[
-                    SentimentScore(utterance_id="u1", label="neutral", valence=0.0)
-                ],
+                per_utterance=[SentimentScore(utterance_id="u1", label="neutral", valence=0.0)],
                 positive_pct=0.0,
                 negative_pct=0.0,
                 neutral_pct=100.0,
@@ -606,7 +595,10 @@ def test_pick_degraded_stock_phrase_varies_across_jobs():
     ],
 )
 async def test_run_headline_summary_takes_agent_path_for_sidebar_signals(
-    monkeypatch, label, field, value,
+    monkeypatch,
+    label,
+    field,
+    value,
 ):
     """Public-API guard: any input shape the sidebar renders as non-empty
     must reach the synthesizer, not the stock pool. Parametrized over the
@@ -626,14 +618,12 @@ async def test_run_headline_summary_takes_agent_path_for_sidebar_signals(
         lambda *args, **kwargs: agent,
     )
     inputs = replace(_empty_inputs(), **{field: value})
-    settings = cast(Settings, cast(object, SimpleNamespace()))
+    settings = Settings()
     job_id = UUID("66666666-6666-6666-6666-666666666666")
 
     result = await run_headline_summary(inputs, settings=settings, job_id=job_id)
 
-    assert result.kind == "synthesized", (
-        f"{label} must reach the agent path; got stock instead"
-    )
+    assert result.kind == "synthesized", f"{label} must reach the agent path; got stock instead"
     assert agent.prompts, f"{label} must invoke the agent at least once"
     assert label in result.text
     # Caller forces unavailable_inputs from inputs, never echoes the model's.
@@ -657,7 +647,7 @@ async def test_run_headline_summary_scd_clean_insufficient_takes_stock_path(monk
             insufficient_conversation=True,
         ),
     )
-    settings = cast(Settings, cast(object, SimpleNamespace()))
+    settings = Settings()
     job_id = UUID("77777777-7777-7777-7777-777777777777")
 
     result = await run_headline_summary(inputs, settings=settings, job_id=job_id)
@@ -753,7 +743,7 @@ async def test_run_headline_summary_coverage_only_caution_takes_degraded_stock_p
         ),
         unavailable_inputs=["web_risk", "scd"],
     )
-    settings = cast(Settings, cast(object, SimpleNamespace()))
+    settings = Settings()
     job_id = UUID("88888888-8888-8888-8888-888888888888")
 
     result = await run_headline_summary(inputs, settings=settings, job_id=job_id)

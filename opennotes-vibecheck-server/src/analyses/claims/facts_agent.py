@@ -8,6 +8,7 @@ from all tool calls are unioned and returned as the agent output.
 Tool failures return ``[]`` and are logged as warnings — they must not fail
 the agent run.  Vertex/agent-level errors propagate to the caller.
 """
+
 from __future__ import annotations
 
 import json
@@ -23,6 +24,7 @@ from src.analyses.claims._factcheck_schemas import FactCheckMatch
 from src.analyses.claims.known_misinfo import check_known_misinformation
 from src.config import Settings
 from src.services.gemini_agent import build_agent
+from src.services.vertex_limiter import vertex_slot
 
 logger = logging.getLogger(__name__)
 
@@ -78,9 +80,7 @@ async def run_facts_claims_known_misinfo(
         ctx: RunContext[FactsAgentDeps], claim_text: str
     ) -> list[FactCheckMatch]:
         try:
-            return await check_known_misinformation(
-                claim_text, httpx_client=ctx.deps.httpx_client
-            )
+            return await check_known_misinformation(claim_text, httpx_client=ctx.deps.httpx_client)
         except Exception as exc:
             logger.warning("fact check tool failed for %r: %s", claim_text, exc)
             return []
@@ -95,7 +95,8 @@ async def run_facts_claims_known_misinfo(
             else:
                 serializable_claims.append(claim)
         user_prompt = json.dumps(serializable_claims)
-        result = await agent.run(user_prompt, deps=FactsAgentDeps(httpx_client=hx))
+        async with vertex_slot(settings):
+            result = await agent.run(user_prompt, deps=FactsAgentDeps(httpx_client=hx))
 
     matches = list(result.output or [])
     return {"known_misinformation": [m.model_dump() for m in matches]}
@@ -113,9 +114,7 @@ def _extract_deduped_claims(payload: Any) -> list[Any]:
     return list(getattr(claims_report, "deduped_claims", []) or [])
 
 
-async def _load_deduped_claims_from_dedup_slot(
-    pool: Any, job_id: UUID
-) -> list[Any]:
+async def _load_deduped_claims_from_dedup_slot(pool: Any, job_id: UUID) -> list[Any]:
     """Read FACTS_CLAIMS_DEDUP slot data from the job's sections JSONB.
 
     The orchestrator runs all slots in parallel with the same ``UtterancesPayload``
