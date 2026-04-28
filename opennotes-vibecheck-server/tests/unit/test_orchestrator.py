@@ -1563,6 +1563,9 @@ def _stub_post_gemini_for_escalation(monkeypatch: pytest.MonkeyPatch) -> None:
     async def noop_safety_rec(*args: Any, **kwargs: Any) -> None:
         return None
 
+    async def noop_headline(*args: Any, **kwargs: Any) -> None:
+        return None
+
     async def noop_finalize(*args: Any, **kwargs: Any) -> bool:
         return True
 
@@ -1572,6 +1575,9 @@ def _stub_post_gemini_for_escalation(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(orchestrator, "_run_all_sections", noop_run_sections)
     monkeypatch.setattr(
         orchestrator, "_run_safety_recommendation_step", noop_safety_rec
+    )
+    monkeypatch.setattr(
+        orchestrator, "_run_headline_summary_step", noop_headline
     )
     monkeypatch.setattr(orchestrator, "maybe_finalize_job", noop_finalize)
 
@@ -1836,3 +1842,247 @@ async def test_run_pipeline_threads_scrape_step_result_into_extractor(
         )
 
     assert captured["kwargs"].get("scrape") is sentinel_scrape
+
+
+# ---------------------------------------------------------------------------
+# TASK-1508.04.03 — _STAGE_HEADLINE_SUMMARY between safety_recommendation
+# and finalize. Mirrors the safety_recommendation step coverage above:
+# success path, agent-failure swallowed, attempt-rotation no-op, and the
+# input-aggregation helper for missing slots.
+# ---------------------------------------------------------------------------
+
+
+class HeadlineSummaryConn:
+    def __init__(
+        self,
+        sections,
+        *,
+        safety_recommendation: Any = None,
+        page_title: str | None = None,
+        page_kind: str | None = "other",
+        attempt_matches: bool = True,
+    ) -> None:
+        self.sections = sections
+        self.safety_recommendation = safety_recommendation
+        self.page_title = page_title
+        self.page_kind = page_kind
+        self.attempt_matches = attempt_matches
+        self.written: dict[str, Any] | None = None
+
+    async def fetchrow(self, query, job_id, task_attempt):
+        if not self.attempt_matches:
+            return None
+        return {
+            "sections": self.sections,
+            "safety_recommendation": self.safety_recommendation,
+            "page_title": self.page_title,
+            "page_kind": self.page_kind,
+        }
+
+    async def execute(self, query, job_id, headline_json, task_attempt):
+        self.written = {
+            "query": query,
+            "job_id": job_id,
+            "headline_json": headline_json,
+            "task_attempt": task_attempt,
+        }
+        return "UPDATE 1" if self.attempt_matches else "UPDATE 0"
+
+
+def _all_sections_done(**overrides):
+    """Section dict with all 10 slots in DONE state, populated with empty data."""
+    sections = {
+        SectionSlug.SAFETY_MODERATION.value: _slot(
+            SectionState.DONE, {"harmful_content_matches": []}
+        ),
+        SectionSlug.SAFETY_WEB_RISK.value: _slot(
+            SectionState.DONE, {"findings": []}
+        ),
+        SectionSlug.SAFETY_IMAGE_MODERATION.value: _slot(
+            SectionState.DONE, {"matches": []}
+        ),
+        SectionSlug.SAFETY_VIDEO_MODERATION.value: _slot(
+            SectionState.DONE, {"matches": []}
+        ),
+        SectionSlug.TONE_DYNAMICS_FLASHPOINT.value: _slot(
+            SectionState.DONE, {"flashpoint_matches": []}
+        ),
+        SectionSlug.TONE_DYNAMICS_SCD.value: _slot(
+            SectionState.DONE,
+            {
+                "scd": {
+                    "summary": "",
+                    "tone_labels": [],
+                    "per_speaker_notes": {},
+                    "insufficient_conversation": True,
+                }
+            },
+        ),
+        SectionSlug.FACTS_CLAIMS_DEDUP.value: _slot(
+            SectionState.DONE,
+            {
+                "claims_report": {
+                    "deduped_claims": [],
+                    "total_claims": 0,
+                    "total_unique": 0,
+                }
+            },
+        ),
+        SectionSlug.FACTS_CLAIMS_KNOWN_MISINFO.value: _slot(
+            SectionState.DONE, {"known_misinformation": []}
+        ),
+        SectionSlug.OPINIONS_SENTIMENTS_SENTIMENT.value: _slot(
+            SectionState.DONE,
+            {
+                "sentiment_stats": {
+                    "per_utterance": [],
+                    "positive_pct": 0.0,
+                    "negative_pct": 0.0,
+                    "neutral_pct": 0.0,
+                    "mean_valence": 0.0,
+                }
+            },
+        ),
+        SectionSlug.OPINIONS_SENTIMENTS_SUBJECTIVE.value: _slot(
+            SectionState.DONE, {"subjective_claims": []}
+        ),
+    }
+    sections.update(overrides)
+    return sections
+
+
+async def test_headline_summary_step_writes_serialized_summary(monkeypatch):
+    from src.analyses.schemas import HeadlineSummary
+    from src.jobs import orchestrator
+
+    captured_inputs: list[Any] = []
+
+    async def fake_run(inputs, settings, job_id):
+        captured_inputs.append(inputs)
+        return HeadlineSummary(
+            text="Routine page; little to flag.",
+            kind="stock",
+            unavailable_inputs=[],
+        )
+
+    monkeypatch.setattr(orchestrator, "run_headline_summary", fake_run)
+
+    job_id = uuid4()
+    task_attempt = uuid4()
+    conn = HeadlineSummaryConn(_all_sections_done(), page_title="Example", page_kind="article")
+
+    await orchestrator._run_headline_summary_step(
+        FakePool(conn), job_id, task_attempt, MagicMock()
+    )
+
+    assert len(captured_inputs) == 1
+    assert captured_inputs[0].page_title == "Example"
+    assert captured_inputs[0].page_kind.value == "article"
+    assert conn.written is not None
+    assert '"text": "Routine page; little to flag."' in conn.written["headline_json"]
+    assert '"kind": "stock"' in conn.written["headline_json"]
+    assert conn.written["task_attempt"] == task_attempt
+
+
+async def test_headline_summary_step_marks_failed_slots_unavailable(monkeypatch):
+    from src.analyses.schemas import HeadlineSummary
+    from src.jobs import orchestrator
+
+    captured_inputs: list[Any] = []
+
+    async def fake_run(inputs, settings, job_id):
+        captured_inputs.append(inputs)
+        return HeadlineSummary(
+            text="Quiet content with nothing to highlight.",
+            kind="synthesized",
+            unavailable_inputs=inputs.unavailable_inputs,
+        )
+
+    monkeypatch.setattr(orchestrator, "run_headline_summary", fake_run)
+
+    conn = HeadlineSummaryConn(
+        _all_sections_done(
+            **{
+                SectionSlug.TONE_DYNAMICS_SCD.value: _slot(SectionState.FAILED),
+                SectionSlug.FACTS_CLAIMS_DEDUP.value: _slot(SectionState.FAILED),
+            }
+        ),
+    )
+
+    await orchestrator._run_headline_summary_step(
+        FakePool(conn), uuid4(), uuid4(), MagicMock()
+    )
+
+    inputs = captured_inputs[0]
+    assert inputs.scd is None
+    assert inputs.claims_report is None
+    assert "scd" in inputs.unavailable_inputs
+    assert "claims_dedup" in inputs.unavailable_inputs
+    # Missing safety_recommendation should also be tracked as unavailable.
+    assert "safety_recommendation" in inputs.unavailable_inputs
+
+
+async def test_headline_summary_step_swallows_agent_exception(monkeypatch):
+    from src.jobs import orchestrator
+
+    async def fake_run(inputs, settings, job_id):
+        raise RuntimeError("agent unavailable")
+
+    monkeypatch.setattr(orchestrator, "run_headline_summary", fake_run)
+    conn = HeadlineSummaryConn(_all_sections_done())
+
+    await orchestrator._run_headline_summary_step(
+        FakePool(conn), uuid4(), uuid4(), MagicMock()
+    )
+
+    assert conn.written is None
+
+
+async def test_headline_summary_step_noops_when_attempt_rotates(monkeypatch):
+    from src.jobs import orchestrator
+
+    async def fake_run(inputs, settings, job_id):
+        raise AssertionError("agent should not run when the attempt row is gone")
+
+    monkeypatch.setattr(orchestrator, "run_headline_summary", fake_run)
+    conn = HeadlineSummaryConn(_all_sections_done(), attempt_matches=False)
+
+    await orchestrator._run_headline_summary_step(
+        FakePool(conn), uuid4(), uuid4(), MagicMock()
+    )
+
+    assert conn.written is None
+
+
+def test_build_headline_summary_inputs_propagates_safety_recommendation(monkeypatch):
+    from src.jobs import orchestrator
+
+    sections = orchestrator._parse_sections(_all_sections_done())
+    inputs = orchestrator._build_headline_summary_inputs(
+        sections,
+        {
+            "level": "caution",
+            "rationale": "Some inputs were unavailable.",
+            "top_signals": [],
+            "unavailable_inputs": [],
+        },
+        "Title",
+        "article",
+    )
+
+    assert inputs.safety_recommendation is not None
+    assert inputs.safety_recommendation.level == SafetyLevel.CAUTION
+    assert "safety_recommendation" not in inputs.unavailable_inputs
+
+
+def test_build_headline_summary_inputs_marks_safety_unavailable_when_null(monkeypatch):
+    from src.jobs import orchestrator
+
+    sections = orchestrator._parse_sections(_all_sections_done())
+    inputs = orchestrator._build_headline_summary_inputs(
+        sections, None, None, None
+    )
+
+    assert inputs.safety_recommendation is None
+    assert "safety_recommendation" in inputs.unavailable_inputs
+    assert inputs.page_kind.value == "other"

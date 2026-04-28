@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from dataclasses import replace
 from types import SimpleNamespace
-from typing import cast
+from typing import Any, cast
 from uuid import UUID, uuid4
 
 import pytest
@@ -295,7 +295,7 @@ async def test_run_headline_summary_signal_calls_agent_and_overrides_kind(monkey
             unavailable_inputs=["model_echo_should_be_ignored"],
         )
     )
-    build_calls: list[tuple] = []
+    build_calls: list[tuple[Any, ...]] = []
 
     def fake_build_agent(settings, *, output_type, system_prompt, name=None):
         build_calls.append((settings, output_type, system_prompt, name))

@@ -81,35 +81,40 @@ def all_inputs_clear(inputs: HeadlineSummaryInputs) -> bool:
     treats as "nothing to flag" so the stock-phrase short-circuit and the
     rendered sidebar agree on emptiness.
     """
-    if inputs.harmful_content_matches:
-        return False
-    if inputs.web_risk_findings:
-        return False
-    if any(match.max_likelihood > 0.5 for match in inputs.image_moderation_matches):
-        return False
-    if any(match.max_likelihood > 0.5 for match in inputs.video_moderation_matches):
-        return False
-    if inputs.flashpoint_matches:
-        return False
-    if inputs.scd is not None and not inputs.scd.insufficient_conversation:
-        return False
-    if inputs.claims_report is not None and inputs.claims_report.deduped_claims:
-        return False
-    if inputs.known_misinformation:
-        return False
-    if inputs.subjective_claims:
-        return False
-    if inputs.sentiment_stats is not None and (
+    image_signal = any(
+        match.max_likelihood > 0.5 for match in inputs.image_moderation_matches
+    )
+    video_signal = any(
+        match.max_likelihood > 0.5 for match in inputs.video_moderation_matches
+    )
+    scd_signal = (
+        inputs.scd is not None and not inputs.scd.insufficient_conversation
+    )
+    claims_signal = (
+        inputs.claims_report is not None
+        and bool(inputs.claims_report.deduped_claims)
+    )
+    sentiment_signal = inputs.sentiment_stats is not None and (
         inputs.sentiment_stats.positive_pct > 0.0
         or inputs.sentiment_stats.negative_pct > 0.0
-    ):
-        return False
-    if inputs.safety_recommendation is not None and (
+    )
+    safety_signal = inputs.safety_recommendation is not None and (
         inputs.safety_recommendation.level != SafetyLevel.SAFE
-        or inputs.safety_recommendation.top_signals
-    ):
-        return False
-    return True
+        or bool(inputs.safety_recommendation.top_signals)
+    )
+    return not (
+        inputs.harmful_content_matches
+        or inputs.web_risk_findings
+        or image_signal
+        or video_signal
+        or inputs.flashpoint_matches
+        or scd_signal
+        or claims_signal
+        or inputs.known_misinformation
+        or inputs.subjective_claims
+        or sentiment_signal
+        or safety_signal
+    )
 
 
 def pick_stock_phrase(job_id: UUID) -> str:
