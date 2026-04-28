@@ -9,7 +9,10 @@
   block for `vibecheck_jobs` reused by every testcontainer-Postgres unit /
   jobs / routes test. If you add a column to `src/cache/schema.sql`
   `vibecheck_jobs`, update this constant in ONE place and every test picks
-  it up. The integration suite has its own copy in
+  it up. The TASK-1490.03 audit script is the production drift detector;
+  this fixture intentionally does not run the schema.sql `exec_sql`
+  bootstrap or advisory lock because unit fixtures apply DDL directly. The
+  integration suite has its own copy in
   `tests/integration/conftest.py` (it embeds the sweeper function and
   `IF NOT EXISTS` guards, which is a different shape) — keep both in sync
   by hand when columns change.

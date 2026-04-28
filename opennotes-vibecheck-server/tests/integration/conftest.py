@@ -61,9 +61,11 @@ _REAL_GETADDRINFO = socket.getaddrinfo
 # ---------------------------------------------------------------------------
 
 # We mirror src/cache/schema.sql for the tables the orchestrator + slot
-# writers + analyze route + sweeper touch. pg_cron and RLS are out of scope
-# for an integration test — the sweeper function is exercised by direct
-# SQL invocation, not by a scheduled cron job.
+# writers + analyze route + sweeper touch. pg_cron, RLS, and the TASK-1490
+# exec_sql/advisory-lock bootstrap are out of scope for an integration test:
+# fixtures apply DDL directly and TASK-1490.03 audits production drift against
+# the canonical schema.sql. The sweeper function is exercised by direct SQL
+# invocation, not by a scheduled cron job.
 INTEGRATION_DDL = """
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 

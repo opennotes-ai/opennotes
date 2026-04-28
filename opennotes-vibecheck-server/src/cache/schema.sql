@@ -20,6 +20,32 @@
 -- one statement so re-running this file leaves a clean slate.
 
 -- =========================================================================
+-- TEMPORARY exec_sql bootstrap (TASK-1490)
+-- =========================================================================
+-- This function is the stop-gap that lets vibecheck-server self-heal this
+-- schema at startup through Supabase PostgREST RPC. Remove it only after the
+-- opennotes-server merge lands and Alembic owns vibecheck schema changes.
+-- Operators must seed the same block once via docs/guides/vibecheck-deploy.md
+-- §10.4 before the first deploy to an environment where exec_sql is absent.
+CREATE OR REPLACE FUNCTION public.exec_sql(sql text)
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+BEGIN
+    EXECUTE sql;
+END;
+$$;
+ALTER FUNCTION public.exec_sql(text) OWNER TO postgres;
+REVOKE ALL ON FUNCTION public.exec_sql(text) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.exec_sql(text) TO service_role;
+
+-- Serialize cold-start schema applies across Cloud Run replicas. The
+-- transaction-scoped lock is released automatically when the RPC completes.
+SELECT pg_advisory_xact_lock(hashtext('vibecheck_schema_apply')::bigint);
+
+-- =========================================================================
 -- Extensions
 -- =========================================================================
 
