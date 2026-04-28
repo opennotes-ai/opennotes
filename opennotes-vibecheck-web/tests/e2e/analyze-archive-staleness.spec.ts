@@ -233,43 +233,6 @@ async function mainDocumentLoadCount(page: Page): Promise<number> {
   });
 }
 
-async function installSeenTestIdTracker(
-  page: Page,
-  testIds: string[],
-): Promise<void> {
-  await page.addInitScript((ids) => {
-    const win = window as Window & { __archiveStalenessSeenTestIds?: string[] };
-    const seen = new Set<string>();
-    const record = () => {
-      for (const testId of ids) {
-        if (document.querySelector(`[data-testid="${testId}"]`)) {
-          seen.add(testId);
-        }
-      }
-      win.__archiveStalenessSeenTestIds = Array.from(seen);
-    };
-    const start = () => {
-      record();
-      new MutationObserver(record).observe(document.documentElement, {
-        childList: true,
-        subtree: true,
-      });
-    };
-    if (document.readyState === "loading") {
-      document.addEventListener("DOMContentLoaded", start, { once: true });
-    } else {
-      start();
-    }
-  }, testIds);
-}
-
-async function seenTestIds(page: Page): Promise<string[]> {
-  return page.evaluate(() => {
-    const win = window as Window & { __archiveStalenessSeenTestIds?: string[] };
-    return win.__archiveStalenessSeenTestIds ?? [];
-  });
-}
-
 async function installPreviewChainTracker(page: Page): Promise<void> {
   await page.addInitScript(() => {
     const win = window as Window & { __archiveStalenessPreviewChain?: string[] };
@@ -280,24 +243,34 @@ async function installPreviewChainTracker(page: Page): Promise<void> {
         win.__archiveStalenessPreviewChain = [...chain];
       }
     };
+    const isActiveVisibleFrame = (element: Element | null) => {
+      if (!(element instanceof HTMLElement)) return false;
+      const style = getComputedStyle(element);
+      const rect = element.getBoundingClientRect();
+      return (
+        !element.hasAttribute("aria-hidden") &&
+        style.display !== "none" &&
+        style.visibility !== "hidden" &&
+        style.opacity !== "0" &&
+        rect.width > 0 &&
+        rect.height > 0
+      );
+    };
     const record = () => {
       const original = document.querySelector(
         '[data-testid="page-frame-iframe"]',
       );
-      if (
-        original instanceof HTMLElement &&
-        !original.hasAttribute("aria-hidden") &&
-        getComputedStyle(original).opacity !== "0"
-      ) {
+      if (isActiveVisibleFrame(original)) {
         recordState("original-visible");
       }
       if (document.querySelector('[data-testid="page-frame-deciding"]')) {
         recordState("deciding");
       }
-      if (
-        document.querySelector('[data-testid="page-frame-archived-iframe"]')
-      ) {
-        recordState("archived");
+      const archived = document.querySelector(
+        '[data-testid="page-frame-archived-iframe"]',
+      );
+      if (isActiveVisibleFrame(archived)) {
+        recordState("archived-visible");
       }
       if (document.querySelector('[data-testid="page-frame-screenshot"]')) {
         recordState("screenshot");
@@ -598,7 +571,6 @@ test("transient frame-compat failures retry without disabling Archived", async (
 test("blocked original automatically falls from Archived failure to Screenshot", async ({
   page,
 }) => {
-  await installSeenTestIdTracker(page, ["page-frame-archived-iframe"]);
   await installPreviewChainTracker(page);
   await installClockAndOpenJob(page, FALLBACK_JOB_ID);
 
@@ -629,11 +601,11 @@ test("blocked original automatically falls from Archived failure to Screenshot",
 
   await fastForward(page, "00:15");
   await expect
-    .poll(() => seenTestIds(page), {
+    .poll(() => previewChain(page), {
       intervals: [100],
       timeout: PROBE_POLL_TIMEOUT_MS,
     })
-    .toContain("page-frame-archived-iframe");
+    .toContain("archived-visible");
   await expect(page.getByTestId("page-frame-screenshot")).toBeVisible({
     timeout: 10_000,
   });
@@ -643,7 +615,7 @@ test("blocked original automatically falls from Archived failure to Screenshot",
   expect(chain).toEqual([
     "original-visible",
     "deciding",
-    "archived",
+    "archived-visible",
     "screenshot",
   ]);
 });
