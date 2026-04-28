@@ -60,6 +60,9 @@ const DEFAULT_FRAME_COMPAT: FrameCompatResult = {
   screenshotUrl: null,
   archivedPreviewUrl: null,
 };
+const ORIGINAL_BLOCKED_TIP_ID = "preview-mode-original-tip";
+const ORIGINAL_BLOCKED_TIP_TEXT =
+  "This page blocks framing — click to attempt anyway";
 
 function asErrorCode(raw: string | undefined): ErrorCode | null {
   if (!raw) return null;
@@ -89,6 +92,8 @@ export default function AnalyzePage() {
   const [resolvedPreviewMode, setResolvedPreviewMode] =
     createSignal<ResolvedPreviewMode>("original");
   const [previewSize, setPreviewSize] = createSignal<PreviewSize>("regular");
+  const [showOriginalBlockedTip, setShowOriginalBlockedTip] =
+    createSignal(false);
   let previewModeJobId = jobId();
 
   onMount(() => {
@@ -312,7 +317,7 @@ export default function AnalyzePage() {
                   <div class="flex flex-wrap items-center justify-between gap-2">
                     <div
                       data-testid="preview-mode-selector"
-                      class="flex items-center"
+                      class="relative flex items-center"
                       role="group"
                       aria-label="Preview mode"
                     >
@@ -338,9 +343,29 @@ export default function AnalyzePage() {
                                 )}
                                 aria-describedby={
                                   isOriginalBlocked()
-                                    ? "preview-mode-original-tip"
+                                    ? ORIGINAL_BLOCKED_TIP_ID
                                     : undefined
                                 }
+                                onMouseEnter={() => {
+                                  if (isOriginalBlocked()) {
+                                    setShowOriginalBlockedTip(true);
+                                  }
+                                }}
+                                onMouseLeave={() => {
+                                  if (option.value === "original") {
+                                    setShowOriginalBlockedTip(false);
+                                  }
+                                }}
+                                onFocus={() => {
+                                  if (isOriginalBlocked()) {
+                                    setShowOriginalBlockedTip(true);
+                                  }
+                                }}
+                                onBlur={() => {
+                                  if (option.value === "original") {
+                                    setShowOriginalBlockedTip(false);
+                                  }
+                                }}
                                 onClick={() => selectPreviewMode(option.value)}
                               >
                                 {option.label}
@@ -351,11 +376,15 @@ export default function AnalyzePage() {
                       </div>
                       <Show when={!frameCompat().canIframe}>
                         <span
-                          id="preview-mode-original-tip"
-                          data-testid="preview-mode-original-tip"
-                          class="sr-only"
+                          id={ORIGINAL_BLOCKED_TIP_ID}
+                          data-testid={ORIGINAL_BLOCKED_TIP_ID}
+                          class={
+                            showOriginalBlockedTip()
+                              ? "pointer-events-none absolute left-0 top-full z-20 mt-2 w-max max-w-64 rounded-md border border-border bg-popover px-2.5 py-1.5 text-xs font-medium text-popover-foreground shadow-md"
+                              : "sr-only"
+                          }
                         >
-                          This page blocks framing — click to attempt anyway
+                          {ORIGINAL_BLOCKED_TIP_TEXT}
                         </span>
                       </Show>
                     </div>
