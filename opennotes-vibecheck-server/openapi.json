@@ -925,6 +925,36 @@
         "title": "HarmfulContentMatch",
         "description": "A single flagged utterance from a content moderation API.\n\n`utterance_text` and `source` default so `sidebar_payload` blobs\nwritten before these fields existed (pre PR #411) still deserialize\nwhen `GET /api/analyze/{job_id}` reads them. New writes always\npopulate both (see `jobs/finalize.py` and `moderation_slot.py`)."
       },
+      "HeadlineSummary": {
+        "properties": {
+          "text": {
+            "type": "string",
+            "title": "Text"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "stock",
+              "synthesized"
+            ],
+            "title": "Kind"
+          },
+          "unavailable_inputs": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Unavailable Inputs"
+          }
+        },
+        "type": "object",
+        "required": [
+          "text",
+          "kind"
+        ],
+        "title": "HeadlineSummary",
+        "description": "1-2 sentence synthesis rendered above the safety recommendation.\n\n`kind` discriminates the deterministic stock-phrase short-circuit (when\nevery input section is empty/clear/neutral) from the model-generated\nsynthesis path. `unavailable_inputs` mirrors the SafetyRecommendation\npattern so the UI can later annotate degraded coverage."
+      },
       "ImageModerationMatch": {
         "properties": {
           "utterance_id": {
@@ -1666,6 +1696,16 @@
           },
           "video_moderation": {
             "$ref": "#/components/schemas/VideoModerationSection"
+          },
+          "headline": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/HeadlineSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "type": "object",

@@ -33,7 +33,7 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
     + """
 CREATE TABLE vibecheck_scrapes (
     scrape_id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    normalized_url TEXT NOT NULL UNIQUE,
+    normalized_url TEXT NOT NULL,
     url TEXT NOT NULL,
     host TEXT NOT NULL,
     page_kind TEXT NOT NULL DEFAULT 'other',
@@ -41,9 +41,12 @@ CREATE TABLE vibecheck_scrapes (
     markdown TEXT,
     html TEXT,
     screenshot_storage_key TEXT,
+    tier TEXT NOT NULL DEFAULT 'scrape',
     scraped_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     expires_at TIMESTAMPTZ NOT NULL DEFAULT (now() + INTERVAL '72 hours')
 );
+CREATE UNIQUE INDEX vibecheck_scrapes_normalized_url_tier_idx
+    ON vibecheck_scrapes (normalized_url, tier);
 """
 )
 

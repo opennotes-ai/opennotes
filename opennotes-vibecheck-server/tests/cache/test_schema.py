@@ -246,6 +246,15 @@ class TestIdempotency:
             "    ADD COLUMN IF NOT EXISTS preview_description TEXT"
         ) in schema_sql
 
+    def test_headline_summary_column_is_added_idempotently(
+        self, schema_sql: str
+    ) -> None:
+        # TASK-1508.04.01: synthesized headline summation column.
+        assert (
+            "ALTER TABLE vibecheck_jobs\n"
+            "    ADD COLUMN IF NOT EXISTS headline_summary JSONB"
+        ) in schema_sql
+
 
 class TestWebRiskLookupsTable:
     def test_create_table_if_not_exists(self, schema_sql: str) -> None:

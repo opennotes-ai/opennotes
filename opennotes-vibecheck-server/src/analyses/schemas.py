@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import StrEnum
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, Field
@@ -161,6 +161,20 @@ class OpinionsSection(BaseModel):
     opinions_report: OpinionsReport
 
 
+class HeadlineSummary(BaseModel):
+    """1-2 sentence synthesis rendered above the safety recommendation.
+
+    `kind` discriminates the deterministic stock-phrase short-circuit (when
+    every input section is empty/clear/neutral) from the model-generated
+    synthesis path. `unavailable_inputs` mirrors the SafetyRecommendation
+    pattern so the UI can later annotate degraded coverage.
+    """
+
+    text: str
+    kind: Literal["stock", "synthesized"]
+    unavailable_inputs: list[str] = Field(default_factory=list)
+
+
 class SidebarPayload(BaseModel):
     """Top-level response for `POST /api/analyze`.
 
@@ -183,6 +197,7 @@ class SidebarPayload(BaseModel):
     web_risk: WebRiskSection = Field(default_factory=WebRiskSection)
     image_moderation: ImageModerationSection = Field(default_factory=ImageModerationSection)
     video_moderation: VideoModerationSection = Field(default_factory=VideoModerationSection)
+    headline: HeadlineSummary | None = None
 
 
 class JobState(BaseModel):

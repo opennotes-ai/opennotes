@@ -30,6 +30,7 @@ from src.analyses.safety._schemas import (
 from src.analyses.schemas import (
     ErrorCode,
     FactsClaimsSection,
+    HeadlineSummary,
     ImageModerationSection,
     JobStatus,
     OpinionsSection,
@@ -70,6 +71,7 @@ SELECT
     j.attempt_id,
     j.status,
     j.safety_recommendation,
+    j.headline_summary,
     j.sidebar_payload IS NOT NULL AS already_finalized,
     meta.page_title AS page_title_meta,
     first_utt.text AS first_utterance_text
@@ -149,6 +151,7 @@ def _assemble_payload(
     url: str,
     sections: dict[SectionSlug, SectionSlot],
     safety_recommendation: Any | None = None,
+    headline_summary: Any | None = None,
 ) -> SidebarPayload:
     """Compose SidebarPayload from slot fragments.
 
@@ -237,6 +240,16 @@ def _assemble_payload(
         )
     )
 
+    headline = (
+        HeadlineSummary.model_validate(
+            json.loads(headline_summary)
+            if isinstance(headline_summary, str)
+            else headline_summary
+        )
+        if headline_summary is not None
+        else None
+    )
+
     return SidebarPayload(
         source_url=url,
         page_title=None,
@@ -250,6 +263,7 @@ def _assemble_payload(
         tone_dynamics=tone,
         facts_claims=facts,
         opinions_sentiments=opinions,
+        headline=headline,
     )
 
 
@@ -326,6 +340,7 @@ async def maybe_finalize_job(  # noqa: PLR0911
             row["url"],
             sections,
             row["safety_recommendation"],
+            row["headline_summary"],
         )
         ctx = DerivationContext(
             page_title=row["page_title_meta"],

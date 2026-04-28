@@ -9,6 +9,7 @@ from pydantic import ValidationError
 
 from src.analyses.schemas import (
     ErrorCode,
+    HeadlineSummary,
     ImageModerationSection,
     JobState,
     JobStatus,
@@ -358,6 +359,69 @@ class TestRecentAnalysis:
         payload["preview_description"] = "x" * 500
         analysis = RecentAnalysis.model_validate(payload)
         assert len(analysis.preview_description) == 500
+
+
+class TestHeadlineSummary:
+    """Schema spine for the synthesized headline summation (TASK-1508.04.01)."""
+
+    def test_synthesized_headline_round_trips(self) -> None:
+        headline = HeadlineSummary(
+            text="A clever synthesis sentence.",
+            kind="synthesized",
+            unavailable_inputs=[],
+        )
+        round_tripped = HeadlineSummary.model_validate_json(headline.model_dump_json())
+        assert round_tripped == headline
+
+    def test_stock_headline_round_trips(self) -> None:
+        headline = HeadlineSummary(
+            text="Nothing of note in this content.",
+            kind="stock",
+            unavailable_inputs=["scd"],
+        )
+        round_tripped = HeadlineSummary.model_validate_json(headline.model_dump_json())
+        assert round_tripped == headline
+        assert round_tripped.unavailable_inputs == ["scd"]
+
+    def test_unavailable_inputs_default_is_empty(self) -> None:
+        headline = HeadlineSummary(text="x", kind="stock")
+        assert headline.unavailable_inputs == []
+
+    def test_invalid_kind_rejected(self) -> None:
+        with pytest.raises(ValidationError):
+            HeadlineSummary.model_validate(
+                {"text": "x", "kind": "freeform", "unavailable_inputs": []}
+            )
+
+    def test_sidebar_payload_headline_defaults_to_none(self) -> None:
+        sidebar = _empty_sidebar_payload(datetime.now(UTC))
+        assert sidebar.headline is None
+
+    def test_sidebar_payload_with_headline_round_trips(self) -> None:
+        base = _empty_sidebar_payload(datetime.now(UTC))
+        with_headline = base.model_copy(
+            update={
+                "headline": HeadlineSummary(
+                    text="Clever opening line.",
+                    kind="synthesized",
+                    unavailable_inputs=[],
+                )
+            }
+        )
+        round_tripped = SidebarPayload.model_validate_json(with_headline.model_dump_json())
+        assert round_tripped.headline is not None
+        assert round_tripped.headline.text == "Clever opening line."
+        assert round_tripped.headline.kind == "synthesized"
+
+    def test_sidebar_payload_legacy_blob_without_headline_validates(self) -> None:
+        # Existing cached SidebarPayload blobs predate the headline field; they
+        # must keep deserializing with headline defaulting to None.
+        base = _empty_sidebar_payload(datetime.now(UTC))
+        legacy_blob = base.model_dump(mode="json")
+        legacy_blob.pop("headline", None)
+        assert "headline" not in legacy_blob
+        round_tripped = SidebarPayload.model_validate(legacy_blob)
+        assert round_tripped.headline is None
 
 
 class TestUtteranceNewMediaFields:
