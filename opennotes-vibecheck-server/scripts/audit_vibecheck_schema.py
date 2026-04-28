@@ -1,55 +1,125 @@
 #!/usr/bin/env python
+"""Audit `src/cache/schema.sql` against a live Vibecheck Supabase database.
+
+Required env vars:
+- VIBECHECK_SUPABASE_URL: canonical `https://<project-ref>.supabase.co` URL.
+- VIBECHECK_SUPABASE_DB_PASSWORD: database password for the Supavisor user.
+- VIBECHECK_DATABASE_HOST: Supavisor host for the target project.
+
+Optional env vars:
+- VIBECHECK_DATABASE_PORT: Supavisor port; defaults to 6543.
+
+Exit codes:
+- 0: no drift detected.
+- 1: drift detected.
+- 2: parse, connection, or audit execution failure.
+"""
 from __future__ import annotations
 
 import argparse
 import asyncio
+import json
+import logging
 import os
 import re
 import sys
-from collections import defaultdict
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 from urllib.parse import urlparse
 
 import asyncpg
 import sqlparse
 
 DEFAULT_SCHEMA_PATH = Path(__file__).resolve().parents[1] / "src" / "cache" / "schema.sql"
-DEFAULT_POOLER_HOST = "aws-1-us-east-1.pooler.supabase.com"
 DEFAULT_POOLER_PORT = 6543
+DEFAULT_TIMEOUT_SECONDS = 30.0
+
+logger = logging.getLogger("audit_vibecheck_schema")
+
+_IDENT = r'(?:"[^"]+"|[A-Za-z_][A-Za-z0-9_$]*)'
+_QUALIFIED = rf"{_IDENT}(?:\.{_IDENT})?"
+
+
+@dataclass(frozen=True)
+class ColumnExpectation:
+    name: str
+    definition: str
+    ordinal: int
+
+
+@dataclass(frozen=True)
+class ConstraintExpectation:
+    name: str
+    expression: str = ""
+
+
+@dataclass
+class TableExpectation:
+    schema: str
+    name: str
+    defined: bool = True
+    columns: list[ColumnExpectation] = field(default_factory=list)
+    constraints: dict[str, ConstraintExpectation] = field(default_factory=dict)
+
+    @property
+    def key(self) -> str:
+        return f"{self.schema}.{self.name}"
+
+    @property
+    def columns_by_name(self) -> dict[str, ColumnExpectation]:
+        return {column.name: column for column in self.columns}
 
 
 @dataclass(frozen=True)
 class IndexExpectation:
+    schema: str
+    name: str
     table: str
     unique: bool
-    definition: str
+    columns: tuple[str, ...]
     predicate: str = ""
+
+    @property
+    def key(self) -> str:
+        return f"{self.schema}.{self.name}"
+
+
+@dataclass(frozen=True)
+class PolicyExpectation:
+    name: str
+    using: str = ""
+    with_check: str = ""
 
 
 @dataclass(frozen=True)
 class FunctionExpectation:
+    schema: str
+    name: str
+    identity_arguments: str
     owner: str = ""
     security_definer: bool = False
-    search_path: str = ""
+    search_path: tuple[str, ...] = ()
     grants: set[str] = field(default_factory=set)
     revokes: set[str] = field(default_factory=set)
+
+    @property
+    def key(self) -> str:
+        return f"{self.schema}.{self.name}({self.identity_arguments})"
 
 
 @dataclass
 class ExpectedSchema:
-    tables: set[str] = field(default_factory=set)
-    columns: dict[str, set[str]] = field(default_factory=lambda: defaultdict(set))
+    tables: dict[str, TableExpectation] = field(default_factory=dict)
     indexes: dict[str, IndexExpectation] = field(default_factory=dict)
-    constraints: dict[str, set[str]] = field(default_factory=lambda: defaultdict(set))
     rls_enabled: set[str] = field(default_factory=set)
     rls_forced: set[str] = field(default_factory=set)
-    policies: dict[str, set[str]] = field(default_factory=lambda: defaultdict(set))
-    policy_clauses: dict[tuple[str, str], tuple[str, str]] = field(default_factory=dict)
+    policies: dict[str, dict[str, PolicyExpectation]] = field(default_factory=dict)
     cron_jobs: dict[str, str] = field(default_factory=dict)
     functions: dict[str, FunctionExpectation] = field(default_factory=dict)
-    table_revokes: dict[str, set[str]] = field(default_factory=lambda: defaultdict(set))
+    table_revokes: dict[str, set[str]] = field(default_factory=dict)
+    warnings: list[str] = field(default_factory=list)
 
 
 def _compact(sql: str) -> str:
@@ -58,11 +128,55 @@ def _compact(sql: str) -> str:
 
 def _unquote(identifier: str) -> str:
     value = identifier.strip().rstrip(";")
-    if "." in value:
-        value = value.split(".")[-1]
     if value.startswith('"') and value.endswith('"'):
         return value[1:-1].replace('""', '"')
     return value
+
+
+def _parse_name(identifier: str, default_schema: str = "public") -> tuple[str, str]:
+    parts = [part.strip() for part in identifier.strip().rstrip(";").split(".", 1)]
+    if len(parts) == 1:
+        return default_schema, _unquote(parts[0])
+    return _unquote(parts[0]), _unquote(parts[1])
+
+
+def _qualified(schema: str, name: str) -> str:
+    return f"{schema}.{name}"
+
+
+def _normalize_expr(value: str) -> str:
+    expr = " ".join(value.strip().rstrip(";").split())
+    expr = re.sub(r"::[A-Za-z_][A-Za-z0-9_]*(?:\[\])?", "", expr)
+    while expr.startswith("(") and expr.endswith(")") and _balanced(expr[1:-1]):
+        expr = expr[1:-1].strip()
+    return expr
+
+
+def _normalize_type(value: str) -> str:
+    normalized = " ".join(value.strip().rstrip(",").split()).upper()
+    normalized = normalized.replace("CHARACTER VARYING", "VARCHAR")
+    normalized = normalized.replace("TIMESTAMP WITH TIME ZONE", "TIMESTAMPTZ")
+    return normalized.replace("INTEGER", "INT")
+
+
+def _balanced(value: str) -> bool:
+    depth = 0
+    quote: str | None = None
+    for char in value:
+        if quote:
+            if char == quote:
+                quote = None
+            continue
+        if char in {"'", '"'}:
+            quote = char
+            continue
+        if char == "(":
+            depth += 1
+        elif char == ")":
+            depth -= 1
+            if depth < 0:
+                return False
+    return depth == 0 and quote is None
 
 
 def _split_csv(text: str) -> list[str]:
@@ -70,15 +184,37 @@ def _split_csv(text: str) -> list[str]:
     current: list[str] = []
     depth = 0
     quote: str | None = None
-    for char in text:
+    dollar_quote: str | None = None
+    index = 0
+    while index < len(text):
+        if dollar_quote:
+            if text.startswith(dollar_quote, index):
+                current.append(dollar_quote)
+                index += len(dollar_quote)
+                dollar_quote = None
+                continue
+            current.append(text[index])
+            index += 1
+            continue
+
+        dollar_match = re.match(r"\$[A-Za-z_][A-Za-z0-9_]*\$|\$\$", text[index:])
+        if not quote and dollar_match:
+            dollar_quote = dollar_match.group(0)
+            current.append(dollar_quote)
+            index += len(dollar_quote)
+            continue
+
+        char = text[index]
         if quote:
             current.append(char)
             if char == quote:
                 quote = None
+            index += 1
             continue
         if char in {"'", '"'}:
             quote = char
             current.append(char)
+            index += 1
             continue
         if char == "(":
             depth += 1
@@ -89,134 +225,296 @@ def _split_csv(text: str) -> list[str]:
             current = []
         else:
             current.append(char)
+        index += 1
     tail = "".join(current).strip()
     if tail:
         values.append(tail)
     return values
 
 
+def _find_matching_paren(text: str, open_index: int) -> int:
+    depth = 0
+    quote: str | None = None
+    dollar_quote: str | None = None
+    index = open_index
+    while index < len(text):
+        if dollar_quote:
+            if text.startswith(dollar_quote, index):
+                index += len(dollar_quote)
+                dollar_quote = None
+                continue
+            index += 1
+            continue
+        dollar_match = re.match(r"\$[A-Za-z_][A-Za-z0-9_]*\$|\$\$", text[index:])
+        if not quote and dollar_match:
+            dollar_quote = dollar_match.group(0)
+            index += len(dollar_quote)
+            continue
+        char = text[index]
+        if quote:
+            if char == quote:
+                quote = None
+            index += 1
+            continue
+        if char in {"'", '"'}:
+            quote = char
+            index += 1
+            continue
+        if char == "(":
+            depth += 1
+        elif char == ")":
+            depth -= 1
+            if depth == 0:
+                return index
+        index += 1
+    raise ValueError("unbalanced parenthesized SQL fragment")
+
+
+def _column_definition(item: str, name: str) -> str:
+    rest = item[item.find(name) + len(name) :].strip()
+    rest = re.split(
+        r"\bDEFAULT\b|\bCONSTRAINT\b|\bCHECK\b|\bREFERENCES\b|\bGENERATED\b",
+        rest,
+        maxsplit=1,
+        flags=re.IGNORECASE,
+    )[0].strip()
+    not_null = bool(re.search(r"\bNOT\s+NULL\b|\bPRIMARY\s+KEY\b", item, re.IGNORECASE))
+    rest = re.sub(r"\bPRIMARY\s+KEY\b|\bNOT\s+NULL\b", "", rest, flags=re.IGNORECASE).strip()
+    return _normalize_type(f"{rest} NOT NULL" if not_null else rest)
+
+
+def _ensure_table(expected: ExpectedSchema, schema: str, table: str, *, defined: bool) -> TableExpectation:
+    key = _qualified(schema, table)
+    if key not in expected.tables:
+        expected.tables[key] = TableExpectation(schema=schema, name=table, defined=defined)
+    elif defined:
+        expected.tables[key].defined = True
+    return expected.tables[key]
+
+
 def _extract_create_table(statement: str, expected: ExpectedSchema) -> None:
     compact = _compact(statement)
     match = re.search(
-        r"CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?(?P<table>(?:\"[^\"]+\"|\w+)(?:\.(?:\"[^\"]+\"|\w+))?)\s*\((?P<body>.*)\)\s*;?$",
+        rf"CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?(?P<table>{_QUALIFIED})\s*\(",
         compact,
-        re.IGNORECASE | re.DOTALL,
+        re.IGNORECASE,
     )
     if not match:
         return
-    table = _unquote(match.group("table"))
-    expected.tables.add(table)
-    for item in _split_csv(match.group("body")):
-        first_match = re.match(r"\s*(\"[^\"]+\"|\w+)", item)
+    open_index = compact.find("(", match.end() - 1)
+    close_index = _find_matching_paren(compact, open_index)
+    schema, table_name = _parse_name(match.group("table"))
+    table = _ensure_table(expected, schema, table_name, defined=True)
+    for ordinal, item in enumerate(_split_csv(compact[open_index + 1 : close_index]), start=1):
+        first_match = re.match(rf"\s*(?P<first>{_IDENT})", item)
         if not first_match:
             continue
-        first = first_match.group(1)
+        first = first_match.group("first")
         if first.upper() in {"CONSTRAINT", "PRIMARY", "FOREIGN", "UNIQUE", "CHECK"}:
-            constraint = re.search(r"\bCONSTRAINT\s+(\"[^\"]+\"|\w+)", item, re.IGNORECASE)
+            constraint = re.search(rf"\bCONSTRAINT\s+(?P<name>{_IDENT})", item, re.IGNORECASE)
             if constraint:
-                expected.constraints[table].add(_unquote(constraint.group(1)))
+                table.constraints[_unquote(constraint.group("name"))] = ConstraintExpectation(
+                    name=_unquote(constraint.group("name")),
+                    expression=_extract_check_expression(item),
+                )
             continue
-        expected.columns[table].add(_unquote(first))
+        name = _unquote(first)
+        table.columns.append(
+            ColumnExpectation(
+                name=name,
+                definition=_column_definition(item, first),
+                ordinal=ordinal,
+            )
+        )
+
+
+def _extract_check_expression(item: str) -> str:
+    match = re.search(r"\bCHECK\s*\(", item, re.IGNORECASE)
+    if not match:
+        return ""
+    open_index = item.find("(", match.end() - 1)
+    close_index = _find_matching_paren(item, open_index)
+    return _normalize_expr(item[open_index + 1 : close_index])
 
 
 def _extract_alter_table(statement: str, expected: ExpectedSchema) -> None:
     compact = _compact(statement)
     table_match = re.match(
-        r"ALTER\s+TABLE\s+(?P<table>(?:\"[^\"]+\"|\w+)(?:\.(?:\"[^\"]+\"|\w+))?)\s+(?P<rest>.*)",
+        rf"ALTER\s+TABLE\s+(?P<table>{_QUALIFIED})\s+(?P<rest>.*)",
         compact,
         re.IGNORECASE | re.DOTALL,
     )
     if not table_match:
         return
-    table = _unquote(table_match.group("table"))
+    schema, table_name = _parse_name(table_match.group("table"))
+    table_key = _qualified(schema, table_name)
     rest = table_match.group("rest")
+    table = _ensure_table(expected, schema, table_name, defined=False)
     if re.search(r"\bENABLE\s+ROW\s+LEVEL\s+SECURITY\b", rest, re.IGNORECASE):
-        expected.rls_enabled.add(table)
+        expected.rls_enabled.add(table_key)
     if re.search(r"\bFORCE\s+ROW\s+LEVEL\s+SECURITY\b", rest, re.IGNORECASE):
-        expected.rls_forced.add(table)
+        expected.rls_forced.add(table_key)
     column = re.search(
-        r"\bADD\s+COLUMN\s+(?:IF\s+NOT\s+EXISTS\s+)?(?P<column>\"[^\"]+\"|\w+)",
+        rf"\bADD\s+COLUMN\s+(?:IF\s+NOT\s+EXISTS\s+)?(?P<column>{_IDENT})(?P<definition>.*)",
         rest,
         re.IGNORECASE,
     )
     if column:
-        expected.columns[table].add(_unquote(column.group("column")))
+        name = _unquote(column.group("column"))
+        if name not in table.columns_by_name:
+            table.columns.append(
+                ColumnExpectation(
+                    name=name,
+                    definition=_column_definition(rest, column.group("column")),
+                    ordinal=len(table.columns) + 1,
+                )
+            )
     constraint = re.search(
-        r"\bADD\s+CONSTRAINT\s+(?P<constraint>\"[^\"]+\"|\w+)",
+        rf"\bADD\s+CONSTRAINT\s+(?P<constraint>{_IDENT})(?P<body>.*)",
         rest,
         re.IGNORECASE,
     )
     if constraint:
-        expected.constraints[table].add(_unquote(constraint.group("constraint")))
+        name = _unquote(constraint.group("constraint"))
+        table.constraints[name] = ConstraintExpectation(
+            name=name,
+            expression=_extract_check_expression(constraint.group("body")),
+        )
 
 
 def _extract_index(statement: str, expected: ExpectedSchema) -> None:
     compact = _compact(statement)
     match = re.search(
-        r"CREATE\s+(?P<unique>UNIQUE\s+)?INDEX\s+(?:IF\s+NOT\s+EXISTS\s+)?(?P<name>\"[^\"]+\"|\w+)\s+ON\s+(?P<table>(?:\"[^\"]+\"|\w+)(?:\.(?:\"[^\"]+\"|\w+))?)",
+        rf"CREATE\s+(?P<unique>UNIQUE\s+)?INDEX\s+(?:IF\s+NOT\s+EXISTS\s+)?(?P<name>{_IDENT})\s+ON\s+(?P<table>{_QUALIFIED})(?:\s+USING\s+\w+)?\s*\(",
         compact,
         re.IGNORECASE,
     )
     if not match:
         return
+    open_index = compact.find("(", match.end() - 1)
+    close_index = _find_matching_paren(compact, open_index)
+    table_schema, table_name = _parse_name(match.group("table"))
+    where = re.search(r"\bWHERE\s+(?P<predicate>.+)$", compact[close_index + 1 :], re.IGNORECASE)
+    index_schema = table_schema
     name = _unquote(match.group("name"))
-    where = re.search(r"\bWHERE\s+(?P<predicate>.+)$", compact, re.IGNORECASE)
-    expected.indexes[name] = IndexExpectation(
-        table=_unquote(match.group("table")),
+    expected.indexes[_qualified(index_schema, name)] = IndexExpectation(
+        schema=index_schema,
+        name=name,
+        table=_qualified(table_schema, table_name),
         unique=bool(match.group("unique")),
-        definition=compact,
-        predicate=where.group("predicate") if where else "",
+        columns=tuple(_normalize_expr(part) for part in _split_csv(compact[open_index + 1 : close_index])),
+        predicate=_normalize_expr(where.group("predicate")) if where else "",
     )
+
+
+def _balanced_clause_after(keyword: str, compact: str, *, normalize: bool = True) -> str:
+    match = re.search(rf"\b{keyword}\s*\(", compact, re.IGNORECASE)
+    if not match:
+        return ""
+    open_index = compact.find("(", match.end() - 1)
+    close_index = _find_matching_paren(compact, open_index)
+    clause = " ".join(compact[open_index + 1 : close_index].strip().split())
+    return _normalize_expr(clause) if normalize else clause
 
 
 def _extract_policy(statement: str, expected: ExpectedSchema) -> None:
     compact = _compact(statement)
     match = re.search(
-        r"CREATE\s+POLICY\s+(?P<policy>\"[^\"]+\"|\w+)\s+ON\s+(?P<table>(?:\"[^\"]+\"|\w+)(?:\.(?:\"[^\"]+\"|\w+))?)",
+        rf"CREATE\s+POLICY\s+(?P<policy>{_IDENT})\s+ON\s+(?P<table>{_QUALIFIED})",
         compact,
         re.IGNORECASE,
     )
     if not match:
         return
-    table = _unquote(match.group("table"))
+    schema, table_name = _parse_name(match.group("table"))
+    table_key = _qualified(schema, table_name)
     policy = _unquote(match.group("policy"))
-    expected.policies[table].add(policy)
-    using = re.search(r"\bUSING\s*\((?P<using>.*?)\)\s*(?:WITH\s+CHECK|$)", compact, re.IGNORECASE)
-    check = re.search(r"\bWITH\s+CHECK\s*\((?P<check>.*?)\)\s*$", compact, re.IGNORECASE)
-    expected.policy_clauses[(table, policy)] = (
-        using.group("using").strip() if using else "",
-        check.group("check").strip() if check else "",
+    expected.policies.setdefault(table_key, {})[policy] = PolicyExpectation(
+        name=policy,
+        using=_balanced_clause_after("USING", compact, normalize=False),
+        with_check=_balanced_clause_after("WITH\\s+CHECK", compact),
     )
+
+
+def _parse_signature(compact: str, keyword: str) -> tuple[str, str, str] | None:
+    match = re.search(rf"{keyword}\s+(?P<name>{_QUALIFIED})\s*\(", compact, re.IGNORECASE)
+    if not match:
+        return None
+    open_index = compact.find("(", match.end() - 1)
+    close_index = _find_matching_paren(compact, open_index)
+    schema, name = _parse_name(match.group("name"))
+    return schema, name, compact[open_index + 1 : close_index].strip()
+
+
+def _function_key(schema: str, name: str, args: str) -> str:
+    return f"{schema}.{name}({args})"
+
+
+def _argument_types(args: str) -> tuple[str, ...]:
+    types: list[str] = []
+    for arg in _split_csv(args):
+        parts = arg.strip().split()
+        if not parts:
+            continue
+        if len(parts) == 1:
+            types.append(parts[0].lower())
+        else:
+            types.append(" ".join(parts[1:]).lower())
+    return tuple(types)
+
+
+def _resolve_function_key(expected: ExpectedSchema, schema: str, name: str, args: str) -> str:
+    key = _function_key(schema, name, args)
+    if key in expected.functions:
+        return key
+    arg_types = _argument_types(args)
+    for candidate_key, candidate in expected.functions.items():
+        if (
+            candidate.schema == schema
+            and candidate.name == name
+            and _argument_types(candidate.identity_arguments) == arg_types
+        ):
+            return candidate_key
+    return key
 
 
 def _extract_function(statement: str, expected: ExpectedSchema) -> None:
     compact = _compact(statement)
-    create_match = re.search(
-        r"CREATE\s+OR\s+REPLACE\s+FUNCTION\s+(?P<name>(?:\"[^\"]+\"|\w+)(?:\.(?:\"[^\"]+\"|\w+))?)\s*\(",
+    create_signature = _parse_signature(
         compact,
-        re.IGNORECASE,
+        r"CREATE\s+(?:OR\s+REPLACE\s+)?FUNCTION",
     )
-    if create_match:
-        name = _unquote(create_match.group("name"))
-        search_path = ""
-        search_path_match = re.search(r"\bSET\s+search_path\s*=\s*([^$]+?)\s+AS\s", compact, re.IGNORECASE)
+    if create_signature:
+        schema, name, args = create_signature
+        search_path = ()
+        search_path_match = re.search(
+            r"\bSET\s+search_path\s*=\s*(?P<path>.*?)(?=\s+(?:AS|LANGUAGE|VOLATILE|STABLE|IMMUTABLE|SECURITY)\b)",
+            compact,
+            re.IGNORECASE,
+        )
         if search_path_match:
-            search_path = search_path_match.group(1).strip()
-        expected.functions[name] = FunctionExpectation(
+            search_path = tuple(
+                token.strip() for token in search_path_match.group("path").split(",")
+            )
+        expectation = FunctionExpectation(
+            schema=schema,
+            name=name,
+            identity_arguments=args,
             security_definer=bool(re.search(r"\bSECURITY\s+DEFINER\b", compact, re.IGNORECASE)),
             search_path=search_path,
         )
+        expected.functions[expectation.key] = expectation
         return
 
-    owner = re.search(
-        r"ALTER\s+FUNCTION\s+(?P<name>(?:\"[^\"]+\"|\w+)(?:\.(?:\"[^\"]+\"|\w+))?)\s*\([^)]*\)\s+OWNER\s+TO\s+(?P<owner>\"[^\"]+\"|\w+)",
-        compact,
-        re.IGNORECASE,
-    )
-    if owner:
-        name = _unquote(owner.group("name"))
-        current = expected.functions.get(name, FunctionExpectation())
-        expected.functions[name] = FunctionExpectation(
+    owner_signature = _parse_signature(compact, r"ALTER\s+FUNCTION")
+    if owner_signature and (owner := re.search(r"\bOWNER\s+TO\s+(?P<owner>\w+)", compact, re.IGNORECASE)):
+        schema, name, args = owner_signature
+        key = _resolve_function_key(expected, schema, name, args)
+        current = expected.functions.get(key, FunctionExpectation(schema, name, args))
+        expected.functions[key] = FunctionExpectation(
+            schema=current.schema,
+            name=current.name,
+            identity_arguments=current.identity_arguments,
             owner=_unquote(owner.group("owner")),
             security_definer=current.security_definer,
             search_path=current.search_path,
@@ -225,22 +523,27 @@ def _extract_function(statement: str, expected: ExpectedSchema) -> None:
         )
         return
 
-    privilege = re.search(
-        r"(?P<kind>GRANT|REVOKE)\s+(?:ALL|EXECUTE)\s+ON\s+FUNCTION\s+(?P<name>(?:\"[^\"]+\"|\w+)(?:\.(?:\"[^\"]+\"|\w+))?)\s*\([^)]*\)\s+(?:TO|FROM)\s+(?P<roles>.+)",
-        compact,
-        re.IGNORECASE,
-    )
-    if privilege:
-        name = _unquote(privilege.group("name"))
-        current = expected.functions.get(name, FunctionExpectation())
+    privilege = re.search(r"(?P<kind>GRANT|REVOKE)\s+(?:ALL|EXECUTE)\s+ON\s+FUNCTION", compact, re.IGNORECASE)
+    privilege_signature = _parse_signature(compact, r"(?:GRANT|REVOKE)\s+(?:ALL|EXECUTE)\s+ON\s+FUNCTION")
+    if privilege and privilege_signature:
+        schema, name, args = privilege_signature
+        roles_match = re.search(r"\s(?:TO|FROM)\s+(?P<roles>.+)$", compact, re.IGNORECASE)
+        roles = {
+            _unquote(role.strip()) for role in (roles_match.group("roles") if roles_match else "").rstrip(";").split(",")
+            if role.strip()
+        }
+        key = _resolve_function_key(expected, schema, name, args)
+        current = expected.functions.get(key, FunctionExpectation(schema, name, args))
         grants = set(current.grants)
         revokes = set(current.revokes)
-        roles = {_unquote(role.strip()) for role in privilege.group("roles").rstrip(";").split(",")}
         if privilege.group("kind").upper() == "GRANT":
             grants.update(roles)
         else:
             revokes.update(roles)
-        expected.functions[name] = FunctionExpectation(
+        expected.functions[key] = FunctionExpectation(
+            schema=current.schema,
+            name=current.name,
+            identity_arguments=current.identity_arguments,
             owner=current.owner,
             security_definer=current.security_definer,
             search_path=current.search_path,
@@ -252,14 +555,15 @@ def _extract_function(statement: str, expected: ExpectedSchema) -> None:
 def _extract_revoke(statement: str, expected: ExpectedSchema) -> None:
     compact = _compact(statement)
     revoke = re.search(
-        r"REVOKE\s+ALL\s+ON\s+(?P<table>(?:\"[^\"]+\"|\w+)(?:\.(?:\"[^\"]+\"|\w+))?)\s+FROM\s+(?P<roles>.+)",
+        rf"REVOKE\s+ALL\s+ON\s+(?P<table>{_QUALIFIED})\s+FROM\s+(?P<roles>.+)",
         compact,
         re.IGNORECASE,
     )
     if not revoke or " ON FUNCTION " in compact.upper():
         return
-    table = _unquote(revoke.group("table"))
-    expected.table_revokes[table].update(
+    schema, table = _parse_name(revoke.group("table"))
+    key = _qualified(schema, table)
+    expected.table_revokes.setdefault(key, set()).update(
         _unquote(role.strip()) for role in revoke.group("roles").rstrip(";").split(",")
     )
 
@@ -293,192 +597,403 @@ def extract_expected_schema(schema_sql: str) -> ExpectedSchema:
         elif first == "ALTER":
             _extract_alter_table(statement, expected)
             _extract_function(statement, expected)
-        elif first == "REVOKE" or compact.upper().startswith("REVOKE "):
+        elif compact.upper().startswith("REVOKE "):
             _extract_function(statement, expected)
             _extract_revoke(statement, expected)
-        elif first == "GRANT" or compact.upper().startswith("GRANT "):
+        elif compact.upper().startswith("GRANT "):
             _extract_function(statement, expected)
-        elif first == "UNKNOWN" or "cron.schedule" in statement:
+        if "cron.schedule" in compact.lower():
             _extract_cron(statement, expected)
+
+    for table in expected.tables.values():
+        if not table.defined and table.columns:
+            expected.warnings.append(
+                f"{table.key} has ALTER-added columns but no parsed CREATE TABLE statement"
+            )
     return expected
 
 
 def _project_ref_from_url(supabase_url: str) -> str:
     host = urlparse(supabase_url).hostname
-    if not host:
+    if not host or not host.endswith(".supabase.co"):
+        raise ValueError(
+            "VIBECHECK_SUPABASE_URL must use the canonical https://<project-ref>.supabase.co host"
+        )
+    project_ref = host.removesuffix(".supabase.co")
+    if not project_ref or "." in project_ref:
         raise ValueError(f"cannot derive Supabase project ref from {supabase_url!r}")
-    return host.split(".", 1)[0]
+    return project_ref
 
 
-async def _connect() -> asyncpg.Connection:
+async def _connect(timeout: float) -> asyncpg.Connection:
     supabase_url = os.environ.get("VIBECHECK_SUPABASE_URL", "")
     password = os.environ.get("VIBECHECK_SUPABASE_DB_PASSWORD", "")
-    if not supabase_url or not password:
+    host = os.environ.get("VIBECHECK_DATABASE_HOST", "")
+    if not supabase_url or not password or not host:
         raise RuntimeError(
-            "VIBECHECK_SUPABASE_URL and VIBECHECK_SUPABASE_DB_PASSWORD must be set"
+            "VIBECHECK_SUPABASE_URL, VIBECHECK_SUPABASE_DB_PASSWORD, and "
+            "VIBECHECK_DATABASE_HOST must be set"
         )
     return await asyncpg.connect(
-        host=os.environ.get("VIBECHECK_DATABASE_HOST", DEFAULT_POOLER_HOST),
+        host=host,
         port=int(os.environ.get("VIBECHECK_DATABASE_PORT", str(DEFAULT_POOLER_PORT))),
         user=f"postgres.{_project_ref_from_url(supabase_url)}",
         password=password,
         database="postgres",
         ssl="require",
         statement_cache_size=0,
-        timeout=10,
+        timeout=int(timeout),
     )
 
 
 def _mark(report: list[str], category: str, name: str, ok: bool, detail: str = "") -> bool:
     status = "OK" if ok else "DRIFT"
-    suffix = f" — {detail}" if detail else ""
+    suffix = f" - {detail}" if detail else ""
     report.append(f"- `{category}` `{name}`: **{status}**{suffix}")
     return ok
 
 
-async def _audit(  # noqa: PLR0912
-    conn: asyncpg.Connection, expected: ExpectedSchema
-) -> tuple[bool, str]:
-    report = ["# Vibecheck Schema Drift Audit", ""]
-    clean = True
+def _row_key(row: Mapping[str, Any], name_key: str = "table_name") -> str:
+    return _qualified(str(row["schema_name"]), str(row[name_key]))
 
-    report.extend(["## Tables And Columns", ""])
-    for table in sorted(expected.tables | set(expected.columns)):
-        table_exists = await conn.fetchval("SELECT to_regclass($1)", f"public.{table}")
-        clean &= _mark(report, "table", table, table_exists is not None)
-        rows = await conn.fetch(
-            """
-            SELECT column_name
-            FROM information_schema.columns
-            WHERE table_schema = 'public' AND table_name = $1
-            """,
-            table,
-        )
-        present_columns = {row["column_name"] for row in rows}
-        for column in sorted(expected.columns.get(table, set())):
-            clean &= _mark(report, "column", f"{table}.{column}", column in present_columns)
 
-    report.extend(["", "## Indexes", ""])
-    index_rows = await conn.fetch(
-        "SELECT indexname, tablename, indexdef FROM pg_indexes WHERE schemaname = 'public'"
-    )
-    indexes = {row["indexname"]: row for row in index_rows}
-    for name, expectation in sorted(expected.indexes.items()):
-        row = indexes.get(name)
-        ok = False
-        if row is not None and row["tablename"] == expectation.table:
-            indexdef = row["indexdef"]
-            ok = ("UNIQUE INDEX" in indexdef) == expectation.unique
-            if expectation.predicate:
-                ok = ok and "WHERE" in indexdef
-        clean &= _mark(report, "index", name, ok)
-
-    report.extend(["", "## Constraints", ""])
-    constraint_rows = await conn.fetch(
+async def _audit_tables(conn: Any, expected: ExpectedSchema, report: list[str]) -> tuple[bool, set[str]]:
+    rows = await conn.fetch(
         """
-        SELECT c.conname, rel.relname AS table_name
+        /* AUDIT_TABLES */
+        SELECT n.nspname AS schema_name, c.relname AS table_name, c.relkind
+        FROM pg_class c
+        JOIN pg_namespace n ON n.oid = c.relnamespace
+        WHERE c.relkind IN ('r', 'v', 'm')
+        """
+    )
+    actual = {_row_key(row): row for row in rows}
+    columns = await conn.fetch(
+        """
+        /* AUDIT_COLUMNS */
+        SELECT
+            n.nspname AS schema_name,
+            c.relname AS table_name,
+            a.attname AS column_name,
+            a.attnum AS ordinal_position,
+            upper(format_type(a.atttypid, a.atttypmod)) ||
+                CASE WHEN a.attnotnull THEN ' NOT NULL' ELSE '' END AS definition
+        FROM pg_attribute a
+        JOIN pg_class c ON c.oid = a.attrelid
+        JOIN pg_namespace n ON n.oid = c.relnamespace
+        WHERE a.attnum > 0 AND NOT a.attisdropped
+        ORDER BY n.nspname, c.relname, a.attnum
+        """
+    )
+    actual_columns: dict[str, list[Mapping[str, Any]]] = {}
+    for row in columns:
+        actual_columns.setdefault(_row_key(row), []).append(row)
+
+    clean = True
+    existing_tables: set[str] = set()
+    report.extend(["## Tables And Columns", ""])
+    for key, table in sorted(expected.tables.items()):
+        row = actual.get(key)
+        table_ok = row is not None and row["relkind"] == "r"
+        clean &= _mark(report, "table", key, table_ok)
+        if not table_ok:
+            continue
+        existing_tables.add(key)
+        actual_by_name = {
+            str(row["column_name"]): row
+            for row in sorted(actual_columns.get(key, []), key=lambda item: int(item["ordinal_position"]))
+        }
+        actual_order = list(actual_by_name)
+        expected_order = [column.name for column in table.columns]
+        if expected_order:
+            clean &= _mark(report, "column order", key, actual_order[: len(expected_order)] == expected_order)
+        for column in table.columns:
+            actual_column = actual_by_name.get(column.name)
+            column_ok = (
+                actual_column is not None
+                and _normalize_type(str(actual_column["definition"])) == column.definition
+            )
+            detail = f"expected {column.definition}" if not column_ok else ""
+            clean &= _mark(report, "column", f"{key}.{column.name}", column_ok, detail)
+    return clean, existing_tables
+
+
+async def _audit_indexes(conn: Any, expected: ExpectedSchema, report: list[str]) -> bool:
+    rows = await conn.fetch(
+        """
+        /* AUDIT_INDEXES */
+        SELECT schemaname AS schema_name, indexname AS index_name, tablename AS table_name, indexdef
+        FROM pg_indexes
+        """
+    )
+    actual = {_row_key(row, "index_name"): row for row in rows}
+    clean = True
+    report.extend(["", "## Indexes", ""])
+    for key, expectation in sorted(expected.indexes.items()):
+        row = actual.get(key)
+        ok = False
+        if row is not None:
+            parsed = _parse_indexdef(str(row["indexdef"]))
+            ok = (
+                _qualified(str(row["schema_name"]), str(row["table_name"])) == expectation.table
+                and parsed.unique == expectation.unique
+                and parsed.columns == expectation.columns
+                and _normalize_expr(parsed.predicate) == _normalize_expr(expectation.predicate)
+            )
+        clean &= _mark(report, "index", key, ok)
+    return clean
+
+
+def _parse_indexdef(indexdef: str) -> IndexExpectation:
+    compact = _compact(indexdef)
+    match = re.search(
+        rf"CREATE\s+(?P<unique>UNIQUE\s+)?INDEX\s+(?P<name>{_IDENT})\s+ON\s+(?P<table>{_QUALIFIED})(?:\s+USING\s+\w+)?\s*\(",
+        compact,
+        re.IGNORECASE,
+    )
+    if not match:
+        return IndexExpectation("public", "", "public.", False, ())
+    open_index = compact.find("(", match.end() - 1)
+    close_index = _find_matching_paren(compact, open_index)
+    schema, table = _parse_name(match.group("table"))
+    where = re.search(r"\bWHERE\s+(?P<predicate>.+)$", compact[close_index + 1 :], re.IGNORECASE)
+    return IndexExpectation(
+        schema=schema,
+        name=_unquote(match.group("name")),
+        table=_qualified(schema, table),
+        unique=bool(match.group("unique")),
+        columns=tuple(_normalize_expr(part) for part in _split_csv(compact[open_index + 1 : close_index])),
+        predicate=_normalize_expr(where.group("predicate")) if where else "",
+    )
+
+
+async def _audit_constraints(conn: Any, expected: ExpectedSchema, report: list[str], existing_tables: set[str]) -> bool:
+    rows = await conn.fetch(
+        """
+        /* AUDIT_CONSTRAINTS */
+        SELECT
+            n.nspname AS schema_name,
+            rel.relname AS table_name,
+            c.conname AS constraint_name,
+            pg_get_constraintdef(c.oid, true) AS definition
         FROM pg_constraint c
         JOIN pg_class rel ON rel.oid = c.conrelid
         JOIN pg_namespace n ON n.oid = rel.relnamespace
-        WHERE n.nspname = 'public'
         """
     )
-    constraints = {(row["table_name"], row["conname"]) for row in constraint_rows}
-    for table, names in sorted(expected.constraints.items()):
-        for name in sorted(names):
-            clean &= _mark(report, "constraint", f"{table}.{name}", (table, name) in constraints)
+    actual = {f"{_row_key(row)}.{row['constraint_name']}": row for row in rows}
+    clean = True
+    report.extend(["", "## Constraints", ""])
+    for table_key, table in sorted(expected.tables.items()):
+        if table_key not in existing_tables:
+            continue
+        for name, expectation in sorted(table.constraints.items()):
+            key = f"{table_key}.{name}"
+            row = actual.get(key)
+            ok = False
+            if row is not None and expectation.expression:
+                actual_expr = _extract_check_expression(str(row["definition"]))
+                ok = _normalize_expr(actual_expr) == expectation.expression
+            elif row is not None:
+                ok = True
+            clean &= _mark(report, "constraint", key, ok)
+    return clean
 
-    report.extend(["", "## RLS And Privileges", ""])
+
+async def _audit_rls_privileges(
+    conn: Any, expected: ExpectedSchema, report: list[str], existing_tables: set[str]
+) -> bool:
     rls_rows = await conn.fetch(
         """
-        SELECT relname, relrowsecurity, relforcerowsecurity
+        /* AUDIT_RLS */
+        SELECT n.nspname AS schema_name, c.relname AS table_name, c.relrowsecurity, c.relforcerowsecurity
         FROM pg_class c
         JOIN pg_namespace n ON n.oid = c.relnamespace
-        WHERE n.nspname = 'public'
         """
     )
-    rls = {row["relname"]: row for row in rls_rows}
-    for table in sorted(expected.rls_enabled):
+    privileges = await conn.fetch(
+        """
+        /* AUDIT_TABLE_PRIVILEGES */
+        SELECT table_schema AS schema_name, table_name, grantee, privilege_type
+        FROM information_schema.table_privileges
+        """
+    )
+    rls = {_row_key(row): row for row in rls_rows}
+    privilege_map: dict[tuple[str, str], set[str]] = {}
+    for row in privileges:
+        privilege_map.setdefault((_row_key(row), str(row["grantee"])), set()).add(str(row["privilege_type"]))
+
+    clean = True
+    report.extend(["", "## RLS And Privileges", ""])
+    for table in sorted(expected.rls_enabled & existing_tables):
         clean &= _mark(report, "rls enabled", table, bool(rls.get(table, {}).get("relrowsecurity")))
-    for table in sorted(expected.rls_forced):
+    for table in sorted(expected.rls_forced & existing_tables):
         clean &= _mark(report, "rls forced", table, bool(rls.get(table, {}).get("relforcerowsecurity")))
+    for table, roles in sorted(expected.table_revokes.items()):
+        if table not in existing_tables:
+            continue
+        for role in sorted(roles):
+            clean &= _mark(
+                report,
+                "table revoke",
+                f"{table} from {role}",
+                not privilege_map.get((table, role)),
+            )
+    return clean
 
-    report.extend(["", "## Policies", ""])
-    policy_rows = await conn.fetch(
+
+async def _audit_policies(conn: Any, expected: ExpectedSchema, report: list[str], existing_tables: set[str]) -> bool:
+    rows = await conn.fetch(
         """
-        SELECT tablename, policyname, qual, with_check
+        /* AUDIT_POLICIES */
+        SELECT schemaname AS schema_name, tablename AS table_name, policyname AS policy_name,
+               qual AS using_expr, with_check AS with_check_expr
         FROM pg_policies
-        WHERE schemaname = 'public'
         """
     )
-    policies = {(row["tablename"], row["policyname"]): row for row in policy_rows}
-    for table, names in sorted(expected.policies.items()):
-        for name in sorted(names):
-            clean &= _mark(report, "policy", f"{table}.{name}", (table, name) in policies)
+    actual = {f"{_row_key(row)}.{row['policy_name']}": row for row in rows}
+    clean = True
+    report.extend(["", "## Policies", ""])
+    for table, policies in sorted(expected.policies.items()):
+        if table not in existing_tables:
+            continue
+        for name, expectation in sorted(policies.items()):
+            key = f"{table}.{name}"
+            row = actual.get(key)
+            ok = False
+            if row is not None:
+                ok = (
+                    _normalize_expr(str(row.get("using_expr") or "")) == expectation.using
+                    and _normalize_expr(str(row.get("with_check_expr") or "")) == expectation.with_check
+                )
+            clean &= _mark(report, "policy", key, ok)
+    return clean
 
+
+async def _audit_cron(conn: Any, expected: ExpectedSchema, report: list[str]) -> bool:
     report.extend(["", "## Cron", ""])
     try:
-        cron_rows = await conn.fetch("SELECT jobname, schedule FROM cron.job")
-        cron = {row["jobname"]: row["schedule"] for row in cron_rows}
-    except asyncpg.UndefinedTableError:
-        cron = {}
+        rows = await conn.fetch("/* AUDIT_CRON */ SELECT jobname, schedule FROM cron.job")
+    except asyncpg.PostgresError as exc:
+        report.append(f"- `cron` `cron.job`: **WARN** - could not inspect cron.job: {exc.__class__.__name__}")
+        return True
+    cron = {str(row["jobname"]): str(row["schedule"]) for row in rows}
+    clean = True
     for name, schedule in sorted(expected.cron_jobs.items()):
         clean &= _mark(report, "cron", name, cron.get(name) == schedule, f"expected `{schedule}`")
+    return clean
 
-    report.extend(["", "## Functions", ""])
-    function_rows = await conn.fetch(
+
+async def _audit_functions(conn: Any, expected: ExpectedSchema, report: list[str]) -> bool:
+    rows = await conn.fetch(
         """
+        /* AUDIT_FUNCTIONS */
         SELECT
-            p.proname,
+            n.nspname AS schema_name,
+            p.proname AS function_name,
+            pg_get_function_identity_arguments(p.oid) AS identity_arguments,
             pg_get_userbyid(p.proowner) AS owner,
-            p.prosecdef,
-            COALESCE(array_to_string(p.proconfig, ','), '') AS proconfig,
-            COALESCE(array_to_string(p.proacl, ','), '') AS proacl
+            p.prosecdef AS security_definer,
+            p.proconfig,
+            p.proacl
         FROM pg_proc p
         JOIN pg_namespace n ON n.oid = p.pronamespace
-        WHERE n.nspname = 'public'
         """
     )
-    functions = {row["proname"]: row for row in function_rows}
-    for name, expectation in sorted(expected.functions.items()):
-        row = functions.get(name)
+    actual = {
+        _function_key(str(row["schema_name"]), str(row["function_name"]), str(row["identity_arguments"])): row
+        for row in rows
+    }
+    clean = True
+    report.extend(["", "## Functions", ""])
+    for key, expectation in sorted(expected.functions.items()):
+        row = actual.get(key)
         ok = row is not None
         if row is not None:
-            if expectation.owner:
-                ok = ok and row["owner"] == expectation.owner
-            ok = ok and bool(row["prosecdef"]) == expectation.security_definer
-            if expectation.search_path:
-                ok = ok and f"search_path={expectation.search_path}" in row["proconfig"]
-            proacl = row["proacl"]
-            for role in expectation.grants:
-                ok = ok and f"{role}=X" in proacl
-            for role in expectation.revokes:
-                ok = ok and f"{role}=X" not in proacl
-        clean &= _mark(report, "function", name, ok)
+            execute_grantees = _execute_grantees(row.get("proacl") or [])
+            ok = (
+                (not expectation.owner or row["owner"] == expectation.owner)
+                and bool(row["security_definer"]) == expectation.security_definer
+                and _search_path(row.get("proconfig") or []) == expectation.search_path
+                and expectation.grants.issubset(execute_grantees)
+                and execute_grantees.isdisjoint(expectation.revokes)
+            )
+        clean &= _mark(report, "function", key, ok)
+    return clean
 
-    return clean, "\n".join(report) + "\n"
+
+def _execute_grantees(acl_items: Sequence[str]) -> set[str]:
+    grantees: set[str] = set()
+    for item in acl_items:
+        grant_part = item.split("/", 1)[0]
+        grantee, _, privileges = grant_part.partition("=")
+        if "X" in privileges:
+            grantees.add(grantee or "PUBLIC")
+    return grantees
+
+
+def _search_path(proconfig: Sequence[str]) -> tuple[str, ...]:
+    for item in proconfig:
+        key, _, value = item.partition("=")
+        if key == "search_path":
+            return tuple(part.strip() for part in value.split(","))
+    return ()
+
+
+async def _audit(conn: Any, expected: ExpectedSchema) -> tuple[bool, str]:
+    if not (
+        expected.tables
+        or expected.indexes
+        or expected.rls_enabled
+        or expected.rls_forced
+        or expected.policies
+        or expected.cron_jobs
+        or expected.functions
+        or expected.table_revokes
+    ):
+        raise ValueError("schema parser found no auditable statements; refusing empty audit")
+    report = ["# Vibecheck Schema Drift Audit", ""]
+    for warning in expected.warnings:
+        report.append(f"- `parser` `warning`: **WARN** - {warning}")
+    clean_tables, existing_tables = await _audit_tables(conn, expected, report)
+    checks = [
+        clean_tables,
+        await _audit_indexes(conn, expected, report),
+        await _audit_constraints(conn, expected, report, existing_tables),
+        await _audit_rls_privileges(conn, expected, report, existing_tables),
+        await _audit_policies(conn, expected, report, existing_tables),
+        await _audit_cron(conn, expected, report),
+        await _audit_functions(conn, expected, report),
+    ]
+    return all(checks), "\n".join(report) + "\n"
 
 
 def _parse_args(argv: Iterable[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Audit vibecheck schema.sql against prod catalogs.")
     parser.add_argument("--schema", type=Path, default=DEFAULT_SCHEMA_PATH)
     parser.add_argument("--report-path", type=Path)
+    parser.add_argument("--json", action="store_true", help="emit a compact JSON summary")
+    parser.add_argument("--timeout", type=float, default=DEFAULT_TIMEOUT_SECONDS)
     return parser.parse_args(list(argv))
 
 
 async def _main(argv: Iterable[str]) -> int:
     args = _parse_args(argv)
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s:%(name)s:%(message)s")
     try:
         expected = extract_expected_schema(args.schema.read_text(encoding="utf-8"))
-        conn = await _connect()
+        conn = await _connect(args.timeout)
         try:
             clean, report = await _audit(conn, expected)
         finally:
             await conn.close()
-    except Exception as exc:
-        print(f"ERROR: schema audit failed: {exc}", file=sys.stderr)
+    except Exception:
+        logger.exception("schema audit failed")
         return 2
-    print(report, end="")
+    if args.json:
+        print(json.dumps({"clean": clean, "drift": not clean, "report": report}, sort_keys=True))
+    else:
+        print(report, end="")
     if args.report_path:
         args.report_path.write_text(report, encoding="utf-8")
     return 0 if clean else 1

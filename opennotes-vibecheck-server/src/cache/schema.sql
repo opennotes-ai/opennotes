@@ -25,25 +25,57 @@
 -- This function is the stop-gap that lets vibecheck-server self-heal this
 -- schema at startup through Supabase PostgREST RPC. Remove it only after the
 -- opennotes-server merge lands and Alembic owns vibecheck schema changes.
+-- Threat model: any service-role key holder can invoke arbitrary SQL through
+-- this SECURITY DEFINER function; keeping it is a privilege-escalation risk.
+-- Removal is tracked by TASK-1490.20.
 -- Operators must seed the same block once via docs/guides/vibecheck-deploy.md
 -- §10.4 before the first deploy to an environment where exec_sql is absent.
+SET LOCAL lock_timeout = '30s';
+SELECT pg_advisory_xact_lock(1490, hashtext('schema_apply')::int);
+
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'anon') THEN
+        CREATE ROLE anon;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'authenticated') THEN
+        CREATE ROLE authenticated;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'service_role') THEN
+        CREATE ROLE service_role;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'vibecheck_schema_admin') THEN
+        CREATE ROLE vibecheck_schema_admin;
+    END IF;
+END
+$$;
+
+DO $$
+BEGIN
+    IF NOT has_schema_privilege('vibecheck_schema_admin', 'public', 'CREATE') THEN
+        GRANT USAGE, CREATE ON SCHEMA public TO vibecheck_schema_admin;
+    END IF;
+EXCEPTION WHEN insufficient_privilege THEN
+    RAISE NOTICE 'vibecheck_schema_admin already exists but current role cannot grant public schema privileges';
+END
+$$;
+
 CREATE OR REPLACE FUNCTION public.exec_sql(sql text)
 RETURNS void
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = public, pg_temp
+SET search_path = pg_catalog, pg_temp
 AS $$
 BEGIN
+    RAISE LOG 'vibecheck exec_sql apply length=% hash=%', length(sql), md5(sql);
     EXECUTE sql;
 END;
 $$;
-ALTER FUNCTION public.exec_sql(text) OWNER TO postgres;
+ALTER FUNCTION public.exec_sql(text) OWNER TO vibecheck_schema_admin;
+COMMENT ON FUNCTION public.exec_sql(text) IS
+    'TEMPORARY TASK-1490.20: service-role-only schema bootstrap; privilege-escalation risk until opennotes-server merge and Alembic owns vibecheck schema changes.';
 REVOKE ALL ON FUNCTION public.exec_sql(text) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.exec_sql(text) TO service_role;
-
--- Serialize cold-start schema applies across Cloud Run replicas. The
--- transaction-scoped lock is released automatically when the RPC completes.
-SELECT pg_advisory_xact_lock(hashtext('vibecheck_schema_apply')::bigint);
 
 -- =========================================================================
 -- Extensions
@@ -362,7 +394,7 @@ CREATE OR REPLACE FUNCTION vibecheck_sweep_orphan_jobs()
 RETURNS INT
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = public, pg_temp
+SET search_path = pg_catalog, pg_temp
 AS $$
 DECLARE
     swept INT;
@@ -408,7 +440,7 @@ CREATE OR REPLACE FUNCTION vibecheck_purge_terminal_jobs()
 RETURNS INT
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = public, pg_temp
+SET search_path = pg_catalog, pg_temp
 AS $$
 DECLARE
     purged INT;

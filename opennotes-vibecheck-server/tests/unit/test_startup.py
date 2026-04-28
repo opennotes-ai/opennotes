@@ -137,7 +137,10 @@ class _FailingPostgrest:
     def __init__(self, exc: BaseException) -> None:
         self._exc = exc
 
-    def rpc(self, _name: str, _params: dict[str, str]) -> _FailingRpc:
+    def rpc(self, name: str, params: dict[str, str]) -> _FailingRpc:
+        assert name == "exec_sql"
+        assert set(params) == {"sql"}
+        assert params["sql"] == "SELECT 1;"
         return _FailingRpc(self._exc)
 
 
@@ -168,6 +171,34 @@ def test_apply_schema_propagates_exec_sql_rpc_error(
         and "vibecheck schema apply via exec_sql RPC failed" in record.getMessage()
         for record in caplog.records
     )
+    traceback_frames = []
+    tb = raised.value.__traceback__
+    while tb is not None:
+        traceback_frames.append(tb.tb_frame.f_code.co_name)
+        tb = tb.tb_next
+    assert "execute" in traceback_frames
+
+
+def test_apply_schema_redacts_supabase_project_ref_from_logged_traceback(
+    caplog: pytest.LogCaptureFixture,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    from src import startup
+
+    schema_path = tmp_path / "schema.sql"
+    schema_path.write_text("SELECT 1;", encoding="utf-8")
+    monkeypatch.setattr(startup, "_SCHEMA_PATH", schema_path)
+    exc = RuntimeError(
+        "POST https://abcdefghijklmnopqrst.supabase.co/rest/v1/rpc/exec_sql failed"
+    )
+
+    with caplog.at_level(logging.ERROR), pytest.raises(RuntimeError):
+        startup._apply_schema(cast(Client, cast(object, _FailingClient(exc))))  # pyright: ignore[reportPrivateUsage]
+
+    rendered = "\n".join(record.getMessage() for record in caplog.records)
+    assert "abcdefghijklmnopqrst" not in rendered
+    assert "<supabase-project>" in rendered
 
 
 def test_lifespan_propagates_apply_schema_failure(
