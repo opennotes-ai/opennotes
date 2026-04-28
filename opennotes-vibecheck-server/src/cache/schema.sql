@@ -41,26 +41,26 @@
 -- service_role can call exec_sql, and service_role already bypasses RLS on
 -- the same Supabase project. A separate non-superuser owner does not raise
 -- the security floor here.
--- search_path decision: exec_sql uses `search_path = public, pg_temp` (not
--- pg_catalog) so that the unqualified CREATE TABLE / ALTER TABLE statements in
--- schema.sql resolve to the public schema during EXECUTE. pg_catalog as first
--- element would cause those statements to attempt system-catalog writes and
--- fail with InsufficientPrivilege. TASK-1490.20 tracks the eventual cutover.
+-- search_path decision (TASK-1490.10, TASK-1490.21, TASK-1490.39):
+-- exec_sql is locked to `pg_catalog, pg_temp`; all DDL targets and built-in
+-- calls below are schema-qualified so the apply path is not dependent on
+-- public search_path resolution or Supabase extension placement. Do NOT flip
+-- search_path; if a function call fails to resolve, qualify the call instead.
 SET LOCAL lock_timeout = '30s';
-SELECT pg_advisory_xact_lock(1490, hashtext('schema_apply')::int);
+SELECT pg_catalog.pg_advisory_xact_lock(1490, pg_catalog.hashtext('schema_apply')::int);
 
 DO $$
 BEGIN
-    IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'anon') THEN
+    IF NOT EXISTS (SELECT 1 FROM pg_catalog.pg_roles WHERE rolname = 'anon') THEN
         CREATE ROLE anon;
     END IF;
-    IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'authenticated') THEN
+    IF NOT EXISTS (SELECT 1 FROM pg_catalog.pg_roles WHERE rolname = 'authenticated') THEN
         CREATE ROLE authenticated;
     END IF;
-    IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'service_role') THEN
+    IF NOT EXISTS (SELECT 1 FROM pg_catalog.pg_roles WHERE rolname = 'service_role') THEN
         CREATE ROLE service_role;
     END IF;
-    IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'vibecheck_schema_admin') THEN
+    IF NOT EXISTS (SELECT 1 FROM pg_catalog.pg_roles WHERE rolname = 'vibecheck_schema_admin') THEN
         CREATE ROLE vibecheck_schema_admin;
     END IF;
 END
@@ -68,7 +68,7 @@ $$;
 
 DO $$
 BEGIN
-    IF NOT has_schema_privilege('vibecheck_schema_admin', 'public', 'CREATE') THEN
+    IF NOT pg_catalog.has_schema_privilege('vibecheck_schema_admin', 'public', 'CREATE') THEN
         GRANT USAGE, CREATE ON SCHEMA public TO vibecheck_schema_admin;
     END IF;
 EXCEPTION WHEN insufficient_privilege THEN
@@ -80,15 +80,17 @@ CREATE OR REPLACE FUNCTION public.exec_sql(sql text)
 RETURNS void
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = public, pg_temp
+SET search_path = pg_catalog, pg_temp
 AS $$
 BEGIN
-    RAISE LOG 'vibecheck exec_sql apply length=% hash=%', length(sql), md5(sql);
+    RAISE LOG 'vibecheck exec_sql apply length=% hash=%',
+        pg_catalog.length(sql),
+        pg_catalog.md5(sql);
     EXECUTE sql;
 END;
 $$;
 COMMENT ON FUNCTION public.exec_sql(text) IS
-    'TEMPORARY TASK-1490.20: service-role-only schema bootstrap; postgres-owned so re-apply via exec_sql can ALTER TABLE/FUNCTION owned by postgres without InsufficientPrivilege. search_path=public to allow unqualified CREATE TABLE/ALTER TABLE in schema.sql. Remove once Alembic owns vibecheck changes (TASK-1490.20).';
+    'TEMPORARY TASK-1490.20: service-role-only schema bootstrap; postgres-owned so re-apply via exec_sql can ALTER TABLE/FUNCTION owned by postgres without InsufficientPrivilege. Do NOT flip search_path: TASK-1490.10/TASK-1490.21/TASK-1490.39 lock it to pg_catalog, pg_temp; qualify DDL or function calls instead. Remove once Alembic owns vibecheck changes (TASK-1490.20).';
 REVOKE ALL ON FUNCTION public.exec_sql(text) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.exec_sql(text) TO service_role;
 
@@ -100,41 +102,42 @@ GRANT EXECUTE ON FUNCTION public.exec_sql(text) TO service_role;
 -- (TASK-1473.02 §10.1). The `IF NOT EXISTS` keeps the file re-runnable
 -- when the extension is already present.
 CREATE EXTENSION IF NOT EXISTS pg_cron;
-CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+CREATE SCHEMA IF NOT EXISTS extensions;
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp" WITH SCHEMA extensions;
 
 -- =========================================================================
 -- vibecheck_analyses (legacy 72h cache, locked down)
 -- =========================================================================
 
-CREATE TABLE IF NOT EXISTS vibecheck_analyses (
+CREATE TABLE IF NOT EXISTS public.vibecheck_analyses (
     url TEXT PRIMARY KEY,
     sidebar_payload JSONB NOT NULL,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT pg_catalog.now(),
     expires_at TIMESTAMPTZ NOT NULL
 );
-ALTER TABLE vibecheck_analyses ENABLE ROW LEVEL SECURITY;
-ALTER TABLE vibecheck_analyses FORCE ROW LEVEL SECURITY;
+ALTER TABLE public.vibecheck_analyses ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.vibecheck_analyses FORCE ROW LEVEL SECURITY;
 
 -- TASK-1473.02 swaps the Cloud Run env from anon_key → service_role_key;
 -- the public-grant policy is no longer needed. Drop it and revoke from anon
 -- + authenticated so the only access path is the service role.
-DROP POLICY IF EXISTS vibecheck_analyses_full_access ON vibecheck_analyses;
-DROP POLICY IF EXISTS service_role_full_access ON vibecheck_analyses;
-REVOKE ALL ON vibecheck_analyses FROM anon, authenticated;
+DROP POLICY IF EXISTS vibecheck_analyses_full_access ON public.vibecheck_analyses;
+DROP POLICY IF EXISTS service_role_full_access ON public.vibecheck_analyses;
+REVOKE ALL ON public.vibecheck_analyses FROM anon, authenticated;
 
-CREATE INDEX IF NOT EXISTS vibecheck_analyses_expires_at_idx ON vibecheck_analyses(expires_at);
+CREATE INDEX IF NOT EXISTS vibecheck_analyses_expires_at_idx ON public.vibecheck_analyses(expires_at);
 
 -- =========================================================================
 -- vibecheck_jobs (async pipeline lifecycle)
 -- =========================================================================
 
-CREATE TABLE IF NOT EXISTS vibecheck_jobs (
-    job_id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+CREATE TABLE IF NOT EXISTS public.vibecheck_jobs (
+    job_id UUID PRIMARY KEY DEFAULT extensions.uuid_generate_v4(),
     url TEXT NOT NULL,
     normalized_url TEXT NOT NULL,
     host TEXT NOT NULL,
     status TEXT NOT NULL DEFAULT 'pending',
-    attempt_id UUID NOT NULL DEFAULT uuid_generate_v4(),
+    attempt_id UUID NOT NULL DEFAULT extensions.uuid_generate_v4(),
     error_code TEXT,
     error_message TEXT,
     error_host TEXT,
@@ -143,8 +146,8 @@ CREATE TABLE IF NOT EXISTS vibecheck_jobs (
     sidebar_payload JSONB,
     cached BOOLEAN NOT NULL DEFAULT false,
     extract_transient_attempts INT NOT NULL DEFAULT 0,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT pg_catalog.now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT pg_catalog.now(),
     heartbeat_at TIMESTAMPTZ,
     finished_at TIMESTAMPTZ,
     CONSTRAINT vibecheck_jobs_status_check
@@ -165,27 +168,27 @@ CREATE TABLE IF NOT EXISTS vibecheck_jobs (
         )
 );
 
-ALTER TABLE vibecheck_jobs ENABLE ROW LEVEL SECURITY;
-ALTER TABLE vibecheck_jobs FORCE ROW LEVEL SECURITY;
-REVOKE ALL ON vibecheck_jobs FROM anon, authenticated;
+ALTER TABLE public.vibecheck_jobs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.vibecheck_jobs FORCE ROW LEVEL SECURITY;
+REVOKE ALL ON public.vibecheck_jobs FROM anon, authenticated;
 
 -- Dedup: hot path looks up by normalized_url to short-circuit duplicates.
 CREATE INDEX IF NOT EXISTS vibecheck_jobs_normalized_url_idx
-    ON vibecheck_jobs(normalized_url);
+    ON public.vibecheck_jobs(normalized_url);
 
 -- Sweeper hot path: scan only non-terminal rows by status + age.
 CREATE INDEX IF NOT EXISTS vibecheck_jobs_status_created_at_idx
-    ON vibecheck_jobs(status, created_at)
+    ON public.vibecheck_jobs(status, created_at)
     WHERE status NOT IN ('done', 'partial', 'failed');
 
 -- Heartbeat sweeper: stale heartbeats while in extracting/analyzing.
 CREATE INDEX IF NOT EXISTS vibecheck_jobs_heartbeat_idx
-    ON vibecheck_jobs(heartbeat_at)
+    ON public.vibecheck_jobs(heartbeat_at)
     WHERE status IN ('extracting', 'analyzing');
 
 -- Purge sweeper: terminal jobs by finished_at.
 CREATE INDEX IF NOT EXISTS vibecheck_jobs_finished_at_idx
-    ON vibecheck_jobs(finished_at)
+    ON public.vibecheck_jobs(finished_at)
     WHERE finished_at IS NOT NULL;
 
 -- TASK-1473.46: cache-hit dedup invariant. The advisory lock in
@@ -199,7 +202,7 @@ CREATE INDEX IF NOT EXISTS vibecheck_jobs_finished_at_idx
 -- caller re-fetch the surviving row.
 CREATE UNIQUE INDEX IF NOT EXISTS
     vibecheck_jobs_unique_done_cached_normalized_url
-    ON vibecheck_jobs(normalized_url)
+    ON public.vibecheck_jobs(normalized_url)
     WHERE status = 'done' AND cached = true;
 
 -- TASK-1473.35: e2e test hook for the section-retry Playwright spec.
@@ -208,18 +211,18 @@ CREATE UNIQUE INDEX IF NOT EXISTS
 -- and the orchestrator's `_run_section` forces a synthetic failure for
 -- that slug. Always-null in production (the env flag defaults to off
 -- so the route ignores the header).
-ALTER TABLE vibecheck_jobs
+ALTER TABLE public.vibecheck_jobs
     ADD COLUMN IF NOT EXISTS test_fail_slug TEXT;
 
 -- TASK-1474.32: aggregate safety recommendation written after the four
 -- safety slots complete. Nullable for old rows and optional-agent failure.
-ALTER TABLE vibecheck_jobs
+ALTER TABLE public.vibecheck_jobs
     ADD COLUMN IF NOT EXISTS safety_recommendation JSONB;
 
 -- TASK-1508.04.01: synthesized headline summation (1-2 sentence opening
 -- line) rendered above the safety recommendation. Nullable for old rows
 -- and optional-agent failure; finalize falls back to None when missing.
-ALTER TABLE vibecheck_jobs
+ALTER TABLE public.vibecheck_jobs
     ADD COLUMN IF NOT EXISTS headline_summary JSONB;
 
 -- TASK-1474.23.02: post-Gemini stage breadcrumb. The orchestrator updates
@@ -227,7 +230,7 @@ ALTER TABLE vibecheck_jobs
 -- set_analyzing, run_sections, safety_recommendation, finalize) so a
 -- silent worker death between stages still leaves a DB-visible marker
 -- pinpointing the dying stage. Always-NULL on legacy rows.
-ALTER TABLE vibecheck_jobs
+ALTER TABLE public.vibecheck_jobs
     ADD COLUMN IF NOT EXISTS last_stage TEXT;
 
 -- TASK-1485.01: short preview blurb (~140 chars) populated at job-completion
@@ -235,7 +238,7 @@ ALTER TABLE vibecheck_jobs
 -- Computed deterministically from the assembled SidebarPayload so reads
 -- are O(1) and cards never recompute on every poll. Nullable on legacy
 -- rows; the gallery endpoint filters them out at the API boundary.
-ALTER TABLE vibecheck_jobs
+ALTER TABLE public.vibecheck_jobs
     ADD COLUMN IF NOT EXISTS preview_description TEXT;
 
 -- TASK-1474.23.03: in-row backstop counter for the extract-stage retry path.
@@ -247,15 +250,15 @@ ALTER TABLE vibecheck_jobs
 -- NULL DEFAULT 0 covers legacy rows during the first deploy; the column is
 -- additive-only — no readers/writers in this subtask, those land in
 -- TASK-1474.23.03.04 + .05.
-ALTER TABLE vibecheck_jobs
+ALTER TABLE public.vibecheck_jobs
     ADD COLUMN IF NOT EXISTS extract_transient_attempts INT NOT NULL DEFAULT 0;
 
 -- =========================================================================
 -- vibecheck_scrapes (persisted scrape bundles for retry resumption)
 -- =========================================================================
 
-CREATE TABLE IF NOT EXISTS vibecheck_scrapes (
-    scrape_id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+CREATE TABLE IF NOT EXISTS public.vibecheck_scrapes (
+    scrape_id UUID PRIMARY KEY DEFAULT extensions.uuid_generate_v4(),
     normalized_url TEXT NOT NULL UNIQUE,
     url TEXT NOT NULL,
     host TEXT NOT NULL,
@@ -264,8 +267,8 @@ CREATE TABLE IF NOT EXISTS vibecheck_scrapes (
     markdown TEXT,
     html TEXT,
     screenshot_storage_key TEXT,
-    scraped_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    expires_at TIMESTAMPTZ NOT NULL DEFAULT (now() + INTERVAL '72 hours'),
+    scraped_at TIMESTAMPTZ NOT NULL DEFAULT pg_catalog.now(),
+    expires_at TIMESTAMPTZ NOT NULL DEFAULT (pg_catalog.now() + INTERVAL '72 hours'),
     CONSTRAINT vibecheck_scrapes_page_kind_check
         CHECK (page_kind IN (
             'blog_post', 'forum_thread', 'hierarchical_thread',
@@ -273,24 +276,24 @@ CREATE TABLE IF NOT EXISTS vibecheck_scrapes (
         ))
 );
 
-ALTER TABLE vibecheck_scrapes ENABLE ROW LEVEL SECURITY;
-ALTER TABLE vibecheck_scrapes FORCE ROW LEVEL SECURITY;
-REVOKE ALL ON vibecheck_scrapes FROM anon, authenticated;
+ALTER TABLE public.vibecheck_scrapes ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.vibecheck_scrapes FORCE ROW LEVEL SECURITY;
+REVOKE ALL ON public.vibecheck_scrapes FROM anon, authenticated;
 
 CREATE INDEX IF NOT EXISTS vibecheck_scrapes_expires_at_idx
-    ON vibecheck_scrapes(expires_at);
+    ON public.vibecheck_scrapes(expires_at);
 
 -- TASK-1488.01: tier separates Tier 1 (`scrape`, cheap Firecrawl /scrape)
 -- from Tier 2 (`interact`, post-fallback Firecrawl /interact). Both rows
 -- coexist for the same normalized_url so a Tier 1 failure cache entry
 -- can't short-circuit a retry that escalated successfully to Tier 2.
 -- Existing rows backfill to 'scrape' via the DEFAULT.
-ALTER TABLE vibecheck_scrapes
+ALTER TABLE public.vibecheck_scrapes
     ADD COLUMN IF NOT EXISTS tier TEXT NOT NULL DEFAULT 'scrape';
 
-ALTER TABLE vibecheck_scrapes
+ALTER TABLE public.vibecheck_scrapes
     DROP CONSTRAINT IF EXISTS vibecheck_scrapes_tier_check;
-ALTER TABLE vibecheck_scrapes
+ALTER TABLE public.vibecheck_scrapes
     ADD CONSTRAINT vibecheck_scrapes_tier_check
     CHECK (tier IN ('scrape', 'interact'));
 
@@ -301,15 +304,15 @@ ALTER TABLE vibecheck_scrapes
 -- of this file leave a clean slate. The composite UNIQUE is added via a
 -- partial-unique index so re-runs are idempotent and concurrent puts get
 -- the same on_conflict target the application code expects.
-ALTER TABLE vibecheck_scrapes
+ALTER TABLE public.vibecheck_scrapes
     DROP CONSTRAINT IF EXISTS vibecheck_scrapes_normalized_url_key;
-ALTER TABLE vibecheck_scrapes
+ALTER TABLE public.vibecheck_scrapes
     DROP CONSTRAINT IF EXISTS vibecheck_scrapes_normalized_url_unique;
-DROP INDEX IF EXISTS vibecheck_scrapes_normalized_url_key;
+DROP INDEX IF EXISTS public.vibecheck_scrapes_normalized_url_key;
 
 CREATE UNIQUE INDEX IF NOT EXISTS
     vibecheck_scrapes_normalized_url_tier_idx
-    ON vibecheck_scrapes (normalized_url, tier);
+    ON public.vibecheck_scrapes (normalized_url, tier);
 
 -- TASK-1488.18: persist Firecrawl's resolved post-redirect URL
 -- (`metadata.source_url`) so cache reads rehydrate `metadata.source_url`
@@ -318,7 +321,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS
 -- as both the lookup key and the resolved URL — the SSRF re-check is
 -- silently bypassed. Nullable + no default so legacy rows hydrate via
 -- the row's `url` fallback in `_row_to_cached_scrape`.
-ALTER TABLE vibecheck_scrapes
+ALTER TABLE public.vibecheck_scrapes
     ADD COLUMN IF NOT EXISTS final_url TEXT;
 
 -- TASK-1488.18: tombstone marker so `evict()` can fence concurrent
@@ -328,16 +331,16 @@ ALTER TABLE vibecheck_scrapes
 -- this column before its own upsert and aborts when a recent eviction
 -- is observed. Tombstones are filtered out of `get()` by the existing
 -- `expires_at > now()` predicate so callers never see them.
-ALTER TABLE vibecheck_scrapes
+ALTER TABLE public.vibecheck_scrapes
     ADD COLUMN IF NOT EXISTS evicted_at TIMESTAMPTZ;
 
 -- =========================================================================
 -- vibecheck_job_utterances (per-job utterance cache)
 -- =========================================================================
 
-CREATE TABLE IF NOT EXISTS vibecheck_job_utterances (
-    utterance_pk UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    job_id UUID NOT NULL REFERENCES vibecheck_jobs(job_id) ON DELETE CASCADE,
+CREATE TABLE IF NOT EXISTS public.vibecheck_job_utterances (
+    utterance_pk UUID PRIMARY KEY DEFAULT extensions.uuid_generate_v4(),
+    job_id UUID NOT NULL REFERENCES public.vibecheck_jobs(job_id) ON DELETE CASCADE,
     utterance_id TEXT,
     kind TEXT NOT NULL,
     text TEXT NOT NULL,
@@ -345,7 +348,7 @@ CREATE TABLE IF NOT EXISTS vibecheck_job_utterances (
     timestamp_at TIMESTAMPTZ,
     parent_id TEXT,
     position INT NOT NULL DEFAULT 0,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT pg_catalog.now(),
     CONSTRAINT vibecheck_job_utterances_kind_check
         CHECK (kind IN ('post', 'comment', 'reply'))
 );
@@ -358,9 +361,9 @@ CREATE TABLE IF NOT EXISTS vibecheck_job_utterances (
 -- with `page_kind` defaulting to the same `'other'` sentinel the scrape
 -- bundle uses; existing rows backfill to `(NULL, 'other')` which the
 -- selector's `IS NOT NULL` predicate already filters out.
-ALTER TABLE vibecheck_job_utterances
+ALTER TABLE public.vibecheck_job_utterances
     ADD COLUMN IF NOT EXISTS page_title TEXT;
-ALTER TABLE vibecheck_job_utterances
+ALTER TABLE public.vibecheck_job_utterances
     ADD COLUMN IF NOT EXISTS page_kind TEXT NOT NULL DEFAULT 'other';
 
 -- TASK-1473.60: the NOT NULL DEFAULT 'other' from 1473.36 made every
@@ -370,20 +373,20 @@ ALTER TABLE vibecheck_job_utterances
 -- nullable and the default is dropped. Existing rows with
 -- page_kind='other' (from the prior default) remain valid but are
 -- distinguishable from NULL by the new selector.
-ALTER TABLE vibecheck_job_utterances
+ALTER TABLE public.vibecheck_job_utterances
     ALTER COLUMN page_kind DROP DEFAULT;
-ALTER TABLE vibecheck_job_utterances
+ALTER TABLE public.vibecheck_job_utterances
     ALTER COLUMN page_kind DROP NOT NULL;
 
-ALTER TABLE vibecheck_job_utterances ENABLE ROW LEVEL SECURITY;
-ALTER TABLE vibecheck_job_utterances FORCE ROW LEVEL SECURITY;
-REVOKE ALL ON vibecheck_job_utterances FROM anon, authenticated;
+ALTER TABLE public.vibecheck_job_utterances ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.vibecheck_job_utterances FORCE ROW LEVEL SECURITY;
+REVOKE ALL ON public.vibecheck_job_utterances FROM anon, authenticated;
 
 CREATE INDEX IF NOT EXISTS vibecheck_job_utterances_job_id_idx
-    ON vibecheck_job_utterances(job_id);
+    ON public.vibecheck_job_utterances(job_id);
 
 CREATE INDEX IF NOT EXISTS vibecheck_job_utterances_job_position_idx
-    ON vibecheck_job_utterances(job_id, position);
+    ON public.vibecheck_job_utterances(job_id, position);
 
 -- =========================================================================
 -- Sweeper functions (TASK-1473.04 AC4)
@@ -405,7 +408,7 @@ CREATE INDEX IF NOT EXISTS vibecheck_job_utterances_job_position_idx
 -- revoked from PUBLIC/anon/authenticated below so only the postgres
 -- superuser (and explicitly-granted roles) can invoke it. `search_path`
 -- is pinned to defeat hijack via untrusted schemas.
-CREATE OR REPLACE FUNCTION vibecheck_sweep_orphan_jobs()
+CREATE OR REPLACE FUNCTION public.vibecheck_sweep_orphan_jobs()
 RETURNS INT
 LANGUAGE plpgsql
 SECURITY DEFINER
@@ -425,18 +428,18 @@ BEGIN
                 ELSE 'worker heartbeat stale > 30s'
             END
         ),
-        updated_at    = now(),
-        finished_at   = now()
+        updated_at    = pg_catalog.now(),
+        finished_at   = pg_catalog.now()
     WHERE
         status NOT IN ('done', 'partial', 'failed')
         AND (
             -- Tier 1: pending jobs older than 240s never reached a worker.
-            (status = 'pending' AND (now() - created_at) > INTERVAL '240 seconds')
+            (status = 'pending' AND (pg_catalog.now() - created_at) > INTERVAL '240 seconds')
             -- Tier 2: active jobs with stale heartbeat. COALESCE so a job
             -- that just became active gets at least one 30s heartbeat window.
             OR (
                 status IN ('extracting', 'analyzing')
-                AND (now() - COALESCE(heartbeat_at, updated_at, created_at))
+                AND (pg_catalog.now() - COALESCE(heartbeat_at, updated_at, created_at))
                     > INTERVAL '30 seconds'
             )
         );
@@ -444,14 +447,14 @@ BEGIN
     RETURN swept;
 END;
 $$;
-ALTER FUNCTION vibecheck_sweep_orphan_jobs() OWNER TO postgres;
-REVOKE ALL ON FUNCTION vibecheck_sweep_orphan_jobs() FROM PUBLIC, anon, authenticated;
+ALTER FUNCTION public.vibecheck_sweep_orphan_jobs() OWNER TO postgres;
+REVOKE ALL ON FUNCTION public.vibecheck_sweep_orphan_jobs() FROM PUBLIC, anon, authenticated;
 
 -- Purges terminal jobs older than 7 days. Cascades to job_utterances via FK.
 -- Scrape bundles are TTL-pruned independently via vibecheck_scrapes.expires_at
 -- (used by future tickets); kept here as a single hourly maintenance pass.
 -- See vibecheck_sweep_orphan_jobs for the SECURITY DEFINER rationale.
-CREATE OR REPLACE FUNCTION vibecheck_purge_terminal_jobs()
+CREATE OR REPLACE FUNCTION public.vibecheck_purge_terminal_jobs()
 RETURNS INT
 LANGUAGE plpgsql
 SECURITY DEFINER
@@ -463,38 +466,38 @@ BEGIN
     DELETE FROM public.vibecheck_jobs
     WHERE status IN ('done', 'partial', 'failed')
       AND finished_at IS NOT NULL
-      AND finished_at < (now() - INTERVAL '7 days');
+      AND finished_at < (pg_catalog.now() - INTERVAL '7 days');
     GET DIAGNOSTICS purged = ROW_COUNT;
 
     DELETE FROM public.vibecheck_scrapes
-    WHERE expires_at < now();
+    WHERE expires_at < pg_catalog.now();
 
     DELETE FROM public.vibecheck_analyses
-    WHERE expires_at < now();
+    WHERE expires_at < pg_catalog.now();
 
-    DELETE FROM public.vibecheck_web_risk_lookups WHERE expires_at < now();
+    DELETE FROM public.vibecheck_web_risk_lookups WHERE expires_at < pg_catalog.now();
 
     RETURN purged;
 END;
 $$;
-ALTER FUNCTION vibecheck_purge_terminal_jobs() OWNER TO postgres;
-REVOKE ALL ON FUNCTION vibecheck_purge_terminal_jobs() FROM PUBLIC, anon, authenticated;
+ALTER FUNCTION public.vibecheck_purge_terminal_jobs() OWNER TO postgres;
+REVOKE ALL ON FUNCTION public.vibecheck_purge_terminal_jobs() FROM PUBLIC, anon, authenticated;
 
 -- =========================================================================
 -- vibecheck_web_risk_lookups (TASK-1474.03 — Google Web Risk cache)
 -- =========================================================================
 
-CREATE TABLE IF NOT EXISTS vibecheck_web_risk_lookups (
+CREATE TABLE IF NOT EXISTS public.vibecheck_web_risk_lookups (
     url TEXT PRIMARY KEY,
     finding_payload JSONB NOT NULL,
-    checked_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    checked_at TIMESTAMPTZ NOT NULL DEFAULT pg_catalog.now(),
     expires_at TIMESTAMPTZ NOT NULL
 );
 CREATE INDEX IF NOT EXISTS vibecheck_web_risk_lookups_expires_at_idx
-    ON vibecheck_web_risk_lookups (expires_at);
-ALTER TABLE vibecheck_web_risk_lookups ENABLE ROW LEVEL SECURITY;
-ALTER TABLE vibecheck_web_risk_lookups FORCE ROW LEVEL SECURITY;
-REVOKE ALL ON vibecheck_web_risk_lookups FROM anon, authenticated;
+    ON public.vibecheck_web_risk_lookups (expires_at);
+ALTER TABLE public.vibecheck_web_risk_lookups ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.vibecheck_web_risk_lookups FORCE ROW LEVEL SECURITY;
+REVOKE ALL ON public.vibecheck_web_risk_lookups FROM anon, authenticated;
 
 -- =========================================================================
 -- Extend vibecheck_jobs_error_code_check to include 'unsafe_url'
@@ -505,10 +508,10 @@ REVOKE ALL ON vibecheck_web_risk_lookups FROM anon, authenticated;
 -- schema apply can drop the constraint between the EXISTS check and the
 -- subsequent DROP, producing a "constraint does not exist" error (codex P2.5).
 -- DROP ... IF EXISTS collapses both steps into one atomic, idempotent call.
-ALTER TABLE vibecheck_jobs
+ALTER TABLE public.vibecheck_jobs
   DROP CONSTRAINT IF EXISTS vibecheck_jobs_error_code_check;
 
-ALTER TABLE vibecheck_jobs
+ALTER TABLE public.vibecheck_jobs
   ADD CONSTRAINT vibecheck_jobs_error_code_check
   CHECK (
     error_code IS NULL

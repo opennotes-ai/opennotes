@@ -166,6 +166,37 @@ async def test_full_schema_apply_first_seed(full_schema_conn: asyncpg.Connection
     await _assert_sweeper_functions_owned_by_postgres(full_schema_conn)
 
 
+async def test_full_schema_apply_resolves_uuid_ossp_from_extensions_schema(
+    full_schema_conn: asyncpg.Connection,
+) -> None:
+    await full_schema_conn.execute('DROP EXTENSION IF EXISTS "uuid-ossp" CASCADE')
+    await full_schema_conn.execute("CREATE SCHEMA IF NOT EXISTS extensions")
+    await full_schema_conn.execute('CREATE EXTENSION "uuid-ossp" WITH SCHEMA extensions')
+
+    await _apply_full_schema_as_superuser(full_schema_conn)
+
+    await _assert_vibecheck_tables_exist(full_schema_conn)
+    default_exprs = await full_schema_conn.fetch(
+        """
+        SELECT table_name, column_name, column_default
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = ANY($1)
+          AND column_default LIKE '%uuid_generate_v4%'
+        ORDER BY table_name, column_name
+        """,
+        ["vibecheck_jobs", "vibecheck_scrapes", "vibecheck_job_utterances"],
+    )
+    assert {
+        (row["table_name"], row["column_name"], row["column_default"]) for row in default_exprs
+    } == {
+        ("vibecheck_job_utterances", "utterance_pk", "extensions.uuid_generate_v4()"),
+        ("vibecheck_jobs", "attempt_id", "extensions.uuid_generate_v4()"),
+        ("vibecheck_jobs", "job_id", "extensions.uuid_generate_v4()"),
+        ("vibecheck_scrapes", "scrape_id", "extensions.uuid_generate_v4()"),
+    }
+
+
 async def test_full_schema_reapply_via_exec_sql_idempotent(
     full_schema_conn: asyncpg.Connection,
 ) -> None:

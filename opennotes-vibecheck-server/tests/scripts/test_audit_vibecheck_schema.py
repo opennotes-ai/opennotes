@@ -2,16 +2,15 @@ from __future__ import annotations
 
 from typing import Any
 
+import asyncpg
 import pytest
 
-import asyncpg
-
 from scripts.audit_vibecheck_schema import (
+    ExpectedSchema,
     _audit,
     _audit_cron,
     _execute_grantees,
     _project_ref_from_url,
-    ExpectedSchema,
     extract_expected_schema,
 )
 
@@ -360,6 +359,30 @@ async def test_audit_reports_view_replacing_expected_table() -> None:
     assert "`table` `public.vibecheck_jobs`: **DRIFT**" in report
 
 
+@pytest.mark.asyncio
+async def test_audit_flags_unqualified_schema_sql_targets() -> None:
+    expected = extract_expected_schema("CREATE TABLE vibecheck_jobs (job_id UUID);")
+    conn = FakeConn(
+        tables=[
+            {"schema_name": "public", "table_name": "vibecheck_jobs", "relkind": "r"},
+        ],
+        columns=[
+            {
+                "schema_name": "public",
+                "table_name": "vibecheck_jobs",
+                "column_name": "job_id",
+                "ordinal_position": 1,
+                "definition": "UUID",
+            }
+        ],
+    )
+
+    clean, report = await _audit(conn, expected)
+
+    assert clean is False
+    assert "`schema contract` `CREATE TABLE vibecheck_jobs`: **DRIFT**" in report
+
+
 def test_project_ref_from_url_rejects_vanity_hosts() -> None:
     with pytest.raises(ValueError, match=r"supabase\.co"):
         _project_ref_from_url("https://db.example.com")
@@ -379,7 +402,9 @@ async def test_drop_policy_in_schema_flags_when_present_in_prod() -> None:
         DROP POLICY IF EXISTS vibecheck_analyses_full_access ON public.vibecheck_analyses;
         """
     )
-    assert "vibecheck_analyses_full_access" in expected.dropped_policies.get("public.vibecheck_analyses", set())
+    assert "vibecheck_analyses_full_access" in expected.dropped_policies.get(
+        "public.vibecheck_analyses", set()
+    )
 
     conn = FakeConn(
         tables=[
@@ -408,7 +433,9 @@ async def test_drop_policy_in_schema_flags_when_present_in_prod() -> None:
     clean, report = await _audit(conn, expected)
 
     assert clean is False
-    assert "`policy` `public.vibecheck_analyses.vibecheck_analyses_full_access`: **DRIFT**" in report
+    assert (
+        "`policy` `public.vibecheck_analyses.vibecheck_analyses_full_access`: **DRIFT**" in report
+    )
 
 
 @pytest.mark.asyncio
