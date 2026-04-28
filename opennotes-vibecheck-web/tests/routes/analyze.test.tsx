@@ -1219,6 +1219,124 @@ describe("AnalyzePage headline summary mount (TASK-1483.13.10)", () => {
   });
 });
 
+describe("AnalyzePage Archived tab availability (TASK-1483.15.02)", () => {
+  const url = "https://news.example.com/a";
+
+  function getPreviewModeButton(mode: "original" | "archived" | "screenshot") {
+    return screen.getByTestId(`preview-mode-${mode}`) as HTMLButtonElement;
+  }
+
+  function mockBlockedNoFallbacks() {
+    getArchiveProbeMock.mockResolvedValue(
+      frameCompatResult({
+        canIframe: false,
+        blockingHeader: "content-security-policy: frame-ancestors 'none'",
+        cspFrameAncestors: "'none'",
+        archivedPreviewUrl: null,
+      }),
+    );
+    getScreenshotMock.mockResolvedValue(null);
+  }
+
+  it("keeps Archived enabled without a title while archiveProbeState is pending", async () => {
+    vi.useFakeTimers();
+    mockBlockedNoFallbacks();
+
+    try {
+      renderAt(
+        `/analyze?job=job-archive-pending-tab&url=${encodeURIComponent(url)}`,
+      );
+      await flushMicrotasks();
+
+      const archived = getPreviewModeButton("archived");
+      expect(screen.getByTestId("page-frame-loading")).not.toBeNull();
+      expect(
+        screen
+          .getByTestId("analyze-main")
+          .getAttribute("data-archive-probe-state"),
+      ).toBe("pending");
+      expect(archived.disabled).toBe(false);
+      expect(archived.hasAttribute("disabled")).toBe(false);
+      expect(archived.hasAttribute("title")).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps Archived enabled without a title while archiveProbeState is available", async () => {
+    const archiveUrl = `/api/archive-preview?url=${encodeURIComponent(url)}`;
+    getArchiveProbeMock.mockResolvedValue(
+      frameCompatResult({
+        canIframe: false,
+        blockingHeader: "content-security-policy: frame-ancestors 'none'",
+        cspFrameAncestors: "'none'",
+        archivedPreviewUrl: archiveUrl,
+      }),
+    );
+    getScreenshotMock.mockResolvedValue(null);
+
+    renderAt(
+      `/analyze?job=job-archive-available-tab&url=${encodeURIComponent(url)}`,
+    );
+    await flushMicrotasks();
+
+    const archived = getPreviewModeButton("archived");
+    expect(
+      screen
+        .getByTestId("analyze-main")
+        .getAttribute("data-archive-probe-state"),
+    ).toBe("available");
+    expect(archived.disabled).toBe(false);
+    expect(archived.hasAttribute("disabled")).toBe(false);
+    expect(archived.hasAttribute("title")).toBe(false);
+
+    fireEvent.click(archived);
+    expect(archived.getAttribute("aria-pressed")).toBe("true");
+  });
+
+  it("disables Archived with a title when archiveProbeState is unavailable without affecting Original or Screenshot", async () => {
+    vi.useFakeTimers();
+    mockBlockedNoFallbacks();
+
+    try {
+      renderAt(
+        `/analyze?job=job-archive-unavailable-tab&url=${encodeURIComponent(url)}`,
+      );
+      await flushMicrotasks();
+
+      setPolledJobState(makeJobState({ status: "done", url }));
+      await flushMicrotasks();
+      await vi.advanceTimersByTimeAsync(10_000);
+
+      const original = getPreviewModeButton("original");
+      const archived = getPreviewModeButton("archived");
+      const screenshot = getPreviewModeButton("screenshot");
+
+      expect(
+        screen
+          .getByTestId("analyze-main")
+          .getAttribute("data-archive-probe-state"),
+      ).toBe("unavailable");
+      expect(archived.disabled).toBe(true);
+      expect(archived.getAttribute("title")).toBe(
+        "No archive available for this page",
+      );
+      expect(archived.getAttribute("aria-pressed")).toBe("false");
+
+      expect(original.disabled).toBe(false);
+      expect(original.hasAttribute("title")).toBe(false);
+      expect(screenshot.disabled).toBe(false);
+      expect(screenshot.hasAttribute("title")).toBe(false);
+
+      fireEvent.click(archived);
+      expect(archived.getAttribute("aria-pressed")).toBe("false");
+      expect(screen.getByTestId("page-frame-unavailable")).not.toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
 describe("AnalyzePage Original tab — soft-disabled when canIframe=false (TASK-1483.13.02)", () => {
   function mockBlockedFrame() {
     getArchiveProbeMock.mockResolvedValue(

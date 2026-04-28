@@ -443,8 +443,8 @@ export default function AnalyzePage() {
 
   const segmentClass = (isSelected: boolean, corners: string) =>
     isSelected
-      ? `${corners} bg-foreground px-3 py-1.5 text-xs font-medium text-background`
-      : `${corners} px-3 py-1.5 text-xs font-medium text-muted-foreground hover:bg-accent hover:text-accent-foreground`;
+      ? `${corners} bg-foreground px-3 py-1.5 text-xs font-medium text-background disabled:cursor-not-allowed disabled:opacity-50`
+      : `${corners} px-3 py-1.5 text-xs font-medium text-muted-foreground hover:bg-accent hover:text-accent-foreground disabled:cursor-not-allowed disabled:opacity-50`;
 
   return (
     <>
@@ -522,6 +522,9 @@ export default function AnalyzePage() {
                             const isOriginalBlocked = () =>
                               option.value === "original" &&
                               !frameCompat().canIframe;
+                            const isArchivedUnavailable = () =>
+                              option.value === "archived" &&
+                              archiveProbeState() === "unavailable";
                             return (
                               <button
                                 type="button"
@@ -539,6 +542,12 @@ export default function AnalyzePage() {
                                 aria-describedby={
                                   isOriginalBlocked()
                                     ? ORIGINAL_BLOCKED_TIP_ID
+                                    : undefined
+                                }
+                                disabled={isArchivedUnavailable()}
+                                title={
+                                  isArchivedUnavailable()
+                                    ? "No archive available for this page"
                                     : undefined
                                 }
                                 onMouseEnter={() => {
