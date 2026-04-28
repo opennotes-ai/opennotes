@@ -13,7 +13,7 @@ import {
   createMemoryHistory,
 } from "@solidjs/router";
 import { createSignal } from "solid-js";
-import type { JobState } from "~/lib/api-client.server";
+import type { JobState, SidebarPayload } from "~/lib/api-client.server";
 
 type PollingHandle = {
   state: () => JobState | null;
@@ -167,6 +167,51 @@ function makeJobState(overrides: Partial<JobState> = {}): JobState {
     utterance_count: 0,
     ...overrides,
   } as JobState;
+}
+
+function makeSidebarPayload(
+  overrides: Partial<SidebarPayload> = {},
+): SidebarPayload {
+  return {
+    source_url: "https://news.example.com/a",
+    page_title: null,
+    page_kind: "article",
+    scraped_at: "2026-04-22T00:00:00Z",
+    cached: false,
+    cached_at: null,
+    safety: { harmful_content_matches: [] },
+    tone_dynamics: {
+      scd: {
+        summary: "",
+        tone_labels: [],
+        per_speaker_notes: {},
+        insufficient_conversation: true,
+      },
+      flashpoint_matches: [],
+    },
+    facts_claims: {
+      claims_report: {
+        deduped_claims: [],
+        total_claims: 0,
+        total_unique: 0,
+      },
+      known_misinformation: [],
+    },
+    opinions_sentiments: {
+      opinions_report: {
+        sentiment_stats: {
+          per_utterance: [],
+          positive_pct: 0,
+          negative_pct: 0,
+          neutral_pct: 0,
+          mean_valence: 0,
+        },
+        subjective_claims: [],
+      },
+    },
+    headline: null,
+    ...overrides,
+  } as SidebarPayload;
 }
 
 describe("AnalyzePage route", () => {
@@ -690,6 +735,110 @@ describe("AnalyzePage left column min-h floor (TASK-1483.13.03)", () => {
     // Sanity: surrounding flex/min-w invariants preserved.
     expect(cls).toMatch(/\bflex\b/);
     expect(cls).toMatch(/\bmin-w-0\b/);
+  });
+});
+
+describe("AnalyzePage headline summary mount (TASK-1483.13.10)", () => {
+  it("does not render headline-summary before sidebarPayload arrives", async () => {
+    renderAt("/analyze?job=job-headline-pending&url=https://news.example.com/a");
+
+    await waitFor(() => {
+      expect(pollingHandles.length).toBeGreaterThan(0);
+    });
+
+    setPolledJobState(makeJobState({ status: "analyzing" }));
+
+    await waitFor(() => {
+      expect(screen.queryByTestId("preview-mode-selector")).not.toBeNull();
+    });
+    expect(screen.queryByTestId("headline-summary")).toBeNull();
+  });
+
+  it("renders fallback headline text when sidebarPayload has headline=null", async () => {
+    renderAt(
+      "/analyze?job=job-headline-fallback&url=https://news.example.com/a",
+    );
+
+    await waitFor(() => {
+      expect(pollingHandles.length).toBeGreaterThan(0);
+    });
+
+    setPolledJobState(
+      makeJobState({
+        status: "analyzing",
+        page_title: "Investigative dispatch",
+        sidebar_payload: makeSidebarPayload({ headline: null }),
+      }),
+    );
+
+    const headline = await screen.findByTestId("headline-summary");
+    expect(headline.getAttribute("data-headline-source")).toBe("fallback");
+    expect(screen.getByTestId("headline-summary-text").textContent).toBe(
+      "news.example.com — Investigative dispatch",
+    );
+  });
+
+  it("renders real headline text when payload.headline.text is non-empty", async () => {
+    renderAt("/analyze?job=job-headline-real&url=https://news.example.com/a");
+
+    await waitFor(() => {
+      expect(pollingHandles.length).toBeGreaterThan(0);
+    });
+
+    setPolledJobState(
+      makeJobState({
+        status: "analyzing",
+        sidebar_payload: makeSidebarPayload({
+          headline: {
+            text: "Verified article headline from the analysis payload.",
+            kind: "synthesized",
+            unavailable_inputs: [],
+          },
+        }),
+      }),
+    );
+
+    const headline = await screen.findByTestId("headline-summary");
+    expect(headline.getAttribute("data-headline-source")).toBe("server");
+    expect(screen.getByTestId("headline-summary-text").textContent).toBe(
+      "Verified article headline from the analysis payload.",
+    );
+  });
+
+  it("places headline-summary before preview-mode-selector inside analyze-left-column", async () => {
+    renderAt("/analyze?job=job-headline-order&url=https://news.example.com/a");
+
+    await waitFor(() => {
+      expect(pollingHandles.length).toBeGreaterThan(0);
+    });
+
+    setPolledJobState(
+      makeJobState({
+        status: "analyzing",
+        sidebar_payload: makeSidebarPayload({
+          headline: {
+            text: "Headline appears above preview controls.",
+            kind: "stock",
+            unavailable_inputs: [],
+          },
+        }),
+      }),
+    );
+
+    const leftColumn = await screen.findByTestId("analyze-left-column");
+    const headline = screen.getByTestId("headline-summary");
+    const previewMode = screen.getByTestId("preview-mode-selector");
+
+    expect(headline.closest("[data-testid='analyze-left-column']")).toBe(
+      leftColumn,
+    );
+    expect(previewMode.closest("[data-testid='analyze-left-column']")).toBe(
+      leftColumn,
+    );
+    expect(
+      headline.compareDocumentPosition(previewMode) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
   });
 });
 
