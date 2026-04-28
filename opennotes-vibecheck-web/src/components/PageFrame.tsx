@@ -137,6 +137,10 @@ export default function PageFrame(props: PageFrameProps) {
       setArchivedLoaded(false);
       setCountdownElapsed(false);
       setUserArmedDeciding(false);
+      // Defensive reset of prevRequestedMode so the user-armed flip
+      // detector cannot mis-fire across job boundaries even if the
+      // parent's previewMode reset arrives in a different effect tick.
+      prevRequestedMode = props.previewMode;
       startLoadTimeout();
     }
   });
@@ -155,16 +159,22 @@ export default function PageFrame(props: PageFrameProps) {
   });
 
   createEffect(() => {
-    // Countdown effect: arms a single timer ONLY when we'd actually show the
-    // deciding interstitial — i.e., either (a) runtime iframe failure
-    // (canIframe was true but iframe.onError fired) or (b) the user-armed
-    // escape hatch on a server-known blocked frame. Initial render with
-    // canIframe=false now skips deciding entirely (TASK-1483.13.02), so we
-    // intentionally do NOT arm the timer in that case to avoid wasted work
-    // and stale-fire races.
+    // Countdown effect: arms a single timer EXACTLY when activePreview()
+    // would return "deciding" — i.e., (requestedMode==="original") AND
+    // (iframeFailed || hasBlockingHint) AND NOT the server-blocked
+    // auto-resolve path (canIframe=false and not user-armed).
+    //
+    // Equivalent simplified form: requestedMode==="original" AND
+    // (iframeFailed || hasBlockingHint) AND (canIframe || userArmedDeciding).
+    //
+    // The (canIframe || userArmedDeciding) clause is what makes the timer
+    // arm for the canIframe=true + cspFrameAncestors/blockingHeader case
+    // (regression caught in code review), while still skipping the timer
+    // on the canIframe=false initial-render auto-resolve path.
     const decidingTriggerActive =
       requestedMode() === "original" &&
-      (iframeFailed() || (!props.canIframe && userArmedDeciding()));
+      (iframeFailed() || hasBlockingHint()) &&
+      (props.canIframe || userArmedDeciding());
     if (!decidingTriggerActive) {
       setCountdownElapsed(false);
       return;

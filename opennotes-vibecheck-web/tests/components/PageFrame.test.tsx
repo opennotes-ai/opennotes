@@ -480,6 +480,39 @@ describe("countdown interstitial (TASK-1495.07 + TASK-1483.13.02 escape hatch)",
     cleanup();
   });
 
+  it("arms the countdown when canIframe=true but a blockingHeader/cspFrameAncestors hint is present (regression: Codex review)", async () => {
+    // Regression: when the server reports canIframe=true alongside a blocking
+    // header (e.g. a permissive `frame-ancestors *` CSP that the probe sees
+    // but the iframe will load fine), activePreview() returns "deciding"
+    // because hasBlockingHint() is true. The countdown trigger MUST also
+    // arm a timer in this case, otherwise the UI gets stuck on
+    // "Auto-switching in ~15s" forever.
+    const onResolvedModeChange = vi.fn();
+    render(() => (
+      <PageFrame
+        url="https://example.com/article"
+        canIframe={true}
+        cspFrameAncestors="frame-ancestors *"
+        archivedPreviewUrl="/api/archive-preview?url=https%3A%2F%2Fexample.com%2Farticle"
+        screenshotUrl="https://cdn.example.com/shot.png"
+        previewMode="original"
+        onResolvedModeChange={onResolvedModeChange}
+      />
+    ));
+
+    // Initially: hasBlockingHint=true (cspFrameAncestors set) but canIframe=true,
+    // so activePreview returns "deciding" rather than auto-resolving.
+    expect(screen.getByTestId("page-frame-deciding")).not.toBeNull();
+
+    // The countdown timer MUST arm — after 15s, chain B fires.
+    vi.advanceTimersByTime(15_000);
+    await Promise.resolve();
+
+    expect(screen.queryByTestId("page-frame-deciding")).toBeNull();
+    expect(screen.getByTestId("page-frame-archived-iframe")).not.toBeNull();
+    expect(onResolvedModeChange).toHaveBeenCalledWith("archived");
+  });
+
   it("renders the deciding interstitial on runtime iframe failure (canIframe=true → onError)", () => {
     render(() => (
       <PageFrame
