@@ -11,6 +11,9 @@ env:
   PYTHON_VERSION: '3.11'
   NODE_VERSION: '20'
 
+permissions:
+  contents: read
+
 jobs:
   detect-changes:
     name: Detect Changed Services
