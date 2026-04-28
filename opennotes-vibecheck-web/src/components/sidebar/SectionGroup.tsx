@@ -32,6 +32,7 @@ export interface SectionGroupProps {
   jobId?: string;
   onRetry?: (slug: SectionSlugLiteral) => void;
   cachedHint?: boolean;
+  renderRevision?: string | number | boolean;
 }
 
 function ChevronIcon(props: { expanded: boolean }) {
@@ -298,7 +299,7 @@ export default function SectionGroup(props: SectionGroupProps): JSX.Element {
                             const attemptKey = createMemo(() => {
                               const s = slot();
                               return s.state === "done" && s.attempt_id
-                                ? s.attempt_id
+                                ? `${s.attempt_id}:${String(props.renderRevision ?? "")}`
                                 : null;
                             });
                             const rendered = createMemo(() => {

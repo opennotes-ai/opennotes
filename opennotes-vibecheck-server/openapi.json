@@ -65,6 +65,22 @@
             }
           },
           {
+            "name": "job_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Job Id"
+            }
+          },
+          {
             "name": "generate",
             "in": "query",
             "required": false,
@@ -1706,6 +1722,14 @@
                 "type": "null"
               }
             ]
+          },
+          "utterances": {
+            "items": {
+              "$ref": "#/components/schemas/UtteranceAnchor"
+            },
+            "type": "array",
+            "title": "Utterances",
+            "description": "Minimal position-to-id anchors used by sidebar controls to jump into the archived transcript."
           }
         },
         "type": "object",
@@ -1806,6 +1830,27 @@
         ],
         "title": "ToneDynamicsSection",
         "description": "Speaker conversational dynamics + per-utterance flashpoint matches."
+      },
+      "UtteranceAnchor": {
+        "properties": {
+          "position": {
+            "type": "integer",
+            "title": "Position",
+            "description": "1-indexed utterance position in the extracted thread."
+          },
+          "utterance_id": {
+            "type": "string",
+            "title": "Utterance Id",
+            "description": "Stable utterance id stored in vibecheck_job_utterances."
+          }
+        },
+        "type": "object",
+        "required": [
+          "position",
+          "utterance_id"
+        ],
+        "title": "UtteranceAnchor",
+        "description": "Minimal position-to-id map for client-side transcript jumps."
       },
       "ValidationError": {
         "properties": {

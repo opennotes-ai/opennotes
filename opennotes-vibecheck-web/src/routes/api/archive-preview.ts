@@ -48,6 +48,8 @@ export async function GET(event: APIEvent): Promise<Response> {
   const backendBase = resolveBaseUrl();
   const backendUrl = new URL("/api/archive-preview", backendBase);
   backendUrl.searchParams.set("url", targetUrl);
+  const jobId = requestUrl.searchParams.get("job_id");
+  if (jobId) backendUrl.searchParams.set("job_id", jobId);
 
   const headers = new Headers();
   if (process.env.NODE_ENV === "production") {

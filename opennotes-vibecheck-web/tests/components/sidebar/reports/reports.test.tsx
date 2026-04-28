@@ -1,5 +1,5 @@
-import { describe, it, expect, afterEach } from "vitest";
-import { render, screen, cleanup } from "@solidjs/testing-library";
+import { describe, it, expect, afterEach, vi } from "vitest";
+import { render, screen, cleanup, fireEvent } from "@solidjs/testing-library";
 import SafetyModerationReport from "../../../../src/components/sidebar/reports/SafetyModerationReport";
 import WebRiskReport from "../../../../src/components/sidebar/reports/WebRiskReport";
 import ImageModerationReport from "../../../../src/components/sidebar/reports/ImageModerationReport";
@@ -91,6 +91,32 @@ describe("<SafetyModerationReport />", () => {
     expect(screen.getByText("GCP provider sentence.")).toBeDefined();
     expect(screen.getByText("82%")).toBeDefined();
     expect(screen.queryByText("76%")).toBeNull();
+  });
+
+  it("renders fallback utterance id as a clickable ref", () => {
+    const onUtteranceClick = vi.fn();
+    const matches: HarmfulContentMatch[] = [
+      {
+        utterance_id: "utt-1",
+        utterance_text: "",
+        max_score: 0.82,
+        flagged_categories: ["harassment"],
+        categories: { harassment: true },
+        scores: {},
+        source: "openai",
+      },
+    ];
+
+    render(() => (
+      <SafetyModerationReport
+        matches={matches}
+        onUtteranceClick={onUtteranceClick}
+        canJumpToUtterance
+      />
+    ));
+    fireEvent.click(screen.getByTestId("safety-utterance-ref"));
+
+    expect(onUtteranceClick).toHaveBeenCalledWith("utt-1");
   });
 });
 
@@ -449,6 +475,58 @@ describe("<FlashpointReport />", () => {
     expect(headlines[1]).toMatch(/turn 11/);
     expect(headlines[2]).toMatch(/turn 18/);
   });
+
+  it("renders clickable utterance refs when jump is available", () => {
+    const onUtteranceClick = vi.fn();
+    const matches: FlashpointMatch[] = [
+      {
+        scan_type: "conversation_flashpoint",
+        utterance_id: "comment-4-aaaa",
+        derailment_score: 30,
+        risk_level: "Guarded",
+        reasoning: "first wobble",
+        context_messages: 2,
+      },
+    ];
+
+    render(() => (
+      <FlashpointReport
+        matches={matches}
+        onUtteranceClick={onUtteranceClick}
+        canJumpToUtterance
+      />
+    ));
+    fireEvent.click(screen.getByTestId("flashpoint-utterance-ref"));
+
+    expect(onUtteranceClick).toHaveBeenCalledWith("comment-4-aaaa");
+  });
+
+  it("renders disabled utterance refs when jump is unavailable", () => {
+    const matches: FlashpointMatch[] = [
+      {
+        scan_type: "conversation_flashpoint",
+        utterance_id: "comment-4-aaaa",
+        derailment_score: 30,
+        risk_level: "Guarded",
+        reasoning: "first wobble",
+        context_messages: 2,
+      },
+    ];
+
+    render(() => (
+      <FlashpointReport
+        matches={matches}
+        onUtteranceClick={vi.fn()}
+        canJumpToUtterance={false}
+      />
+    ));
+
+    expect(
+      screen
+        .getByTestId("flashpoint-utterance-ref")
+        .getAttribute("aria-disabled"),
+    ).toBe("true");
+  });
 });
 
 function makeScd(overrides: Partial<SCDReport> = {}): SCDReport {
@@ -529,6 +607,35 @@ describe("<ScdReport />", () => {
     const range = screen.getByTestId("scd-arc-range");
     expect(range.textContent).toMatch(/turns 3-7/);
     expect(range.getAttribute("aria-label")).toMatch(/turns 3-7/);
+  });
+
+  it("clicks an SCD range through the utterance anchor for the start position", () => {
+    const onUtteranceClick = vi.fn();
+    const scd = makeScd({
+      narrative: "narrative present",
+      speaker_arcs: [
+        {
+          speaker: "alice",
+          note: "gets defensive around the middle of the thread",
+          utterance_id_range: [3, 7],
+        },
+      ],
+    });
+
+    render(() => (
+      <ScdReport
+        scd={scd}
+        utterances={[
+          { position: 1, utterance_id: "comment-0-aaa" },
+          { position: 3, utterance_id: "comment-2-ccc" },
+        ]}
+        onUtteranceClick={onUtteranceClick}
+        canJumpToUtterance
+      />
+    ));
+    fireEvent.click(screen.getByTestId("scd-arc-range"));
+
+    expect(onUtteranceClick).toHaveBeenCalledWith("comment-2-ccc");
   });
 
   it("renders speaker_arcs without range badge when utterance_id_range is null", () => {
@@ -672,6 +779,60 @@ describe("<ClaimsDedupReport />", () => {
     expect(container.textContent).toContain("No repeated claims identified");
     expect(container.innerHTML).not.toMatch(/\bborder-l\b/);
   });
+
+  it("renders a primary utterance chip and expandable remaining-id popover", () => {
+    const onUtteranceClick = vi.fn();
+    const claimsReport: ClaimsReport = {
+      deduped_claims: [
+        {
+          canonical_text: "often said",
+          occurrence_count: 3,
+          author_count: 2,
+          utterance_ids: ["u-1", "u-2", "u-3"],
+          representative_authors: ["@a", "@b"],
+        },
+      ],
+      total_claims: 3,
+      total_unique: 1,
+    };
+
+    render(() => (
+      <ClaimsDedupReport
+        claimsReport={claimsReport}
+        onUtteranceClick={onUtteranceClick}
+        canJumpToUtterance
+      />
+    ));
+
+    fireEvent.click(screen.getByTestId("deduped-claim-utterance-ref"));
+    expect(onUtteranceClick).toHaveBeenCalledWith("u-1");
+
+    fireEvent.click(screen.getByTestId("deduped-claim-more-utterances"));
+    const remaining = screen.getAllByTestId("deduped-claim-popover-utterance-ref");
+    expect(remaining).toHaveLength(2);
+    fireEvent.click(remaining[1]);
+    expect(onUtteranceClick).toHaveBeenCalledWith("u-3");
+  });
+
+  it("does not render an utterance chip row when a claim has no utterance ids", () => {
+    const claimsReport: ClaimsReport = {
+      deduped_claims: [
+        {
+          canonical_text: "source absent",
+          occurrence_count: 1,
+          author_count: 1,
+          utterance_ids: [],
+          representative_authors: ["@a"],
+        },
+      ],
+      total_claims: 1,
+      total_unique: 1,
+    };
+
+    render(() => <ClaimsDedupReport claimsReport={claimsReport} />);
+
+    expect(screen.queryByTestId("deduped-claim-utterance-refs")).toBeNull();
+  });
 });
 
 describe("<KnownMisinfoReport />", () => {
@@ -809,5 +970,27 @@ describe("<SubjectiveReport />", () => {
     const { container } = render(() => <SubjectiveReport claims={[]} />);
     expect(container.textContent).toContain("No subjective claims detected");
     expect(container.innerHTML).not.toMatch(/\bborder-l\b/);
+  });
+
+  it("renders subjective claim utterance refs", () => {
+    const onUtteranceClick = vi.fn();
+    const claims: SubjectiveClaim[] = [
+      {
+        claim_text: "The policy is unfair",
+        utterance_id: "u-1",
+        stance: "opposes",
+      },
+    ];
+
+    render(() => (
+      <SubjectiveReport
+        claims={claims}
+        onUtteranceClick={onUtteranceClick}
+        canJumpToUtterance
+      />
+    ));
+    fireEvent.click(screen.getByTestId("subjective-claim-utterance-ref"));
+
+    expect(onUtteranceClick).toHaveBeenCalledWith("u-1");
   });
 });

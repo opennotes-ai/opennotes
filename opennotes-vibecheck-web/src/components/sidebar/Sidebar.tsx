@@ -40,6 +40,7 @@ type FactCheckMatch = components["schemas"]["FactCheckMatch"];
 type SentimentStats = components["schemas"]["SentimentStatsReport"];
 type SubjectiveClaim = components["schemas"]["SubjectiveClaim"];
 type ClaimsReport = components["schemas"]["ClaimsReport"];
+type UtteranceAnchor = components["schemas"]["UtteranceAnchor"];
 
 export interface SidebarProps {
   sections?: JobState["sections"];
@@ -48,6 +49,8 @@ export interface SidebarProps {
   jobStatus?: JobStatus;
   onRetry?: (slug: SectionSlugLiteral) => void;
   cachedHint?: boolean;
+  onUtteranceClick?: (id: string) => void;
+  canJumpToUtterance?: boolean;
 }
 
 const SAFETY_SLUGS: SectionSlugLiteral[] = [
@@ -341,6 +344,67 @@ function fillMissingSlotsAsRunning(base: SlugToSlots): SlugToSlots {
 }
 
 export default function Sidebar(props: SidebarProps) {
+  const canJump = () => props.canJumpToUtterance === true;
+  const utterances = (): UtteranceAnchor[] => props.payload?.utterances ?? [];
+  const safetyRender = createMemo<
+    Partial<Record<SectionSlugLiteral, (data: unknown) => JSX.Element>>
+  >(() => ({
+    ...SAFETY_RENDER,
+    safety__moderation: (data) => (
+      <SafetyModerationReport
+        matches={extractHarmfulContentMatches(data)}
+        onUtteranceClick={props.onUtteranceClick}
+        canJumpToUtterance={canJump()}
+      />
+    ),
+  }));
+  const toneRender = createMemo<
+    Partial<Record<SectionSlugLiteral, (data: unknown) => JSX.Element>>
+  >(() => ({
+    tone_dynamics__flashpoint: (data) => (
+      <FlashpointReport
+        matches={extractFlashpointMatches(data)}
+        onUtteranceClick={props.onUtteranceClick}
+        canJumpToUtterance={canJump()}
+      />
+    ),
+    tone_dynamics__scd: (data) => (
+      <ScdReport
+        scd={extractScd(data)}
+        utterances={utterances()}
+        onUtteranceClick={props.onUtteranceClick}
+        canJumpToUtterance={canJump()}
+      />
+    ),
+  }));
+  const factsRender = createMemo<
+    Partial<Record<SectionSlugLiteral, (data: unknown) => JSX.Element>>
+  >(() => ({
+    facts_claims__dedup: (data) => (
+      <ClaimsDedupReport
+        claimsReport={extractClaimsReport(data)}
+        onUtteranceClick={props.onUtteranceClick}
+        canJumpToUtterance={canJump()}
+      />
+    ),
+    facts_claims__known_misinfo: (data) => (
+      <KnownMisinfoReport matches={extractKnownMisinfo(data)} />
+    ),
+  }));
+  const opinionsRender = createMemo<
+    Partial<Record<SectionSlugLiteral, (data: unknown) => JSX.Element>>
+  >(() => ({
+    opinions_sentiments__sentiment: (data) => (
+      <SentimentReport stats={extractSentimentStats(data)} />
+    ),
+    opinions_sentiments__subjective: (data) => (
+      <SubjectiveReport
+        claims={extractSubjectiveClaims(data)}
+        onUtteranceClick={props.onUtteranceClick}
+        canJumpToUtterance={canJump()}
+      />
+    ),
+  }));
   const effectiveSections = createMemo<SlugToSlots>(() => {
     const raw = props.sections;
     const hasSlots = raw !== undefined && Object.keys(raw).length > 0;
@@ -394,46 +458,50 @@ export default function Sidebar(props: SidebarProps) {
           label="Safety"
           slugs={SAFETY_SLUGS}
           sections={effectiveSections()}
-          render={SAFETY_RENDER}
+          render={safetyRender()}
           emptinessChecks={SAFETY_EMPTINESS}
           counts={SAFETY_COUNTS}
           jobId={props.jobId}
           onRetry={props.onRetry}
           cachedHint={props.cachedHint}
+          renderRevision={canJump()}
         />
       </section>
       <SectionGroup
         label="Tone/dynamics"
         slugs={TONE_SLUGS}
         sections={effectiveSections()}
-        render={TONE_RENDER}
+        render={toneRender()}
         emptinessChecks={TONE_EMPTINESS}
         counts={TONE_COUNTS}
         jobId={props.jobId}
         onRetry={props.onRetry}
         cachedHint={props.cachedHint}
+        renderRevision={canJump()}
       />
       <SectionGroup
         label="Facts/claims"
         slugs={FACTS_SLUGS}
         sections={effectiveSections()}
-        render={FACTS_RENDER}
+        render={factsRender()}
         emptinessChecks={FACTS_EMPTINESS}
         counts={FACTS_COUNTS}
         jobId={props.jobId}
         onRetry={props.onRetry}
         cachedHint={props.cachedHint}
+        renderRevision={canJump()}
       />
       <SectionGroup
         label="Opinions/sentiments"
         slugs={OPINIONS_SLUGS}
         sections={effectiveSections()}
-        render={OPINIONS_RENDER}
+        render={opinionsRender()}
         emptinessChecks={OPINIONS_EMPTINESS}
         counts={OPINIONS_COUNTS}
         jobId={props.jobId}
         onRetry={props.onRetry}
         cachedHint={props.cachedHint}
+        renderRevision={canJump()}
       />
     </aside>
   );

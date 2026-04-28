@@ -3,9 +3,10 @@ from __future__ import annotations
 import asyncio
 from inspect import isawaitable
 from typing import Any
+from uuid import UUID
 
 import httpx
-from fastapi import APIRouter, HTTPException, Query, Response
+from fastapi import APIRouter, HTTPException, Query, Request, Response
 from pydantic import BaseModel
 from supabase import create_client
 
@@ -16,6 +17,8 @@ from src.firecrawl_client import FirecrawlClient, ScrapeResult
 from src.monitoring import get_logger
 from src.utils.html_sanitize import strip_noise
 from src.utils.url_security import InvalidURL, validate_public_http_url
+from src.utterances.annotate_html import annotate_utterances_in_html
+from src.utterances.lookup import get_utterances_for_archive
 
 logger = get_logger(__name__)
 
@@ -232,12 +235,47 @@ def _archive_response(html: str) -> Response:
     )
 
 
+def _parse_archive_job_id(job_id: str | None) -> UUID | None:
+    if job_id in (None, ""):
+        return None
+    try:
+        return UUID(job_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Invalid job_id") from exc
+
+
+async def _annotate_archive_html(
+    html: str,
+    *,
+    request: Request,
+    job_id: UUID | None,
+    requested_url: str,
+) -> str:
+    if job_id is None:
+        return html
+    pool = getattr(request.app.state, "db_pool", None)
+    if pool is None:
+        logger.warning("archive utterance annotation skipped: database pool not initialized")
+        return html
+    try:
+        utterances = await get_utterances_for_archive(pool, job_id, requested_url)
+    except Exception as exc:
+        logger.warning("archive utterance lookup failed for job %s: %s", job_id, exc)
+        return html
+    if not utterances:
+        return html
+    return annotate_utterances_in_html(html, utterances)
+
+
 @router.get("/archive-preview")
 async def archive_preview(
+    request: Request,
     url: str = Query(...),
+    job_id: str | None = Query(None),
     generate: bool = Query(False),
 ) -> Response:
     _validate_http_url(url)
+    parsed_job_id = _parse_archive_job_id(job_id)
     scrape_cache = get_scrape_cache()
     cached = await scrape_cache.get(url, tier="scrape")
     if cached and cached.html:
@@ -246,7 +284,13 @@ async def archive_preview(
         await _revalidate_archive_final_url(
             cached, original_url=url, scrape_cache=scrape_cache
         )
-        return _archive_response(cached.html)
+        html = await _annotate_archive_html(
+            cached.html,
+            request=request,
+            job_id=parsed_job_id,
+            requested_url=url,
+        )
+        return _archive_response(html)
 
     if not generate:
         raise HTTPException(status_code=404, detail="Archive unavailable")
@@ -268,6 +312,12 @@ async def archive_preview(
     html = strip_noise(stored.html) if stored.html else None
     if not html:
         raise HTTPException(status_code=502, detail="Archive unavailable")
+    html = await _annotate_archive_html(
+        html,
+        request=request,
+        job_id=parsed_job_id,
+        requested_url=url,
+    )
     return _archive_response(html)
 
 

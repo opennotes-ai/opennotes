@@ -23,6 +23,10 @@ import type { ErrorCode, SectionSlug } from "~/lib/api-client.server";
 import { createPollingResource } from "~/lib/polling";
 import { resolveHeadline } from "~/lib/headline-fallback";
 import {
+  scrollToUtterance,
+  type ScrollState,
+} from "~/lib/utterance-scroll";
+import {
   getArchiveProbe,
   getScreenshot,
   type ArchiveProbeResult,
@@ -277,7 +281,7 @@ export default function AnalyzePage() {
       try {
         await revalidate(getArchiveProbe.keyFor(url));
         if (stopped || request !== frameCompatRequest) return;
-        result = await getArchiveProbe(url);
+        result = await getArchiveProbe(url, jobId() || undefined);
       } catch (error: unknown) {
         console.warn("vibecheck archive probe failed:", error);
       } finally {
@@ -396,6 +400,63 @@ export default function AnalyzePage() {
     setPreviewMode(mode);
     setSelectedPreviewMode(mode);
     setPreviewModeRequestId((id) => id + 1);
+  };
+
+  const [archivedIframe, setArchivedIframe] =
+    createSignal<HTMLIFrameElement | null>(null);
+  const [pendingScrollId, setPendingScrollId] = createSignal<string | null>(null);
+  const scrollState: ScrollState = { lastHighlightedId: null };
+  let scrollContextJobId = "";
+  let scrollContextArchiveUrl = "";
+
+  createEffect(() => {
+    const currentJobId = jobId();
+    const currentArchiveUrl = frameCompat().archivedPreviewUrl ?? "";
+    if (
+      currentJobId === scrollContextJobId &&
+      currentArchiveUrl === scrollContextArchiveUrl
+    ) {
+      return;
+    }
+    scrollContextJobId = currentJobId;
+    scrollContextArchiveUrl = currentArchiveUrl;
+    setArchivedIframe(null);
+    setPendingScrollId(null);
+    scrollState.lastHighlightedId = null;
+  });
+
+  const scrollToPendingUtterance = () => {
+    const pending = pendingScrollId();
+    const iframe = archivedIframe();
+    if (!pending || !iframe || previewMode() !== "archived") return;
+    requestAnimationFrame(() => {
+      if (scrollToUtterance(iframe, pending, scrollState)) {
+        setPendingScrollId(null);
+      }
+    });
+  };
+
+  createEffect(() => {
+    pendingScrollId();
+    archivedIframe();
+    previewMode();
+    scrollToPendingUtterance();
+  });
+
+  const handleUtteranceClick = (id: string) => {
+    if (!frameCompat().archivedPreviewUrl) return;
+    const iframe = archivedIframe();
+    if (previewMode() === "archived" && iframe) {
+      scrollToUtterance(iframe, id, scrollState);
+      return;
+    }
+    setPendingScrollId(id);
+    selectPreviewMode("archived");
+  };
+
+  const handleArchivedIframeReady = (iframe: HTMLIFrameElement) => {
+    setArchivedIframe(iframe);
+    scrollToPendingUtterance();
   };
 
   const isPreviewModePressed = (mode: PreviewMode) =>
@@ -644,6 +705,7 @@ export default function AnalyzePage() {
                         setSelectedPreviewMode(null);
                       }
                     }}
+                    onArchivedIframeReady={handleArchivedIframeReady}
                   />
                   <Show when={frameCompatError()}>
                     {(message) => (
@@ -671,6 +733,8 @@ export default function AnalyzePage() {
                   jobStatus={jobStatus()}
                   onRetry={handleRetry}
                   cachedHint={cachedHint()}
+                  onUtteranceClick={handleUtteranceClick}
+                  canJumpToUtterance={Boolean(frameCompat().archivedPreviewUrl)}
                 />
               </div>
             }
