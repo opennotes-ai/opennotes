@@ -41,14 +41,13 @@ CREATE OR REPLACE FUNCTION public.exec_sql(sql text)
 RETURNS void
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = pg_catalog, pg_temp
+SET search_path = public, pg_temp
 AS $$
 BEGIN
     RAISE LOG 'vibecheck exec_sql apply length=% hash=%', length(sql), md5(sql);
     EXECUTE sql;
 END;
 $$;
-ALTER FUNCTION public.exec_sql(text) OWNER TO vibecheck_schema_admin;
 REVOKE ALL ON FUNCTION public.exec_sql(text) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.exec_sql(text) TO service_role;
 """
@@ -92,9 +91,12 @@ async def test_exec_sql_permission_model(exec_sql_conn: asyncpg.Connection) -> N
     )
 
     assert row is not None
-    assert row["owner"] == "vibecheck_schema_admin"
+    assert row["owner"] != "vibecheck_schema_admin", (
+        "exec_sql must not be owned by vibecheck_schema_admin — "
+        "re-applying schema.sql as service_role would fail on postgres-owned objects"
+    )
     assert row["prosecdef"] is True
-    assert row["proconfig"] == ["search_path=pg_catalog, pg_temp"]
+    assert row["proconfig"] == ["search_path=public, pg_temp"]
 
     await exec_sql_conn.execute("SET ROLE anon")
     with pytest.raises(asyncpg.InsufficientPrivilegeError):

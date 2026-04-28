@@ -28,8 +28,24 @@
 -- Threat model: any service-role key holder can invoke arbitrary SQL through
 -- this SECURITY DEFINER function; keeping it is a privilege-escalation risk.
 -- Removal is tracked by TASK-1490.20.
--- Operators must seed the same block once via docs/guides/vibecheck-deploy.md
--- §10.4 before the first deploy to an environment where exec_sql is absent.
+-- Operators must seed the same block once via docs/exec-sql-bootstrap.md §1
+-- (in this repo) before the first deploy to an environment where exec_sql is absent.
+--
+-- Ownership decision (TASK-1490.21): exec_sql remains postgres-owned (the
+-- default ownership of CREATE FUNCTION by the seeding role) for the duration
+-- of this bootstrap window. Re-applying schema.sql as service_role via
+-- exec_sql re-issues ALTER TABLE ENABLE RLS, ALTER FUNCTION OWNER TO postgres,
+-- REVOKE, and cron.schedule calls — all of which require object-owner / pg_cron
+-- powers that a constrained role (vibecheck_schema_admin) cannot hold on
+-- postgres-owned objects. The security boundary is the EXECUTE grant: only
+-- service_role can call exec_sql, and service_role already bypasses RLS on
+-- the same Supabase project. A separate non-superuser owner does not raise
+-- the security floor here.
+-- search_path decision: exec_sql uses `search_path = public, pg_temp` (not
+-- pg_catalog) so that the unqualified CREATE TABLE / ALTER TABLE statements in
+-- schema.sql resolve to the public schema during EXECUTE. pg_catalog as first
+-- element would cause those statements to attempt system-catalog writes and
+-- fail with InsufficientPrivilege. TASK-1490.20 tracks the eventual cutover.
 SET LOCAL lock_timeout = '30s';
 SELECT pg_advisory_xact_lock(1490, hashtext('schema_apply')::int);
 
@@ -64,16 +80,15 @@ CREATE OR REPLACE FUNCTION public.exec_sql(sql text)
 RETURNS void
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = pg_catalog, pg_temp
+SET search_path = public, pg_temp
 AS $$
 BEGIN
     RAISE LOG 'vibecheck exec_sql apply length=% hash=%', length(sql), md5(sql);
     EXECUTE sql;
 END;
 $$;
-ALTER FUNCTION public.exec_sql(text) OWNER TO vibecheck_schema_admin;
 COMMENT ON FUNCTION public.exec_sql(text) IS
-    'TEMPORARY TASK-1490.20: service-role-only schema bootstrap; privilege-escalation risk until opennotes-server merge and Alembic owns vibecheck schema changes.';
+    'TEMPORARY TASK-1490.20: service-role-only schema bootstrap; postgres-owned so re-apply via exec_sql can ALTER TABLE/FUNCTION owned by postgres without InsufficientPrivilege. search_path=public to allow unqualified CREATE TABLE/ALTER TABLE in schema.sql. Remove once Alembic owns vibecheck changes (TASK-1490.20).';
 REVOKE ALL ON FUNCTION public.exec_sql(text) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.exec_sql(text) TO service_role;
 
