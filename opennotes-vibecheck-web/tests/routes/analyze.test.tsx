@@ -115,7 +115,8 @@ vi.mock("@solidjs/router", async () => {
 
 vi.mock("~/routes/analyze.data", () => {
   const getArchiveProbeStub = Object.assign(getArchiveProbeMock, {
-    keyFor: (url: string) => `vibecheck-archive-probe:${url}`,
+    keyFor: (url: string, jobId?: string) =>
+      `vibecheck-archive-probe:${url}:${jobId ?? ""}`,
     key: "vibecheck-archive-probe",
   });
   const getScreenshotStub = Object.assign(getScreenshotMock, {
@@ -905,7 +906,7 @@ describe("AnalyzePage archiveProbeState re-probe loop (TASK-1483.15.01)", () => 
     );
     expect(revalidateMock).toHaveBeenNthCalledWith(
       1,
-      `vibecheck-archive-probe:${url}`,
+      `vibecheck-archive-probe:${url}:job-archive-immediate`,
     );
     expect(
       revalidateMock.mock.invocationCallOrder[0],
@@ -918,7 +919,7 @@ describe("AnalyzePage archiveProbeState re-probe loop (TASK-1483.15.01)", () => 
     expect(getArchiveProbeMock).toHaveBeenCalledTimes(2);
     expect(revalidateMock).toHaveBeenNthCalledWith(
       2,
-      `vibecheck-archive-probe:${url}`,
+      `vibecheck-archive-probe:${url}:job-archive-immediate`,
     );
     expect(
       revalidateMock.mock.invocationCallOrder[1],
@@ -1401,12 +1402,20 @@ describe("AnalyzePage utterance refs", () => {
   const url = "https://news.example.com/a";
   const archiveUrl = `/api/archive-preview?url=${encodeURIComponent(url)}&job_id=job-utterance-scroll`;
 
-  function jobWithFlashpoint(): JobState {
+  function jobWithFlashpoint(
+    overrides: Pick<Partial<SidebarPayload>, "utterances"> = {},
+  ): JobState {
     return makeJobState({
       job_id: "job-utterance-scroll",
       status: "done",
       url,
       sidebar_payload: makeSidebarPayload({
+        utterances: [
+          {
+            position: 1,
+            utterance_id: "comment-0-aaa",
+          },
+        ],
         tone_dynamics: {
           scd: {
             narrative: "",
@@ -1426,6 +1435,7 @@ describe("AnalyzePage utterance refs", () => {
             },
           ],
         },
+        ...overrides,
       }),
     });
   }
@@ -1486,6 +1496,30 @@ describe("AnalyzePage utterance refs", () => {
         "aria-disabled",
       ),
     ).toBe("true");
+  });
+
+  it("renders utterance refs disabled when the current job has no archive anchors", async () => {
+    getArchiveProbeMock.mockResolvedValue(
+      frameCompatResult({
+        canIframe: true,
+        archivedPreviewUrl: archiveUrl,
+      }),
+    );
+    renderAt(
+      `/analyze?job=job-utterance-scroll&url=${encodeURIComponent(url)}`,
+    );
+    setPolledJobState(jobWithFlashpoint({ utterances: [] }));
+    await flushMicrotasks();
+
+    const ref = await screen.findByTestId("flashpoint-utterance-ref");
+    expect(ref.getAttribute("aria-disabled")).toBe("true");
+
+    fireEvent.click(ref);
+
+    expect(scrollToUtteranceMock).not.toHaveBeenCalled();
+    expect(
+      screen.getByTestId("preview-mode-archived").getAttribute("aria-pressed"),
+    ).toBe("false");
   });
 });
 

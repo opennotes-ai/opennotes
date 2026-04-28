@@ -277,6 +277,12 @@ def _assemble_payload(
     )
 
 
+def _payload_for_url_cache(payload: SidebarPayload) -> str:
+    """Serialize URL-cache payload without job-scoped utterance anchors."""
+    cache_payload = payload.model_copy(update={"utterances": []})
+    return json.dumps(cache_payload.model_dump(mode="json"))
+
+
 async def maybe_finalize_job(  # noqa: PLR0911
     db: Any,
     job_id: UUID,
@@ -364,11 +370,12 @@ async def maybe_finalize_job(  # noqa: PLR0911
         )
         preview_description = derive_preview_description(payload, ctx)
         payload_json = json.dumps(payload.model_dump(mode="json"))
+        cache_payload_json = _payload_for_url_cache(payload)
         expires_at = datetime.now(UTC) + _CACHE_TTL
         await conn.execute(
             _UPSERT_CACHE_SQL,
             row["normalized_url"],
-            payload_json,
+            cache_payload_json,
             expires_at,
         )
         await conn.execute(

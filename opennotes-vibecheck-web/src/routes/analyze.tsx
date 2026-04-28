@@ -279,9 +279,10 @@ export default function AnalyzePage() {
       inFlight = true;
       let result: ArchiveProbeResult = { ok: false, kind: "transient_error" };
       try {
-        await revalidate(getArchiveProbe.keyFor(url));
+        const archiveJobId = jobId() || undefined;
+        await revalidate(getArchiveProbe.keyFor(url, archiveJobId));
         if (stopped || request !== frameCompatRequest) return;
-        result = await getArchiveProbe(url, jobId() || undefined);
+        result = await getArchiveProbe(url, archiveJobId);
       } catch (error: unknown) {
         console.warn("vibecheck archive probe failed:", error);
       } finally {
@@ -386,6 +387,8 @@ export default function AnalyzePage() {
   const sidebarPayload = () => jobState()?.sidebar_payload ?? null;
   const isCached = () => jobState()?.cached === true;
   const cachedAt = () => sidebarPayload()?.cached_at ?? null;
+  const hasCurrentUtteranceAnchors = () =>
+    (sidebarPayload()?.utterances?.length ?? 0) > 0;
 
   const selectPreviewSize = (size: PreviewSize) => {
     setPreviewSize(size);
@@ -734,7 +737,10 @@ export default function AnalyzePage() {
                   onRetry={handleRetry}
                   cachedHint={cachedHint()}
                   onUtteranceClick={handleUtteranceClick}
-                  canJumpToUtterance={Boolean(frameCompat().archivedPreviewUrl)}
+                  canJumpToUtterance={
+                    Boolean(frameCompat().archivedPreviewUrl) &&
+                    hasCurrentUtteranceAnchors()
+                  }
                 />
               </div>
             }

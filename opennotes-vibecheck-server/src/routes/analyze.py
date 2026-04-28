@@ -262,9 +262,15 @@ async def _lookup_cache(conn: Any, normalized_url: str) -> dict[str, Any] | None
     )
     if row is None:
         return None
-    if isinstance(row, str):
-        return json.loads(row)
-    return dict(row)
+    payload = json.loads(row) if isinstance(row, str) else dict(row)
+    return _strip_job_scoped_cache_fields(payload)
+
+
+def _strip_job_scoped_cache_fields(payload: dict[str, Any]) -> dict[str, Any]:
+    """Drop fields that are only valid for the job that generated the cache."""
+    sanitized = dict(payload)
+    sanitized.pop("utterances", None)
+    return sanitized
 
 
 _CACHE_PREVIEW_FALLBACK = "Analysis complete."

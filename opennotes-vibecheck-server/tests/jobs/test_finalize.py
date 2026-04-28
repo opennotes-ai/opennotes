@@ -6,6 +6,7 @@ source to "openai".
 """
 from __future__ import annotations
 
+import json
 from typing import Any
 
 from src.analyses.safety._schemas import HarmfulContentMatch
@@ -297,3 +298,19 @@ class TestAssemblePayloadWiresNewSafetySections:
             "comment-0-aaa",
             "comment-1-bbb",
         ]
+
+    def test_url_cache_payload_drops_job_scoped_utterance_anchors(self):
+        from src.analyses.schemas import UtteranceAnchor
+        from src.jobs.finalize import _assemble_payload, _payload_for_url_cache
+
+        sidebar = _assemble_payload(
+            "https://test",
+            self._sections_with_new_safety(),
+            utterances=[
+                UtteranceAnchor(position=1, utterance_id="comment-0-aaa"),
+            ],
+        )
+
+        assert sidebar.utterances[0].utterance_id == "comment-0-aaa"
+        cached = json.loads(_payload_for_url_cache(sidebar))
+        assert cached["utterances"] == []

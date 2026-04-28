@@ -332,6 +332,36 @@ async def test_cache_hit_inserts_done_job_and_returns_cached_true(
     assert enqueue_mock.await_count == 0
 
 
+async def test_cache_hit_strips_stale_utterance_anchors(
+    client: httpx.AsyncClient, db_pool: Any, enqueue_mock: AsyncMock
+) -> None:
+    url = "https://example.com/stale-anchor-cache"
+    cached_payload = {
+        **_minimal_sidebar_payload(url),
+        "utterances": [{"position": 1, "utterance_id": "stale-job-anchor"}],
+    }
+    await _insert_cache_entry(db_pool, url, cached_payload)
+
+    resp = await client.post("/api/analyze", json={"url": url})
+
+    assert resp.status_code == 202
+    assert resp.json()["cached"] is True
+
+    async with db_pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT sidebar_payload FROM vibecheck_jobs WHERE normalized_url = $1",
+            url,
+        )
+    assert row is not None
+    stored = (
+        json.loads(row["sidebar_payload"])
+        if isinstance(row["sidebar_payload"], str)
+        else dict(row["sidebar_payload"])
+    )
+    assert "utterances" not in stored
+    assert enqueue_mock.await_count == 0
+
+
 async def test_cache_hit_with_stale_payload_shape_does_not_500(
     client: httpx.AsyncClient, db_pool: Any, enqueue_mock: AsyncMock
 ) -> None:
