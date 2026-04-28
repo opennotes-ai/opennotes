@@ -58,6 +58,21 @@ describe("<PageFrame />", () => {
     expect(screen.queryByTestId("page-frame-screenshot")).toBeNull();
   });
 
+  it("uses the shared Lucide external-link icon for the Open original action", () => {
+    render(() => (
+      <PageFrame
+        url="https://example.com/article"
+        canIframe={true}
+        screenshotUrl={null}
+        previewMode="original"
+      />
+    ));
+
+    const icon = screen.getByTestId("open-original-icon");
+    expect(icon.tagName.toLowerCase()).toBe("svg");
+    expect(icon.getAttribute("data-icon")).toBe("external-link");
+  });
+
   it("auto-resolves to screenshot immediately (no deciding) when canIframe=false and no archive (TASK-1483.13.02)", () => {
     render(() => (
       <PageFrame

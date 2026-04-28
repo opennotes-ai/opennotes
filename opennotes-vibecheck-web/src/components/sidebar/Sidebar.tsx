@@ -47,6 +47,7 @@ export interface SidebarProps {
   payload?: SidebarPayload | null;
   jobId?: string;
   jobStatus?: JobStatus;
+  class?: string;
   onRetry?: (slug: SectionSlugLiteral) => void;
   cachedHint?: boolean;
   onUtteranceClick?: (id: string) => void;
@@ -214,8 +215,10 @@ const SAFETY_EMPTINESS: Partial<
 > = {
   safety__moderation: (data) => extractHarmfulContentMatches(data).length === 0,
   safety__web_risk: (data) => extractWebRiskFindings(data).length === 0,
-  safety__image_moderation: (data) =>
-    extractImageModerationMatches(data).length === 0,
+  safety__image_moderation: (data) => {
+    const matches = extractImageModerationMatches(data);
+    return matches.length === 0 || matches.every((match) => !match.flagged);
+  },
   safety__video_moderation: (data) =>
     extractVideoModerationMatches(data).length === 0,
 };
@@ -434,7 +437,7 @@ export default function Sidebar(props: SidebarProps) {
       aria-label="Analysis sidebar"
       data-testid="analysis-sidebar"
       data-job-status={props.jobStatus ?? ""}
-      class="flex w-full flex-col gap-4"
+      class={`flex w-full flex-col gap-4 ${props.class ?? ""}`}
     >
       <Show when={props.jobStatus === "extracting"}>
         <ExtractingIndicator />

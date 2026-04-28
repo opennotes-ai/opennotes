@@ -84,6 +84,39 @@ function makeTonePayload(): SidebarPayload {
   };
 }
 
+function imageModerationSections(matches: unknown[]): SlugToSlots {
+  return {
+    safety__image_moderation: {
+      state: "done",
+      attempt_id: "s-image",
+      data: { matches },
+    },
+  };
+}
+
+function clearImageMatch(id: string) {
+  return {
+    utterance_id: id,
+    image_url: `https://cdn.example.test/${id}.jpg`,
+    adult: 0,
+    violence: 0,
+    racy: 0,
+    medical: 0,
+    spoof: 0,
+    flagged: false,
+    max_likelihood: 0,
+  };
+}
+
+function flaggedImageMatch(id: string) {
+  return {
+    ...clearImageMatch(id),
+    flagged: true,
+    adult: 0.82,
+    max_likelihood: 0.82,
+  };
+}
+
 afterEach(() => {
   cleanup();
 });
@@ -566,10 +599,61 @@ describe("SectionGroup", () => {
     const chevron = toggle.querySelector('[data-testid="slot-chevron"]');
     expect(chevron).not.toBeNull();
     expect(chevron?.tagName.toLowerCase()).toBe("svg");
+    expect(chevron?.getAttribute("data-icon")).toBe("chevron-down");
     expect(chevron?.getAttribute("data-state")).toBe("collapsed");
 
     await fireEvent.click(toggle);
     expect(chevron?.getAttribute("data-state")).toBe("expanded");
+  });
+
+  it("uses mobile-legible 12px slot toggle typography", () => {
+    render(() => (
+      <SectionGroup
+        label="Tone/dynamics"
+        slugs={TONE_SLUGS}
+        sections={{ tone_dynamics__flashpoint: { state: "pending", attempt_id: "" } }}
+        render={{}}
+      />
+    ));
+
+    const toggle = screen.getByTestId(
+      "slot-toggle-tone_dynamics__flashpoint",
+    );
+    const cls = toggle.getAttribute("class") ?? "";
+    expect(cls).toMatch(/\btext-xs\b/);
+    expect(cls).not.toMatch(/text-\[11px\]/);
+  });
+
+  it("renders accessible help affordances for the group and each slot", async () => {
+    render(() => (
+      <SectionGroup
+        label="Safety"
+        slugs={["safety__image_moderation"]}
+        sections={{ safety__image_moderation: { state: "pending", attempt_id: "" } }}
+        render={{}}
+      />
+    ));
+
+    const sectionHelp = screen.getByTestId("section-help-Safety");
+    expect(sectionHelp.getAttribute("aria-label")).toBe(
+      "What does Safety mean?",
+    );
+    await fireEvent.click(sectionHelp);
+    expect(
+      (await screen.findByTestId("section-help-content-Safety")).textContent,
+    ).toContain("What we look for");
+
+    const slotHelp = screen.getByTestId(
+      "slot-help-safety__image_moderation",
+    );
+    expect(slotHelp.getAttribute("aria-label")).toBe(
+      "What does Images mean?",
+    );
+    await fireEvent.click(slotHelp);
+    const slotHelpContent = await screen.findByTestId(
+      "slot-help-content-safety__image_moderation",
+    );
+    expect(slotHelpContent.textContent).toContain("What these results mean");
   });
 
   it("renders a result-count badge for done slots", () => {
@@ -859,6 +943,59 @@ describe("Sidebar", () => {
       );
       expect(screen.queryByTestId(`skeleton-${slug}`)).toBeNull();
     }
+  });
+
+  it("keeps image moderation collapsed by default when no images were checked", () => {
+    render(() => <Sidebar sections={imageModerationSections([])} />);
+
+    const toggle = screen.getByTestId(
+      "slot-toggle-safety__image_moderation",
+    );
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    expect(screen.queryByTestId("report-safety__image_moderation")).toBeNull();
+    expect(
+      screen.getByTestId("slot-count-safety__image_moderation").textContent,
+    ).toBe("no results");
+  });
+
+  it("keeps image moderation collapsed by default when every checked image is clear", () => {
+    render(() => (
+      <Sidebar
+        sections={imageModerationSections([
+          clearImageMatch("clear-a"),
+          clearImageMatch("clear-b"),
+        ])}
+      />
+    ));
+
+    const toggle = screen.getByTestId(
+      "slot-toggle-safety__image_moderation",
+    );
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    expect(screen.queryByTestId("report-safety__image_moderation")).toBeNull();
+    expect(
+      screen.getByTestId("slot-count-safety__image_moderation").textContent,
+    ).toBe("2 results");
+  });
+
+  it("opens image moderation by default when at least one checked image is flagged", () => {
+    render(() => (
+      <Sidebar
+        sections={imageModerationSections([
+          flaggedImageMatch("flagged"),
+          clearImageMatch("clear"),
+        ])}
+      />
+    ));
+
+    const toggle = screen.getByTestId(
+      "slot-toggle-safety__image_moderation",
+    );
+    expect(toggle.getAttribute("aria-expanded")).toBe("true");
+    expect(screen.getByTestId("report-safety__image_moderation")).toBeDefined();
+    expect(
+      screen.getByTestId("slot-count-safety__image_moderation").textContent,
+    ).toBe("2 results");
   });
 
   it("omits left-stripe border classes anywhere in the rendered sidebar", () => {
