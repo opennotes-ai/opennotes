@@ -21,20 +21,20 @@ Paste this exact SQL into the Supabase SQL Editor for your target environment.
 
 ```sql
 SET LOCAL lock_timeout = '30s';
-SELECT pg_advisory_xact_lock(1490, hashtext('schema_apply')::int);
+SELECT pg_catalog.pg_advisory_xact_lock(1490, pg_catalog.hashtext('schema_apply')::int);
 
 DO $$
 BEGIN
-    IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'anon') THEN
+    IF NOT EXISTS (SELECT 1 FROM pg_catalog.pg_roles WHERE rolname = 'anon') THEN
         CREATE ROLE anon;
     END IF;
-    IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'authenticated') THEN
+    IF NOT EXISTS (SELECT 1 FROM pg_catalog.pg_roles WHERE rolname = 'authenticated') THEN
         CREATE ROLE authenticated;
     END IF;
-    IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'service_role') THEN
+    IF NOT EXISTS (SELECT 1 FROM pg_catalog.pg_roles WHERE rolname = 'service_role') THEN
         CREATE ROLE service_role;
     END IF;
-    IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'vibecheck_schema_admin') THEN
+    IF NOT EXISTS (SELECT 1 FROM pg_catalog.pg_roles WHERE rolname = 'vibecheck_schema_admin') THEN
         CREATE ROLE vibecheck_schema_admin;
     END IF;
 END
@@ -42,7 +42,7 @@ $$;
 
 DO $$
 BEGIN
-    IF NOT has_schema_privilege('vibecheck_schema_admin', 'public', 'CREATE') THEN
+    IF NOT pg_catalog.has_schema_privilege('vibecheck_schema_admin', 'public', 'CREATE') THEN
         GRANT USAGE, CREATE ON SCHEMA public TO vibecheck_schema_admin;
     END IF;
 EXCEPTION WHEN insufficient_privilege THEN
@@ -54,15 +54,17 @@ CREATE OR REPLACE FUNCTION public.exec_sql(sql text)
 RETURNS void
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = public, pg_temp
+SET search_path = pg_catalog, pg_temp
 AS $$
 BEGIN
-    RAISE LOG 'vibecheck exec_sql apply length=% hash=%', length(sql), md5(sql);
+    RAISE LOG 'vibecheck exec_sql apply length=% hash=%',
+        pg_catalog.length(sql),
+        pg_catalog.md5(sql);
     EXECUTE sql;
 END;
 $$;
 COMMENT ON FUNCTION public.exec_sql(text) IS
-    'TEMPORARY TASK-1490.20: service-role-only schema bootstrap; postgres-owned so re-apply via exec_sql can ALTER TABLE/FUNCTION owned by postgres without InsufficientPrivilege. search_path=public to allow unqualified CREATE TABLE/ALTER TABLE in schema.sql. Remove once Alembic owns vibecheck changes (TASK-1490.20).';
+    'TEMPORARY TASK-1490.20: service-role-only schema bootstrap; postgres-owned so re-apply via exec_sql can ALTER TABLE/FUNCTION owned by postgres without InsufficientPrivilege. Do NOT flip search_path: TASK-1490.10/TASK-1490.21/TASK-1490.39 lock it to pg_catalog, pg_temp; qualify DDL or function calls instead. Remove once Alembic owns vibecheck changes (TASK-1490.20).';
 REVOKE ALL ON FUNCTION public.exec_sql(text) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.exec_sql(text) TO service_role;
 ```
@@ -84,7 +86,7 @@ WHERE n.nspname = 'public'
 ```
 
 Expected: one row with `args = sql text`, `owner = postgres`,
-`prosecdef = true`, `proconfig = {search_path=public, pg_temp}`, and
+`prosecdef = true`, `proconfig = {search_path=pg_catalog, pg_temp}`, and
 `proacl` showing `service_role=X` without `PUBLIC=X`, `anon=X`, or
 `authenticated=X`.
 
