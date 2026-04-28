@@ -113,7 +113,21 @@ async def compute_sentiment_stats(
     batches = [
         indexed[start : start + _BATCH_SIZE] for start in range(0, len(indexed), _BATCH_SIZE)
     ]
-    batch_scores = await asyncio.gather(*(_run_batch(batch) for batch in batches))
+    tasks = [asyncio.create_task(_run_batch(batch)) for batch in batches]
+    try:
+        batch_scores = await asyncio.gather(*tasks)
+    except asyncio.CancelledError:
+        for task in tasks:
+            if not task.done():
+                task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+        raise
+    except Exception:
+        for task in tasks:
+            if not task.done():
+                task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+        raise
     all_scores = [score for scores in batch_scores for score in scores]
 
     return _aggregate(all_scores)

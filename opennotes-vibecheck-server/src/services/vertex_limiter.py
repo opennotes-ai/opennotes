@@ -7,25 +7,46 @@ import threading
 import time
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from dataclasses import dataclass
 
 import logfire
 
 from src.config import Settings, get_settings
 
-_semaphores: dict[int, asyncio.Semaphore] = {}
-_semaphores_lock = threading.Lock()
+
+@dataclass
+class _LimiterState:
+    limit: int
+    loop: asyncio.AbstractEventLoop
+    semaphore: asyncio.Semaphore
+    active: int = 0
+    pending: int = 0
 
 
-def _semaphore_for(limit: int) -> asyncio.Semaphore:
+_state: _LimiterState | None = None
+_state_lock = threading.Lock()
+
+
+def _limiter_state_for(limit: int, loop: asyncio.AbstractEventLoop) -> _LimiterState:
+    global _state  # noqa: PLW0603
     if limit <= 0:
         raise ValueError("VERTEX_MAX_CONCURRENCY must be > 0")
 
-    with _semaphores_lock:
-        semaphore = _semaphores.get(limit)
-        if semaphore is None:
-            semaphore = asyncio.Semaphore(limit)
-            _semaphores[limit] = semaphore
-        return semaphore
+    with _state_lock:
+        if _state is None:
+            _state = _LimiterState(limit=limit, loop=loop, semaphore=asyncio.Semaphore(limit))
+        elif _state.loop is not loop:
+            if _state.active or _state.pending:
+                raise RuntimeError("Vertex limiter event loop changed while calls are active or waiting")
+            _state = _LimiterState(limit=limit, loop=loop, semaphore=asyncio.Semaphore(limit))
+        elif _state.limit != limit:
+            if _state.active or _state.pending:
+                raise RuntimeError(
+                    "VERTEX_MAX_CONCURRENCY changed "
+                    f"from {_state.limit} to {limit} while Vertex calls are active or waiting"
+                )
+            _state = _LimiterState(limit=limit, loop=loop, semaphore=asyncio.Semaphore(limit))
+        return _state
 
 
 @asynccontextmanager
@@ -37,16 +58,33 @@ async def vertex_slot(settings: Settings | None = None) -> AsyncIterator[None]:
     """
     resolved_settings = settings or get_settings()
     limit = resolved_settings.VERTEX_MAX_CONCURRENCY
-    semaphore = _semaphore_for(limit)
+    state = _limiter_state_for(limit, asyncio.get_running_loop())
     started = time.perf_counter()
+    pending = False
+    slot_active = False
 
-    with logfire.span("vibecheck.vertex_limiter.wait") as span:
-        await semaphore.acquire()
-        wait_ms = (time.perf_counter() - started) * 1000
-        span.set_attribute("vertex_limiter.wait_ms", wait_ms)
-        span.set_attribute("vertex_limiter.max_concurrency", limit)
+    with _state_lock:
+        state.pending += 1
+        pending = True
 
     try:
+        with logfire.span("vibecheck.vertex_limiter.wait") as span:
+            await state.semaphore.acquire()
+            wait_ms = (time.perf_counter() - started) * 1000
+            with _state_lock:
+                state.pending -= 1
+                pending = False
+                state.active += 1
+                slot_active = True
+            span.set_attribute("vertex_limiter.wait_ms", wait_ms)
+            span.set_attribute("vertex_limiter.max_concurrency", limit)
+
         yield
     finally:
-        semaphore.release()
+        if pending:
+            with _state_lock:
+                state.pending -= 1
+        if slot_active:
+            with _state_lock:
+                state.active -= 1
+            state.semaphore.release()

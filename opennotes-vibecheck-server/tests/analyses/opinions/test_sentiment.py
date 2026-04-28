@@ -208,6 +208,52 @@ async def test_compute_sentiment_stats_parallel_batches_preserve_input_order(
     assert set(fake.calls) == {"u0", "u10", "u20"}
 
 
+async def test_compute_sentiment_stats_cancels_sibling_batches_on_failure(
+    monkeypatch,
+) -> None:
+    utterances = [
+        Utterance(utterance_id=f"u{i}", kind="comment", text=f"utterance {i}") for i in range(11)
+    ]
+    second_batch_started = asyncio.Event()
+    second_batch_cancelled = asyncio.Event()
+    release_second_batch = asyncio.Event()
+
+    class _FailingBatchFakeAgent:
+        async def run(self, prompt: str) -> _FakeRunResult:
+            first_id = _first_prompt_id(prompt)
+            if first_id == "u0":
+                await second_batch_started.wait()
+                raise RuntimeError("sentiment batch failed")
+
+            second_batch_started.set()
+            try:
+                await release_second_batch.wait()
+            except asyncio.CancelledError:
+                second_batch_cancelled.set()
+                raise
+            return _FakeRunResult(
+                output=_SentimentBatchLLM(
+                    scores=[_SentimentScoreLLM(utterance_id="u10", label="neutral", valence=0.0)]
+                )
+            )
+
+    monkeypatch.setattr(
+        sentiment_module,
+        "build_agent",
+        lambda *args, **kwargs: _FailingBatchFakeAgent(),
+    )
+
+    with pytest.raises(RuntimeError, match="sentiment batch failed"):
+        await compute_sentiment_stats(utterances)
+
+    try:
+        await asyncio.wait_for(second_batch_cancelled.wait(), timeout=0.1)
+    except TimeoutError as exc:
+        release_second_batch.set()
+        await asyncio.sleep(0)
+        raise AssertionError("sibling sentiment batch was not cancelled") from exc
+
+
 async def test_compute_sentiment_stats_assigns_fallback_ids(monkeypatch):
     utterances = [
         Utterance(kind="post", text="Great job!"),

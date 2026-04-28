@@ -67,6 +67,13 @@ async def test_vertex_slot_records_wait_ms(monkeypatch: pytest.MonkeyPatch) -> N
     assert recorded["vertex_limiter.wait_ms"] >= 0.0
 
 
+async def test_vertex_slot_rejects_cap_change_while_slot_is_active() -> None:
+    async with vertex_slot(Settings(VERTEX_MAX_CONCURRENCY=1)):
+        with pytest.raises(RuntimeError, match="VERTEX_MAX_CONCURRENCY changed"):
+            async with vertex_slot(Settings(VERTEX_MAX_CONCURRENCY=2)):
+                pass
+
+
 def test_settings_rejects_non_positive_vertex_max_concurrency() -> None:
     with pytest.raises(ValidationError, match="VERTEX_MAX_CONCURRENCY"):
         Settings(VERTEX_MAX_CONCURRENCY=0)
