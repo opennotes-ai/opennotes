@@ -664,3 +664,101 @@ async def test_run_headline_summary_scd_clean_insufficient_takes_stock_path(monk
 
     assert result.kind == "stock"
     assert result.text in _STOCK_PHRASES
+
+
+def test_all_inputs_clear_true_for_coverage_only_caution():
+    # `run_safety_recommendation` emits CAUTION with empty top_signals
+    # for purely coverage-degraded jobs (its prompt classes "partial
+    # data" as a caution trigger). Treating that as a real signal would
+    # bypass the deterministic degraded-stock branch and force the model
+    # path on every clear-but-degraded job.
+    inputs = replace(
+        _empty_inputs(),
+        safety_recommendation=SafetyRecommendation(
+            level=SafetyLevel.CAUTION,
+            rationale="partial data: web_risk unavailable",
+            top_signals=[],
+        ),
+        unavailable_inputs=["web_risk"],
+    )
+    assert all_inputs_clear(inputs) is True
+
+
+def test_all_inputs_clear_false_for_caution_with_top_signals():
+    # CAUTION with concrete top_signals must always count as a signal,
+    # regardless of unavailable_inputs.
+    inputs = replace(
+        _empty_inputs(),
+        safety_recommendation=SafetyRecommendation(
+            level=SafetyLevel.CAUTION,
+            rationale="topic-match content score 0.62",
+            top_signals=["topic-match content score 0.62"],
+        ),
+        unavailable_inputs=["web_risk"],
+    )
+    assert all_inputs_clear(inputs) is False
+
+
+def test_all_inputs_clear_false_for_caution_when_coverage_complete():
+    # Coverage-complete CAUTION reflects a real (non-coverage) reason,
+    # so even with empty top_signals (e.g., the model returned only a
+    # rationale) we treat it as a signal and let the agent synthesize.
+    inputs = replace(
+        _empty_inputs(),
+        safety_recommendation=SafetyRecommendation(
+            level=SafetyLevel.CAUTION,
+            rationale="one isolated low-score flag",
+            top_signals=[],
+        ),
+        unavailable_inputs=[],
+    )
+    assert all_inputs_clear(inputs) is False
+
+
+def test_all_inputs_clear_false_for_unsafe_regardless_of_coverage():
+    # UNSAFE is always a real signal — coverage-degraded or not, the
+    # headline must reach the synthesizer.
+    inputs = replace(
+        _empty_inputs(),
+        safety_recommendation=SafetyRecommendation(
+            level=SafetyLevel.UNSAFE,
+            rationale="malware",
+            top_signals=[],
+        ),
+        unavailable_inputs=["web_risk"],
+    )
+    assert all_inputs_clear(inputs) is False
+
+
+async def test_run_headline_summary_coverage_only_caution_takes_degraded_stock_path(
+    monkeypatch,
+):
+    """Public-API guard for the codex pass-3 P2 finding: a job that is
+    clear in every analyzed section but whose SafetyRecommendation came
+    back as CAUTION purely because of partial coverage must reach the
+    deterministic degraded-stock branch (zero model call), not the
+    agent. The stock text must come from the qualified pool, never the
+    reassuring all-clear pool.
+    """
+    monkeypatch.setattr(
+        "src.analyses.synthesis.headline_summary_agent.build_agent",
+        lambda *args, **kwargs: ExplodingAgent(),
+    )
+    inputs = replace(
+        _empty_inputs(),
+        safety_recommendation=SafetyRecommendation(
+            level=SafetyLevel.CAUTION,
+            rationale="partial data: web_risk unavailable",
+            top_signals=[],
+        ),
+        unavailable_inputs=["web_risk", "scd"],
+    )
+    settings = cast(Settings, cast(object, SimpleNamespace()))
+    job_id = UUID("88888888-8888-8888-8888-888888888888")
+
+    result = await run_headline_summary(inputs, settings=settings, job_id=job_id)
+
+    assert result.kind == "stock"
+    assert result.text in _DEGRADED_STOCK_PHRASES
+    assert result.text not in _STOCK_PHRASES
+    assert result.unavailable_inputs == ["web_risk", "scd"]
