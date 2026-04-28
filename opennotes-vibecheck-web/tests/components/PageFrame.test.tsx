@@ -597,6 +597,40 @@ describe("countdown interstitial (TASK-1495.07 + TASK-1483.13.02 escape hatch)",
     expect(screen.getByTestId("page-frame-archived-iframe")).not.toBeNull();
   });
 
+  it("does not let parent auto-resolve feedback cancel a user-armed Original escape hatch", async () => {
+    const [mode, setMode] = createSignal<PreviewMode>("original");
+    const onResolvedModeChange = vi.fn(
+      (resolved: PreviewMode | "unavailable") => {
+        if (resolved !== "unavailable") {
+          setMode(resolved);
+        }
+      },
+    );
+
+    render(() => (
+      <PageFrame
+        url="https://example.com/article"
+        canIframe={false}
+        blockingHeader="content-security-policy: frame-ancestors 'none'"
+        archivedPreviewUrl="/api/archive-preview?url=https%3A%2F%2Fexample.com%2Farticle"
+        screenshotUrl="https://cdn.example.com/shot.png"
+        previewMode={mode()}
+        onResolvedModeChange={onResolvedModeChange}
+      />
+    ));
+
+    await waitFor(() => expect(mode()).toBe("archived"));
+    expect(screen.queryByTestId("page-frame-deciding")).toBeNull();
+    expect(screen.getByTestId("page-frame-archived-iframe")).not.toBeNull();
+
+    setMode("original");
+    await Promise.resolve();
+
+    expect(mode()).toBe("original");
+    expect(screen.getByTestId("page-frame-deciding")).not.toBeNull();
+    expect(screen.queryByTestId("page-frame-archived-iframe")).toBeNull();
+  });
+
   it("auto-switches to screenshot after countdown when no archive is present (runtime failure)", async () => {
     const onResolvedModeChange = vi.fn();
     render(() => (

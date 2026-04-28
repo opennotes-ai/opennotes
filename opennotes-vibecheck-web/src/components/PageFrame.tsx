@@ -49,6 +49,12 @@ export default function PageFrame(props: PageFrameProps) {
     prevRequestedMode = current;
   });
 
+  const isUserArmedDeciding = () =>
+    userArmedDeciding() ||
+    (requestedMode() === "original" &&
+      prevRequestedMode !== "original" &&
+      !props.canIframe);
+
   const activePreview = (): PreviewMode | "deciding" | "unavailable" => {
     if (requestedMode() === "screenshot") {
       return props.screenshotUrl ? "screenshot" : "unavailable";
@@ -65,7 +71,7 @@ export default function PageFrame(props: PageFrameProps) {
     // auto-resolve to chain B immediately and skip the deciding interstitial
     // entirely. The user can re-arm deciding by clicking Original after the
     // auto-resolve via the userArmedDeciding signal above.
-    if (!props.canIframe && !userArmedDeciding()) {
+    if (!props.canIframe && !isUserArmedDeciding()) {
       if (hasArchive()) return "archived";
       if (props.screenshotUrl) return "screenshot";
       return "unavailable";
@@ -174,7 +180,7 @@ export default function PageFrame(props: PageFrameProps) {
     const decidingTriggerActive =
       requestedMode() === "original" &&
       (iframeFailed() || hasBlockingHint()) &&
-      (props.canIframe || userArmedDeciding());
+      (props.canIframe || isUserArmedDeciding());
     if (!decidingTriggerActive) {
       setCountdownElapsed(false);
       return;
