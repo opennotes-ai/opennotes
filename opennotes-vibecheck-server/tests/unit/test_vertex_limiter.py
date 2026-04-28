@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import threading
 from typing import Any
 
 import pytest
@@ -72,6 +73,51 @@ async def test_vertex_slot_rejects_cap_change_while_slot_is_active() -> None:
         with pytest.raises(RuntimeError, match="VERTEX_MAX_CONCURRENCY changed"):
             async with vertex_slot(Settings(VERTEX_MAX_CONCURRENCY=2)):
                 pass
+
+
+async def test_vertex_slot_reserves_pending_state_before_returning(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    original_state_for = vertex_limiter._limiter_state_for
+    selected_state = threading.Event()
+    release_first = threading.Event()
+    errors: list[BaseException] = []
+
+    def _paused_state_for(
+        limit: int, loop: asyncio.AbstractEventLoop
+    ) -> vertex_limiter._LimiterState:
+        state = original_state_for(limit, loop)
+        if limit == 1:
+            selected_state.set()
+            release_first.wait(timeout=1.0)
+        return state
+
+    async def _first_caller() -> None:
+        async with vertex_slot(Settings(VERTEX_MAX_CONCURRENCY=1)):
+            pass
+
+    def _run_first_caller() -> None:
+        try:
+            asyncio.run(_first_caller())
+        except BaseException as exc:  # pragma: no cover - asserted after join
+            errors.append(exc)
+
+    monkeypatch.setattr(vertex_limiter, "_limiter_state_for", _paused_state_for)
+
+    first_thread = threading.Thread(target=_run_first_caller)
+    first_thread.start()
+    assert selected_state.wait(timeout=1.0)
+
+    try:
+        with pytest.raises(RuntimeError, match="active or waiting"):
+            async with vertex_slot(Settings(VERTEX_MAX_CONCURRENCY=2)):
+                pass
+    finally:
+        release_first.set()
+        first_thread.join(timeout=1.0)
+
+    assert not first_thread.is_alive()
+    assert errors == []
 
 
 def test_settings_rejects_non_positive_vertex_max_concurrency() -> None:

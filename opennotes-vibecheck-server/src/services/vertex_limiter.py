@@ -46,6 +46,7 @@ def _limiter_state_for(limit: int, loop: asyncio.AbstractEventLoop) -> _LimiterS
                     f"from {_state.limit} to {limit} while Vertex calls are active or waiting"
                 )
             _state = _LimiterState(limit=limit, loop=loop, semaphore=asyncio.Semaphore(limit))
+        _state.pending += 1
         return _state
 
 
@@ -60,12 +61,8 @@ async def vertex_slot(settings: Settings | None = None) -> AsyncIterator[None]:
     limit = resolved_settings.VERTEX_MAX_CONCURRENCY
     state = _limiter_state_for(limit, asyncio.get_running_loop())
     started = time.perf_counter()
-    pending = False
+    pending = True
     slot_active = False
-
-    with _state_lock:
-        state.pending += 1
-        pending = True
 
     try:
         with logfire.span("vibecheck.vertex_limiter.wait") as span:
