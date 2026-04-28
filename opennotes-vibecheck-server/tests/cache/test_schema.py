@@ -6,6 +6,7 @@ future edit cannot silently drop them.
 """
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import pytest
@@ -32,11 +33,17 @@ class TestNewTablesExist:
 
 
 class TestExecSqlBootstrap:
-    def test_exec_sql_function_is_locked_to_service_role(self, schema_sql: str) -> None:
+    def test_exec_sql_function_is_locked_to_service_role_and_dedicated_owner(
+        self, schema_sql: str
+    ) -> None:
         assert "CREATE OR REPLACE FUNCTION public.exec_sql(sql text)" in schema_sql
         assert "SECURITY DEFINER" in schema_sql
-        assert "SET search_path = public, pg_temp" in schema_sql
-        assert "ALTER FUNCTION public.exec_sql(text) OWNER TO postgres" in schema_sql
+        assert "SET search_path = pg_catalog, pg_temp" in schema_sql
+        assert (
+            "ALTER FUNCTION public.exec_sql(text) OWNER TO vibecheck_schema_admin"
+            in schema_sql
+        )
+        assert "ALTER FUNCTION public.exec_sql(text) OWNER TO postgres" not in schema_sql
         assert (
             "REVOKE ALL ON FUNCTION public.exec_sql(text) "
             "FROM PUBLIC, anon, authenticated"
@@ -47,28 +54,30 @@ class TestExecSqlBootstrap:
         )
         assert "GRANT EXECUTE ON FUNCTION public.exec_sql(text) TO authenticator" not in schema_sql
 
-    def test_schema_apply_uses_deterministic_advisory_lock_before_ddl(
+    def test_exec_sql_has_dashboard_warning_comment(self, schema_sql: str) -> None:
+        assert "COMMENT ON FUNCTION public.exec_sql(text)" in schema_sql
+        assert "TEMPORARY" in schema_sql
+        assert "TASK-1490.20" in schema_sql
+
+    def test_schema_apply_uses_namespaced_lock_before_all_create_alter(
         self, schema_sql: str
     ) -> None:
         lock_index = schema_sql.index("SELECT pg_advisory_xact_lock(")
-        first_ddl_index = min(
-            index
-            for statement in (
-                "CREATE EXTENSION",
-                "CREATE TABLE",
-                "ALTER TABLE",
-            )
-            if (index := schema_sql.find(statement)) != -1
+        ddl_matches = list(
+            re.finditer(r"(?m)^(CREATE|ALTER)\s+(?!ROLE\b)", schema_sql)
         )
 
-        assert "hashtext('vibecheck_schema_apply')::bigint" in schema_sql
-        assert lock_index < first_ddl_index
+        assert "SET LOCAL lock_timeout = '30s'" in schema_sql
+        assert "pg_advisory_xact_lock(1490, hashtext('schema_apply')::int)" in schema_sql
+        assert ddl_matches
+        assert all(lock_index < match.start() for match in ddl_matches)
 
     def test_exec_sql_comment_documents_temporary_removal_criteria(
         self, schema_sql: str
     ) -> None:
         assert "TEMPORARY exec_sql bootstrap" in schema_sql
-        assert "TASK-1490" in schema_sql
+        assert "TASK-1490.20" in schema_sql
+        assert "privilege-escalation" in schema_sql
         assert "opennotes-server merge" in schema_sql
         assert "Alembic owns vibecheck schema changes" in schema_sql
 
@@ -207,8 +216,9 @@ class TestSweeperFunctions:
 
     def test_sweepers_pin_search_path(self, schema_sql: str) -> None:
         # SECURITY DEFINER without search_path is a hijack vector via
-        # untrusted schemas; pin to public + pg_temp.
-        assert schema_sql.count("SET search_path = public, pg_temp") >= 2
+        # untrusted schemas; pin to pg_catalog + pg_temp.
+        assert schema_sql.count("SET search_path = pg_catalog, pg_temp") >= 3
+        assert "SET search_path = public, pg_temp" not in schema_sql
 
     def test_sweepers_revoke_execute_from_public(self, schema_sql: str) -> None:
         # Without REVOKE, anon/authenticated could trigger postgres-privileged
@@ -325,15 +335,16 @@ class TestWebRiskLookupsTable:
         )
 
     def test_no_policies_for_anon_or_authenticated(self, schema_sql: str) -> None:
-        assert (
-            "CREATE POLICY" not in schema_sql
-            or "vibecheck_web_risk_lookups" not in schema_sql.split("CREATE POLICY")[1]
-        ) or True
-        assert "GRANT" not in schema_sql or "vibecheck_web_risk_lookups" not in [
+        forbidden = [
             line
             for line in schema_sql.splitlines()
-            if "GRANT" in line and "vibecheck_web_risk_lookups" in line
+            if "vibecheck_web_risk_lookups" in line
+            and (
+                line.strip().startswith("CREATE POLICY")
+                or re.search(r"\bGRANT\b", line)
+            )
         ]
+        assert forbidden == []
 
 
 class TestUnsafeUrlErrorCode:
