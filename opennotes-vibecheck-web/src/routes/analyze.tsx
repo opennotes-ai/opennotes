@@ -297,7 +297,9 @@ export default function AnalyzePage() {
         return;
       }
       void probeArchive();
-      scheduleProbeInterval();
+      if (!stopped) {
+        scheduleProbeInterval();
+      }
     }
 
     void getScreenshot(url)

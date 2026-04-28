@@ -1053,6 +1053,24 @@ describe("AnalyzePage archiveProbeState re-probe loop (TASK-1483.15.01)", () => 
     await vi.advanceTimersByTimeAsync(1);
     expect(getArchiveProbeMock).toHaveBeenCalledTimes(3);
   });
+
+  it("archiveProbeState does not recreate an interval when hidden-tab resume hits the 300s cap", async () => {
+    renderAt(`/analyze?job=job-archive-hidden-cap&url=${encodeURIComponent(url)}`);
+    await flushMicrotasks();
+    expect(getArchiveProbeMock).toHaveBeenCalledTimes(1);
+
+    visibilityState = "hidden";
+    document.dispatchEvent(new Event("visibilitychange"));
+    await vi.advanceTimersByTimeAsync(300_000);
+    expect(getArchiveProbeMock).toHaveBeenCalledTimes(1);
+
+    visibilityState = "visible";
+    document.dispatchEvent(new Event("visibilitychange"));
+    await flushMicrotasks();
+
+    expect(probeState()).toBe("unavailable");
+    expect(vi.getTimerCount()).toBe(0);
+  });
 });
 
 describe("AnalyzePage headline summary mount (TASK-1483.13.10)", () => {
