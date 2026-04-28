@@ -725,6 +725,8 @@ describe("AnalyzePage Original tab — soft-disabled when canIframe=false (TASK-
       /blocks framing.*click to attempt anyway/i,
     );
     expect((tip.getAttribute("class") ?? "").split(/\s+/)).toContain("sr-only");
+    expect(tip.getAttribute("role")).toBe("tooltip");
+    expect(tip.getAttribute("data-visible")).toBe("false");
   });
 
   it("surfaces the Original blocked-frame tooltip on hover and focus", async () => {
@@ -739,23 +741,43 @@ describe("AnalyzePage Original tab — soft-disabled when canIframe=false (TASK-
     });
 
     const tip = screen.getByTestId("preview-mode-original-tip");
-    expect((tip.getAttribute("class") ?? "").split(/\s+/)).toContain("sr-only");
+    expect(tip.getAttribute("role")).toBe("tooltip");
+    expect(tip.getAttribute("data-visible")).toBe("false");
 
     fireEvent.mouseEnter(original);
-    expect((tip.getAttribute("class") ?? "").split(/\s+/)).not.toContain(
-      "sr-only",
-    );
+    expect(tip.getAttribute("data-visible")).toBe("true");
     expect(tip.textContent ?? "").toMatch(
       /blocks framing.*click to attempt anyway/i,
     );
 
     fireEvent.mouseLeave(original);
-    expect((tip.getAttribute("class") ?? "").split(/\s+/)).toContain("sr-only");
+    expect(tip.getAttribute("data-visible")).toBe("false");
 
     fireEvent.focus(original);
-    expect((tip.getAttribute("class") ?? "").split(/\s+/)).not.toContain(
-      "sr-only",
-    );
+    expect(tip.getAttribute("data-visible")).toBe("true");
+  });
+
+  it("keeps the Original blocked-frame tooltip visible after mouse leave while focused", async () => {
+    mockBlockedFrame();
+    renderAt("/analyze?job=job-blocked&url=https://nypost.com/article");
+
+    const original = await screen.findByTestId("preview-mode-original");
+    await waitFor(() => {
+      expect(original.getAttribute("aria-describedby")).toBe(
+        "preview-mode-original-tip",
+      );
+    });
+
+    const tip = screen.getByRole("tooltip");
+
+    fireEvent.focus(original);
+    expect(tip.getAttribute("data-visible")).toBe("true");
+
+    fireEvent.mouseLeave(original);
+    expect(tip.getAttribute("data-visible")).toBe("true");
+
+    fireEvent.blur(original);
+    expect(tip.getAttribute("data-visible")).toBe("false");
   });
 
   it("uses muted opacity styling on Original when canIframe=false (no aria-disabled, no disabled attr)", async () => {

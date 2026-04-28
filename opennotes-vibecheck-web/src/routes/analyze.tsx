@@ -92,7 +92,9 @@ export default function AnalyzePage() {
   const [resolvedPreviewMode, setResolvedPreviewMode] =
     createSignal<ResolvedPreviewMode>("original");
   const [previewSize, setPreviewSize] = createSignal<PreviewSize>("regular");
-  const [showOriginalBlockedTip, setShowOriginalBlockedTip] =
+  const [isOriginalBlockedTipHovered, setIsOriginalBlockedTipHovered] =
+    createSignal(false);
+  const [isOriginalBlockedTipFocused, setIsOriginalBlockedTipFocused] =
     createSignal(false);
   let previewModeJobId = jobId();
 
@@ -222,6 +224,9 @@ export default function AnalyzePage() {
 
   const isPreviewModePressed = (mode: PreviewMode) =>
     resolvedPreviewMode() !== "unavailable" && previewMode() === mode;
+  const showOriginalBlockedTip = () =>
+    !frameCompat().canIframe &&
+    (isOriginalBlockedTipHovered() || isOriginalBlockedTipFocused());
 
   const mainClass = createMemo(() => {
     if (previewSize() === "max") {
@@ -348,22 +353,22 @@ export default function AnalyzePage() {
                                 }
                                 onMouseEnter={() => {
                                   if (isOriginalBlocked()) {
-                                    setShowOriginalBlockedTip(true);
+                                    setIsOriginalBlockedTipHovered(true);
                                   }
                                 }}
                                 onMouseLeave={() => {
                                   if (option.value === "original") {
-                                    setShowOriginalBlockedTip(false);
+                                    setIsOriginalBlockedTipHovered(false);
                                   }
                                 }}
                                 onFocus={() => {
                                   if (isOriginalBlocked()) {
-                                    setShowOriginalBlockedTip(true);
+                                    setIsOriginalBlockedTipFocused(true);
                                   }
                                 }}
                                 onBlur={() => {
                                   if (option.value === "original") {
-                                    setShowOriginalBlockedTip(false);
+                                    setIsOriginalBlockedTipFocused(false);
                                   }
                                 }}
                                 onClick={() => selectPreviewMode(option.value)}
@@ -378,6 +383,10 @@ export default function AnalyzePage() {
                         <span
                           id={ORIGINAL_BLOCKED_TIP_ID}
                           data-testid={ORIGINAL_BLOCKED_TIP_ID}
+                          role="tooltip"
+                          data-visible={
+                            showOriginalBlockedTip() ? "true" : "false"
+                          }
                           class={
                             showOriginalBlockedTip()
                               ? "pointer-events-none absolute left-0 top-full z-20 mt-2 w-max max-w-64 rounded-md border border-border bg-popover px-2.5 py-1.5 text-xs font-medium text-popover-foreground shadow-md"
