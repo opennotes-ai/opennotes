@@ -1,4 +1,5 @@
 import type { APIEvent } from "@solidjs/start/server";
+import { parseCookieHeader, serializeCookieHeader } from "@supabase/ssr";
 import { createClient } from "~/lib/supabase-server";
 
 // CSRF posture: this route is intentionally cookie-only with no token check.
@@ -7,10 +8,35 @@ import { createClient } from "~/lib/supabase-server";
 export async function POST(event: APIEvent): Promise<Response> {
   const responseHeaders = new Headers();
   const supabase = createClient(event.request, responseHeaders);
-  const { error } = await supabase.auth.signOut();
-  if (error) {
-    console.warn("supabase.auth.signOut() returned error:", error);
+
+  let cleared = false;
+  try {
+    const { error } = await supabase.auth.signOut();
+    cleared = !error;
+    if (error && error.name !== "AuthSessionMissingError") {
+      console.warn("signout: unexpected supabase signOut error:", error);
+    } else if (error?.name === "AuthSessionMissingError") {
+      // Idempotent: no active session means there's nothing to clear.
+      cleared = true;
+    }
+  } catch (err) {
+    console.error("signout: supabase signOut threw:", err);
   }
+
+  if (!cleared) {
+    // Defensive: ensure any sb-* auth cookies the client sent are expired
+    // even if Supabase didn't issue removals through setAll.
+    const inbound = parseCookieHeader(event.request.headers.get("Cookie") ?? "");
+    for (const { name } of inbound) {
+      if (name.startsWith("sb-")) {
+        responseHeaders.append(
+          "Set-Cookie",
+          serializeCookieHeader(name, "", { path: "/", maxAge: 0 }),
+        );
+      }
+    }
+  }
+
   responseHeaders.set("Location", "/");
   return new Response(null, { status: 303, headers: responseHeaders });
 }

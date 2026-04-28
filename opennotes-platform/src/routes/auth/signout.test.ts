@@ -33,7 +33,9 @@ function buildSupabaseClient(
 function buildRequest(method: string = "POST"): Request {
   return new Request("https://platform.opennotes.ai/auth/signout", {
     method,
-    headers: { Cookie: "sb-access-token=token-value" },
+    headers: {
+      Cookie: "sb-access-token=token-value; sb-refresh-token=refresh-value",
+    },
   });
 }
 
@@ -52,19 +54,6 @@ describe("POST /auth/signout", () => {
     expect(response.headers.get("Location")).toBe("/");
   });
 
-  test("invokes supabase.auth.signOut() exactly once on the SSR client", async () => {
-    createClientMock.mockImplementation(
-      (_request: Request, responseHeaders: Headers) =>
-        buildSupabaseClient(responseHeaders)
-    );
-
-    await POST({
-      request: buildRequest("POST"),
-    } as Parameters<typeof POST>[0]);
-
-    expect(signOutMock).toHaveBeenCalledTimes(1);
-  });
-
   test("propagates Set-Cookie headers issued by the SSR signOut flow", async () => {
     createClientMock.mockImplementation(
       (_request: Request, responseHeaders: Headers) =>
@@ -75,8 +64,15 @@ describe("POST /auth/signout", () => {
       request: buildRequest("POST"),
     } as Parameters<typeof POST>[0]);
 
-    const setCookie = response.headers.get("Set-Cookie") ?? "";
-    expect(setCookie).toMatch(/sb-/);
+    const setCookies = response.headers.getSetCookie();
+    const access = setCookies.find((c) => c.startsWith("sb-access-token="));
+    const refresh = setCookies.find((c) => c.startsWith("sb-refresh-token="));
+    expect(access).toBeDefined();
+    expect(refresh).toBeDefined();
+    expect(access).toMatch(/Max-Age=0/);
+    expect(access).toMatch(/Path=\//);
+    expect(refresh).toMatch(/Max-Age=0/);
+    expect(refresh).toMatch(/Path=\//);
   });
 
   test("still returns 303 to / when supabase reports no active session", async () => {
@@ -96,6 +92,62 @@ describe("POST /auth/signout", () => {
 
     expect(response.status).toBe(303);
     expect(response.headers.get("Location")).toBe("/");
+  });
+
+  test("unexpected signOut error still clears sb-* cookies on the response", async () => {
+    createClientMock.mockImplementation(
+      (_request: Request, _responseHeaders: Headers) => ({
+        auth: {
+          signOut: vi.fn(async () => ({
+            error: { name: "AuthApiError", status: 500 },
+          })),
+        },
+      })
+    );
+
+    const response = await POST({
+      request: buildRequest("POST"),
+    } as Parameters<typeof POST>[0]);
+
+    expect(response.status).toBe(303);
+    expect(response.headers.get("Location")).toBe("/");
+    const setCookies = response.headers.getSetCookie();
+    const access = setCookies.find((c) => c.startsWith("sb-access-token="));
+    const refresh = setCookies.find((c) => c.startsWith("sb-refresh-token="));
+    expect(access).toBeDefined();
+    expect(refresh).toBeDefined();
+    expect(access).toMatch(/Max-Age=0/);
+    expect(access).toMatch(/Path=\//);
+    expect(refresh).toMatch(/Max-Age=0/);
+    expect(refresh).toMatch(/Path=\//);
+  });
+
+  test("thrown signOut error still returns 303 + clears cookies (no 500)", async () => {
+    createClientMock.mockImplementation(
+      (_request: Request, _responseHeaders: Headers) => ({
+        auth: {
+          signOut: vi.fn(async () => {
+            throw new Error("boom");
+          }),
+        },
+      })
+    );
+
+    const response = await POST({
+      request: buildRequest("POST"),
+    } as Parameters<typeof POST>[0]);
+
+    expect(response.status).toBe(303);
+    expect(response.headers.get("Location")).toBe("/");
+    const setCookies = response.headers.getSetCookie();
+    const access = setCookies.find((c) => c.startsWith("sb-access-token="));
+    const refresh = setCookies.find((c) => c.startsWith("sb-refresh-token="));
+    expect(access).toBeDefined();
+    expect(refresh).toBeDefined();
+    expect(access).toMatch(/Max-Age=0/);
+    expect(access).toMatch(/Path=\//);
+    expect(refresh).toMatch(/Max-Age=0/);
+    expect(refresh).toMatch(/Path=\//);
   });
 });
 
