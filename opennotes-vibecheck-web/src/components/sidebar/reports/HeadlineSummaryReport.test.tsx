@@ -10,16 +10,28 @@ afterEach(() => {
 const SAMPLE_TEXT =
   "Conversation looks low-risk: no harmful content matches and tone is mostly neutral.";
 
+type ServerHeadline = Extract<ResolvedHeadline, { source: "server" }>;
+type FallbackHeadline = Extract<ResolvedHeadline, { source: "fallback" }>;
+
 function makeHeadline(
   overrides: Partial<ResolvedHeadline> = {},
 ): ResolvedHeadline {
+  if (overrides.source === "fallback") {
+    return {
+      text: SAMPLE_TEXT,
+      kind: "stock",
+      source: "fallback",
+      unavailable_inputs: [],
+      ...overrides,
+    } as FallbackHeadline;
+  }
   return {
     text: SAMPLE_TEXT,
     kind: "synthesized",
     source: "server",
     unavailable_inputs: [],
     ...overrides,
-  };
+  } as ServerHeadline;
 }
 
 describe("HeadlineSummaryReport", () => {
@@ -57,6 +69,19 @@ describe("HeadlineSummaryReport", () => {
         .getByTestId("headline-summary")
         .getAttribute("data-headline-source"),
     ).toBe("server");
+  });
+
+  it("exposes source='fallback' when rendering a fallback headline", () => {
+    render(() => (
+      <HeadlineSummaryReport
+        headline={makeHeadline({ kind: "stock", source: "fallback" })}
+      />
+    ));
+    expect(
+      screen
+        .getByTestId("headline-summary")
+        .getAttribute("data-headline-source"),
+    ).toBe("fallback");
   });
 
   it("renders identical text for kind='stock' and kind='synthesized'", () => {

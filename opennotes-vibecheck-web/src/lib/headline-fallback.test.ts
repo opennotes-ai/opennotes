@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   buildHeadlineFallback,
+  MAX_HEADLINE_CHARS,
   resolveHeadline,
 } from "./headline-fallback";
 import type { components } from "./generated-types";
@@ -103,8 +104,136 @@ describe("buildHeadlineFallback", () => {
       pageTitle: null,
       recommendation: null,
     });
-    expect(result.text.length).toBeGreaterThan(0);
+    expect(result.text).toBe("link — link");
     expect(result.kind).toBe("stock");
+  });
+
+  it("uses neutral link token for empty and non-http URL input", () => {
+    expect(
+      buildHeadlineFallback({
+        url: "",
+        pageTitle: null,
+        recommendation: null,
+      }).text,
+    ).toBe("link — link");
+    expect(
+      buildHeadlineFallback({
+        url: "javascript:alert(1)",
+        pageTitle: null,
+        recommendation: null,
+      }).text,
+    ).toBe("link — link");
+  });
+
+  it("normalizes mixed-case hosts and strips repeated www prefixes", () => {
+    const result = buildHeadlineFallback({
+      url: "https://WWW.www.Example.COM/news",
+      pageTitle: null,
+      recommendation: null,
+    });
+    expect(result.text).toBe("example.com — news");
+  });
+
+  it("supports IDN/punycode, IPv6, and query-only URLs without raw URL echo", () => {
+    expect(
+      buildHeadlineFallback({
+        url: "https://xn--bcher-kva.example/path",
+        pageTitle: null,
+        recommendation: null,
+      }).text,
+    ).toBe("xn--bcher-kva.example — path");
+    expect(
+      buildHeadlineFallback({
+        url: "https://[2001:db8::1]/",
+        pageTitle: null,
+        recommendation: null,
+      }).text,
+    ).toBe("[2001:db8::1] — [2001:db8::1]");
+    expect(
+      buildHeadlineFallback({
+        url: "https://example.com/?q=topic",
+        pageTitle: null,
+        recommendation: null,
+      }).text,
+    ).toBe("example.com — example.com");
+  });
+
+  it("cleans titles and path segments before deciding whether they are usable", () => {
+    expect(
+      buildHeadlineFallback({
+        url: "https://example.com/story-name.html",
+        pageTitle: "Headline\u200b\u0007   with\n\nextra\tspace",
+        recommendation: null,
+      }).text,
+    ).toBe("example.com — Headline with extra space");
+    expect(
+      buildHeadlineFallback({
+        url: "https://example.com/\u200b",
+        pageTitle: "\u200b\u200c\u200d",
+        recommendation: null,
+      }).text,
+    ).toBe("example.com — example.com");
+    expect(
+      buildHeadlineFallback({
+        url: "https://example.com/news/story-title.html",
+        pageTitle: null,
+        recommendation: null,
+      }).text,
+    ).toBe("example.com — story title");
+  });
+
+  it("returns a neutral non-empty string when URL and title are unusable", () => {
+    const result = buildHeadlineFallback({
+      url: "",
+      pageTitle: "\u200b",
+      recommendation: null,
+    });
+    expect(result.text).toBe("link — link");
+    expect(result.text).not.toBe(" — ");
+  });
+
+  it("truncates by Unicode code points with ellipsis at the exported limit", () => {
+    expect(MAX_HEADLINE_CHARS).toBe(200);
+    const title = `${"a".repeat(198)}😀tail`;
+    const result = buildHeadlineFallback({
+      url: "https://example.com/article",
+      pageTitle: title,
+      recommendation: null,
+    });
+    expect([...result.text]).toHaveLength(MAX_HEADLINE_CHARS);
+    expect(result.text).toBe(`example.com — ${"a".repeat(185)}…`);
+    expect(result.text).not.toContain("\ud83d");
+    expect(result.text).not.toContain("\ude00");
+  });
+
+  it("preserves RTL title text while normalizing whitespace", () => {
+    const result = buildHeadlineFallback({
+      url: "https://example.com/article",
+      pageTitle: "שלום   עולם",
+      recommendation: null,
+    });
+    expect(result.text).toBe("example.com — שלום עולם");
+  });
+
+  it("ignores unknown recommendation levels instead of appending undefined", () => {
+    const result = buildHeadlineFallback({
+      url: "https://example.com/article",
+      pageTitle: "Title",
+      recommendation: {
+        ...recommendation("safe"),
+        level: "unknown",
+      } as unknown as SafetyRecommendation,
+    });
+    expect(result.text).toBe("example.com — Title");
+  });
+
+  it("is deterministic for the same input", () => {
+    const input = {
+      url: "https://WWW.example.com/path/to/story.html",
+      pageTitle: "Title",
+      recommendation: recommendation("caution"),
+    };
+    expect(buildHeadlineFallback(input)).toEqual(buildHeadlineFallback(input));
   });
 });
 
