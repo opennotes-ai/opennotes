@@ -7,6 +7,7 @@ phrase keyed by ``job_id`` is returned, so a quiet page never burns a
 model call and never produces a sentence that enumerates which signals
 were absent.
 """
+
 from __future__ import annotations
 
 import json
@@ -30,6 +31,7 @@ from src.analyses.tone._flashpoint_schemas import FlashpointMatch
 from src.analyses.tone._scd_schemas import SCDReport
 from src.config import Settings
 from src.services.gemini_agent import build_agent
+from src.services.vertex_limiter import vertex_slot
 
 HEADLINE_SUMMARY_SYSTEM_PROMPT = """You synthesize a 1-2 sentence summation of one analyzed page.
 Inputs include the safety verdict, conversation dynamics, claims, and sentiment.
@@ -120,10 +122,7 @@ def all_inputs_clear(inputs: HeadlineSummaryInputs) -> bool:
         or bool(inputs.scd.tone_labels)
         or bool(inputs.scd.per_speaker_notes)
     )
-    claims_signal = (
-        inputs.claims_report is not None
-        and bool(inputs.claims_report.deduped_claims)
-    )
+    claims_signal = inputs.claims_report is not None and bool(inputs.claims_report.deduped_claims)
     # Sidebar OPINIONS_EMPTINESS treats sentiment as non-empty when any of
     # per_utterance, positive_pct, negative_pct, or mean_valence is set.
     # An all-neutral page (per_utterance>0, neutral_pct=100) renders the
@@ -145,11 +144,7 @@ def all_inputs_clear(inputs: HeadlineSummaryInputs) -> bool:
     # CAUTION counts when there are concrete top_signals OR when
     # coverage is complete (so the caution is sourced from a real
     # finding, not from the coverage gap itself).
-    level = (
-        inputs.safety_recommendation.level
-        if inputs.safety_recommendation is not None
-        else None
-    )
+    level = inputs.safety_recommendation.level if inputs.safety_recommendation is not None else None
     safety_signal = inputs.safety_recommendation is not None and (
         level == SafetyLevel.UNSAFE
         or bool(inputs.safety_recommendation.top_signals)
@@ -197,34 +192,24 @@ def _serialize_inputs(inputs: HeadlineSummaryInputs) -> str:
         "safety_recommendation": _model_dump(inputs.safety_recommendation)
         if inputs.safety_recommendation is not None
         else None,
-        "harmful_content_matches": [
-            _model_dump(match) for match in inputs.harmful_content_matches
-        ],
-        "web_risk_findings": [
-            _model_dump(finding) for finding in inputs.web_risk_findings
-        ],
+        "harmful_content_matches": [_model_dump(match) for match in inputs.harmful_content_matches],
+        "web_risk_findings": [_model_dump(finding) for finding in inputs.web_risk_findings],
         "image_moderation_matches": [
             _model_dump(match) for match in inputs.image_moderation_matches
         ],
         "video_moderation_matches": [
             _model_dump(match) for match in inputs.video_moderation_matches
         ],
-        "flashpoint_matches": [
-            _model_dump(match) for match in inputs.flashpoint_matches
-        ],
+        "flashpoint_matches": [_model_dump(match) for match in inputs.flashpoint_matches],
         "scd": _model_dump(inputs.scd) if inputs.scd is not None else None,
         "claims_report": _model_dump(inputs.claims_report)
         if inputs.claims_report is not None
         else None,
-        "known_misinformation": [
-            _model_dump(match) for match in inputs.known_misinformation
-        ],
+        "known_misinformation": [_model_dump(match) for match in inputs.known_misinformation],
         "sentiment_stats": _model_dump(inputs.sentiment_stats)
         if inputs.sentiment_stats is not None
         else None,
-        "subjective_claims": [
-            _model_dump(claim) for claim in inputs.subjective_claims
-        ],
+        "subjective_claims": [_model_dump(claim) for claim in inputs.subjective_claims],
         "page_title": inputs.page_title,
         "page_kind": inputs.page_kind.value,
         "unavailable_inputs": list(inputs.unavailable_inputs),
@@ -277,9 +262,11 @@ async def run_headline_summary(
             output_type=HeadlineSummary,
             system_prompt=HEADLINE_SUMMARY_SYSTEM_PROMPT,
             name="vibecheck.headline_summary",
+            tier="synthesis",
         ),
     )
-    result = await agent.run(_serialize_inputs(inputs))
+    async with vertex_slot(settings):
+        result = await agent.run(_serialize_inputs(inputs))
     model_output = cast(HeadlineSummary, result.output)
     return HeadlineSummary(
         text=model_output.text,
