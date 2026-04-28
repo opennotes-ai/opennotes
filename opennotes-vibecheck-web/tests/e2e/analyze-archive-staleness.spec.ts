@@ -19,6 +19,7 @@ const ATTEMPT_ID = "14831503-9999-7000-8000-000000000999";
 const SCREENSHOT_URL =
   "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='1200' height='800'%3E%3Crect width='1200' height='800' fill='%23f8fafc'/%3E%3Ctext x='80' y='140' font-family='Arial' font-size='56' fill='%230f172a'%3EArchive staleness screenshot%3C/text%3E%3C/svg%3E";
 const WEB_ROOT = fileURLToPath(new URL("../..", import.meta.url));
+const PROBE_POLL_TIMEOUT_MS = 10_000;
 
 type FixtureKind =
   | "mid-poll"
@@ -210,6 +211,62 @@ async function fastForward(page: Page, amount: string): Promise<void> {
   await page.clock.fastForward(amount);
 }
 
+async function installMainDocumentLoadSentinel(
+  page: Page,
+  storageKey: string,
+): Promise<void> {
+  await page.addInitScript((key) => {
+    const win = window as Window & { __archiveStalenessLoads?: number };
+    const next = Number(window.sessionStorage.getItem(key) ?? "0") + 1;
+    window.sessionStorage.setItem(key, String(next));
+    win.__archiveStalenessLoads = next;
+  }, storageKey);
+}
+
+async function mainDocumentLoadCount(page: Page): Promise<number> {
+  return page.evaluate(() => {
+    const win = window as Window & { __archiveStalenessLoads?: number };
+    return win.__archiveStalenessLoads ?? 0;
+  });
+}
+
+async function installSeenTestIdTracker(
+  page: Page,
+  testIds: string[],
+): Promise<void> {
+  await page.addInitScript((ids) => {
+    const win = window as Window & { __archiveStalenessSeenTestIds?: string[] };
+    const seen = new Set<string>();
+    const record = () => {
+      for (const testId of ids) {
+        if (document.querySelector(`[data-testid="${testId}"]`)) {
+          seen.add(testId);
+        }
+      }
+      win.__archiveStalenessSeenTestIds = Array.from(seen);
+    };
+    const start = () => {
+      record();
+      new MutationObserver(record).observe(document.documentElement, {
+        childList: true,
+        subtree: true,
+      });
+    };
+    if (document.readyState === "loading") {
+      document.addEventListener("DOMContentLoaded", start, { once: true });
+    } else {
+      start();
+    }
+  }, testIds);
+}
+
+async function seenTestIds(page: Page): Promise<string[]> {
+  return page.evaluate(() => {
+    const win = window as Window & { __archiveStalenessSeenTestIds?: string[] };
+    return win.__archiveStalenessSeenTestIds ?? [];
+  });
+}
+
 async function expectArchivedTabAvailable(page: Page): Promise<void> {
   const archived = page.getByTestId("preview-mode-archived");
   await expect(archived).toBeEnabled();
@@ -231,14 +288,20 @@ async function driveArchiveProbeTicks(
   targetCalls: number,
 ): Promise<void> {
   await expect
-    .poll(() => frameCompatCalls.get(kind) ?? 0)
+    .poll(() => frameCompatCalls.get(kind) ?? 0, {
+      intervals: [100],
+      timeout: PROBE_POLL_TIMEOUT_MS,
+    })
     .toBeGreaterThanOrEqual(1);
 
   while ((frameCompatCalls.get(kind) ?? 0) < targetCalls) {
     const before = frameCompatCalls.get(kind) ?? 0;
     await fastForward(page, "00:05");
     await expect
-      .poll(() => frameCompatCalls.get(kind) ?? 0)
+      .poll(() => frameCompatCalls.get(kind) ?? 0, {
+        intervals: [100],
+        timeout: PROBE_POLL_TIMEOUT_MS,
+      })
       .toBeGreaterThan(before);
     if ((frameCompatCalls.get(kind) ?? 0) < targetCalls) {
       await expectArchivedTabAvailable(page);
@@ -274,7 +337,15 @@ test.beforeAll(async () => {
     ) {
       const targetUrl = requestUrl.searchParams.get("url") ?? "";
       const kind = fixtureKindFromUrl(targetUrl);
-      if (kind === "mid-poll" || kind === "transient" || kind === "fallback") {
+      if (kind === "fallback") {
+        response.writeHead(502, {
+          "cache-control": "no-store, private",
+          "content-type": "text/plain; charset=utf-8",
+        });
+        response.end("Archive unavailable");
+        return;
+      }
+      if (kind === "mid-poll" || kind === "transient") {
         response.writeHead(200, {
           "cache-control": "no-store, private",
           "content-security-policy":
@@ -359,7 +430,15 @@ test.beforeEach(() => {
 test("archive arriving mid-poll keeps Archived available and renders without reload", async ({
   page,
 }) => {
+  await installMainDocumentLoadSentinel(
+    page,
+    `archive-staleness-loads:${MID_POLL_JOB_ID}`,
+  );
   await installClockAndOpenJob(page, MID_POLL_JOB_ID);
+  await expect.poll(() => mainDocumentLoadCount(page), {
+    intervals: [100],
+    timeout: PROBE_POLL_TIMEOUT_MS,
+  }).toBe(1);
   await expect(page.getByTestId("page-frame-iframe")).toBeVisible();
   await expect(page.getByTestId("page-frame-deciding")).toHaveCount(0);
   await expectArchivedTabAvailable(page);
@@ -372,6 +451,7 @@ test("archive arriving mid-poll keeps Archived available and renders without rel
   await expect(page.getByTestId("page-frame-screenshot")).toHaveCount(0);
   await expect(page.getByTestId("page-frame-unavailable")).toHaveCount(0);
   await expect(page).toHaveURL(new RegExp(`/analyze\\?job=${MID_POLL_JOB_ID}$`));
+  expect(await mainDocumentLoadCount(page)).toBe(1);
 });
 
 test("terminal job waits through 10s grace before disabling Archived", async ({
@@ -413,12 +493,30 @@ test("transient frame-compat failures retry without disabling Archived", async (
 }) => {
   await installClockAndOpenJob(page, TRANSIENT_JOB_ID);
   await expect(page.getByTestId("page-frame-iframe")).toBeVisible();
+  await expect
+    .poll(() => frameCompatCalls.get("transient") ?? 0, {
+      intervals: [100],
+      timeout: PROBE_POLL_TIMEOUT_MS,
+    })
+    .toBe(1);
   await expectArchivedTabAvailable(page);
 
-  await fastForward(page, "00:10");
+  await fastForward(page, "00:05");
+  await expect
+    .poll(() => frameCompatCalls.get("transient") ?? 0, {
+      intervals: [100],
+      timeout: PROBE_POLL_TIMEOUT_MS,
+    })
+    .toBe(2);
+  await expectArchivedTabAvailable(page);
+
+  await fastForward(page, "00:05");
 
   await expect
-    .poll(() => frameCompatCalls.get("transient") ?? 0)
+    .poll(() => frameCompatCalls.get("transient") ?? 0, {
+      intervals: [100],
+      timeout: PROBE_POLL_TIMEOUT_MS,
+    })
     .toBeGreaterThanOrEqual(3);
   await expectArchivedTabAvailable(page);
   await expect(page.getByTestId("page-frame-archived-iframe")).toBeVisible({
@@ -427,16 +525,25 @@ test("transient frame-compat failures retry without disabling Archived", async (
   await expect(page.getByTestId("page-frame-unavailable")).toHaveCount(0);
 });
 
-test("blocked original follows Original to Archived to Screenshot fallback chain", async ({
+test("blocked original automatically falls from Archived failure to Screenshot", async ({
   page,
 }) => {
+  await installSeenTestIdTracker(page, ["page-frame-archived-iframe"]);
   await installClockAndOpenJob(page, FALLBACK_JOB_ID);
 
-  await expect(page.getByTestId("page-frame-archived-iframe")).toBeVisible({
+  await expect(page.getByTestId("page-frame-iframe")).toHaveCount(1);
+  await expect
+    .poll(() => seenTestIds(page), {
+      intervals: [100],
+      timeout: PROBE_POLL_TIMEOUT_MS,
+    })
+    .toContain("page-frame-archived-iframe");
+  await expect(page.getByTestId("page-frame-screenshot")).toBeVisible({
     timeout: 10_000,
   });
-  await expect(page.getByTestId("page-frame-iframe")).toHaveCount(1);
+  await expect(page.getByTestId("page-frame-archived-iframe")).toHaveCount(0);
   await expect(page.getByTestId("page-frame-deciding")).toHaveCount(0);
+  await expect(page.getByTestId("page-frame-unavailable")).toHaveCount(0);
 
   await page.getByRole("button", { name: "Original" }).click();
   await expect(page.getByTestId("page-frame-deciding")).toBeVisible();
@@ -444,12 +551,4 @@ test("blocked original follows Original to Archived to Screenshot fallback chain
     "aria-hidden",
     "true",
   );
-
-  await page.getByRole("button", { name: "Archived" }).click();
-  await expect(page.getByTestId("page-frame-archived-iframe")).toBeVisible();
-  await expect(page.getByTestId("page-frame-screenshot")).toHaveCount(0);
-
-  await page.getByRole("button", { name: "Screenshot" }).click();
-  await expect(page.getByTestId("page-frame-screenshot")).toBeVisible();
-  await expect(page.getByTestId("page-frame-unavailable")).toHaveCount(0);
 });
