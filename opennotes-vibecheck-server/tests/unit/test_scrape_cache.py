@@ -1060,7 +1060,7 @@ class TestEvictFenceAndFinalUrl:
 
         class _PinnedDatetime(datetime):
             @classmethod
-            def now(cls, tz: Any = None) -> datetime:
+            def now(cls, _tz: Any = None) -> datetime:
                 return next(nows)
 
         monkeypatch.setattr(scrape_cache_module, "datetime", _PinnedDatetime)

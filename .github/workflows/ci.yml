@@ -22,6 +22,7 @@ jobs:
       playground: ${{ steps.filter.outputs.playground }}
       platform: ${{ steps.filter.outputs.platform }}
       vibecheck: ${{ steps.filter.outputs.vibecheck }}
+      vibecheck_server: ${{ steps.filter.outputs.vibecheck_server }}
       shared: ${{ steps.filter.outputs.shared }}
     steps:
       - uses: actions/checkout@v4
@@ -45,6 +46,8 @@ jobs:
             vibecheck:
               - 'opennotes-vibecheck-web/**'
               - 'packages/**'
+            vibecheck_server:
+              - 'opennotes-vibecheck-server/**'
             shared:
               - '.github/workflows/**'
               - 'docker-compose*.yml'
@@ -289,6 +292,40 @@ jobs:
       - name: Run TypeScript compiler
         run: pnpm --filter opennotes-vibecheck-web run type-check
 
+  lint-vibecheck-server:
+    name: Lint Python (opennotes-vibecheck-server)
+    needs: detect-changes
+    if: needs.detect-changes.outputs.vibecheck_server == 'true' || needs.detect-changes.outputs.shared == 'true'
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+
+      - name: Load cached venv
+        id: cached-uv-dependencies
+        uses: actions/cache@v4
+        with:
+          path: opennotes-vibecheck-server/.venv
+          key: vibecheck-server-venv-${{ runner.os }}-${{ env.PYTHON_VERSION }}-${{ hashFiles('opennotes-vibecheck-server/uv.lock') }}
+
+      - name: Install dependencies
+        working-directory: opennotes-vibecheck-server
+        run: |
+          uv venv --allow-existing --relocatable
+          uv pip install -e ".[dev]"
+
+      - name: Run ruff check
+        working-directory: opennotes-vibecheck-server
+        run: uv run ruff check .
+
   unit-tests-python:
     name: Unit Tests (opennotes-server)
     needs: detect-changes
@@ -469,6 +506,74 @@ jobs:
           files: opennotes-server/coverage.xml
           flags: server-integration
           name: opennotes-server-integration
+
+  unit-tests-vibecheck-server:
+    name: Unit Tests (opennotes-vibecheck-server)
+    needs: detect-changes
+    if: needs.detect-changes.outputs.vibecheck_server == 'true' || needs.detect-changes.outputs.shared == 'true'
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+
+      - name: Load cached venv
+        id: cached-uv-dependencies
+        uses: actions/cache@v4
+        with:
+          path: opennotes-vibecheck-server/.venv
+          key: vibecheck-server-venv-${{ runner.os }}-${{ env.PYTHON_VERSION }}-${{ hashFiles('opennotes-vibecheck-server/uv.lock') }}
+
+      - name: Install dependencies
+        working-directory: opennotes-vibecheck-server
+        run: |
+          uv venv --allow-existing --relocatable
+          uv pip install -e ".[dev]"
+
+      - name: Run unit/cache/script tests
+        working-directory: opennotes-vibecheck-server
+        run: uv run pytest tests/unit tests/cache tests/scripts -p no:xdist
+
+  integration-tests-vibecheck-server:
+    name: Integration Tests (opennotes-vibecheck-server)
+    needs: detect-changes
+    if: needs.detect-changes.outputs.vibecheck_server == 'true' || needs.detect-changes.outputs.shared == 'true'
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+
+      - name: Load cached venv
+        id: cached-uv-dependencies
+        uses: actions/cache@v4
+        with:
+          path: opennotes-vibecheck-server/.venv
+          key: vibecheck-server-venv-${{ runner.os }}-${{ env.PYTHON_VERSION }}-${{ hashFiles('opennotes-vibecheck-server/uv.lock') }}
+
+      - name: Install dependencies
+        working-directory: opennotes-vibecheck-server
+        run: |
+          uv venv --allow-existing --relocatable
+          uv pip install -e ".[dev]"
+
+      - name: Run integration tests
+        working-directory: opennotes-vibecheck-server
+        run: uv run pytest tests/integration -p no:xdist
 
   schemathesis-tests:
     name: Schemathesis API Tests
@@ -1133,7 +1238,7 @@ jobs:
 
   ci-success:
     name: CI Success
-    needs: [pre-commit, lint-python, lint-typescript, lint-playground, lint-platform, lint-vibecheck, unit-tests-python, integration-tests-python, test-typescript, test-playground, test-design-system, test-platform, test-vibecheck, validate-schema, validate-schema-consistency, security-scan-python, security-scan-typescript, security-scan-playground, security-scan-platform, validate-api-endpoints]
+    needs: [pre-commit, lint-python, lint-typescript, lint-playground, lint-platform, lint-vibecheck, lint-vibecheck-server, unit-tests-python, integration-tests-python, unit-tests-vibecheck-server, integration-tests-vibecheck-server, test-typescript, test-playground, test-design-system, test-platform, test-vibecheck, validate-schema, validate-schema-consistency, security-scan-python, security-scan-typescript, security-scan-playground, security-scan-platform, validate-api-endpoints]
     if: always()
     runs-on: blacksmith-4vcpu-ubuntu-2404
     timeout-minutes: 15

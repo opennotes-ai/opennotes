@@ -1480,7 +1480,7 @@ async def _run_headline_summary_step(
 # ---------------------------------------------------------------------------
 
 
-async def _run_pipeline(
+async def _run_pipeline(  # noqa: PLR0912
     pool: Any,
     job_id: UUID,
     task_attempt: UUID,

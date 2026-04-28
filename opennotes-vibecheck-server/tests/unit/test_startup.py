@@ -10,7 +10,7 @@ scrubber to surface token/signature query-param values to our callback.
 from __future__ import annotations
 
 import logging
-from collections.abc import AsyncIterator, Iterator
+from collections.abc import Iterator
 from pathlib import Path
 from typing import cast
 from unittest.mock import AsyncMock, MagicMock, patch
