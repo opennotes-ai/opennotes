@@ -10,10 +10,10 @@ scrubber to surface token/signature query-param values to our callback.
 from __future__ import annotations
 
 import logging
-from collections.abc import Iterator
+from collections.abc import AsyncIterator, Iterator
 from pathlib import Path
 from typing import cast
-from unittest.mock import patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi import FastAPI
@@ -164,7 +164,7 @@ def test_apply_schema_propagates_exec_sql_rpc_error(
     with caplog.at_level(logging.ERROR), pytest.raises(RuntimeError) as raised:
         startup._apply_schema(cast(Client, cast(object, _FailingClient(exc))))  # pyright: ignore[reportPrivateUsage]
 
-    assert raised.value is exc
+    assert raised.value.__cause__ is exc
     assert any(
         record.levelno == logging.ERROR
         and record.exc_info is not None
@@ -172,7 +172,7 @@ def test_apply_schema_propagates_exec_sql_rpc_error(
         for record in caplog.records
     )
     traceback_frames = []
-    tb = raised.value.__traceback__
+    tb = exc.__traceback__
     while tb is not None:
         traceback_frames.append(tb.tb_frame.f_code.co_name)
         tb = tb.tb_next
@@ -227,5 +227,155 @@ def test_lifespan_propagates_apply_schema_failure(
     with pytest.raises(RuntimeError) as raised, TestClient(app):
         pass
 
-    assert raised.value is exc
+    assert raised.value.__cause__ is exc
+    assert str(raised.value) == str(exc)
+    get_settings.cache_clear()
+
+
+def test_apply_schema_redacts_chained_exception(
+    caplog: pytest.LogCaptureFixture,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    from src import startup
+
+    schema_path = tmp_path / "schema.sql"
+    schema_path.write_text("SELECT 1;", encoding="utf-8")
+    monkeypatch.setattr(startup, "_SCHEMA_PATH", schema_path)
+
+    project_ref = "abcdefghijklmnopqrst"
+    exc = RuntimeError(
+        f"POST https://{project_ref}.supabase.co/rest/v1/rpc/exec_sql returned 403"
+    )
+
+    with caplog.at_level(logging.ERROR), pytest.raises(RuntimeError) as raised:
+        startup._apply_schema(cast(Client, cast(object, _FailingClient(exc))))  # pyright: ignore[reportPrivateUsage]
+
+    assert raised.value.__cause__ is exc
+    rendered = str(raised.value)
+    assert project_ref not in rendered
+    assert "<supabase-project>" in rendered
+    assert "https://<supabase-project>.supabase.co" in rendered
+
+
+def test_apply_schema_redacts_bare_host_and_mixed_case(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    from src import startup
+
+    schema_path = tmp_path / "schema.sql"
+    schema_path.write_text("SELECT 1;", encoding="utf-8")
+    monkeypatch.setattr(startup, "_SCHEMA_PATH", schema_path)
+
+    project_ref = "myproject123"
+    exc = RuntimeError(
+        f"host {project_ref}.supabase.co rejected; also HTTPS://{project_ref}.SUPABASE.CO failed"
+    )
+
+    with pytest.raises(RuntimeError) as raised:
+        startup._apply_schema(cast(Client, cast(object, _FailingClient(exc))))  # pyright: ignore[reportPrivateUsage]
+
+    rendered = str(raised.value)
+    assert project_ref not in rendered
+    assert "<supabase-project>" in rendered
+
+
+@pytest.mark.asyncio
+async def test_lifespan_uses_default_pooler_host_when_env_unset(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+    tmp_path: Path,
+) -> None:
+    from src import startup
+    from src.config import get_settings
+
+    schema_path = tmp_path / "schema.sql"
+    schema_path.write_text("SELECT 1;", encoding="utf-8")
+    monkeypatch.setattr(startup, "_SCHEMA_PATH", schema_path)
+    monkeypatch.setattr(startup, "configure_logfire", lambda: None)
+    monkeypatch.setenv("VIBECHECK_SUPABASE_URL", "https://vibecheck-test.supabase.co")
+    monkeypatch.setenv("VIBECHECK_SUPABASE_SERVICE_ROLE_KEY", "service-role")
+    monkeypatch.setenv("VIBECHECK_SUPABASE_DB_PASSWORD", "secret")
+    monkeypatch.delenv("VIBECHECK_DATABASE_HOST", raising=False)
+    get_settings.cache_clear()
+
+    captured_host: list[str] = []
+
+    async def _fake_create_pool(
+        *,
+        supabase_url: str,
+        db_password: str,
+        host: str,
+        port: int,
+    ) -> MagicMock:
+        captured_host.append(host)
+        pool = MagicMock()
+        pool.close = AsyncMock()
+        return pool
+
+    fake_client = MagicMock()
+    fake_client.postgrest.rpc.return_value.execute.return_value = None
+
+    monkeypatch.setattr(startup, "_build_supabase_client", lambda _url, _key: fake_client)
+    monkeypatch.setattr(startup, "_create_db_pool", _fake_create_pool)
+
+    app = FastAPI(lifespan=startup.lifespan)
+    with caplog.at_level(logging.WARNING), TestClient(app):
+        pass
+
+    assert captured_host == [startup._DEFAULT_POOLER_HOST]  # pyright: ignore[reportPrivateUsage]
+    assert any(
+        "VIBECHECK_DATABASE_HOST unset" in r.getMessage()
+        for r in caplog.records
+        if r.levelno == logging.WARNING
+    )
+
+    get_settings.cache_clear()
+
+
+@pytest.mark.asyncio
+async def test_lifespan_uses_explicit_host_when_env_set(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    from src import startup
+    from src.config import get_settings
+
+    schema_path = tmp_path / "schema.sql"
+    schema_path.write_text("SELECT 1;", encoding="utf-8")
+    monkeypatch.setattr(startup, "_SCHEMA_PATH", schema_path)
+    monkeypatch.setattr(startup, "configure_logfire", lambda: None)
+    monkeypatch.setenv("VIBECHECK_SUPABASE_URL", "https://vibecheck-test.supabase.co")
+    monkeypatch.setenv("VIBECHECK_SUPABASE_SERVICE_ROLE_KEY", "service-role")
+    monkeypatch.setenv("VIBECHECK_SUPABASE_DB_PASSWORD", "secret")
+    monkeypatch.setenv("VIBECHECK_DATABASE_HOST", "custom-pooler.example.com")
+    get_settings.cache_clear()
+
+    captured_host: list[str] = []
+
+    async def _fake_create_pool(
+        *,
+        supabase_url: str,
+        db_password: str,
+        host: str,
+        port: int,
+    ) -> MagicMock:
+        captured_host.append(host)
+        pool = MagicMock()
+        pool.close = AsyncMock()
+        return pool
+
+    fake_client = MagicMock()
+    fake_client.postgrest.rpc.return_value.execute.return_value = None
+
+    monkeypatch.setattr(startup, "_build_supabase_client", lambda _url, _key: fake_client)
+    monkeypatch.setattr(startup, "_create_db_pool", _fake_create_pool)
+
+    app = FastAPI(lifespan=startup.lifespan)
+    with TestClient(app):
+        pass
+
+    assert captured_host == ["custom-pooler.example.com"]
+
     get_settings.cache_clear()
