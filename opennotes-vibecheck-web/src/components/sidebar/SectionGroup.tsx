@@ -60,7 +60,7 @@ function ChevronIcon(props: { expanded: boolean }) {
 }
 
 function formatCountBadge(count: number): string {
-  if (count <= 0) return "no results";
+  if (!Number.isFinite(count) || count <= 0) return "no results";
   if (count === 1) return "1 result";
   return `${count} results`;
 }
@@ -124,21 +124,61 @@ export default function SectionGroup(props: SectionGroupProps): JSX.Element {
   const totalCount = () => props.slugs.length;
 
   const announced = new Set<string>();
+  const lastSlotStates = new Map<SectionSlugLiteral, SectionSlot["state"]>();
+  const lastFinishedKeys = new Map<SectionSlugLiteral, string>();
+  let announcedJobId = props.jobId ?? "";
+  let initializedAnnouncements = false;
   const [announcement, setAnnouncement] = createSignal("");
 
   createEffect(() => {
+    const jobId = props.jobId ?? "";
+    if (jobId !== announcedJobId) {
+      announced.clear();
+      lastSlotStates.clear();
+      lastFinishedKeys.clear();
+      announcedJobId = jobId;
+      initializedAnnouncements = false;
+      setAnnouncement("");
+    }
+
     for (const slug of props.slugs) {
       const slot = slotFor(props.sections, slug);
-      if (slot.state !== "done" && slot.state !== "failed") continue;
+      const previousState = lastSlotStates.get(slug);
+      const previousKey = lastFinishedKeys.get(slug);
+      lastSlotStates.set(slug, slot.state);
+
+      if (slot.state !== "done" && slot.state !== "failed") {
+        lastFinishedKeys.delete(slug);
+        continue;
+      }
+
       const attemptId = slot.attempt_id ?? "";
-      if (!attemptId) continue;
-      const key = `${slug}:${slot.state}:${attemptId}`;
-      if (announced.has(key)) continue;
+      if (!attemptId) {
+        lastFinishedKeys.delete(slug);
+        continue;
+      }
+
+      const key = `${jobId}:${slug}:${slot.state}:${attemptId}`;
+      const wasFinished =
+        previousState === "done" || previousState === "failed";
+      const finishedKeyChanged =
+        previousKey !== undefined && previousKey !== key;
+      lastFinishedKeys.set(slug, key);
+
+      if (
+        !initializedAnnouncements ||
+        announced.has(key) ||
+        (wasFinished && !finishedKeyChanged)
+      ) {
+        continue;
+      }
+
       announced.add(key);
       const display = sectionDisplayName(slug);
       const verb = slot.state === "done" ? "complete" : "failed";
       setAnnouncement(`${display} ${verb}`);
     }
+    initializedAnnouncements = true;
   });
 
   return (
@@ -148,14 +188,15 @@ export default function SectionGroup(props: SectionGroupProps): JSX.Element {
     >
       <header class="flex items-baseline justify-between gap-2">
         <h3 class="text-sm font-semibold text-foreground">{props.label}</h3>
-        <span
-          data-testid="section-group-counter"
-          class="font-mono text-[11px] tabular-nums text-muted-foreground"
-          role="status"
-          aria-label={`${doneCount()} of ${totalCount()} done`}
-        >
-          {doneCount()}/{totalCount()}
-        </span>
+        <Show when={totalCount() > 0}>
+          <span
+            data-testid="section-group-counter"
+            class="font-mono text-[11px] tabular-nums text-muted-foreground"
+            aria-label={`${props.label}: ${doneCount()} of ${totalCount()} sections complete`}
+          >
+            {doneCount()}/{totalCount()}
+          </span>
+        </Show>
       </header>
 
       <span
@@ -180,6 +221,13 @@ export default function SectionGroup(props: SectionGroupProps): JSX.Element {
                 userOpen() ??
                 defaultOpenFor(slot(), props.emptinessChecks?.[slug]),
             );
+            const countLabel = createMemo(() => {
+              const current = slot();
+              if (current.state !== "done") return null;
+              return formatCountBadge(
+                props.counts?.[slug]?.(current.data) ?? 0,
+              );
+            });
             const toggle = () => setUserOpen((current) => !(current ?? isOpen()));
             return (
               <div
@@ -214,17 +262,15 @@ export default function SectionGroup(props: SectionGroupProps): JSX.Element {
                     {heading}
                   </span>
                   <span class="ml-auto flex items-center gap-2">
-                    <Show when={slot().state === "done"}>
-                      <span
-                        data-testid={`slot-count-${slug}`}
-                        class="rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium normal-case tracking-normal text-muted-foreground"
-                      >
-                        {formatCountBadge(
-                          props.counts?.[slug]?.(
-                            (slot() as { data?: unknown }).data,
-                          ) ?? 0,
-                        )}
-                      </span>
+                    <Show when={countLabel()}>
+                      {(label) => (
+                        <span
+                          data-testid={`slot-count-${slug}`}
+                          class="rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium normal-case tracking-normal text-muted-foreground"
+                        >
+                          {label()}
+                        </span>
+                      )}
                     </Show>
                     <ChevronIcon expanded={isOpen()} />
                   </span>
