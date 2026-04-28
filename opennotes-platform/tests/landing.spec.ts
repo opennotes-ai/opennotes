@@ -61,6 +61,30 @@ test.describe("/ landing page (anonymous)", () => {
   });
 });
 
+test.describe("/ landing page typography", () => {
+  test("desktop H1 fits design budget (≤56px)", async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto("/");
+    const fontSize = await page
+      .locator("h1")
+      .first()
+      .evaluate((el) => window.getComputedStyle(el).fontSize);
+    expect(parseFloat(fontSize)).toBeLessThanOrEqual(56);
+  });
+
+  test("mobile H1 stays in expected range (28-40px)", async ({ page }) => {
+    await page.setViewportSize({ width: 375, height: 812 });
+    await page.goto("/");
+    const fontSize = await page
+      .locator("h1")
+      .first()
+      .evaluate((el) => window.getComputedStyle(el).fontSize);
+    const px = parseFloat(fontSize);
+    expect(px).toBeGreaterThanOrEqual(28);
+    expect(px).toBeLessThanOrEqual(40);
+  });
+});
+
 test.describe("/ landing page (authenticated)", () => {
   // Skipped until Supabase test-user fixtures are wired in (follow-up task).
   test.skip("authenticated visitor is redirected to /dashboard", async ({
