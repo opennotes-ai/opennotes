@@ -146,6 +146,7 @@ export default function AnalyzePage() {
   const jobState = () => polling.state();
   const jobStatus = () => jobState()?.status;
   const jobUrl = createMemo(() => jobState()?.url ?? pendingUrl());
+  const shouldProbePreview = () => Boolean(jobUrl()) && !pendingError();
   const [frameCompat, setFrameCompat] =
     createSignal<FrameCompatResult>(DEFAULT_FRAME_COMPAT);
   const [frameCompatPending, setFrameCompatPending] = createSignal(false);
@@ -205,14 +206,15 @@ export default function AnalyzePage() {
 
   createEffect(() => {
     const url = jobUrl();
+    const shouldProbe = shouldProbePreview();
     const request = ++frameCompatRequest;
     setFrameCompat(DEFAULT_FRAME_COMPAT);
     setFrameCompatUrl("");
     setFrameCompatError(null);
     setArchiveProbeState("pending");
-    setFrameCompatPending(Boolean(url));
+    setFrameCompatPending(shouldProbe);
     setResolvedPreviewMode(url ? "unavailable" : "original");
-    if (!url) {
+    if (!url || !shouldProbe) {
       setFrameCompatPending(false);
       return;
     }
@@ -257,13 +259,16 @@ export default function AnalyzePage() {
     };
     const probeArchive = async (ignoreVisibility = false) => {
       if (stopped) return;
-      if (stopUnavailableIfExpired()) return;
-      if (inFlight) return;
+      if (inFlight) {
+        stopUnavailableIfExpired();
+        return;
+      }
       if (
         !ignoreVisibility &&
         typeof document !== "undefined" &&
         document.visibilityState === "hidden"
       ) {
+        stopUnavailableIfExpired();
         return;
       }
 
@@ -300,6 +305,9 @@ export default function AnalyzePage() {
     function onVisibilityChange() {
       if (document.visibilityState === "hidden") {
         clearProbeInterval();
+        return;
+      }
+      if (hasTimedOut() && stopUnavailableIfExpired()) {
         return;
       }
       void probeArchive();

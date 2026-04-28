@@ -911,6 +911,19 @@ describe("AnalyzePage archiveProbeState re-probe loop (TASK-1483.15.01)", () => 
     expect(getScreenshotMock).toHaveBeenCalledTimes(1);
   });
 
+  it("does not probe archive availability on pending-error failure pages", async () => {
+    renderAt(
+      `/analyze?pending_error=rate_limited&url=${encodeURIComponent(url)}`,
+    );
+
+    expect(await screen.findByTestId("job-failure-card")).not.toBeNull();
+    await flushMicrotasks();
+    await vi.advanceTimersByTimeAsync(300_000);
+
+    expect(getArchiveProbeMock).not.toHaveBeenCalled();
+    expect(getScreenshotMock).not.toHaveBeenCalled();
+  });
+
   it("archiveProbeState stays pending until a later probe finds an archive, then becomes available", async () => {
     getArchiveProbeMock
       .mockResolvedValueOnce(
@@ -1010,6 +1023,38 @@ describe("AnalyzePage archiveProbeState re-probe loop (TASK-1483.15.01)", () => 
 
     await vi.advanceTimersByTimeAsync(1);
     expect(probeState()).toBe("unavailable");
+  });
+
+  it("archiveProbeState performs a final probe at terminal grace before marking unavailable", async () => {
+    getArchiveProbeMock
+      .mockResolvedValueOnce(
+        frameCompatResult({
+          canIframe: false,
+          blockingHeader: "content-security-policy: frame-ancestors 'none'",
+          cspFrameAncestors: "'none'",
+          archivedPreviewUrl: null,
+        }),
+      )
+      .mockResolvedValueOnce(
+        frameCompatResult({
+          canIframe: false,
+          blockingHeader: "content-security-policy: frame-ancestors 'none'",
+          cspFrameAncestors: "'none'",
+          archivedPreviewUrl: archiveUrl,
+        }),
+      );
+
+    renderAt(`/analyze?job=job-archive-terminal-final&url=${encodeURIComponent(url)}`);
+    await flushMicrotasks();
+
+    setPolledJobState(makeJobState({ status: "done", url }));
+    await flushMicrotasks();
+
+    await vi.advanceTimersByTimeAsync(10_000);
+
+    expect(getArchiveProbeMock).toHaveBeenCalledTimes(2);
+    expect(probeState()).toBe("available");
+    expect(screen.getByTestId("page-frame-archived-iframe")).not.toBeNull();
   });
 
   it("archiveProbeState retries transient errors without marking unavailable", async () => {
