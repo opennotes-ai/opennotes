@@ -7,6 +7,7 @@
 // upgrades that change the auto-inject heuristic), we set setupFiles ourselves
 // below. When adding more setup, extend the setupFiles array rather than
 // relying on the plugin's auto-inject.
+import { fileURLToPath } from "node:url";
 import { defineConfig } from "vitest/config";
 import solid from "vite-plugin-solid";
 
@@ -14,7 +15,7 @@ export default defineConfig({
   plugins: [solid()],
   resolve: {
     alias: {
-      "~": "./src",
+      "~": fileURLToPath(new URL("./src", import.meta.url)),
     },
   },
   test: {
