@@ -190,11 +190,14 @@ function nextFrameCompat(
     kind === "fallback" ||
     (kind === "mid-poll" && count >= 4) ||
     (kind === "transient" && count >= 3);
+  const canIframe = kind === "fallback";
 
   writeJson(response, 200, {
-    can_iframe: false,
-    blocking_header: "content-security-policy: frame-ancestors 'none'",
-    csp_frame_ancestors: "frame-ancestors 'none'",
+    can_iframe: canIframe,
+    blocking_header: canIframe
+      ? null
+      : "content-security-policy: frame-ancestors 'none'",
+    csp_frame_ancestors: canIframe ? null : "frame-ancestors 'none'",
     has_archive: hasArchive,
   });
 }
@@ -264,6 +267,66 @@ async function seenTestIds(page: Page): Promise<string[]> {
   return page.evaluate(() => {
     const win = window as Window & { __archiveStalenessSeenTestIds?: string[] };
     return win.__archiveStalenessSeenTestIds ?? [];
+  });
+}
+
+async function installPreviewChainTracker(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    const win = window as Window & { __archiveStalenessPreviewChain?: string[] };
+    const chain: string[] = [];
+    const recordState = (state: string) => {
+      if (!chain.includes(state)) {
+        chain.push(state);
+        win.__archiveStalenessPreviewChain = [...chain];
+      }
+    };
+    const record = () => {
+      const original = document.querySelector(
+        '[data-testid="page-frame-iframe"]',
+      );
+      if (
+        original instanceof HTMLElement &&
+        !original.hasAttribute("aria-hidden") &&
+        getComputedStyle(original).opacity !== "0"
+      ) {
+        recordState("original-visible");
+      }
+      if (document.querySelector('[data-testid="page-frame-deciding"]')) {
+        recordState("deciding");
+      }
+      if (
+        document.querySelector('[data-testid="page-frame-archived-iframe"]')
+      ) {
+        recordState("archived");
+      }
+      if (document.querySelector('[data-testid="page-frame-screenshot"]')) {
+        recordState("screenshot");
+      }
+      if (document.querySelector('[data-testid="page-frame-unavailable"]')) {
+        recordState("unavailable");
+      }
+    };
+    const start = () => {
+      record();
+      new MutationObserver(record).observe(document.documentElement, {
+        attributes: true,
+        attributeFilter: ["aria-hidden", "class", "style"],
+        childList: true,
+        subtree: true,
+      });
+    };
+    if (document.readyState === "loading") {
+      document.addEventListener("DOMContentLoaded", start, { once: true });
+    } else {
+      start();
+    }
+  });
+}
+
+async function previewChain(page: Page): Promise<string[]> {
+  return page.evaluate(() => {
+    const win = window as Window & { __archiveStalenessPreviewChain?: string[] };
+    return win.__archiveStalenessPreviewChain ?? [];
   });
 }
 
@@ -364,6 +427,13 @@ test.beforeAll(async () => {
       writeJson(response, 200, {
         screenshot_url: kind === "fallback" ? SCREENSHOT_URL : null,
       });
+      return;
+    }
+    if (request.method === "GET" && requestUrl.pathname === fixturePath("fallback")) {
+      response.writeHead(200, {
+        "content-type": "text/html; charset=utf-8",
+      });
+      response.end("<!doctype html><h1>Visible original fixture</h1>");
       return;
     }
     if (request.method === "GET" && requestUrl.pathname.startsWith("/fixture/")) {
@@ -529,9 +599,35 @@ test("blocked original automatically falls from Archived failure to Screenshot",
   page,
 }) => {
   await installSeenTestIdTracker(page, ["page-frame-archived-iframe"]);
+  await installPreviewChainTracker(page);
   await installClockAndOpenJob(page, FALLBACK_JOB_ID);
 
-  await expect(page.getByTestId("page-frame-iframe")).toHaveCount(1);
+  const originalFrame = page.getByTestId("page-frame-iframe");
+  await expect(originalFrame).toBeVisible();
+  await expect(originalFrame).not.toHaveAttribute("aria-hidden");
+  await expect
+    .poll(() => previewChain(page), {
+      intervals: [100],
+      timeout: PROBE_POLL_TIMEOUT_MS,
+    })
+    .toContain("original-visible");
+  await expect(page.getByTestId("page-frame-deciding")).toHaveCount(0);
+  await expect(page.getByTestId("page-frame-archived-iframe")).toHaveCount(0);
+  await expect(page.getByTestId("page-frame-screenshot")).toHaveCount(0);
+
+  await originalFrame.dispatchEvent("error");
+  await expect(page.getByTestId("page-frame-deciding")).toBeVisible({
+    timeout: 10_000,
+  });
+  await expect
+    .poll(() => previewChain(page), {
+      intervals: [100],
+      timeout: PROBE_POLL_TIMEOUT_MS,
+    })
+    .toContain("deciding");
+  await expect(originalFrame).toHaveCount(0);
+
+  await fastForward(page, "00:15");
   await expect
     .poll(() => seenTestIds(page), {
       intervals: [100],
@@ -542,13 +638,12 @@ test("blocked original automatically falls from Archived failure to Screenshot",
     timeout: 10_000,
   });
   await expect(page.getByTestId("page-frame-archived-iframe")).toHaveCount(0);
-  await expect(page.getByTestId("page-frame-deciding")).toHaveCount(0);
   await expect(page.getByTestId("page-frame-unavailable")).toHaveCount(0);
-
-  await page.getByRole("button", { name: "Original" }).click();
-  await expect(page.getByTestId("page-frame-deciding")).toBeVisible();
-  await expect(page.getByTestId("page-frame-iframe")).toHaveAttribute(
-    "aria-hidden",
-    "true",
-  );
+  const chain = await previewChain(page);
+  expect(chain).toEqual([
+    "original-visible",
+    "deciding",
+    "archived",
+    "screenshot",
+  ]);
 });
