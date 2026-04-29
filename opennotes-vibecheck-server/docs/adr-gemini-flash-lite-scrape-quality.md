@@ -1,4 +1,4 @@
-# ADR: Gemini 3.1 Flash-Lite for scrape quality gating (TASK-1488.23)
+# ADR: Gemini 3 vs Flash-Lite for scrape quality gating (TASK-1488.23)
 
 Date: 2026-04-29
 Status: Proposed
@@ -19,21 +19,33 @@ Current classification safety properties:
 - no network call, no prompt injection surface, no JSON parsing from untrusted LLM output;
 - low latency relative to extraction.
 
-This ADR is to evaluate adding Gemini 3.1 Flash-Lite in front of or instead of this classifier, while keeping runtime behavior unchanged unless strong evidence supports a change.
+This ADR is to evaluate adding an LLM classifier in front of or instead of this scraper heuristic, with **Gemini 3 Flash as the default candidate for any future LLM classifier/confirmer path** and a Flash-Lite challenger path only after controlled validation. This ADR defines a **future eval/shadow plan only**.
+
+No TASK-1488.23 testing has shown that Flash-Lite materially outperforms the current heuristic under this task’s scope; no runtime enforcement is being made in this ADR.
 
 ## Official model facts (as of 2026-04-29)
 
+- Gemini 3 Flash model docs: https://docs.cloud.google.com/vertex-ai/generative-ai/docs/models/gemini/3-flash
 - Gemini 3.1 Flash-Lite model docs: https://docs.cloud.google.com/vertex-ai/generative-ai/docs/models/gemini/3-1-flash-lite
 - Vertex AI pricing docs: https://cloud.google.com/vertex-ai/generative-ai/pricing
 - Gemini Flex PayGo docs: https://docs.cloud.google.com/vertex-ai/generative-ai/docs/flex-paygo
 - As stated in the task brief and cited by current official docs snapshots on 2026-04-29:
-  - model ID: `gemini-3.1-flash-lite-preview`
-  - launch stage: Public preview
-  - release date: 2026-03-03
-  - last updated: 2026-04-23 UTC
-  - pricing:
-    - Standard Runtime (PayGo): input `text/image/video $0.25 / 1M`, audio `$0.50 / 1M`, text output `$1.50 / 1M`
-    - Flex/Batch (Flex PayGo): input `text/image/video $0.13 / 1M`, audio `$0.25 / 1M`, output `$0.75 / 1M`
+  - Gemini 3 Flash:
+    - model ID: `gemini-3-flash-preview`
+    - launch stage: Public preview
+    - release date: 2025-12-17
+    - last updated: 2026-04-23 UTC
+    - pricing:
+      - Standard Runtime (PayGo): input `text/image/video $0.50 / 1M`, audio `$1.00 / 1M`, text output `$3.00 / 1M`
+      - Flex/Batch (Flex PayGo): input `text/image/video $0.25 / 1M`, audio `$0.50 / 1M`, output `$1.50 / 1M`
+  - Gemini 3.1 Flash-Lite:
+    - model ID: `gemini-3.1-flash-lite-preview`
+    - launch stage: Public preview
+    - release date: 2026-03-03
+    - last updated: 2026-04-23 UTC
+    - pricing:
+      - Standard Runtime (PayGo): input `text/image/video $0.25 / 1M`, audio `$0.50 / 1M`, text output `$1.50 / 1M`
+      - Flex/Batch (Flex PayGo): input `text/image/video $0.13 / 1M`, audio `$0.25 / 1M`, output `$0.75 / 1M`
 
 ## Option 1 — keep current deterministic heuristic only
 
@@ -68,11 +80,13 @@ No direct model cost.
 - Zero additional telemetry changes required.
 - Minimal observability changes beyond existing tier transition metrics in orchestration spans.
 
-## Option 2 — add Gemini 3.1 Flash-Lite as a confirmer for ambiguous cases
+## Option 2 — add Gemini 3 Flash as the default confirmer for ambiguous cases
 
 ### Description
 
 Run the existing heuristic first; only in ambiguous cases (likely `INTERSTITIAL` candidates or low-confidence markers) call Gemini in a verifier role to decide whether to escalate.
+The default candidate for this option is Gemini 3 Flash.
+Gemini 3.1 Flash-Lite remains a challenger, only for follow-up downgrade consideration if cost and safety criteria are met.
 
 #### Decision matrix (proposed; current recommended)
 
@@ -97,23 +111,32 @@ Run the existing heuristic first; only in ambiguous cases (likely `INTERSTITIAL`
 
 No grounding for classifier calls.
 
-For runtime decisions, assume Standard PayGo rates are used first.
+For runtime decisions, prefer Gemini 3 Standard PayGo as the default and compare Flash-Lite only as a challenger.
 
 `cost = (input_tokens / 1_000_000 * input_rate) + (output_tokens / 1_000_000 * output_rate)`
 
 1. 4K input + 100 output
-   - Standard: `(4,000 / 1,000,000 * $0.25) + (100 / 1,000,000 * $1.50) = $0.001000 + $0.000150 = $0.00115` per call
+   - Gemini 3 Standard: `(4,000 / 1,000,000 * $0.50) + (100 / 1,000,000 * $3.00) = $0.002000 + $0.000300 = $0.00230` per call
 2. 20K input + 100 output
-   - Standard: `(20,000 / 1,000,000 * $0.25) + (100 / 1,000,000 * $1.50) = $0.005000 + $0.000150 = $0.00515` per call
+   - Gemini 3 Standard: `(20,000 / 1,000,000 * $0.50) + (100 / 1,000,000 * $3.00) = $0.010000 + $0.000300 = $0.01030` per call
    - Standard lower-bound estimate: ~1 input/output round trip per selected ambiguous case.
 
 Flex/Batch is separated from runtime-latency-sensitive paths:
 - Flex/Batch is intended for non-critical, latency-tolerant and potentially throttled workloads, matching Vertex AI Flex PayGo guidance.
 - Use Flex/Batch only for shadow/eval backfill or overnight calibration jobs, not for synchronous `/scrape -> /interact` control.
 
+Flash-Lite challenger baseline for cost comparison:
+- 4K input + 100 output: `~$0.00115` per call (half the Gemini 3 Standard text/input rate).
+- 20K input + 100 output: `~$0.00515` per call.
+  - This Challenger path is only acceptable if quality/security gates pass and head-to-head tests show no material safety regression.
+
 Illustrative Flex/Batch examples for same payloads:
-- 4K input + 100 output: `(4,000 / 1,000,000 * $0.13) + (100 / 1,000,000 * $0.75) = $0.000595` per call
-- 20K input + 100 output: `(20,000 / 1,000,000 * $0.13) + (100 / 1,000,000 * $0.75) = $0.002675` per call
+- 4K input + 100 output:
+  - Gemini 3 Flex/Batch: `(4,000 / 1,000,000 * $0.25) + (100 / 1,000,000 * $1.50) = $0.001000 + $0.000150 = $0.00115`
+  - Flash-Lite Flex/Batch: `(4,000 / 1,000,000 * $0.13) + (100 / 1,000,000 * $0.75) = $0.000595`
+- 20K input + 100 output:
+  - Gemini 3 Flex/Batch: `(20,000 / 1,000,000 * $0.25) + (100 / 1,000,000 * $1.50) = $0.005000 + $0.000150 = $0.00515`
+  - Flash-Lite Flex/Batch: `(20,000 / 1,000,000 * $0.13) + (100 / 1,000,000 * $0.75) = $0.002675`
 
 ### Latency and reliability
 
@@ -158,24 +181,29 @@ Introduce model timeouts/guardrails as proposals (not measured values; no baseli
 - Evaluate by category (e.g., cloudflare-like interstitial, login-wall pages, empty/deleted, normal OK pages, JS-rendered edge pages, and known mixed-content pages).
 - Run in shadow mode first by comparing confirm output with existing classifier outcome and logging a `decision_match` signal.
 
-## Option 3 — replace heuristic classifier entirely with Gemini 3.1 Flash-Lite
+## Option 3 — replace heuristic classifier entirely with Gemini 3 Flash
 
 ### Description
 
-Use LLM output as the single decision source for scrape ladder dispatch.
+Use Gemini 3 output as the single decision source for scrape ladder dispatch.
+Evaluate Gemini 3.1 Flash-Lite as a cost-optimized challenger only if it meets all quality/security gates.
 
 ### Cost
 
 Every scrape attempt can hit Gemini, so costs scale with all traffic:
 - at 4K input + 100 output and 1M calls/month:
-  - ~$1,150/month Standard PayGo (runtime).
+  - Gemini 3 Standard: ~`$2,300/month` runtime.
 - at 20K input + 100 output and 1M calls/month:
-  - ~$5,150/month Standard PayGo (runtime).
+  - Gemini 3 Standard: ~`$10,300/month` runtime.
 - Real-world totals likely higher due to retries and malformed payload retries.
 
+Flash-Lite evaluated alternative (non-default):
+- 4K input + 100 output and 1M calls: ~`$1,150/month` (same formula as Flash-Lite Standard).
+- 20K input + 100 output and 1M calls: ~`$5,150/month`.
+
 For Flex/Batch-only workflows (non-realtime eval or backfill):
-- 4K input + 100 output: ~$595/month at 1M calls.
-- 20K input + 100 output: ~$2,675/month at 1M calls.
+- Gemini 3: `~$1,150/month` at 4K and `~$5,150/month` at 20K (1M calls/month) in Flex/Batch.
+- Flash-Lite: `~$595/month` at 4K and `~$2,675/month` at 20K (1M calls/month) in Flex/Batch.
 
 ### Latency and reliability
 
@@ -255,6 +283,14 @@ Use a human-labeled gold set for shadow comparisons before any runtime switch.
 - Stratum-level acceptance checks (in addition to class-level metrics):
   - `LOGIN_REDIRECT_MIXED`: disagreement ≤ 18%.
   - `SHORT_LOW_CONTENT`: disagreement ≤ 20%.
+- Head-to-head flash-vs-flash-lite precondition for any future downgrade to Flash-Lite:
+  - Run the same 2,000-page labeled set through both models in parallel.
+  - Require paired statistical comparison on safety-critical classes:
+    - `AUTH_WALL`: Flash-Lite precision/recall delta vs Gemini 3 `>= -0.005` (non-inferiority margin 0.5pp), with paired 95% CI lower bound `>= -0.005`.
+    - `LEGITIMATELY_EMPTY`: Flash-Lite precision/recall delta vs Gemini 3 `>= -0.005`, with paired 95% CI lower bound `>= -0.005`.
+  - Require overall quality non-inferiority:
+    - Flash-Lite macro `F1` delta vs Gemini 3 `>= -0.01` (non-inferiority margin 1pp), or better.
+  - Only if this passes and latency/cost improves materially without worse safety gates can Flash-Lite be considered for downgrade from Flash.
 
 ### Proposed instrumentation for all options with Gemini
 
@@ -267,11 +303,13 @@ Use a human-labeled gold set for shadow comparisons before any runtime switch.
 - Evaluation mode:
  1. shadow only for 1–2 weeks,
  2. no runtime branching change; log only,
- 3. gate on defined disagreement, guardrails, and minimum pass thresholds above.
+ 3. include parallel scoring for Gemini 3 and Flash-Lite on the same traffic sample.
+ 4. gate on defined disagreement, guardrails, and non-inferiority thresholds above.
 
 ## Recommendation
 
 For this task, recommend **keep the deterministic heuristic classifier as current runtime behavior**.
-Use Gemini 3.1 Flash-Lite only as a future **shadow-mode confirmer**, then only promote if disagreement/accuracy and cost envelopes are favorable.
+When moving beyond this ADR’s shadow/eval scope, adopt Gemini 3 Flash as the default model for any future classifier confirmer/enforcer path.
+Treat Gemini 3.1 Flash-Lite only as a challenger/cost-optimized fallback path, and only approve downgrade if it is materially better on latency/cost, passes all safety gates, and passes the non-inferiority criteria above.
 
 This keeps `/scrape -> /interact` control flow stable, avoids immediate dependency on a preview LLM for gating logic, and prevents behavior drift on attacker-controlled inputs while preserving current safety guarantees.
