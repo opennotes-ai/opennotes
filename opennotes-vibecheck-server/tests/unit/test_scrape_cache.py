@@ -64,9 +64,17 @@ class _FakeTableQuery:
         self._upsert_row: dict[str, Any] | None = None
         self._upsert_on_conflict: str | None = None
         self._maybe_single: bool = False
+        self._selected: list[str] | None = None
 
     def select(self, *_fields: str) -> _FakeTableQuery:
         self._op = "select"
+        parsed: list[str] = []
+        for field in _fields:
+            for part in field.split(","):
+                name = part.strip()
+                if name:
+                    parsed.append(name)
+        self._selected = parsed if parsed else None
         return self
 
     def eq(self, column: str, value: Any) -> _FakeTableQuery:
@@ -108,7 +116,7 @@ class _FakeTableQuery:
                     row_expires = datetime.fromisoformat(row["expires_at"])
                     if not row_expires > threshold:
                         continue
-                rows.append(dict(row))
+                rows.append(self._project_row(row))
             if self._maybe_single:
                 if len(rows) > 1:
                     raise RuntimeError(
@@ -135,6 +143,13 @@ class _FakeTableQuery:
                 del self._store[key]
             return _FakeResponse(None)
         raise AssertionError(f"unexpected op {self._op}")
+
+    def _project_row(self, row: dict[str, Any]) -> dict[str, Any]:
+        if not self._selected:
+            return dict(row)
+        if "*" in self._selected:
+            return dict(row)
+        return {field: row.get(field) for field in self._selected}
 
 
 class _FakeSupabaseClient:
@@ -272,6 +287,53 @@ def test_fake_maybe_single_raises_when_multiple_rows_match() -> None:
             .maybe_single()
             .execute()
         )
+
+
+def test_fake_select_respects_projection() -> None:
+    """`select()` must honor requested columns for test-faithful reads."""
+    fake = _FakeSupabaseClient()
+    norm = normalize_url("https://example.com/select-projection")
+    now_iso = datetime.now(UTC).isoformat()
+
+    fake._rows[(norm, "scrape")] = {
+        "normalized_url": norm,
+        "tier": "scrape",
+        "url": norm,
+        "final_url": "https://final.example/select-projection",
+        "host": "example.com",
+        "page_kind": "other",
+        "page_title": "Select Projection",
+        "markdown": "content",
+        "html": None,
+        "screenshot_storage_key": None,
+        "scraped_at": now_iso,
+        "expires_at": now_iso,
+        "evicted_at": None,
+    }
+
+    full = (
+        fake.table("vibecheck_scrapes")
+        .select("markdown, final_url")
+        .eq("normalized_url", norm)
+        .eq("tier", "scrape")
+        .maybe_single()
+        .execute()
+        .data
+    )
+    assert isinstance(full, dict)
+    assert full["final_url"] == "https://final.example/select-projection"
+
+    projection_only = (
+        fake.table("vibecheck_scrapes")
+        .select("markdown")
+        .eq("normalized_url", norm)
+        .eq("tier", "scrape")
+        .maybe_single()
+        .execute()
+        .data
+    )
+    assert isinstance(projection_only, dict)
+    assert projection_only == {"markdown": "content"}
 
 
 # ---------------------------------------------------------------------------
