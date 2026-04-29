@@ -25,14 +25,15 @@ This ADR is to evaluate adding Gemini 3.1 Flash-Lite in front of or instead of t
 
 - Gemini 3.1 Flash-Lite model docs: https://docs.cloud.google.com/vertex-ai/generative-ai/docs/models/gemini/3-1-flash-lite
 - Vertex AI pricing docs: https://cloud.google.com/vertex-ai/generative-ai/pricing
+- Gemini Flex PayGo docs: https://docs.cloud.google.com/vertex-ai/generative-ai/docs/flex-paygo
 - As stated in the task brief and cited by current official docs snapshots on 2026-04-29:
   - model ID: `gemini-3.1-flash-lite-preview`
   - launch stage: Public preview
   - release date: 2026-03-03
   - last updated: 2026-04-23 UTC
   - pricing:
-    - Standard: input `text/image/video $0.25 / 1M`, audio `$0.50 / 1M`, text output `$1.50 / 1M`
-    - Flex/Batch: input `text/image/video $0.13 / 1M`, audio `$0.25 / 1M`, output `$0.75 / 1M`
+    - Standard Runtime (PayGo): input `text/image/video $0.25 / 1M`, audio `$0.50 / 1M`, text output `$1.50 / 1M`
+    - Flex/Batch (Flex PayGo): input `text/image/video $0.13 / 1M`, audio `$0.25 / 1M`, output `$0.75 / 1M`
 
 ## Option 1 — keep current deterministic heuristic only
 
@@ -73,18 +74,46 @@ No direct model cost.
 
 Run the existing heuristic first; only in ambiguous cases (likely `INTERSTITIAL` candidates or low-confidence markers) call Gemini in a verifier role to decide whether to escalate.
 
+#### Decision matrix (proposed; current recommended)
+
+- Runtime recommendation remains heuristic-only today; Gemini is shadow-only until explicit enforcement is approved.
+- In shadow mode, Gemini output is logged and compared against the existing heuristic result.
+- To preserve the ToS/security boundary, valid-output override rules are:
+  - `AUTH_WALL` and `LEGITIMATELY_EMPTY` are terminal and **never** promotable to `/interact` without a separate, explicitly approved follow-up decision.
+  - Gemini can only target ambiguous/interstitial buckets for any future enforcement.
+
+| Heuristic outcome | Gemini output | Shadow behavior | Enforced confirmer behavior (if approved separately) |
+| --- | --- | --- | --- |
+| `AUTH_WALL` | `AUTH_WALL` | log `match` | terminal `AUTH_WALL` |
+| `AUTH_WALL` | `INTERSTITIAL` / `OK` / `LEGITIMATELY_EMPTY` | log override attempt (terminal) | terminal `AUTH_WALL` |
+| `LEGITIMATELY_EMPTY` | `LEGITIMATELY_EMPTY` | log `match` | terminal `LEGITIMATELY_EMPTY` |
+| `LEGITIMATELY_EMPTY` | `AUTH_WALL` / `INTERSTITIAL` / `OK` | log override attempt (terminal) | terminal `LEGITIMATELY_EMPTY` |
+| `INTERSTITIAL` (ambiguous bucket) | `INTERSTITIAL` | log confirm escalate | escalate to `/interact` |
+| `INTERSTITIAL` (ambiguous bucket) | `AUTH_WALL` | log demotion to `AUTH_WALL` | terminal `AUTH_WALL` |
+| `INTERSTITIAL` (ambiguous bucket) | `LEGITIMATELY_EMPTY` | log demotion to `LEGITIMATELY_EMPTY` | terminal `LEGITIMATELY_EMPTY` |
+| `INTERSTITIAL` (ambiguous bucket) | `OK` | log confirm-pass | conservative hold: no escalation without separate review |
+
 ### Cost (assumptions)
 
 No grounding for classifier calls.
 
-Assume per-call cost = `(input_tokens / 1_000_000 * input_rate) + (output_tokens / 1_000_000 * output_rate)`
+For runtime decisions, assume Standard PayGo rates are used first.
+
+`cost = (input_tokens / 1_000_000 * input_rate) + (output_tokens / 1_000_000 * output_rate)`
 
 1. 4K input + 100 output
    - Standard: `(4,000 / 1,000,000 * $0.25) + (100 / 1,000,000 * $1.50) = $0.001000 + $0.000150 = $0.00115` per call
-   - Flex/Batch: `(4,000 / 1,000,000 * $0.13) + (100 / 1,000,000 * $0.75) = $0.00052 + $0.000075 = $0.000595` per call
 2. 20K input + 100 output
    - Standard: `(20,000 / 1,000,000 * $0.25) + (100 / 1,000,000 * $1.50) = $0.005000 + $0.000150 = $0.00515` per call
-   - Flex/Batch: `(20,000 / 1,000,000 * $0.13) + (100 / 1,000,000 * $0.75) = $0.002600 + $0.000075 = $0.002675` per call
+   - Standard lower-bound estimate: ~1 input/output round trip per selected ambiguous case.
+
+Flex/Batch is separated from runtime-latency-sensitive paths:
+- Flex/Batch is intended for non-critical, latency-tolerant and potentially throttled workloads, matching Vertex AI Flex PayGo guidance.
+- Use Flex/Batch only for shadow/eval backfill or overnight calibration jobs, not for synchronous `/scrape -> /interact` control.
+
+Illustrative Flex/Batch examples for same payloads:
+- 4K input + 100 output: `(4,000 / 1,000,000 * $0.13) + (100 / 1,000,000 * $0.75) = $0.000595` per call
+- 20K input + 100 output: `(20,000 / 1,000,000 * $0.13) + (100 / 1,000,000 * $0.75) = $0.002675` per call
 
 ### Latency and reliability
 
@@ -139,10 +168,14 @@ Use LLM output as the single decision source for scrape ladder dispatch.
 
 Every scrape attempt can hit Gemini, so costs scale with all traffic:
 - at 4K input + 100 output and 1M calls/month:
-  - ~$1,150/month standard; ~$595/month flex/batch (plus output token count and retries/overhead).
+  - ~$1,150/month Standard PayGo (runtime).
 - at 20K input + 100 output and 1M calls/month:
-  - ~$5,150/month standard; ~$2,675/month flex/batch.
+  - ~$5,150/month Standard PayGo (runtime).
 - Real-world totals likely higher due to retries and malformed payload retries.
+
+For Flex/Batch-only workflows (non-realtime eval or backfill):
+- 4K input + 100 output: ~$595/month at 1M calls.
+- 20K input + 100 output: ~$2,675/month at 1M calls.
 
 ### Latency and reliability
 
@@ -195,7 +228,7 @@ Use a human-labeled gold set for shadow comparisons before any runtime switch.
 - Labeling rule: 3 reviewers + majority vote, with adjudication on ties.
 - Required schema labels: `AUTH_WALL`, `INTERSTITIAL`, `LEGITIMATELY_EMPTY`, `OK`.
 
-| Label | Target samples | Example fixture types | Required expected outcomes |
+| Fixture stratum | Target samples | Example fixture types | Expected schema label |
 | --- | ---: | --- | --- |
 | `AUTH_WALL` | 300 | login forms with password input, explicit `/login`/`/signin` form actions, 401/403 pages that clearly indicate credential gating | `AUTH_WALL` |
 | `INTERSTITIAL` | 350 | Cloudflare-style challenge pages, JS-required/no-js fallbacks, interaction challenge pages with browser challenge text/class names | `INTERSTITIAL` |
@@ -211,12 +244,16 @@ Use a human-labeled gold set for shadow comparisons before any runtime switch.
     - `LEGITIMATELY_EMPTY`: precision ≥ 0.96, recall ≥ 0.95
     - `INTERSTITIAL`: precision ≥ 0.92, recall ≥ 0.90
     - `OK`: precision ≥ 0.93, recall ≥ 0.90
+  - These four-class threshold gates apply only to schema outputs (`AUTH_WALL`, `INTERSTITIAL`, `LEGITIMATELY_EMPTY`, `OK`).
   - Confirmer disagreement with current heuristic for same record:
-  - added latency budgets: `p95` ≤ 700ms, `p99` ≤ 1,400ms (same guardrails as above),
+    - added latency budgets: `p95` ≤ 700ms, `p99` ≤ 1,400ms (same guardrails as above),
     - disagreement rate ≤ 12% on full shadow set and ≤ 18% on `LOGIN_REDIRECT_MIXED`.
   - Confirmer call quality:
     - parse/schema reject rate ≤ 1.0%,
     - error + timeout + retry-fallback rate ≤ 2.0%.
+- Stratum-level acceptance checks (in addition to class-level metrics):
+  - `LOGIN_REDIRECT_MIXED`: disagreement ≤ 18%.
+  - `SHORT_LOW_CONTENT`: disagreement ≤ 20%.
 
 ### Proposed instrumentation for all options with Gemini
 
