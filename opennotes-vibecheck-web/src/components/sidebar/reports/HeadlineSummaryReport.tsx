@@ -15,11 +15,11 @@ export default function HeadlineSummaryReport(
           data-testid="headline-summary"
           data-headline-kind={h().kind}
           data-headline-source={h().source}
-          class="rounded-md border border-border bg-background/60 p-3"
+          class="max-w-prose space-y-1"
         >
           <p
             data-testid="headline-summary-text"
-            class="text-sm leading-relaxed text-foreground"
+            class="text-base leading-7 text-foreground"
           >
             {h().text}
           </p>

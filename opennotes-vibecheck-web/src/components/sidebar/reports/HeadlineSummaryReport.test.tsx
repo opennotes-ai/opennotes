@@ -9,6 +9,8 @@ afterEach(() => {
 
 const SAMPLE_TEXT =
   "Conversation looks low-risk: no harmful content matches and tone is mostly neutral.";
+const LONG_HEADLINE_TEXT =
+  "This is a long headline summary crafted for the line-length tests to ensure the full text renders as a readable lead-in, with no truncation, no overflow clipping, and no hidden behavior that would suggest a clamped or shortened card treatment.";
 
 type ServerHeadline = Extract<ResolvedHeadline, { source: "server" }>;
 type FallbackHeadline = Extract<ResolvedHeadline, { source: "fallback" }>;
@@ -82,6 +84,15 @@ describe("HeadlineSummaryReport", () => {
         .getByTestId("headline-summary")
         .getAttribute("data-headline-source"),
     ).toBe("fallback");
+  });
+
+  it("renders the full long headline text without truncation affordances", () => {
+    render(() => <HeadlineSummaryReport headline={makeHeadline({ text: LONG_HEADLINE_TEXT })} />);
+    const text = screen.getByTestId("headline-summary-text");
+    expect(text).toBeTruthy();
+    expect(text.textContent).toBe(LONG_HEADLINE_TEXT);
+    const textCls = text.getAttribute("class") ?? "";
+    expect(textCls).not.toMatch(/line-clamp-|text-ellipsis|whitespace-nowrap|overflow-hidden/);
   });
 
   it("renders identical text for kind='stock' and kind='synthesized'", () => {
