@@ -1,4 +1,4 @@
-# ADR: Gemini 3 vs Flash-Lite for scrape quality gating (TASK-1488.23)
+# ADR: Gemini 3 Flash vs Gemini 3.1 Flash-Lite for scrape quality gating (TASK-1488.23)
 
 Date: 2026-04-29
 Status: Proposed
@@ -111,14 +111,14 @@ Gemini 3.1 Flash-Lite remains a challenger, only for follow-up downgrade conside
 
 No grounding for classifier calls.
 
-For runtime decisions, prefer Gemini 3 Standard PayGo as the default and compare Flash-Lite only as a challenger.
+For runtime decisions, prefer Gemini 3 Flash Standard PayGo as the default and compare Flash-Lite only as a challenger.
 
 `cost = (input_tokens / 1_000_000 * input_rate) + (output_tokens / 1_000_000 * output_rate)`
 
 1. 4K input + 100 output
-   - Gemini 3 Standard: `(4,000 / 1,000,000 * $0.50) + (100 / 1,000,000 * $3.00) = $0.002000 + $0.000300 = $0.00230` per call
+   - Gemini 3 Flash Standard: `(4,000 / 1,000,000 * $0.50) + (100 / 1,000,000 * $3.00) = $0.002000 + $0.000300 = $0.00230` per call
 2. 20K input + 100 output
-   - Gemini 3 Standard: `(20,000 / 1,000,000 * $0.50) + (100 / 1,000,000 * $3.00) = $0.010000 + $0.000300 = $0.01030` per call
+   - Gemini 3 Flash Standard: `(20,000 / 1,000,000 * $0.50) + (100 / 1,000,000 * $3.00) = $0.010000 + $0.000300 = $0.01030` per call
    - Standard lower-bound estimate: ~1 input/output round trip per selected ambiguous case.
 
 Flex/Batch is separated from runtime-latency-sensitive paths:
@@ -126,16 +126,16 @@ Flex/Batch is separated from runtime-latency-sensitive paths:
 - Use Flex/Batch only for shadow/eval backfill or overnight calibration jobs, not for synchronous `/scrape -> /interact` control.
 
 Flash-Lite challenger baseline for cost comparison:
-- 4K input + 100 output: `~$0.00115` per call (half the Gemini 3 Standard text/input rate).
+- 4K input + 100 output: `~$0.00115` per call (half the Gemini 3 Flash Standard text/input rate).
 - 20K input + 100 output: `~$0.00515` per call.
   - This Challenger path is only acceptable if quality/security gates pass and head-to-head tests show no material safety regression.
 
 Illustrative Flex/Batch examples for same payloads:
 - 4K input + 100 output:
-  - Gemini 3 Flex/Batch: `(4,000 / 1,000,000 * $0.25) + (100 / 1,000,000 * $1.50) = $0.001000 + $0.000150 = $0.00115`
+  - Gemini 3 Flash Flex/Batch: `(4,000 / 1,000,000 * $0.25) + (100 / 1,000,000 * $1.50) = $0.001000 + $0.000150 = $0.00115`
   - Flash-Lite Flex/Batch: `(4,000 / 1,000,000 * $0.13) + (100 / 1,000,000 * $0.75) = $0.000595`
 - 20K input + 100 output:
-  - Gemini 3 Flex/Batch: `(20,000 / 1,000,000 * $0.25) + (100 / 1,000,000 * $1.50) = $0.005000 + $0.000150 = $0.00515`
+  - Gemini 3 Flash Flex/Batch: `(20,000 / 1,000,000 * $0.25) + (100 / 1,000,000 * $1.50) = $0.005000 + $0.000150 = $0.00515`
   - Flash-Lite Flex/Batch: `(20,000 / 1,000,000 * $0.13) + (100 / 1,000,000 * $0.75) = $0.002675`
 
 ### Latency and reliability
@@ -185,16 +185,16 @@ Introduce model timeouts/guardrails as proposals (not measured values; no baseli
 
 ### Description
 
-Use Gemini 3 output as the single decision source for scrape ladder dispatch.
+Use Gemini 3 Flash output as the single decision source for scrape ladder dispatch.
 Evaluate Gemini 3.1 Flash-Lite as a cost-optimized challenger only if it meets all quality/security gates.
 
 ### Cost
 
 Every scrape attempt can hit Gemini, so costs scale with all traffic:
 - at 4K input + 100 output and 1M calls/month:
-  - Gemini 3 Standard: ~`$2,300/month` runtime.
+  - Gemini 3 Flash Standard: ~`$2,300/month` runtime.
 - at 20K input + 100 output and 1M calls/month:
-  - Gemini 3 Standard: ~`$10,300/month` runtime.
+  - Gemini 3 Flash Standard: ~`$10,300/month` runtime.
 - Real-world totals likely higher due to retries and malformed payload retries.
 
 Flash-Lite evaluated alternative (non-default):
@@ -202,7 +202,7 @@ Flash-Lite evaluated alternative (non-default):
 - 20K input + 100 output and 1M calls: ~`$5,150/month`.
 
 For Flex/Batch-only workflows (non-realtime eval or backfill):
-- Gemini 3: `~$1,150/month` at 4K and `~$5,150/month` at 20K (1M calls/month) in Flex/Batch.
+- Gemini 3 Flash: `~$1,150/month` at 4K and `~$5,150/month` at 20K (1M calls/month) in Flex/Batch.
 - Flash-Lite: `~$595/month` at 4K and `~$2,675/month` at 20K (1M calls/month) in Flex/Batch.
 
 ### Latency and reliability
@@ -286,10 +286,10 @@ Use a human-labeled gold set for shadow comparisons before any runtime switch.
 - Head-to-head flash-vs-flash-lite precondition for any future downgrade to Flash-Lite:
   - Run the same 2,000-page labeled set through both models in parallel.
   - Require paired statistical comparison on safety-critical classes:
-    - `AUTH_WALL`: Flash-Lite precision/recall delta vs Gemini 3 `>= -0.005` (non-inferiority margin 0.5pp), with paired 95% CI lower bound `>= -0.005`.
-    - `LEGITIMATELY_EMPTY`: Flash-Lite precision/recall delta vs Gemini 3 `>= -0.005`, with paired 95% CI lower bound `>= -0.005`.
+    - `AUTH_WALL`: Flash-Lite precision/recall delta vs Gemini 3 Flash `>= -0.005` (non-inferiority margin 0.5pp), with paired 95% CI lower bound `>= -0.005`.
+    - `LEGITIMATELY_EMPTY`: Flash-Lite precision/recall delta vs Gemini 3 Flash `>= -0.005`, with paired 95% CI lower bound `>= -0.005`.
   - Require overall quality non-inferiority:
-    - Flash-Lite macro `F1` delta vs Gemini 3 `>= -0.01` (non-inferiority margin 1pp), or better.
+    - Flash-Lite macro `F1` delta vs Gemini 3 Flash `>= -0.01` (non-inferiority margin 1pp), or better.
   - Only if this passes and latency/cost improves materially without worse safety gates can Flash-Lite be considered for downgrade from Flash.
 
 ### Proposed instrumentation for all options with Gemini
@@ -303,7 +303,7 @@ Use a human-labeled gold set for shadow comparisons before any runtime switch.
 - Evaluation mode:
  1. shadow only for 1–2 weeks,
  2. no runtime branching change; log only,
- 3. include parallel scoring for Gemini 3 and Flash-Lite on the same traffic sample.
+ 3. include parallel scoring for Gemini 3 Flash and Flash-Lite on the same traffic sample.
  4. gate on defined disagreement, guardrails, and non-inferiority thresholds above.
 
 ## Recommendation
