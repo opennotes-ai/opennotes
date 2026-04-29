@@ -36,6 +36,7 @@ import socket
 from collections.abc import AsyncIterator, Awaitable, Callable, Iterator
 from datetime import UTC, datetime, timedelta
 from typing import Any
+from urllib.parse import urlparse
 from uuid import UUID, uuid4
 
 import asyncpg
@@ -44,6 +45,7 @@ import pytest
 from testcontainers.postgres import PostgresContainer
 
 from src.cache.scrape_cache import CachedScrape
+from src.cache.supabase_cache import normalize_url
 from src.firecrawl_client import ScrapeMetadata, ScrapeResult
 from src.main import app
 from src.routes import analyze as analyze_route
@@ -271,7 +273,8 @@ class AsyncpgScrapeCache:
     Behavior contract is identical to `SupabaseScrapeCache.get/put/evict`:
     rows live in `vibecheck_scrapes` with a 72h TTL; `get` enforces a
     server-side `expires_at > now()` predicate; `put` UPSERTs on
-    normalized_url; `evict` deletes by normalized_url. We do not exercise
+    normalized_url; `evict` writes tombstones by normalized_url for fence
+    protection. We do not exercise
     the Storage bucket — `signed_screenshot_url` returns None.
 
     `signed_screenshot_url` is async to mirror the production surface so
@@ -292,6 +295,7 @@ class AsyncpgScrapeCache:
     async def get(
         self, url: str, *, tier: str = "scrape"
     ) -> CachedScrape | None:
+        norm = normalize_url(url)
         async with self._pool.acquire() as conn:
             row = await conn.fetchrow(
                 """
@@ -302,7 +306,7 @@ class AsyncpgScrapeCache:
                   AND tier = $2
                   AND expires_at > now()
                 """,
-                url,
+                norm,
                 tier,
             )
         if row is None:
@@ -328,12 +332,8 @@ class AsyncpgScrapeCache:
         tier: str = "scrape",
         screenshot_bytes: bytes | None = None,
     ) -> CachedScrape:
-        norm = url
-        host = (
-            scrape.metadata.source_url.split("://", 1)[-1].split("/", 1)[0]
-            if scrape.metadata and scrape.metadata.source_url
-            else norm.split("://", 1)[-1].split("/", 1)[0]
-        )
+        norm = normalize_url(url)
+        host = urlparse(norm).netloc
         put_started_at = datetime.now(UTC)
         metadata = scrape.metadata or ScrapeMetadata()
         final_url = metadata.source_url or url
@@ -393,7 +393,7 @@ class AsyncpgScrapeCache:
                     expires_at = EXCLUDED.expires_at,
                     evicted_at = EXCLUDED.evicted_at
                 """,
-                url,
+                norm,
                 tier,
                 url,
                 final_url,
@@ -417,19 +417,20 @@ class AsyncpgScrapeCache:
 
     async def evict(self, url: str, *, tier: str | None = None) -> None:
         now = datetime.now(UTC)
-        host = url.split("://", 1)[-1].split("/", 1)[0]
+        norm = normalize_url(url)
+        host = urlparse(norm).netloc
         expired = now - timedelta(hours=1)
         async with self._pool.acquire() as conn:
             tombstones = ("scrape", "interact") if tier is None else (tier,)
             if tier is None:
                 await conn.execute(
-                    "DELETE FROM vibecheck_scrapes WHERE normalized_url = $1", url
+                    "DELETE FROM vibecheck_scrapes WHERE normalized_url = $1", norm
                 )
             else:
                 await conn.execute(
                     "DELETE FROM vibecheck_scrapes "
                     "WHERE normalized_url = $1 AND tier = $2",
-                    url,
+                    norm,
                     tier,
                 )
             for tombstone_tier in tombstones:
@@ -457,9 +458,9 @@ class AsyncpgScrapeCache:
                         expires_at = EXCLUDED.expires_at,
                         evicted_at = EXCLUDED.evicted_at
                     """,
-                    url,
+                    norm,
                     tombstone_tier,
-                    url,
+                    norm,
                     host,
                     now,
                     expired,

@@ -122,7 +122,8 @@ async def test_evict_with_tier_none_tombstones_all_tiers(
 async def test_asyncpg_cache_fence_prevents_resurrection_with_concurrent_evict(
     db_pool: Any,
 ) -> None:
-    target_url = "https://example.com/fence-resurrection"
+    cache_put_url = "https://example.com/cache-parity/?utm_source=x"
+    cache_get_url = "https://example.com/cache-parity"
     pre_fence = asyncio.Event()
     release_fence = asyncio.Event()
     timeout = 5.0
@@ -137,15 +138,17 @@ async def test_asyncpg_cache_fence_prevents_resurrection_with_concurrent_evict(
 
     put_task = asyncio.create_task(
         cache.put(
-            target_url,
+            cache_put_url,
             ScrapeResult(
                 markdown="resurrect-me",
-                metadata=ScrapeMetadata(title="Resurrect", source_url=target_url),
+                metadata=ScrapeMetadata(
+                    title="Resurrect", source_url=cache_put_url
+                ),
             ),
         )
     )
     await asyncio.wait_for(pre_fence.wait(), timeout=timeout)
-    await cache.evict(target_url, tier="scrape")
+    await cache.evict(cache_get_url, tier="scrape")
     release_fence.set()
     result = await asyncio.wait_for(put_task, timeout=timeout)
 
@@ -158,18 +161,19 @@ async def test_asyncpg_cache_fence_prevents_resurrection_with_concurrent_evict(
             FROM vibecheck_scrapes
             WHERE normalized_url = $1 AND tier = $2
             """,
-            target_url,
+            cache_get_url,
             "scrape",
         )
         rescue_row = await conn.fetchrow(
             "SELECT markdown FROM vibecheck_scrapes WHERE normalized_url = $1",
-            target_url,
+            cache_get_url,
         )
     assert row is not None
     assert row["markdown"] is None
     assert row["evicted_at"] is not None
     assert rescue_row is not None
-    assert await cache.get(target_url, tier="scrape") is None
+    assert await cache.get(cache_get_url, tier="scrape") is None
+    assert await cache.get(cache_put_url, tier="scrape") is None
 
 
 async def test_second_submit_within_ttl_reuses_scrape_cache(
