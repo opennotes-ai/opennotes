@@ -88,8 +88,19 @@ Assume per-call cost = `(input_tokens / 1_000_000 * input_rate) + (output_tokens
 
 ### Latency and reliability
 
-- Adds one network call only for selected cases; end-to-end scrape latency rises for those pages.
-- `interact` already adds latency/complexity in one branch, so this is incremental and bounded by ambiguity rate.
+Adds one network call only for selected cases; end-to-end scrape latency rises for those pages.
+`interact` already adds latency/complexity in one branch, so this is incremental and bounded by ambiguity rate.
+Introduce model timeouts/guardrails as proposals (not measured values; no baseline observations yet):
+
+- Hard per-call timeout cap: 1.5s at the request layer.
+- Retry policy: no automatic retry in the classifier path (single-shot only), because retries can amplify latency and cost on flaky upstreams.
+- Proposed added latency budgets for confirmer path:
+  - target `p95` add-on ≤ 700ms,
+  - target `p99` add-on ≤ 1,400ms,
+  - `error_or_timeout_rate` target ≤ 1.5% during shadow.
+- Proposed shadow-mode rollout gate:
+  - phase 1 run for at least 7 days with ≥ 10,000 confirmer opportunities and ≥ 1,000 per top host before promotion discussion.
+  - if either budget is breached (p99 add-on > 1,500ms, or timeout/error > 2%), disable confirmer by feature flag.
 - Introduces preview model risk and SDK/API failure surface; must enforce hard timeout and fallback.
 
 ### Security and jailbreak posture
@@ -138,6 +149,10 @@ Every scrape attempt can hit Gemini, so costs scale with all traffic:
 - Adds external dependency to all `/scrape` decisions, increasing baseline pipeline latency.
 - Preview API availability/stability becomes a platform dependency for every scrape path.
 - Harder to provide strict SLOs unless extensive caching and async/timeout controls are added.
+- Proposed baseline budgets (not measured):
+  - hard request timeout cap: 1.5s,
+  - no automatic model retries in the primary path,
+  - target added `p95` latency ≤ 900ms and `p99` ≤ 1,900ms versus current heuristic-only path.
 
 ### Security and jailbreak posture
 
@@ -172,13 +187,39 @@ Every scrape attempt can hit Gemini, so costs scale with all traffic:
 
 ## Monitoring/Evals Plan
 
-- Labeling set categories:
-  - AUTH wall pages (forms/status-based),
-  - Cloudflare/JS challenge interstitials,
-  - deleted/empty pages,
-  - normal content pages,
-  - multi-tenant login redirects,
-  - short/low-content pages near heuristic thresholds.
+### Concrete eval-set plan (proposed, not implemented yet)
+
+Use a human-labeled gold set for shadow comparisons before any runtime switch.
+
+- Total target sample size: **2,000 pages**.
+- Labeling rule: 3 reviewers + majority vote, with adjudication on ties.
+- Required schema labels: `AUTH_WALL`, `INTERSTITIAL`, `LEGITIMATELY_EMPTY`, `OK`.
+
+| Label | Target samples | Example fixture types | Required expected outcomes |
+| --- | ---: | --- | --- |
+| `AUTH_WALL` | 300 | login forms with password input, explicit `/login`/`/signin` form actions, 401/403 pages that clearly indicate credential gating | `AUTH_WALL` |
+| `INTERSTITIAL` | 350 | Cloudflare-style challenge pages, JS-required/no-js fallbacks, interaction challenge pages with browser challenge text/class names | `INTERSTITIAL` |
+| `LEGITIMATELY_EMPTY` | 300 | 404/410 pages, deleted/content removed notices, empty scrape bundle bodies with no meaningful content | `LEGITIMATELY_EMPTY` |
+| `OK` | 800 | stable content pages with clear extractable markdown body and low ambiguity markers | `OK` |
+| `LOGIN_REDIRECT_MIXED` | 150 | auth redirect flows from public landing → login, mixed with page content around the redirect | `AUTH_WALL` if access is blocked, else `INTERSTITIAL` if clear JS challenge, never `OK` |
+| `SHORT_LOW_CONTENT` | 100 | very short pages around threshold lengths, boilerplate-heavy pages, low-token but non-empty payloads | `LEGITIMATELY_EMPTY` unless clear evidence supports `INTERSTITIAL`/`AUTH_WALL` |
+
+- Per-class minimum acceptance thresholds for the shadow confirmer:
+  - Macro `F1 >= 0.88` across all classes.
+  - Per-class precision/recall:
+    - `AUTH_WALL`: precision ≥ 0.97, recall ≥ 0.98
+    - `LEGITIMATELY_EMPTY`: precision ≥ 0.96, recall ≥ 0.95
+    - `INTERSTITIAL`: precision ≥ 0.92, recall ≥ 0.90
+    - `OK`: precision ≥ 0.93, recall ≥ 0.90
+  - Confirmer disagreement with current heuristic for same record:
+  - added latency budgets: `p95` ≤ 700ms, `p99` ≤ 1,400ms (same guardrails as above),
+    - disagreement rate ≤ 12% on full shadow set and ≤ 18% on `LOGIN_REDIRECT_MIXED`.
+  - Confirmer call quality:
+    - parse/schema reject rate ≤ 1.0%,
+    - error + timeout + retry-fallback rate ≤ 2.0%.
+
+### Proposed instrumentation for all options with Gemini
+
 - Metrics to add:
   - `false_positive` / `false_negative` by class versus human-labeled set,
   - agreement/disagreement against current heuristic when shadowing,
@@ -188,7 +229,7 @@ Every scrape attempt can hit Gemini, so costs scale with all traffic:
 - Evaluation mode:
  1. shadow only for 1–2 weeks,
  2. no runtime branching change; log only,
- 3. gate on defined disagreement and cost thresholds.
+ 3. gate on defined disagreement, guardrails, and minimum pass thresholds above.
 
 ## Recommendation
 
