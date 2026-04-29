@@ -254,7 +254,7 @@ def _contains_login_form_action(html: str) -> bool:
         return False
 
     for action in parser.actions:
-        parsed = urlparse(action)
+        parsed = urlparse(action.strip())
         path = parsed.path or ""
         normalized_path = path.lower().rstrip("/")
         if not normalized_path:
