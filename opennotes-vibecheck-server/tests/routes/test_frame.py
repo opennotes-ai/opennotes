@@ -392,10 +392,11 @@ class TestScreenshot:
 
 
 class TestArchivePreview:
-    def test_cached_scrape_ok_html_served_for_scrape_tier_even_if_interact_exists(
+    def test_cached_interact_html_served_when_scrape_tier_is_superficially_ok(
         self, client: TestClient
     ) -> None:
         from src.cache.scrape_cache import CachedScrape
+        from src.jobs.scrape_quality import ScrapeQuality, classify_scrape
 
         calls: list[str] = []
 
@@ -421,10 +422,14 @@ class TestArchivePreview:
                 params={"url": "https://example.com/article"},
             )
 
+        assert (
+            classify_scrape(CachedScrape(html="<main><h1>Scrape preview</h1></main>"))
+            is ScrapeQuality.OK
+        )
         assert resp.status_code == 200
-        assert "Scrape preview" in resp.text
-        assert "Interact preview" not in resp.text
-        assert calls == ["scrape"]
+        assert "Scrape preview" not in resp.text
+        assert "Interact preview" in resp.text
+        assert calls == ["interact"]
 
     def test_cached_interact_html_served_when_scrape_tier_is_non_ok(
         self, client: TestClient
@@ -452,7 +457,35 @@ class TestArchivePreview:
         assert resp.status_code == 200
         assert "Interact preview" in resp.text
         assert "Just a moment" not in resp.text
-        assert calls == ["scrape", "interact"]
+        assert calls == ["interact"]
+
+    def test_cached_scrape_html_served_when_interact_tier_is_non_ok(
+        self, client: TestClient
+    ) -> None:
+        from src.cache.scrape_cache import CachedScrape
+
+        calls: list[str] = []
+
+        class StubCache:
+            async def get(
+                self, url: str, *, tier: str = "scrape"
+            ) -> CachedScrape | None:
+                assert url == "https://example.com/article"
+                calls.append(tier)
+                if tier == "interact":
+                    return CachedScrape(html="<main>Just a moment</main>")
+                return CachedScrape(html="<main><h1>Scrape preview</h1></main>")
+
+        with patch("src.routes.frame.get_scrape_cache", return_value=StubCache()):
+            resp = client.get(
+                "/api/archive-preview",
+                params={"url": "https://example.com/article"},
+            )
+
+        assert resp.status_code == 200
+        assert "Scrape preview" in resp.text
+        assert "Just a moment" not in resp.text
+        assert calls == ["interact", "scrape"]
 
     def test_cached_scrape_html_served_for_interact_tier_when_scrape_empty(
         self, client: TestClient
@@ -479,7 +512,7 @@ class TestArchivePreview:
 
         assert resp.status_code == 200
         assert "Interact preview" in resp.text
-        assert calls == ["scrape", "interact"]
+        assert calls == ["interact"]
 
     def test_archive_preview_eviction_uses_served_tier_for_invalid_final_url(
         self, client: TestClient
@@ -523,7 +556,11 @@ class TestArchivePreview:
                 self, url: str, *, tier: str = "scrape"
             ) -> CachedScrape:
                 assert url == "https://example.com/article"
-                assert tier == "scrape"
+                if tier == "interact":
+                    return CachedScrape(
+                        html="<main><h1>Archived preview</h1></main>",
+                        raw_html="<script>alert(1)</script>",
+                    )
                 return CachedScrape(
                     html="<main><h1>Archived preview</h1></main>",
                     raw_html="<script>alert(1)</script>",
@@ -557,7 +594,8 @@ class TestArchivePreview:
                 self, url: str, *, tier: str = "scrape"
             ) -> CachedScrape:
                 assert url == "https://example.com/article"
-                assert tier == "scrape"
+                if tier == "interact":
+                    return CachedScrape(html="<main><p>Alice opens calmly.</p></main>")
                 return CachedScrape(html="<main><p>Alice opens calmly.</p></main>")
 
         async def stub_lookup(
@@ -671,7 +709,7 @@ class TestArchivePreview:
             )
         assert resp.status_code == 404
         assert resp.json() == {"detail": "Archive unavailable"}
-        assert calls == ["scrape", "interact"]
+        assert calls == ["interact", "scrape"]
 
     def test_cache_miss_without_generate_when_cached_tiers_are_unusable(
         self, client: TestClient
@@ -695,7 +733,7 @@ class TestArchivePreview:
 
         assert resp.status_code == 404
         assert resp.json() == {"detail": "Archive unavailable"}
-        assert calls == ["scrape", "interact"]
+        assert calls == ["interact", "scrape"]
 
     def test_generate_scrapes_with_short_budget_and_stores_html(
         self, client: TestClient
@@ -745,7 +783,7 @@ class TestArchivePreview:
         assert resp.status_code == 200
         assert resp.text == "<article>Fresh archive</article>"
         assert cache.put_url == "https://example.com/fresh"
-        assert cache.get_calls == ["scrape", "interact"]
+        assert cache.get_calls == ["interact", "scrape"]
 
     def test_generated_html_with_job_id_annotates_response_but_not_cache(
         self, client: TestClient

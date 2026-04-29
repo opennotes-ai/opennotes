@@ -209,7 +209,8 @@ async def _get_cached_archive(
     url: str, scrape_cache: SupabaseScrapeCache, *, require_usable: bool = False
 ) -> tuple[CachedScrape | None, str | None]:
     try:
-        for tier in _ARCHIVE_CACHE_TIERS:
+        tiers = ("interact", "scrape") if require_usable else _ARCHIVE_CACHE_TIERS
+        for tier in tiers:
             cached = await scrape_cache.get(url, tier=tier)
             if cached and cached.html:
                 if require_usable and classify_scrape(cached) is not ScrapeQuality.OK:
