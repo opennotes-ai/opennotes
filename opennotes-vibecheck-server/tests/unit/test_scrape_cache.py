@@ -63,6 +63,7 @@ class _FakeTableQuery:
         self._gt_val: str | None = None
         self._upsert_row: dict[str, Any] | None = None
         self._upsert_on_conflict: str | None = None
+        self._maybe_single: bool = False
 
     def select(self, *_fields: str) -> _FakeTableQuery:
         self._op = "select"
@@ -78,6 +79,7 @@ class _FakeTableQuery:
         return self
 
     def maybe_single(self) -> _FakeTableQuery:
+        self._maybe_single = True
         return self
 
     def upsert(
@@ -97,6 +99,7 @@ class _FakeTableQuery:
 
     def execute(self) -> _FakeResponse:
         if self._op == "select":
+            rows: list[dict[str, Any]] = []
             for row in self._store.values():
                 if not self._matches_eqs(row):
                     continue
@@ -105,8 +108,15 @@ class _FakeTableQuery:
                     row_expires = datetime.fromisoformat(row["expires_at"])
                     if not row_expires > threshold:
                         continue
-                return _FakeResponse(dict(row))
-            return _FakeResponse(None)
+                rows.append(dict(row))
+            if self._maybe_single:
+                if len(rows) > 1:
+                    raise RuntimeError(
+                        "maybe_single() requires at most one row, got "
+                        f"{len(rows)}"
+                    )
+                return _FakeResponse(rows[0] if rows else None)
+            return _FakeResponse(rows)
         if self._op == "upsert":
             assert self._upsert_row is not None
             err = self._client.next_upsert_error
@@ -215,6 +225,53 @@ def _make_scrape(
         screenshot=screenshot,
         metadata=ScrapeMetadata(title=title, source_url="https://example.com/a"),
     )
+
+
+def test_fake_maybe_single_raises_when_multiple_rows_match() -> None:
+    """`maybe_single()` should raise when multiple rows match the query."""
+    fake = _FakeSupabaseClient()
+    norm = normalize_url("https://example.com/a")
+    now_iso = datetime.now(UTC).isoformat()
+
+    fake._rows[(norm, "scrape")] = {
+        "normalized_url": norm,
+        "tier": "scrape",
+        "url": norm,
+        "final_url": None,
+        "host": "example.com",
+        "page_kind": "other",
+        "page_title": None,
+        "markdown": "s",
+        "html": None,
+        "screenshot_storage_key": None,
+        "scraped_at": now_iso,
+        "expires_at": now_iso,
+        "evicted_at": None,
+    }
+    fake._rows[(norm, "interact")] = {
+        "normalized_url": norm,
+        "tier": "interact",
+        "url": norm,
+        "final_url": None,
+        "host": "example.com",
+        "page_kind": "other",
+        "page_title": None,
+        "markdown": "i",
+        "html": None,
+        "screenshot_storage_key": None,
+        "scraped_at": now_iso,
+        "expires_at": now_iso,
+        "evicted_at": None,
+    }
+
+    with pytest.raises(RuntimeError, match="maybe_single\\(\\) requires at most one row"):
+        (
+            fake.table("vibecheck_scrapes")
+            .select("markdown")
+            .eq("normalized_url", norm)
+            .maybe_single()
+            .execute()
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -912,6 +969,51 @@ class TestTierAwareCache:
         )
 
         await cache.evict("https://example.com/a")
+
+        norm = normalize_url("https://example.com/a")
+        for tier in ("scrape", "interact"):
+            row = fake._rows[(norm, tier)]  # pyright: ignore[reportPrivateUsage]
+            assert row["markdown"] is None
+            assert row["screenshot_storage_key"] is None
+            assert row["evicted_at"] is not None
+        assert await cache.get("https://example.com/a", tier="scrape") is None
+        assert await cache.get("https://example.com/a", tier="interact") is None
+
+    @pytest.mark.asyncio
+    async def test_evict_without_tier_deletes_screenshot_blobs_for_all_tiers(self) -> None:
+        """`evict(url)` drops every screenshot key before tombstoning both
+        tiers.
+
+        Writes both scrape and interact rows with screenshot bytes, then
+        verifies `evict()` deleted both blob keys and tombstoned both
+        persisted rows.
+        """
+        fake = _FakeSupabaseClient()
+        cache, store = _make_cache(fake)
+
+        scrape_hit = await cache.put(
+            "https://example.com/a",
+            _make_scrape(markdown="s"),
+            tier="scrape",
+            screenshot_bytes=b"scrape-screenshot",
+        )
+        interact_hit = await cache.put(
+            "https://example.com/a",
+            _make_scrape(markdown="i"),
+            tier="interact",
+            screenshot_bytes=b"interact-screenshot",
+        )
+        assert scrape_hit.storage_key is not None
+        assert interact_hit.storage_key is not None
+
+        await cache.evict("https://example.com/a")
+
+        assert len(store.delete_calls) == 2
+        assert sorted(store.delete_calls) == sorted(
+            [scrape_hit.storage_key, interact_hit.storage_key]
+        )
+        assert scrape_hit.storage_key not in store.uploads
+        assert interact_hit.storage_key not in store.uploads
 
         norm = normalize_url("https://example.com/a")
         for tier in ("scrape", "interact"):
