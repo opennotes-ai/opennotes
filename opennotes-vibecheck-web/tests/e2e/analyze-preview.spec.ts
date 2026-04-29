@@ -7,8 +7,8 @@ import {
   type Server,
   type ServerResponse,
 } from "node:http";
-import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
+import { stopWebProcess } from "./_helpers/web-process";
 
 const PERMISSIVE_JOB_ID = "66666666-6666-7666-8666-666666666666";
 const BLOCKED_WITH_ARCHIVE_JOB_ID = "77777777-7777-7777-8777-777777777777";
@@ -96,22 +96,6 @@ async function waitForHttpOk(url: string, timeoutMs = 60_000): Promise<void> {
       },
     )
     .toBe(true);
-}
-
-async function stopWebProcess(process: ChildProcess): Promise<void> {
-  if (process.exitCode !== null || process.signalCode !== null) return;
-
-  const exitPromise = once(process, "exit").then(() => undefined);
-  process.kill("SIGTERM");
-  const exited = await Promise.race([
-    exitPromise.then(() => true),
-    delay(5_000).then(() => false),
-  ]);
-
-  if (!exited && process.exitCode === null && process.signalCode === null) {
-    process.kill("SIGKILL");
-    await exitPromise;
-  }
 }
 
 function writeJson(

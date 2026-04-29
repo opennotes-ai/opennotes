@@ -9,7 +9,8 @@ import {
 } from "@solidjs/testing-library";
 import { createSignal } from "solid-js";
 import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { dirname, resolve as resolvePath } from "node:path";
+import { fileURLToPath } from "node:url";
 import SectionGroup, { type SlugToSlots } from "./SectionGroup";
 import Sidebar from "./Sidebar";
 import type { SectionSlug, SidebarPayload } from "~/lib/api-client.server";
@@ -1401,8 +1402,37 @@ describe("Sidebar (done slots, per-slug reports)", () => {
 });
 
 describe("app.css motion rules", () => {
-  it("defines .skeleton-pulse and .section-reveal keyframes", () => {
-    const appCssPath = resolve(process.cwd(), "src/app.css");
+  it("defines .skeleton-pulse and .section-reveal keyframes", async () => {
+    const resolveCss =
+      Reflect.get(import.meta, "resolve") as
+        | ((url: string) => string | Promise<string>)
+        | undefined;
+    let appCssPath: string | undefined;
+    if (resolveCss) {
+      try {
+        const appCssUrl = await resolveCss("../../app.css");
+        if (appCssUrl.startsWith("file:")) {
+          appCssPath = fileURLToPath(appCssUrl);
+        }
+      } catch {
+        // module runner environments may not support import.meta.resolve.
+      }
+    }
+    if (!appCssPath) {
+      const appCssUrl = new URL("../../app.css", import.meta.url);
+      if (appCssUrl.protocol === "file:") {
+        appCssPath = fileURLToPath(appCssUrl);
+      } else if (appCssUrl.pathname.startsWith("/@fs/")) {
+        appCssPath = decodeURIComponent(appCssUrl.pathname.slice("/@fs/".length));
+      } else if (appCssUrl.pathname.startsWith("/src/")) {
+        const localTestPath = fileURLToPath(import.meta.url);
+        appCssPath = resolvePath(dirname(localTestPath), "../../app.css");
+      }
+    }
+    if (!appCssPath) {
+      throw new Error(`Unable to resolve app.css path from ${import.meta.url}`);
+    }
+
     const appCss = readFileSync(appCssPath, "utf8");
     expect(appCss).toMatch(/\.skeleton-pulse\b/);
     expect(appCss).toMatch(/\.section-reveal\b/);

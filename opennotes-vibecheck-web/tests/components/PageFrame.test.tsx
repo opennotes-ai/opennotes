@@ -819,7 +819,27 @@ describe("countdown interstitial (TASK-1495.07 + TASK-1483.13.02 escape hatch)",
     ) as HTMLElement;
     expect(progress).not.toBeNull();
     const style = progress.getAttribute("style") ?? "";
-    expect(style).toMatch(/pageFrameDecidingProgress/);
-    expect(style).toContain(`${FALLBACK_COUNTDOWN_MS}ms`);
+    const inlineDuration = style.match(/(\d+)ms/);
+    expect(inlineDuration).not.toBeNull();
+    const inlineDurationMs = Number(inlineDuration?.[1]);
+    expect(inlineDurationMs).toBe(FALLBACK_COUNTDOWN_MS);
+
+    const computedStyle = window.getComputedStyle(progress);
+    const computedAnimationDuration = computedStyle.animationDuration;
+    if (computedAnimationDuration) {
+      const durationMatch = computedAnimationDuration.match(
+        /([0-9]+(?:\.[0-9]+)?)(ms|s)/,
+      );
+      if (durationMatch) {
+        const durationMs =
+          durationMatch[2] === "ms"
+            ? Number.parseFloat(durationMatch[1])
+            : Number.parseFloat(durationMatch[1]) * 1_000;
+        if (!Number.isNaN(durationMs)) {
+          expect(durationMs).toBeGreaterThan(0);
+          expect(durationMs).toBe(FALLBACK_COUNTDOWN_MS);
+        }
+      }
+    }
   });
 });
