@@ -98,10 +98,15 @@ class _FakeRunResult:
         self.output = output
 
 
+class _FakeModel:
+    model_name = "gemini-fake-from-agent"
+
+
 @dataclass
 class _FakeAgent:
     payload: UtterancesPayload
     tool_registrations: list[tuple[str, Any]] = field(default_factory=list)
+    model: Any = field(default_factory=_FakeModel)
 
     def tool(self, func: Any = None, /, **_kwargs: Any) -> Any:
         if func is None:
