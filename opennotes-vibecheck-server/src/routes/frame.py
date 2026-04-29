@@ -14,6 +14,7 @@ from src.cache.scrape_cache import CachedScrape, SupabaseScrapeCache
 from src.cache.screenshot_store import GCSScreenshotStore, InMemoryScreenshotStore, ScreenshotStore
 from src.config import get_settings
 from src.firecrawl_client import FirecrawlClient, ScrapeResult
+from src.jobs.scrape_quality import ScrapeQuality, classify_scrape
 from src.monitoring import get_logger
 from src.utils.html_sanitize import strip_noise
 from src.utils.url_security import InvalidURL, validate_public_http_url
@@ -205,12 +206,14 @@ async def _has_cached_archive(url: str) -> bool:
 
 
 async def _get_cached_archive(
-    url: str, scrape_cache: SupabaseScrapeCache
+    url: str, scrape_cache: SupabaseScrapeCache, *, require_usable: bool = False
 ) -> tuple[CachedScrape | None, str | None]:
     try:
         for tier in _ARCHIVE_CACHE_TIERS:
             cached = await scrape_cache.get(url, tier=tier)
             if cached and cached.html:
+                if require_usable and classify_scrape(cached) is not ScrapeQuality.OK:
+                    continue
                 return cached, tier
         return None, None
     except Exception as exc:
@@ -295,7 +298,9 @@ async def archive_preview(
     _validate_http_url(url)
     parsed_job_id = _parse_archive_job_id(job_id)
     scrape_cache = get_scrape_cache()
-    cached, cached_tier = await _get_cached_archive(url, scrape_cache)
+    cached, cached_tier = await _get_cached_archive(
+        url, scrape_cache, require_usable=True
+    )
     if cached and cached.html:
         # TODO: If Firecrawl exposes a hosted archive URL in CachedScrape metadata,
         # return a redirect to that URL instead of serving cached sanitized HTML.
