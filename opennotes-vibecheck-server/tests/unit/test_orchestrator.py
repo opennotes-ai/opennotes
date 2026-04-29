@@ -892,7 +892,7 @@ def test_tier2_actions_for_coral_signal_expands_comment_stream() -> None:
     assert actions[0] == {"type": "wait", "milliseconds": 2000}
     assert actions[1] == {"type": "scroll", "direction": "down"}
     assert actions[2]["type"] == "executeJavascript"
-    js = actions[2]["function"]
+    js = actions[2]["script"]
     assert "clicked " in js
     assert "no-op" in js
     assert "button[data-testid=\"comments-show-comments-button\"]" in js
@@ -948,7 +948,7 @@ async def test_run_tier2_records_coral_specific_actions() -> None:
         if action["type"] == "executeJavascript"
     ]
     assert len(js_actions) == 1
-    js = js_actions[0]["function"]
+    js = js_actions[0]["script"]
     assert "button[data-testid=\"comments-show-comments-button\"]" in js
     assert "button[data-gtm-class=\"open-community\"]" in js
     assert "#coral_talk_stream button" in js

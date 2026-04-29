@@ -705,7 +705,7 @@ def _tier2_actions_for(coral_signal: CoralSignal | None) -> list[dict[str, Any]]
         {"type": "scroll", "direction": "down"},
         {
             "type": "executeJavascript",
-            "function": """
+            "script": """
                 () => {
                     const selectors = [
                         'button[data-testid="comments-show-comments-button"]',
