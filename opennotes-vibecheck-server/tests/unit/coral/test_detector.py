@@ -39,6 +39,27 @@ def test_detects_coral_signal_from_tier1_html() -> None:
     )
 
 
+def test_detects_coral_signal_from_static_embed() -> None:
+    html = """
+    <html>
+      <head>
+        <link rel="canonical" href="https://www.tagesspiegel.de/2026/04/29/example"/>
+        <script src="https://coral.tagesspiegel.de/static/embed.js"></script>
+        <script>
+          window.__INITIAL_STATE__ = {"communityHostname":"coral.tagesspiegel.de"};
+        </script>
+      </head>
+    </html>
+    """
+
+    signal = detect_coral(html)
+    assert signal == CoralSignal(
+        graphql_origin="https://coral.tagesspiegel.de",
+        story_url="https://www.tagesspiegel.de/2026/04/29/example",
+        iframe_src="https://coral.tagesspiegel.de/embed/stream?asset_url=https%3A%2F%2Fwww.tagesspiegel.de%2F2026%2F04%2F29%2Fexample",
+    )
+
+
 @pytest.mark.parametrize(
     "html",
     [
@@ -78,6 +99,55 @@ def test_returns_none_when_iframe_src_is_missing() -> None:
     </html>
     """
     assert detect_coral(html) is None
+
+
+def test_returns_none_when_static_embed_canonical_is_missing() -> None:
+    html = """
+    <html>
+      <head>
+        <script src="https://coral.tagesspiegel.de/static/embed.js"></script>
+        <script>
+          window.__INITIAL_STATE__ = {"communityHostname":"coral.tagesspiegel.de"};
+        </script>
+      </head>
+    </html>
+    """
+    assert detect_coral(html) is None
+
+
+def test_returns_none_when_static_embed_community_host_is_unusable() -> None:
+    html = """
+    <html>
+      <head>
+        <link rel="canonical" href="https://www.tagesspiegel.de/2026/04/29/example"/>
+        <script src="https://coral.tagesspiegel.de/static/embed.js"></script>
+        <script>
+          window.__INITIAL_STATE__ = {"communityHostname":"ftp://coral.tagesspiegel.de"};
+        </script>
+      </head>
+    </html>
+    """
+    assert detect_coral(html) is None
+
+
+def test_detects_static_embed_from_initial_state_canonical_url() -> None:
+    html = """
+    <html>
+      <head>
+        <script src="https://coral.tagesspiegel.de/static/embed.js"></script>
+        <script>
+          window.__INITIAL_STATE__ = {"communityHostname":"coral.tagesspiegel.de","canonicalUrl":"https://www.tagesspiegel.de/2026/04/29/example"};
+        </script>
+      </head>
+    </html>
+    """
+
+    signal = detect_coral(html)
+    assert signal == CoralSignal(
+        graphql_origin="https://coral.tagesspiegel.de",
+        story_url="https://www.tagesspiegel.de/2026/04/29/example",
+        iframe_src="https://coral.tagesspiegel.de/embed/stream?asset_url=https%3A%2F%2Fwww.tagesspiegel.de%2F2026%2F04%2F29%2Fexample",
+    )
 
 
 @pytest.mark.parametrize(
