@@ -33,6 +33,7 @@ from src.firecrawl_client import (
     ScrapeMetadata,
     ScrapeResult,
 )
+from src.services.gemini_agent import google_vertex_model_name
 from src.utterances.errors import (
     TransientExtractionError,
     UtteranceExtractionError,
@@ -1095,7 +1096,10 @@ async def test_extract_utterances_sets_upstream_attrs_on_vertex_transient(
     assert set_attrs.get("upstream_provider") == "vertex"
     assert set_attrs.get("upstream_status_code") == 503
     assert set_attrs.get("upstream_status") == "UNAVAILABLE"
-    assert set_attrs.get("model_name") == "gemini-fake-from-agent"
+    assert set_attrs.get("model_name") == google_vertex_model_name(
+        settings.VERTEXAI_FAST_MODEL,
+        setting_name="VERTEXAI_FAST_MODEL",
+    )
     # Vertex-arm legacy compat — saved Logfire searches keyed on these.
     assert set_attrs.get("vertex_status_code") == 503
     assert set_attrs.get("vertex_status") == "UNAVAILABLE"
