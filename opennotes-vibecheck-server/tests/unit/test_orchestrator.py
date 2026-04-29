@@ -961,10 +961,13 @@ async def test_scrape_step_tier1_coral_detection_merges_graphql_comments(
 
     result = await _call_scrape_step(url, scrape_client, interact_client, cache)
 
+    assert "Real Article" in result.markdown
+    assert "Substantive article body." in result.markdown
     assert "## Comments" in result.markdown
     assert "Great discussion" in result.markdown
     assert (url, "scrape") in cache.store
     assert (url, "scrape") in cache.puts
+    assert "Real Article" in cache.store[(url, "scrape")].markdown
     assert "## Comments" in cache.store[(url, "scrape")].markdown
     assert len(interact_client.interact_calls) == 0
 
@@ -989,7 +992,9 @@ async def test_scrape_step_tier1_coral_graphql_failure_escalates_to_tier2_with_c
             )
         )
     )
-    interact_client = _FakeFirecrawlClient(interact_result=_ok_scrape_result())
+    interact_client = _FakeFirecrawlClient(
+        interact_result=_ok_scrape_result(body="Tier 2 rendered comments. " * 20)
+    )
 
     async def fetch_fails(*_args: Any, **_kwargs: Any) -> CoralComments:
         raise CoralFetchError("temporary coral graphql error")
@@ -998,11 +1003,12 @@ async def test_scrape_step_tier1_coral_graphql_failure_escalates_to_tier2_with_c
 
     result = await _call_scrape_step(url, scrape_client, interact_client, cache)
 
-    assert result.markdown is not None
+    assert "Tier 2 rendered comments." in result.markdown
     assert len(scrape_client.scrape_calls) == 1
     assert len(interact_client.interact_calls) == 1
     assert (url, "scrape") in cache.store
     assert (url, "interact") in cache.store
+    assert "Tier 2 rendered comments." in cache.store[(url, "interact")].markdown
     _, interact_kwargs = interact_client.interact_calls[0]
     actions = interact_kwargs["actions"]
     assert any(
@@ -1047,7 +1053,9 @@ async def test_scrape_step_tier1_coral_graphql_failure_then_tier2_fail_raises_un
     msg = exc_info.value.error_detail.lower()
     assert "tier 1:" in msg
     assert "coral_graphql_failed" in msg
+    assert "temporary coral graphql error" in msg
     assert "tier 2:" in msg
+    assert "interstitial" in msg
     assert (url, "interact") not in cache.store
     assert (url, "scrape") in cache.store
     assert len(scrape_client.scrape_calls) == 1
