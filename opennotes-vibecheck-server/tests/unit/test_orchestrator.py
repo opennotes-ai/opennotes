@@ -1279,6 +1279,66 @@ async def test_scrape_step_tier1_coral_iframe_fallback_rejected_source_url_escal
     assert (url, "interact") in cache.store
 
 
+async def test_scrape_step_tier1_coral_iframe_fallback_malformed_final_url_escalates_to_tier2(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Malformed iframe final URLs are treated as fallback failure and escalate to Tier 2."""
+
+    from src.jobs import orchestrator
+
+    url = "https://example.com/post"
+    cache = _FakeScrapeCache()
+    scrape_client = _FakeFirecrawlClient(
+        scrape_result=_scrape_results(
+            _ok_scrape_result(
+                html=(
+                    "<html><body>"
+                    f"{_PARTIAL_CORAL_HTML_FIXTURE}"
+                    "<article><h1>Real Article</h1><p>Substantive article body.</p></article>"
+                    "</body></html>"
+                )
+            ),
+            ScrapeResult(
+                markdown="## Comments\n- Should not merge malformed iframe comments.",
+                html="<html><body><section>Coral comments iframe</section></body></html>",
+                metadata=ScrapeMetadata(
+                    status_code=200,
+                    source_url="http://[::1",
+                ),
+            ),
+        )
+    )
+    interact_client = _FakeFirecrawlClient(
+        interact_result=_ok_scrape_result(body="## Comments\n- Tier 2 rendered comments.")
+    )
+
+    async def fetch_fails(*_args: Any, **_kwargs: Any) -> CoralComments:
+        raise CoralFetchError("temporary coral graphql error")
+
+    async def fetch_detection_html(_url: str) -> str:
+        return _CORAL_DETECTION_HTML_FIXTURE
+
+    monkeypatch.setattr(
+        orchestrator,
+        "_fetch_coral_detection_html",
+        fetch_detection_html,
+    )
+    monkeypatch.setattr(orchestrator, "fetch_coral_comments", fetch_fails)
+
+    result = await _call_scrape_step(url, scrape_client, interact_client, cache)
+
+    assert "Should not merge malformed iframe comments." not in result.markdown
+    assert "Tier 2 rendered comments." in result.markdown
+    assert (url, "scrape") in cache.store
+    assert (
+        "Should not merge malformed iframe comments."
+        not in cache.store[(url, "scrape")].markdown
+    )
+    assert len(interact_client.interact_calls) == 1
+    assert interact_client.interact_calls[0][0] == url
+    assert (url, "interact") in cache.store
+
+
 async def test_scrape_step_tier1_coral_graphql_failure_escalates_to_tier2_with_coral_click(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

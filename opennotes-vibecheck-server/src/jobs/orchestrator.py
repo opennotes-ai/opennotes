@@ -876,7 +876,7 @@ async def _run_tier1(  # noqa: PLR0911, PLR0912
                         else:
                             try:
                                 revalidate_redirect_target(final_iframe_source_url)
-                            except InvalidURL:
+                            except (InvalidURL, ValueError):
                                 pass
                             else:
                                 iframe_markdown = iframe_scrape.markdown
