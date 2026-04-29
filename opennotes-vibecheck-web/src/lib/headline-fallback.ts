@@ -4,7 +4,6 @@ type HeadlineSummary = components["schemas"]["HeadlineSummary"];
 type SafetyRecommendation = components["schemas"]["SafetyRecommendation"];
 type SafetyLevel = SafetyRecommendation["level"];
 
-export const MAX_HEADLINE_CHARS = 200;
 export type HeadlineSource = "server" | "fallback";
 
 export type ResolvedHeadline =
@@ -37,12 +36,6 @@ const SAFETY_VERB = {
 
 function isSafetyLevel(value: string): value is SafetyLevel {
   return value in SAFETY_VERB;
-}
-
-function truncateHeadline(text: string): string {
-  const codePoints = Array.from(text);
-  if (codePoints.length <= MAX_HEADLINE_CHARS) return text;
-  return `${codePoints.slice(0, MAX_HEADLINE_CHARS - 1).join("")}…`;
 }
 
 function cleanText(text: string): string {
@@ -131,7 +124,7 @@ export function buildHeadlineFallback(
     ? `${joinHeadlineParts(domain, title)} — ${safetyVerb}`
     : joinHeadlineParts(domain, title);
 
-  return { text: truncateHeadline(text), kind: "stock", source: "fallback" };
+  return { text: cleanText(text), kind: "stock", source: "fallback" };
 }
 
 export function resolveHeadline(
@@ -141,7 +134,7 @@ export function resolveHeadline(
   if (payloadHeadline && cleanText(payloadHeadline.text).length > 0) {
     return {
       ...payloadHeadline,
-      text: truncateHeadline(cleanText(payloadHeadline.text)),
+      text: cleanText(payloadHeadline.text),
       source: "server",
     };
   }
