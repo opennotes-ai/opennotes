@@ -1995,6 +1995,51 @@ async def test_scrape_step_tier2_cache_hit_skips_interact() -> None:
     assert len(interact_client.interact_calls) == 0
 
 
+async def test_scrape_step_tier2_cached_auth_wall_is_rejected() -> None:
+    """A cached Tier 2 auth-wall result should not be returned as content.
+
+    When `_run_tier2` reads a cached interact-tier row, it must still
+    classify and only short-circuit when the row is OK. AUTH_WALL cached
+    rows must be surfaced as unsupported-site failures and re-fetch via
+    interact must not run.
+    """
+    from src.jobs import orchestrator
+
+    url = "https://example.com/login-gated"
+    cache = _FakeScrapeCache()
+    cache.store[(url, "interact")] = CachedScrape(
+        markdown="Please sign in",
+        html=(
+            "<html><body><form action='https://example.com/login'"
+            " method='post'><input name='username' /></form></body></html>"
+        ),
+        metadata=ScrapeMetadata(status_code=200, source_url=url),
+        storage_key="cached-auth-wall-key",
+    )
+
+    def _blocked() -> ScrapeResult:
+        raise FirecrawlBlocked("firecrawl /v2/scrape refused: 403 do not support this site")
+
+    scrape_client = _FakeFirecrawlClient(scrape_result=_blocked)
+    interact_client = _FakeFirecrawlClient(
+        interact_result=lambda: (_ for _ in ()).throw(
+            AssertionError("interact must not run when cached Tier 2 auth_wall exists")
+        )
+    )
+
+    with pytest.raises(TerminalError) as exc_info:
+        await orchestrator._scrape_step(
+            url,
+            cast(FirecrawlClient, cast(object, scrape_client)),
+            cast(FirecrawlClient, cast(object, interact_client)),
+            cast(SupabaseScrapeCache, cast(object, cache)),
+        )
+
+    assert exc_info.value.error_code is ErrorCode.UNSUPPORTED_SITE
+    assert "tier 2: auth_wall" in exc_info.value.error_detail
+    assert len(interact_client.interact_calls) == 0
+
+
 # AC#5 — Logfire span 'vibecheck.scrape_step' carries the required attributes.
 
 

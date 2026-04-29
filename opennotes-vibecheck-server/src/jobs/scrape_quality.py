@@ -34,7 +34,9 @@ Constraints:
 
 from __future__ import annotations
 
+from html.parser import HTMLParser
 from enum import StrEnum
+from urllib.parse import urlparse
 
 from src.firecrawl_client import ScrapeResult
 
@@ -76,6 +78,15 @@ AUTH_WALL_HTML_MARKERS: tuple[str, ...] = (
     'action="/sign-in"',
     "action='/sign-in'",
 )
+"""Fixed-string substrings indicating a login form is present in the HTML.
+
+`action="..."` markers are intentionally limited to root-relative login
+routes as a fast-path; absolute URLs are handled by the HTML parser path
+check below. This keeps the historical marker contract stable while
+closing the absolute-URL gap.
+"""
+
+_AUTH_WALL_LOGIN_PATHS: tuple[str, ...] = ("/login", "/signin", "/sign-in")
 """Fixed-string substrings indicating a login form is present in the HTML.
 
 Each marker fires AUTH_WALL unconditionally — a `<input type="password">`
@@ -177,6 +188,8 @@ def classify_scrape(result: ScrapeResult) -> ScrapeQuality:  # noqa: PLR0911
         return ScrapeQuality.AUTH_WALL
     if _contains_any(html, AUTH_WALL_HTML_MARKERS):
         return ScrapeQuality.AUTH_WALL
+    if _contains_login_form_action(html):
+        return ScrapeQuality.AUTH_WALL
 
     # Tier 2: INTERSTITIAL — CF / JS-required markers in markdown OR html.
     if _contains_any(body_text, INTERSTITIAL_MARKERS):
@@ -205,3 +218,50 @@ def _contains_any(haystack: str, needles: tuple[str, ...]) -> bool:
     e.g. `"login"` in user-content prose doesn't trip AUTH_WALL.
     """
     return any(needle in haystack for needle in needles)
+
+
+class _LoginFormActionParser(HTMLParser):
+    """Very small parser that extracts `<form action>` values."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._actions: list[str] = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag != "form":
+            return
+        for key, value in attrs:
+            if key == "action" and value is not None:
+                self._actions.append(value)
+
+    @property
+    def actions(self) -> tuple[str, ...]:
+        return tuple(self._actions)
+
+
+def _contains_login_form_action(html: str) -> bool:
+    """Parse only form actions and classify auth-route login actions.
+
+    This parser is deliberately narrow: only `<form>` elements and their
+    `action` attributes are interpreted, avoiding broad substring matches
+    like header `<a href="/login">` links that produce false positives.
+    """
+    parser = _LoginFormActionParser()
+    try:
+        parser.feed(html)
+        parser.close()
+    except Exception:
+        return False
+
+    for action in parser.actions:
+        parsed = urlparse(action)
+        path = parsed.path or ""
+        normalized_path = path.lower().rstrip("/")
+        if not normalized_path:
+            continue
+        if not normalized_path.startswith("/"):
+            normalized_path = f"/{normalized_path}"
+        if normalized_path in _AUTH_WALL_LOGIN_PATHS:
+            return True
+
+    return False

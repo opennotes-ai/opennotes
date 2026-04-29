@@ -1043,8 +1043,15 @@ async def _run_tier2(
     """
     cached_t2 = await scrape_cache.get(url, tier="interact")
     if cached_t2 is not None:
+        cached_quality = classify_scrape(cached_t2)
+        if cached_quality is ScrapeQuality.OK:
+            return _Tier2Outcome(
+                cached=cached_t2, tier2_reason="ok", final_classification="ok"
+            )
         return _Tier2Outcome(
-            cached=cached_t2, tier2_reason="ok", final_classification="ok"
+            cached=None,
+            tier2_reason=cached_quality.value,
+            final_classification=cached_quality.value,
         )
 
     try:
