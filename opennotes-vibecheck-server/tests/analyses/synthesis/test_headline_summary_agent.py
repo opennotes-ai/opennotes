@@ -538,6 +538,30 @@ def test_degraded_stock_phrases_acknowledge_partial_coverage():
         )
 
 
+def test_headline_summary_system_prompt_directs_overall_narrative_not_inventory():
+    lowered = HEADLINE_SUMMARY_SYSTEM_PROMPT.lower()
+    assert "overall thrust" in lowered
+    assert "narrative" in lowered
+    assert "not an" in lowered
+    assert "inventory" in lowered
+    assert "page's overall" in lowered
+
+
+def test_headline_summary_system_prompt_requires_pithy_one_sentence_by_default():
+    lowered = HEADLINE_SUMMARY_SYSTEM_PROMPT.lower()
+    assert "pithy" in lowered
+    assert "default" in lowered
+    assert "one pithy sentence" in lowered
+    assert "only add a second sentence" in lowered
+    assert "distinct high-signal point" in lowered
+
+
+def test_headline_summary_system_prompt_does_not_add_hard_length_caps():
+    lowered = HEADLINE_SUMMARY_SYSTEM_PROMPT.lower()
+    banned_caps = ("max length", "maximum length", "character limit", "limit this to")
+    assert all(cap not in lowered for cap in banned_caps)
+
+
 def test_pick_degraded_stock_phrase_deterministic():
     job_id = UUID("01234567-89ab-cdef-0123-456789abcdef")
     first = pick_degraded_stock_phrase(job_id)

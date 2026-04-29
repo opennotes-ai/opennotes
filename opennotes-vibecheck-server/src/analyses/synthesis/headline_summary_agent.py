@@ -33,9 +33,14 @@ from src.config import Settings
 from src.services.gemini_agent import build_agent
 from src.services.vertex_limiter import vertex_slot
 
-HEADLINE_SUMMARY_SYSTEM_PROMPT = """You synthesize a 1-2 sentence summation of one analyzed page.
-Inputs include the safety verdict, conversation dynamics, claims, and sentiment.
-Write a single perceptive opening line. Do not write like a tabloid headline.
+HEADLINE_SUMMARY_SYSTEM_PROMPT = """You synthesize a 1-2 sentence narrative lead for one analyzed page.
+Use the inputs (safety verdict, conversation dynamics, claims, and sentiment)
+to describe the page's overall thrust and dynamic — the core story, not an
+inventory of available signals.
+By default, write one pithy sentence.
+Only add a second sentence when it contributes a distinct high-signal point.
+
+Do not write like a tabloid headline.
 Do not list which specific sections were missing or absent — never name slot
 identifiers like "scd" or "web_risk".
 

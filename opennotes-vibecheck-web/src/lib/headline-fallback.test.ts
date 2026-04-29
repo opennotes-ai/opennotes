@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
   buildHeadlineFallback,
-  MAX_HEADLINE_CHARS,
   resolveHeadline,
 } from "./headline-fallback";
 import type { components } from "./generated-types";
@@ -192,18 +191,17 @@ describe("buildHeadlineFallback", () => {
     expect(result.text).not.toBe(" — ");
   });
 
-  it("truncates by Unicode code points with ellipsis at the exported limit", () => {
-    expect(MAX_HEADLINE_CHARS).toBe(200);
-    const title = `${"a".repeat(198)}😀tail`;
+  it("preserves full fallback headline text and does not add ellipsis", () => {
+    const title = `${"a".repeat(250)}\u200b\u0007`;
     const result = buildHeadlineFallback({
       url: "https://example.com/article",
       pageTitle: title,
       recommendation: null,
     });
-    expect([...result.text]).toHaveLength(MAX_HEADLINE_CHARS);
-    expect(result.text).toBe(`example.com — ${"a".repeat(185)}…`);
-    expect(result.text).not.toContain("\ud83d");
-    expect(result.text).not.toContain("\ude00");
+    expect(result.text).toBe(`example.com — ${"a".repeat(250)}`);
+    expect(result.text).not.toContain("…");
+    expect(result.text).not.toContain("\u0007");
+    expect(result.text).toContain("a".repeat(250));
   });
 
   it("preserves RTL title text while normalizing whitespace", () => {
@@ -283,5 +281,30 @@ describe("resolveHeadline", () => {
       },
     );
     expect(result.text).toBe("example.com — Fallback");
+  });
+
+  it("preserves full cleaned server headline text without truncation", () => {
+    const headlineText =
+      `Server-generated summary with ${"b".repeat(260)}\u200b\u0007 and safety note`;
+    const result = resolveHeadline(
+      {
+        text: headlineText,
+        kind: "synthesized",
+      },
+      {
+        url: "https://example.com/article",
+        pageTitle: "Fallback Title",
+        recommendation: null,
+      },
+    );
+
+    expect(result.text).toBe(
+      `Server-generated summary with ${"b".repeat(260)} and safety note`,
+    );
+    expect(result.text).not.toContain("\u200b");
+    expect(result.text).not.toContain("\u0007");
+    expect(result.source).toBe("server");
+    expect(result.kind).toBe("synthesized");
+    expect(result.text).not.toContain("…");
   });
 });

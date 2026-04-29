@@ -55,6 +55,13 @@ type GetArchiveProbeMock = (
 
 type GetScreenshotMock = (url: string) => Promise<string | null>;
 
+const LONG_SERVER_HEADLINE_TEXT =
+  "The terminal payload now ships a full editorial synthesis with policy context, uncertainty bounds, and a complete timeline of causality across the major actors, which would previously have been cut short when fixed-length clipping was applied to preserve card stability under strict sidebar width constraints.";
+const LONG_FALLBACK_HEADLINE_TITLE =
+  "The fallback title pathway must preserve long article names across normalization and punctuation while still being surfaced as a stock headline in the sidebar alongside the safety recommendation card and with full contextual fidelity";
+const LONG_FALLBACK_HEADLINE_TEXT =
+  `news.example.com — ${LONG_FALLBACK_HEADLINE_TITLE}`;
+
 const { pollingHandles, refetchSpy } = vi.hoisted(() => ({
   pollingHandles: [] as Array<{
     setState: (v: JobState | null) => void;
@@ -1329,7 +1336,7 @@ describe("AnalyzePage headline summary mount (TASK-1483.13.10)", () => {
     setPolledJobState(
       makeJobState({
         status: "analyzing",
-        page_title: "Investigative dispatch",
+        page_title: LONG_FALLBACK_HEADLINE_TITLE,
         sidebar_payload: makeSidebarPayload({ headline: null }),
       }),
     );
@@ -1337,7 +1344,7 @@ describe("AnalyzePage headline summary mount (TASK-1483.13.10)", () => {
     const headline = await screen.findByTestId("headline-summary");
     expect(headline.getAttribute("data-headline-source")).toBe("fallback");
     expect(screen.getByTestId("headline-summary-text").textContent).toBe(
-      "news.example.com — Investigative dispatch",
+      LONG_FALLBACK_HEADLINE_TEXT,
     );
   });
 
@@ -1353,7 +1360,7 @@ describe("AnalyzePage headline summary mount (TASK-1483.13.10)", () => {
         status: "analyzing",
         sidebar_payload: makeSidebarPayload({
           headline: {
-            text: "Verified article headline from the analysis payload.",
+            text: LONG_SERVER_HEADLINE_TEXT,
             kind: "synthesized",
             unavailable_inputs: [],
           },
@@ -1364,7 +1371,7 @@ describe("AnalyzePage headline summary mount (TASK-1483.13.10)", () => {
     const headline = await screen.findByTestId("headline-summary");
     expect(headline.getAttribute("data-headline-source")).toBe("server");
     expect(screen.getByTestId("headline-summary-text").textContent).toBe(
-      "Verified article headline from the analysis payload.",
+      LONG_SERVER_HEADLINE_TEXT,
     );
   });
 

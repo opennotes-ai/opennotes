@@ -35,6 +35,7 @@ from src.firecrawl_client import (
 )
 from src.utterances.errors import (
     TransientExtractionError,
+    UtteranceExtractionError,
 )
 from src.utterances.extractor import (
     EXTRACTOR_SYSTEM_PROMPT,

@@ -1,4 +1,4 @@
-import { test, expect, type Page } from "@playwright/test";
+import { test, expect, type Page, type TestInfo } from "@playwright/test";
 import { spawn, type ChildProcess } from "node:child_process";
 import { once } from "node:events";
 import { createServer, type Server } from "node:http";
@@ -15,7 +15,27 @@ const SERVER_HEADLINE_JOB_ID = "11111111-1111-7111-8111-111111111111";
 const FALLBACK_HEADLINE_JOB_ID = "33333333-3333-7333-8333-333333333333";
 const ATTEMPT_ID = "22222222-2222-7222-8222-222222222222";
 const SOURCE_URL = "https://WWW.www.Example.COM/news/story-title.html";
-const SERVER_HEADLINE_TEXT = "Server headline lands from the terminal payload.";
+const PROD_HEADLINE_JOB_ID = "abd714b0-bd5d-405e-83ef-419be5261866";
+const PROD_HEADLINE_BASE_URL =
+  process.env.VIBECHECK_E2E_PROD_HEADLINE_BASE_URL ??
+  "https://vibecheck.opennotes.ai";
+const SERVER_HEADLINE_TEXT =
+  "The server-generated headline now includes the full policy synthesis, uncertainty rationale, operational constraints, and downstream governance context in one uninterrupted narrative sentence to prove long-trim-sensitive behavior across both browser and slot rendering paths.";
+const FALLBACK_HEADLINE_TITLE =
+  "The fallback headline should keep a long source-derived title in full so no cap or ellipsis hides the context, including punctuation, date references, and the nuanced framing that helps distinguish related but dissimilar stories from the same feed";
+const FALLBACK_HEADLINE_TEXT = `example.com — ${FALLBACK_HEADLINE_TITLE} — appears clean`;
+const HEADLINE_VIEWPORTS = [
+  { name: "desktop", width: 1440, height: 1080 },
+  { name: "mobile", width: 390, height: 844 },
+] as const;
+
+type HeadlineViewport = (typeof HEADLINE_VIEWPORTS)[number];
+type HeadlineSource = "server" | "fallback" | "auto";
+type HeadlineViewportOptions = {
+  baseUrl?: string;
+  jobId?: string;
+  screenshotPrefix?: string;
+};
 
 let apiServer: Server;
 let apiBaseUrl = "";
@@ -167,10 +187,135 @@ function terminalJobState(jobId: string) {
     sidebar_payload: sidebarPayload(headline),
     cached: true,
     next_poll_ms: 1500,
-    page_title: jobId === FALLBACK_HEADLINE_JOB_ID ? "" : "Groups are now classes",
+    page_title: jobId === FALLBACK_HEADLINE_JOB_ID
+      ? FALLBACK_HEADLINE_TITLE
+      : "Groups are now classes",
     page_kind: "article",
     utterance_count: 3,
   };
+}
+
+async function assertHeadlineNoClippingStyles(page: Page): Promise<void> {
+  const style = await page.getByTestId("headline-summary-text").evaluate((node) => {
+    const textElement = node as HTMLElement;
+    const container = textElement.closest("section") as HTMLElement | null;
+    if (!container) {
+      throw new Error("headline-summary section not found");
+    }
+    const textStyles = getComputedStyle(textElement);
+    const containerStyles = getComputedStyle(container);
+    return {
+      textOverflow: textStyles.textOverflow,
+      whiteSpace: textStyles.whiteSpace,
+      lineClamp: textStyles.getPropertyValue("-webkit-line-clamp"),
+      textElementOverflow: textStyles.overflow,
+      textElementOverflowX: textStyles.overflowX,
+      textElementOverflowY: textStyles.overflowY,
+      overflow: containerStyles.overflow,
+      overflowX: containerStyles.overflowX,
+      overflowY: containerStyles.overflowY,
+      lineHeight: textStyles.lineHeight,
+      scrollHeight: textElement.scrollHeight,
+      clientHeight: textElement.clientHeight,
+    };
+  });
+
+  expect(style.textOverflow, "headline text should not apply ellipsis truncation").not
+    .toMatch(/ellipsis/i);
+  expect(
+    style.lineClamp,
+    "headline text should not line-clamp the summary",
+  ).not.toMatch(/^\d+$/);
+  expect(
+    style.whiteSpace,
+    "headline text should allow wrapping",
+  ).not.toBe("nowrap");
+  expect(
+    style.overflow,
+    "headline text container should not clip overflow",
+  ).not.toBe("hidden");
+  expect(
+    style.overflowX,
+    "headline text container should not hide horizontal overflow",
+  ).not.toBe("hidden");
+  expect(
+    style.overflowY,
+    "headline text container should not hide vertical overflow",
+  ).not.toBe("hidden");
+  expect(
+    style.textElementOverflow,
+    "headline text element should not clip horizontal overflow",
+  ).not.toBe("hidden");
+  expect(
+    style.textElementOverflowX,
+    "headline text element should not hide horizontal overflow",
+  ).not.toBe("hidden");
+  expect(
+    style.textElementOverflowY,
+    "headline text element should not hide vertical overflow",
+  ).not.toBe("hidden");
+  const lineHeight = parseFloat(style.lineHeight);
+  const lines = Number.isFinite(lineHeight) && lineHeight > 0
+    ? style.scrollHeight / lineHeight
+    : 0;
+  expect(
+    lines,
+    "headline text should expand across lines instead of being force-clipped",
+  ).toBeGreaterThan(1);
+  const heightTolerancePx = 1;
+  expect(
+    style.scrollHeight,
+    "headline text should not be visually clipped by text element height constraints",
+  ).toBeLessThanOrEqual(style.clientHeight + heightTolerancePx);
+}
+
+async function assertHeadlineSummaryAtViewport(
+  page: Page,
+  source: HeadlineSource,
+  expectedText: string | null,
+  viewport: HeadlineViewport,
+  testInfo: TestInfo,
+  options: HeadlineViewportOptions = {},
+): Promise<string> {
+  const analyzeJobId = options.jobId
+    ? options.jobId
+    : source === "server"
+      ? SERVER_HEADLINE_JOB_ID
+      : FALLBACK_HEADLINE_JOB_ID;
+  if (source === "auto" && !options.jobId) {
+    throw new Error(
+      "assertHeadlineSummaryAtViewport('auto') requires options.jobId to be set",
+    );
+  }
+
+  await page.setViewportSize({ width: viewport.width, height: viewport.height });
+  await page.goto(`${options.baseUrl ?? webBaseUrl}/analyze?job=${analyzeJobId}`);
+
+  const headlineText = await assertHeadlineSummary(page, source);
+  if (expectedText !== null) {
+    expect(headlineText).toBe(expectedText);
+
+    const normalizedText = headlineText.normalize("NFC");
+    expect(normalizedText.length).toBeGreaterThanOrEqual(expectedText.length);
+    expect(normalizedText).toBe(expectedText);
+  } else {
+    expect(
+      headlineText.length,
+      "headline summary must render text for the production regression job",
+    ).toBeGreaterThan(0);
+  }
+
+  await assertHeadlineNoClippingStyles(page);
+  const screenshotPath = testInfo.outputPath(
+    `headline-summary-${options.screenshotPrefix ?? source}-${viewport.name}.png`,
+  );
+  await page.screenshot({
+    path: screenshotPath,
+    fullPage: true,
+  });
+  expect(screenshotPath).toBeTruthy();
+
+  return headlineText;
 }
 
 async function assertHeadlinePrecedesSafety(page: Page): Promise<void> {
@@ -198,7 +343,7 @@ async function assertHeadlinePrecedesSafety(page: Page): Promise<void> {
 
 async function assertHeadlineSummary(
   page: Page,
-  source: "server" | "fallback",
+  source: HeadlineSource | undefined,
 ): Promise<string> {
   await expect(page.locator('[data-testid="analyze-layout"]')).toBeVisible({
     timeout: 30_000,
@@ -232,7 +377,18 @@ async function assertHeadlineSummary(
     `data-headline-kind must be 'stock' or 'synthesized' (got: ${JSON.stringify(kind)})`,
   ).toMatch(/^(stock|synthesized)$/);
 
-  await expect(headline).toHaveAttribute("data-headline-source", source);
+  const headlineSource = await headline.getAttribute("data-headline-source");
+  if (source === "server" || source === "fallback") {
+    expect(
+      headlineSource,
+      `headline source should be '${source}' for this scenario`,
+    ).toBe(source);
+  } else {
+    expect(
+      headlineSource,
+      "headline source should be explicit for analyzed jobs",
+    ).toMatch(/^(server|fallback)$/);
+  }
   await expect(
     text,
     "headline text must not render the read-more truncation chrome",
@@ -321,21 +477,61 @@ test.afterAll(async () => {
   }
 });
 
-test("mocked terminal poll payload renders server headline source", async ({
-  page,
-}) => {
-  await page.goto(`${webBaseUrl}/analyze?job=${SERVER_HEADLINE_JOB_ID}`);
-  const headlineText = await assertHeadlineSummary(page, "server");
-  expect(headlineText).toBe(SERVER_HEADLINE_TEXT);
-});
+test(
+  "mocked terminal poll payload renders server headline source",
+  async ({ page }, testInfo) => {
+    const headlineText = await assertHeadlineSummaryAtViewport(
+      page,
+      "server",
+      SERVER_HEADLINE_TEXT,
+      HEADLINE_VIEWPORTS[0],
+      testInfo,
+    );
+    expect(headlineText).toBe(SERVER_HEADLINE_TEXT);
+  },
+);
 
-test("mocked terminal poll payload without headline renders fallback source", async ({
-  page,
-}) => {
-  await page.goto(`${webBaseUrl}/analyze?job=${FALLBACK_HEADLINE_JOB_ID}`);
-  const headlineText = await assertHeadlineSummary(page, "fallback");
-  expect(headlineText).toBe("example.com — story title — appears clean");
-});
+test(
+  "mocked terminal poll payload without headline renders fallback source",
+  async ({ page }, testInfo) => {
+    const headlineText = await assertHeadlineSummaryAtViewport(
+      page,
+      "fallback",
+      FALLBACK_HEADLINE_TEXT,
+      HEADLINE_VIEWPORTS[0],
+      testInfo,
+    );
+    expect(headlineText).toBe(FALLBACK_HEADLINE_TEXT);
+  },
+);
+
+test(
+  "mocked terminal poll payload renders long server headline on mobile viewport",
+  async ({ page }, testInfo) => {
+    const headlineText = await assertHeadlineSummaryAtViewport(
+      page,
+      "server",
+      SERVER_HEADLINE_TEXT,
+      HEADLINE_VIEWPORTS[1],
+      testInfo,
+    );
+    expect(headlineText).toBe(SERVER_HEADLINE_TEXT);
+  },
+);
+
+test(
+  "mocked terminal poll payload without headline renders fallback source on mobile",
+  async ({ page }, testInfo) => {
+    const headlineText = await assertHeadlineSummaryAtViewport(
+      page,
+      "fallback",
+      FALLBACK_HEADLINE_TEXT,
+      HEADLINE_VIEWPORTS[1],
+      testInfo,
+    );
+    expect(headlineText).toBe(FALLBACK_HEADLINE_TEXT);
+  },
+);
 
 test("live upstream headline summary renders above safety-recommendation", async ({
   page,
@@ -357,4 +553,23 @@ test("live upstream headline summary renders above safety-recommendation", async
   expect(jobId, "AnalyzePage must be reached with ?job=<id>").toBeTruthy();
 
   await assertHeadlineSummary(page, "server");
+});
+
+test("post-deploy production headline regression for cited job at desktop and mobile", async ({
+  page,
+}, testInfo) => {
+  test.skip(
+    process.env.VIBECHECK_E2E_PROD_HEADLINE_REGRESSION !== "1" ||
+      process.env.VIBECHECK_E2E_PROD_HEADLINE_CACHE_CLEARED !== "1",
+    `Set VIBECHECK_E2E_PROD_HEADLINE_REGRESSION=1 and VIBECHECK_E2E_PROD_HEADLINE_CACHE_CLEARED=1 to run this post-deploy production regression for job ${PROD_HEADLINE_JOB_ID}. Before running, clear stale vibecheck_analyses / persisted headline data for the normalized source URL for that job.`,
+  );
+  test.setTimeout(180_000);
+
+  for (const viewport of HEADLINE_VIEWPORTS) {
+    await assertHeadlineSummaryAtViewport(page, "auto", null, viewport, testInfo, {
+      baseUrl: PROD_HEADLINE_BASE_URL,
+      jobId: PROD_HEADLINE_JOB_ID,
+      screenshotPrefix: "prod",
+    });
+  }
 });
