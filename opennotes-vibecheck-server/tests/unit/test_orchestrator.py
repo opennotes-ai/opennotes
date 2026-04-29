@@ -1012,6 +1012,100 @@ async def test_scrape_step_tier1_coral_graphql_failure_escalates_to_tier2_with_c
     )
 
 
+async def test_scrape_step_tier1_coral_graphql_failure_then_tier2_fail_raises_unsupported_site(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Coral GraphQL failure then tier-2 failure is terminal with both-tier reasons."""
+
+    from src.jobs import orchestrator
+
+    url = "https://example.com/post"
+    cache = _FakeScrapeCache()
+    scrape_client = _FakeFirecrawlClient(
+        scrape_result=_ok_scrape_result(
+            html=(
+                "<html><body>"
+                f"{_CORAL_HTML_FIXTURE}"
+                "<article><h1>Real Article</h1><p>Substantive article body.</p></article>"
+                "</body></html>"
+            )
+        )
+    )
+    interact_client = _FakeFirecrawlClient(
+        interact_result=_interstitial_scrape_result()
+    )
+
+    async def fetch_fails(*_args: Any, **_kwargs: Any) -> CoralComments:
+        raise CoralFetchError("temporary coral graphql error")
+
+    monkeypatch.setattr(orchestrator, "fetch_coral_comments", fetch_fails)
+
+    with pytest.raises(TerminalError) as exc_info:
+        await _call_scrape_step(url, scrape_client, interact_client, cache)
+
+    assert exc_info.value.error_code is ErrorCode.UNSUPPORTED_SITE
+    msg = exc_info.value.error_detail.lower()
+    assert "tier 1:" in msg
+    assert "coral_graphql_failed" in msg
+    assert "tier 2:" in msg
+    assert (url, "interact") not in cache.store
+    assert (url, "scrape") in cache.store
+    assert len(scrape_client.scrape_calls) == 1
+    assert len(interact_client.interact_calls) == 1
+    _, interact_kwargs = interact_client.interact_calls[0]
+    actions = interact_kwargs["actions"]
+    assert any(
+        action["type"] == "click"
+        and action["selector"] == 'button[data-testid="comments-show-comments-button"]'
+        for action in actions
+    )
+
+
+async def test_scrape_step_tier1_cache_hit_with_merged_coral_comments_skips_graphql(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Cached merged Tier-1 Coral row is reused; no scrape or GraphQL re-fetch."""
+
+    from src.jobs import orchestrator
+
+    url = "https://example.com/cached-coral-post"
+    cache = _FakeScrapeCache()
+    cache.store[(url, "scrape")] = CachedScrape(
+        markdown=(
+            "# Real Article\n\nSubstantive article body.\n\n"
+            "## Comments\n- Great discussion in the comments."
+        ),
+        html=(
+            "<html><body>"
+            f"{_CORAL_HTML_FIXTURE}"
+            "<article><h1>Real Article</h1><p>Substantive article body.</p></article>"
+            "</body></html>"
+        ),
+        metadata=ScrapeMetadata(status_code=200, source_url=url),
+        storage_key="cached-coral-marked-up",
+    )
+    scrape_client = _FakeFirecrawlClient(
+        scrape_result=lambda: (_ for _ in ()).throw(
+            AssertionError("scrape must not run on scrape cache hit")
+        )
+    )
+    interact_client = _FakeFirecrawlClient(interact_result=_ok_scrape_result())
+
+    async def fetch_forbidden(*_args: Any, **_kwargs: Any) -> CoralComments:
+        raise AssertionError(
+            "fetch_coral_comments should not run on scraped-tier cache hit"
+        )
+
+    monkeypatch.setattr(orchestrator, "fetch_coral_comments", fetch_forbidden)
+
+    result = await _call_scrape_step(url, scrape_client, interact_client, cache)
+
+    assert result.storage_key == "cached-coral-marked-up"
+    assert "Great discussion in the comments." in result.markdown
+    assert len(scrape_client.scrape_calls) == 0
+    assert len(interact_client.interact_calls) == 0
+
+
 async def test_scrape_step_tier1_non_coral_ok_does_not_call_graphql(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
