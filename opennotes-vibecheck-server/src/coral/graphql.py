@@ -8,6 +8,8 @@ from typing import Any
 import httpx
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
+from src.utils.url_security import InvalidURL, validate_public_http_url
+
 from .render import render_to_markdown
 
 CORAL_GRAPHQL_QUERY = """
@@ -132,7 +134,13 @@ async def fetch_coral_comments(
     retried while 4xx/GraphQL parse/schema errors are terminal.
     """
 
-    endpoint = graphql_origin.rstrip("/") + "/api/graphql"
+    raw_endpoint = graphql_origin.rstrip("/") + "/api/graphql"
+    try:
+        endpoint = validate_public_http_url(raw_endpoint)
+    except InvalidURL as exc:
+        raise CoralUnsupportedError(
+            f"coral graphql unsafe endpoint: {exc.reason}"
+        ) from exc
     body = _safe_request_body(story_url)
 
     last_error: Exception | None = None

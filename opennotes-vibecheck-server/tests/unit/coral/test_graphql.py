@@ -17,7 +17,7 @@ from src.coral.graphql import (
     fetch_coral_comments,
 )
 
-CORAL_ORIGIN = "https://coral.example.com"
+CORAL_ORIGIN = "https://example.com"
 STORY_URL = "https://www.npr.org/2026/04/29/example"
 GRAPHQL_URL = f"{CORAL_ORIGIN}/api/graphql"
 
@@ -130,3 +130,18 @@ async def test_fetch_coral_comments_schema_mismatch_is_unsupported(httpx_mock: H
 
     with pytest.raises(CoralUnsupportedError):
         await fetch_coral_comments(CORAL_ORIGIN, STORY_URL, timeout=10.0, max_attempts=2)
+
+
+async def test_fetch_coral_comments_rejects_private_graphql_origin(
+    httpx_mock: HTTPXMock,
+) -> None:
+    """Coral origins parsed from page HTML are untrusted and must not SSRF."""
+    with pytest.raises(CoralUnsupportedError, match="unsafe endpoint"):
+        await fetch_coral_comments(
+            "http://127.0.0.1:8080",
+            STORY_URL,
+            timeout=10.0,
+            max_attempts=2,
+        )
+
+    assert httpx_mock.get_requests() == []
