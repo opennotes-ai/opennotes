@@ -110,7 +110,10 @@ class _CoralMarkerParser(HTMLParser):
             values = params.get(key)
             if values:
                 story_url = values[0].strip()
-                return story_url if story_url else None
+                parsed = urlparse(story_url)
+                if parsed.scheme in {"http", "https"} and parsed.netloc:
+                    return story_url
+                return None
         return None
 
 

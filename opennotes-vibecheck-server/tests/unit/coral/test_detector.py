@@ -78,3 +78,29 @@ def test_returns_none_when_iframe_src_is_missing() -> None:
     </html>
     """
     assert detect_coral(html) is None
+
+
+@pytest.mark.parametrize(
+    "story_url",
+    [
+        "not-a-url",
+        "/relative/path",
+        "javascript:alert(1)",
+    ],
+)
+def test_returns_none_when_story_url_is_not_http_url(story_url: str) -> None:
+    html = f"""
+    <html>
+      <head>
+        <script src="https://assets.coralproject.net/assets/js/embed.js"></script>
+      </head>
+      <body>
+        <iframe
+          class="coral-talk-stream"
+          src="https://coral.npr.org/embed/stream?storyURL={story_url}"
+        ></iframe>
+      </body>
+    </html>
+    """
+
+    assert detect_coral(html) is None
