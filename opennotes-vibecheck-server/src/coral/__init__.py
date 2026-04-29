@@ -10,6 +10,7 @@ from .graphql import (
     CoralUnsupportedError,
     fetch_coral_comments,
 )
+from .merge import merge_coral_into_scrape
 from .render import render_to_markdown
 
 __all__ = [
@@ -20,5 +21,6 @@ __all__ = [
     "CoralUnsupportedError",
     "detect_coral",
     "fetch_coral_comments",
+    "merge_coral_into_scrape",
     "render_to_markdown",
 ]
