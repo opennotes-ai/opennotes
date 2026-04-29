@@ -245,9 +245,10 @@ Use a human-labeled gold set for shadow comparisons before any runtime switch.
     - `INTERSTITIAL`: precision ≥ 0.92, recall ≥ 0.90
     - `OK`: precision ≥ 0.93, recall ≥ 0.90
   - These four-class threshold gates apply only to schema outputs (`AUTH_WALL`, `INTERSTITIAL`, `LEGITIMATELY_EMPTY`, `OK`).
-  - Confirmer disagreement with current heuristic for same record:
-    - added latency budgets: `p95` ≤ 700ms, `p99` ≤ 1,400ms (same guardrails as above),
-    - disagreement rate ≤ 12% on full shadow set and ≤ 18% on `LOGIN_REDIRECT_MIXED`.
+  - Added latency budgets:
+    - `p95` ≤ 700ms, `p99` ≤ 1,400ms (same guardrails as above).
+  - Disagreement rate:
+    - ≤ 12% on full shadow set and ≤ 18% on `LOGIN_REDIRECT_MIXED`.
   - Confirmer call quality:
     - parse/schema reject rate ≤ 1.0%,
     - error + timeout + retry-fallback rate ≤ 2.0%.
