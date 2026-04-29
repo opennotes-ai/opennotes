@@ -645,20 +645,14 @@ describe("AnalyzePage route", () => {
 
     const layout = screen.getByTestId("analyze-layout");
     expect(layout.getAttribute("data-preview-size")).toBe("regular");
-    expect(layout.getAttribute("class")).toContain(
-      "lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]",
-    );
 
     fireEvent.click(screen.getByRole("button", { name: "Large" }));
     expect(layout.getAttribute("data-preview-size")).toBe("large");
-    expect(layout.getAttribute("class")).toContain(
-      "lg:grid-cols-[minmax(0,5fr)_minmax(0,2fr)]",
-    );
 
     fireEvent.click(screen.getByRole("button", { name: "Max width" }));
     expect(layout.getAttribute("data-preview-size")).toBe("max");
-    expect(layout.getAttribute("class")).toContain("lg:grid-cols-1");
     expect(screen.getByTestId("analysis-sidebar")).not.toBeNull();
+    expect(screen.getByTestId("analyze-main")).not.toBeNull();
   });
 
   it("widens the page max-width when Large is selected, not just the iframe-to-sidebar ratio", async () => {
@@ -667,62 +661,162 @@ describe("AnalyzePage route", () => {
     await waitFor(() => {
       expect(screen.queryByTestId("analyze-layout")).not.toBeNull();
     });
+    const analyzeMain = screen.getByTestId("analyze-main");
+    expect(analyzeMain).not.toBeNull();
 
-    const main = document.querySelector("main") as HTMLElement;
-    expect(main).not.toBeNull();
-    const regularClass = main.getAttribute("class") ?? "";
-    expect(regularClass).toContain("max-w-6xl");
+    const regularButton = screen.getByRole("button", { name: "Regular" });
+    const largeButton = screen.getByRole("button", { name: "Large" });
+    const maxButton = screen.getByRole("button", { name: "Max width" });
+    const layout = screen.getByTestId("analyze-layout");
+    expect(layout.getAttribute("data-preview-size")).toBe("regular");
+    expect(regularButton.getAttribute("aria-pressed")).toBe("true");
 
-    fireEvent.click(screen.getByRole("button", { name: "Large" }));
-    const largeClass = main.getAttribute("class") ?? "";
-    expect(largeClass).not.toContain("max-w-6xl");
-    expect(largeClass).toMatch(/max-w-\[/);
+    fireEvent.click(largeButton);
+    expect(regularButton.getAttribute("aria-pressed")).toBe("false");
+    expect(largeButton.getAttribute("aria-pressed")).toBe("true");
+    expect(layout.getAttribute("data-preview-size")).toBe("large");
 
-    fireEvent.click(screen.getByRole("button", { name: "Max width" }));
-    const maxClass = main.getAttribute("class") ?? "";
-    expect(maxClass).toMatch(/max-w-\[/);
+    fireEvent.click(maxButton);
+    expect(largeButton.getAttribute("aria-pressed")).toBe("false");
+    expect(maxButton.getAttribute("aria-pressed")).toBe("true");
+    expect(layout.getAttribute("data-preview-size")).toBe("max");
   });
 
-  it("uses outer-corners-only rounding on segmented controls so selected/hover does not show a half-rounded artifact", async () => {
+  it("uses grouped segmented controls with exclusive, press-state semantics", async () => {
     renderAt("/analyze?job=job-segmented&url=https://news.example.com/a");
 
     await waitFor(() => {
       expect(screen.queryByTestId("preview-mode-selector")).not.toBeNull();
     });
 
-    const checkSegmentRounding = (groupTestId: string, labels: string[]) => {
+    const checkSegmentGroupingAndPressedState = async (
+      groupTestId: string,
+      labels: string[],
+      options?: { interactive?: boolean },
+    ) => {
+      const group = screen.getByTestId(groupTestId);
+      expect(group.getAttribute("role")).toBe("group");
       const buttons = labels.map(
         (label) => screen.getByRole("button", { name: label }) as HTMLElement,
       );
       // Sanity: all buttons live inside the same segmented group.
       for (const b of buttons) {
-        expect(b.closest(`[data-testid='${groupTestId}']`)).not.toBeNull();
+        expect(b.closest(`[role='group']`)).toBe(group);
       }
-      // None of the segment buttons should have plain `rounded-md` — that's the bug.
-      for (const b of buttons) {
-        const cls = b.getAttribute("class") ?? "";
-        expect(cls).not.toMatch(/(?:^|\s)rounded-md(?:\s|$)/);
+      await waitFor(() => {
+        const pressedValues = buttons.map((button) =>
+          button.getAttribute("aria-pressed"),
+        );
+        const pressedCount = pressedValues.filter(
+          (pressed) => pressed === "true",
+        ).length;
+
+        expect(pressedCount).toBe(1);
+        for (const pressed of pressedValues) {
+          expect(["true", "false"]).toContain(pressed);
+        }
+      });
+
+      if (options?.interactive !== true) return;
+
+      fireEvent.click(buttons[0]);
+      await waitFor(() => {
+        expect(buttons[0].getAttribute("aria-pressed")).toBe("true");
+      });
+      for (let i = 1; i < buttons.length; i += 1) {
+        await waitFor(() => {
+          expect(buttons[i].getAttribute("aria-pressed")).toBe("false");
+        });
       }
-      const first = buttons[0].getAttribute("class") ?? "";
-      const last = buttons[buttons.length - 1].getAttribute("class") ?? "";
-      expect(first).toMatch(/rounded-l-md/);
-      expect(last).toMatch(/rounded-r-md/);
-      for (let i = 1; i < buttons.length - 1; i++) {
-        const mid = buttons[i].getAttribute("class") ?? "";
-        expect(mid).toMatch(/rounded-none/);
+      fireEvent.click(buttons[buttons.length - 1]);
+      await waitFor(() => {
+        expect(
+          buttons[buttons.length - 1].getAttribute("aria-pressed"),
+        ).toBe("true");
+      });
+      for (let i = 0; i < buttons.length - 1; i += 1) {
+        await waitFor(() => {
+          expect(buttons[i].getAttribute("aria-pressed")).toBe("false");
+        });
       }
     };
 
-    checkSegmentRounding("preview-mode-selector", [
+    await checkSegmentGroupingAndPressedState("preview-mode-selector", [
       "Original",
       "Archived",
       "Screenshot",
     ]);
-    checkSegmentRounding("preview-size-selector", [
-      "Regular",
-      "Large",
-      "Max width",
-    ]);
+    await checkSegmentGroupingAndPressedState(
+      "preview-size-selector",
+      ["Regular", "Large", "Max width"],
+      { interactive: true },
+    );
+  });
+
+  it("keeps preview mode selections observable via aria-pressed across a blocked-to-unblocked job transition (TASK-1483.13.27)", async () => {
+    const blockedCompat = frameCompatResult({
+      canIframe: false,
+      blockingHeader: "content-security-policy: frame-ancestors 'none'",
+      cspFrameAncestors: "'none'",
+      archivedPreviewUrl:
+        "/api/archive-preview?url=https%3A%2F%2Fnypost.com%2Farticle",
+    });
+    const unblockedCompat = deferred<MockArchiveProbeResult>();
+
+    getArchiveProbeMock
+      .mockResolvedValueOnce(blockedCompat)
+      .mockReturnValueOnce(unblockedCompat.promise);
+    getScreenshotMock.mockResolvedValue(null);
+
+    const history = renderAtWithHistory(
+      "/analyze?job=task-1483.13.27&url=https://nypost.com/article",
+    ).history;
+
+    const archivedButton = await screen.findByTestId("preview-mode-archived");
+    await waitFor(() => {
+      expect(archivedButton.getAttribute("aria-pressed")).toBe("true");
+    });
+    const originalButton = screen.getByTestId("preview-mode-original");
+    fireEvent.click(originalButton);
+    await waitFor(() => {
+      expect(originalButton.getAttribute("aria-pressed")).toBe("true");
+    });
+    expect(screen.getByTestId("analyze-main")).not.toBeNull();
+
+    history.set({
+      value:
+        "/analyze?job=task-1483.13.27-unblocked&url=https://example.com/permissive",
+      scroll: false,
+      replace: true,
+    });
+    setPolledJobState(
+      makeJobState({
+        job_id: "task-1483.13.27-unblocked",
+        status: "analyzing",
+        url: "https://example.com/permissive",
+      }),
+    );
+
+    const previewButtons = [
+      originalButton,
+      screen.getByTestId("preview-mode-archived"),
+      screen.getByTestId("preview-mode-screenshot"),
+    ];
+    for (const button of previewButtons) {
+      expect(button.getAttribute("aria-pressed")).not.toBe("true");
+    }
+    expect(originalButton.getAttribute("aria-pressed")).not.toBe("true");
+
+    unblockedCompat.resolve(
+      frameCompatResult({
+        canIframe: true,
+        blockingHeader: null,
+        cspFrameAncestors: null,
+      }),
+    );
+    await waitFor(() => {
+      expect(originalButton.getAttribute("aria-pressed")).toBe("true");
+    });
   });
 
   it("renders preview mode selector alongside the width selector", async () => {

@@ -3,6 +3,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { once } from "node:events";
 import { createServer, type Server } from "node:http";
 import { fileURLToPath } from "node:url";
+import { stopWebProcess } from "./_helpers/web-process";
 import {
   ALL_SECTION_SLUGS,
   QUIZLET_REFERENCE_URL,
@@ -21,6 +22,7 @@ let apiBaseUrl = "";
 let webBaseUrl = "";
 let webProcess: ChildProcess | null = null;
 let webLogs = "";
+const WEB_ROOT = fileURLToPath(new URL("../..", import.meta.url));
 
 async function listenOnRandomPort(server: Server): Promise<number> {
   server.listen(0, "127.0.0.1");
@@ -286,7 +288,7 @@ test.beforeAll(async () => {
     "pnpm",
     ["run", "dev", "--port", String(webPort), "--host", "127.0.0.1"],
     {
-      cwd: fileURLToPath(new URL("../..", import.meta.url)),
+      cwd: WEB_ROOT,
       env: {
         ...process.env,
         VIBECHECK_SERVER_URL: apiBaseUrl,
@@ -311,8 +313,8 @@ test.beforeAll(async () => {
 });
 
 test.afterAll(async () => {
-  if (webProcess && !webProcess.killed) {
-    webProcess.kill("SIGTERM");
+  if (webProcess) {
+    await stopWebProcess(webProcess);
   }
   if (apiServer) {
     await new Promise<void>((resolve) => apiServer.close(() => resolve()));
