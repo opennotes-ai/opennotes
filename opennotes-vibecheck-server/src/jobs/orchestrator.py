@@ -706,7 +706,7 @@ def _tier2_actions_for(coral_signal: CoralSignal | None) -> list[dict[str, Any]]
         {
             "type": "executeJavascript",
             "script": """
-                () => {
+                (() => {
                     const selectors = [
                         'button[data-testid="comments-show-comments-button"]',
                         'button[data-gtm-class="open-community"]',
@@ -724,7 +724,7 @@ def _tier2_actions_for(coral_signal: CoralSignal | None) -> list[dict[str, Any]]
                     }
 
                     return "no-op";
-                }
+                })();
             """,
         },
         {"type": "wait", "milliseconds": 3000},

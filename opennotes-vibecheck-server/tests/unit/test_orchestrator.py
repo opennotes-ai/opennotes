@@ -7,7 +7,10 @@ without standing up Postgres or the FastAPI app.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
+import shutil
+import subprocess
 from datetime import UTC, datetime
 from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock
@@ -867,6 +870,61 @@ _CORAL_DETECTION_HTML_FIXTURE = """
 </html>"""
 
 
+def _eval_execute_javascript(script: str, *, match_selectors: list[str] | tuple[str, ...]) -> tuple[str, str | None]:
+    """Run a generated executeJavascript payload against a stubbed document."""
+
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("node.js is required to execute generated executeJavascript payloads")
+
+    driver = r"""
+const payload = JSON.parse(process.argv[1]);
+const matchingSelectors = new Set(payload.matchingSelectors);
+let clickedSelector = null;
+
+global.document = {
+    querySelector(selector) {
+        if (!matchingSelectors.has(selector)) {
+            return null;
+        }
+
+        return {
+            click() {
+                clickedSelector = selector;
+            },
+        };
+    },
+};
+
+const result = eval(payload.script);
+const output = {
+    result: typeof result === "string" ? result : String(result),
+    clickedSelector,
+};
+console.log(JSON.stringify(output));
+"""
+
+    completed = subprocess.run(
+        [
+            node,
+            "-e",
+            driver,
+            json.dumps(
+                {
+                    "script": script,
+                    "matchingSelectors": list(match_selectors),
+                }
+            ),
+        ],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+
+    output = json.loads(completed.stdout.strip())
+    return output["result"], output["clickedSelector"]
+
+
 def _sample_coral_signal() -> CoralSignal:
     return CoralSignal(
         iframe_src=(
@@ -893,13 +951,21 @@ def test_tier2_actions_for_coral_signal_expands_comment_stream() -> None:
     assert actions[1] == {"type": "scroll", "direction": "down"}
     assert actions[2]["type"] == "executeJavascript"
     js = actions[2]["script"]
-    assert "clicked " in js
-    assert "no-op" in js
     assert "button[data-testid=\"comments-show-comments-button\"]" in js
     assert "button[data-gtm-class=\"open-community\"]" in js
     assert "#coral_talk_stream button" in js
     assert "#coral_thread button" in js
     assert "[data-embed-coral] button" in js
+    returned, clicked = _eval_execute_javascript(
+        js,
+        match_selectors=["button[data-gtm-class=\"open-community\"]"],
+    )
+    assert clicked == 'button[data-gtm-class="open-community"]'
+    assert returned == 'clicked button[data-gtm-class="open-community"]'
+
+    returned, clicked = _eval_execute_javascript(js, match_selectors=[])
+    assert clicked is None
+    assert returned == "no-op"
     assert actions[3] == {"type": "wait", "milliseconds": 3000}
     assert actions[4] == {"type": "scroll", "direction": "down"}
     assert len(actions) == 5
