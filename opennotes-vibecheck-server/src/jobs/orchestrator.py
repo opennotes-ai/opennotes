@@ -866,7 +866,20 @@ async def _run_tier1(  # noqa: PLR0911, PLR0912
                         and isinstance(iframe_scrape.markdown, str)
                         and iframe_scrape.markdown.strip()
                     ):
-                        iframe_markdown = iframe_scrape.markdown
+                        final_iframe_source_url = (
+                            iframe_scrape.metadata.source_url
+                            if iframe_scrape.metadata
+                            else None
+                        )
+                        if final_iframe_source_url is None:
+                            iframe_markdown = iframe_scrape.markdown
+                        else:
+                            try:
+                                revalidate_redirect_target(final_iframe_source_url)
+                            except InvalidURL:
+                                pass
+                            else:
+                                iframe_markdown = iframe_scrape.markdown
 
             if iframe_markdown is not None:
                 merged = merge_coral_into_scrape(fresh, iframe_markdown)
