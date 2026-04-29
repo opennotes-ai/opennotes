@@ -34,8 +34,8 @@ Constraints:
 
 from __future__ import annotations
 
-from html.parser import HTMLParser
 from enum import StrEnum
+from html.parser import HTMLParser
 from urllib.parse import urlparse
 
 from src.firecrawl_client import ScrapeResult

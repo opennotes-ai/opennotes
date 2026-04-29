@@ -1086,7 +1086,9 @@ async def _run_tier2(
             scrape_cache, url, fresh, tier="interact"
         )
         return _Tier2Outcome(
-            cached=cached_after_t2, tier2_reason="ok", final_classification="ok"
+            cached=cached_after_t2,
+            tier2_reason="ok",
+            final_classification="ok",
         )
     return _Tier2Outcome(
         cached=None,

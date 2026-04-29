@@ -97,8 +97,17 @@ def test_status_code_401_classifies_auth_wall() -> None:
     assert classify_scrape(result) is ScrapeQuality.AUTH_WALL
 
 
-@pytest.mark.parametrize("path", ("/login", "/signin", "/sign-in"))
-@pytest.mark.parametrize("quote", ("\"", "'"))
+@pytest.mark.parametrize(
+    ("path", "quote"),
+    [
+        ("/login", "\""),
+        ("/signin", "\""),
+        ("/sign-in", "\""),
+        ("/login", "'"),
+        ("/signin", "'"),
+        ("/sign-in", "'"),
+    ],
+)
 def test_root_relative_form_action_variants_classify_auth_wall(
     path: str, quote: str
 ) -> None:
@@ -114,8 +123,17 @@ def test_root_relative_form_action_variants_classify_auth_wall(
     assert classify_scrape(result) is ScrapeQuality.AUTH_WALL
 
 
-@pytest.mark.parametrize("path", ("/login", "/signin", "/sign-in"))
-@pytest.mark.parametrize("quote", ("\"", "'"))
+@pytest.mark.parametrize(
+    ("path", "quote"),
+    [
+        ("/login", "\""),
+        ("/signin", "\""),
+        ("/sign-in", "\""),
+        ("/login", "'"),
+        ("/signin", "'"),
+        ("/sign-in", "'"),
+    ],
+)
 def test_absolute_form_action_variants_classify_auth_wall(
     path: str, quote: str
 ) -> None:
