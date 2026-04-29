@@ -194,14 +194,22 @@ def get_scrape_cache() -> SupabaseScrapeCache:
 
 
 async def _has_cached_archive(url: str) -> bool:
-    cached, _ = await _get_cached_archive(url)
+    try:
+        scrape_cache = get_scrape_cache()
+    except Exception as exc:
+        logger.info("archive cache lookup failed for %s: %s", url, exc)
+        return False
+
+    cached, _ = await _get_cached_archive(url, scrape_cache)
     return bool(cached)
 
 
-async def _get_cached_archive(url: str) -> tuple[CachedScrape | None, str | None]:
+async def _get_cached_archive(
+    url: str, scrape_cache: SupabaseScrapeCache
+) -> tuple[CachedScrape | None, str | None]:
     try:
         for tier in _ARCHIVE_CACHE_TIERS:
-            cached = await get_scrape_cache().get(url, tier=tier)
+            cached = await scrape_cache.get(url, tier=tier)
             if cached and cached.html:
                 return cached, tier
         return None, None
@@ -287,7 +295,7 @@ async def archive_preview(
     _validate_http_url(url)
     parsed_job_id = _parse_archive_job_id(job_id)
     scrape_cache = get_scrape_cache()
-    cached, cached_tier = await _get_cached_archive(url)
+    cached, cached_tier = await _get_cached_archive(url, scrape_cache)
     if cached and cached.html:
         # TODO: If Firecrawl exposes a hosted archive URL in CachedScrape metadata,
         # return a redirect to that URL instead of serving cached sanitized HTML.

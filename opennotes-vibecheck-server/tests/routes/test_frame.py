@@ -629,10 +629,11 @@ class TestArchivePreview:
             def __init__(self) -> None:
                 self.put_url: str | None = None
                 self.put_tier: str | None = None
+                self.get_calls: list[str] = []
 
             async def get(self, url: str, *, tier: str = "scrape") -> None:
                 assert url == "https://example.com/fresh"
-                assert tier == "scrape"
+                self.get_calls.append(tier)
 
             async def put(
                 self,
@@ -666,6 +667,7 @@ class TestArchivePreview:
         assert resp.status_code == 200
         assert resp.text == "<article>Fresh archive</article>"
         assert cache.put_url == "https://example.com/fresh"
+        assert cache.get_calls == ["scrape", "interact"]
 
     def test_generated_html_with_job_id_annotates_response_but_not_cache(
         self, client: TestClient
