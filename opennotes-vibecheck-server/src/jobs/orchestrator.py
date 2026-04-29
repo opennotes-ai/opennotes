@@ -64,6 +64,7 @@ from urllib.parse import urlparse
 from uuid import UUID, uuid4
 
 import asyncpg
+import httpx
 import logfire
 
 from src.analyses.claims._claims_schemas import ClaimsReport
@@ -113,7 +114,7 @@ from src.coral import (
     fetch_coral_comments,
     merge_coral_into_scrape,
 )
-from src.firecrawl_client import FirecrawlBlocked, FirecrawlClient, FirecrawlError
+from src.firecrawl_client import FirecrawlBlocked, FirecrawlClient, FirecrawlError, ScrapeResult
 from src.jobs.finalize import maybe_finalize_job
 from src.jobs.scrape_quality import ScrapeQuality, classify_scrape
 from src.jobs.section_defaults import empty_section_data as _empty_section_data
@@ -131,7 +132,11 @@ from src.monitoring_metrics import (
     SECTION_FAILURES,
     classify_error,
 )
-from src.utils.url_security import InvalidURL, revalidate_redirect_target
+from src.utils.url_security import (
+    InvalidURL,
+    revalidate_redirect_target,
+    validate_public_http_url,
+)
 from src.utterances.errors import (
     TransientExtractionError,
     UtteranceExtractionError,
@@ -153,6 +158,18 @@ transient extraction failure, flip the row to TerminalError(UPSTREAM_ERROR)
 so the user sees a stable error instead of waiting on a silently-dropped 3rd
 delivery. Subtract 1 to keep the terminal flip strictly before exhaustion.
 """
+
+
+_CORAL_PARTIAL_MARKERS: tuple[str, ...] = (
+    "coral_talk_stream",
+    'data-gtm-class="open-community"',
+    'data-gtm-class=\'open-community\'',
+    'comments-show-comments-button',
+    "coral-talk-stream",
+    "data-embed-coral",
+)
+
+_CORAL_DETECTION_FETCH_TIMEOUT_SECONDS: float = 1.5
 
 
 class TransientError(Exception):
@@ -609,6 +626,64 @@ def _build_firecrawl_tier1_client(settings: Settings) -> FirecrawlClient:
     return FirecrawlClient(api_key=settings.FIRECRAWL_API_KEY, max_attempts=1)
 
 
+def _has_partial_coral_marker(html: str) -> bool:
+    """Return True when the cleaned HTML has hints that a Coral embed is present.
+
+    The fast /scrape pass strips more aggressive script/state metadata than
+    full-page fetches. We treat these as "partial" Coral markers and only
+    escalate to a bounded direct fetch when they are present and primary
+    detection fails.
+    """
+    lowered = html.lower()
+    return any(marker in lowered for marker in _CORAL_PARTIAL_MARKERS)
+
+
+async def _fetch_coral_detection_html(url: str) -> str | None:
+    """Fetch article HTML directly for a bounded Coral signature check.
+
+    Only public URLs are fetched and failures are intentionally swallowed so
+    detector misses are never terminal.
+    """
+    try:
+        safe_url = validate_public_http_url(url)
+    except InvalidURL:
+        return None
+
+    timeout = httpx.Timeout(_CORAL_DETECTION_FETCH_TIMEOUT_SECONDS)
+    try:
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            response = await client.get(safe_url)
+            response.raise_for_status()
+    except Exception:
+        return None
+
+    content = response.text
+    if not content:
+        return None
+    return content
+
+
+async def _detect_coral_signal(url: str, scrape: ScrapeResult) -> CoralSignal | None:
+    """Run staged Coral detection on scraped and optionally direct HTML."""
+    candidates = [scrape.raw_html or "", scrape.html or ""]
+
+    has_partial_marker = any(_has_partial_coral_marker(html) for html in candidates)
+
+    for html in candidates:
+        signal = detect_coral(html)
+        if signal is not None:
+            return signal
+
+    if not has_partial_marker:
+        return None
+
+    full_html = await _fetch_coral_detection_html(url)
+    if full_html is None:
+        return None
+
+    return detect_coral(full_html)
+
+
 # Tier 2 /interact action list. Default to a single 3s wait so JS-rendered
 # pages have a chance to load before content is captured. Kept conservative
 # — extending the action list would let the ladder masquerade as a richer
@@ -629,8 +704,28 @@ def _tier2_actions_for(coral_signal: CoralSignal | None) -> list[dict[str, Any]]
         {"type": "wait", "milliseconds": 2000},
         {"type": "scroll", "direction": "down"},
         {
-            "type": "click",
-            "selector": 'button[data-testid="comments-show-comments-button"]',
+            "type": "executeJavascript",
+            "function": """
+                () => {
+                    const selectors = [
+                        'button[data-testid="comments-show-comments-button"]',
+                        'button[data-gtm-class="open-community"]',
+                        '#coral_talk_stream button',
+                        '#coral_thread button',
+                        '[data-embed-coral] button',
+                    ];
+
+                    for (const selector of selectors) {
+                        const button = document.querySelector(selector);
+                        if (button) {
+                            button.click();
+                            return `clicked ${selector}`;
+                        }
+                    }
+
+                    return "no-op";
+                }
+            """,
         },
         {"type": "wait", "milliseconds": 3000},
         {"type": "scroll", "direction": "down"},
@@ -707,7 +802,7 @@ async def _run_tier1(  # noqa: PLR0911
     try:
         fresh = await scrape_client.scrape(
             url,
-            formats=["markdown", "html", "screenshot@fullPage"],
+            formats=["markdown", "html", "rawHtml", "screenshot@fullPage"],
             only_main_content=True,
         )
     except FirecrawlBlocked as exc:
@@ -729,7 +824,7 @@ async def _run_tier1(  # noqa: PLR0911
 
     quality = classify_scrape(fresh)
     if quality is ScrapeQuality.OK:
-        signal = detect_coral(fresh.html or "")
+        signal = await _detect_coral_signal(url, fresh)
         if signal is None:
             cached_t1 = await _cache_put_or_keyless(
                 scrape_cache, url, fresh, tier="scrape"

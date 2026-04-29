@@ -844,6 +844,28 @@ _CORAL_HTML_FIXTURE = """\
 <script src="https://assets.coralproject.net/assets/js/embed.js"></script>
 <iframe class="coral-talk-stream" src="https://coral.example.com/embed/stream?storyURL=https%3A%2F%2Fexample.com%2Fpost"></iframe>"""
 
+_PARTIAL_CORAL_HTML_FIXTURE = """
+<div id="coral_talk_stream">
+  <button class="comment-button" data-gtm-class="open-community">2 Kommentare</button>
+</div>"""
+
+_CORAL_DETECTION_HTML_FIXTURE = """
+<html>
+  <head>
+    <link rel="canonical" href="https://www.tagesspiegel.de/2026/04/29/example"/>
+    <script src="https://coral.tagesspiegel.de/static/embed.js"></script>
+    <script>
+      window.__INITIAL_STATE__ = {"communityHostname":"coral.tagesspiegel.de"};
+    </script>
+  </head>
+  <body>
+    <article>
+      <h1>Tagesspiegel Article</h1>
+      <p>Visible article body</p>
+    </article>
+  </body>
+</html>"""
+
 
 def _sample_coral_signal() -> CoralSignal:
     return CoralSignal(
@@ -869,10 +891,15 @@ def test_tier2_actions_for_coral_signal_expands_comment_stream() -> None:
 
     assert actions[0] == {"type": "wait", "milliseconds": 2000}
     assert actions[1] == {"type": "scroll", "direction": "down"}
-    assert actions[2] == {
-        "type": "click",
-        "selector": 'button[data-testid="comments-show-comments-button"]',
-    }
+    assert actions[2]["type"] == "executeJavascript"
+    js = actions[2]["function"]
+    assert "clicked " in js
+    assert "no-op" in js
+    assert "button[data-testid=\"comments-show-comments-button\"]" in js
+    assert "button[data-gtm-class=\"open-community\"]" in js
+    assert "#coral_talk_stream button" in js
+    assert "#coral_thread button" in js
+    assert "[data-embed-coral] button" in js
     assert actions[3] == {"type": "wait", "milliseconds": 3000}
     assert actions[4] == {"type": "scroll", "direction": "down"}
     assert len(actions) == 5
@@ -915,11 +942,18 @@ async def test_run_tier2_records_coral_specific_actions() -> None:
     assert len(interact_client.interact_calls) == 1
     _, interact_kwargs = interact_client.interact_calls[0]
     actions = interact_kwargs["actions"]
-    assert any(
-        action["type"] == "click"
-        and action["selector"] == 'button[data-testid="comments-show-comments-button"]'
+    js_actions = [
+        action
         for action in actions
-    )
+        if action["type"] == "executeJavascript"
+    ]
+    assert len(js_actions) == 1
+    js = js_actions[0]["function"]
+    assert "button[data-testid=\"comments-show-comments-button\"]" in js
+    assert "button[data-gtm-class=\"open-community\"]" in js
+    assert "#coral_talk_stream button" in js
+    assert "#coral_thread button" in js
+    assert "[data-embed-coral] button" in js
     assert sum(1 for action in actions if action["type"] == "wait") >= 2
     assert sum(1 for action in actions if action["type"] == "scroll") >= 2
 
@@ -972,6 +1006,60 @@ async def test_scrape_step_tier1_coral_detection_merges_graphql_comments(
     assert len(interact_client.interact_calls) == 0
 
 
+async def test_scrape_step_tier1_partial_coral_markers_triggers_direct_html_fetch_for_detection(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Tagesspiegel-style partial Coral evidence triggers direct fetch and GraphQL merge."""
+
+    from src.jobs import orchestrator
+
+    url = "https://www.tagesspiegel.de/example/article"
+    cache = _FakeScrapeCache()
+    scrape_client = _FakeFirecrawlClient(
+        scrape_result=_ok_scrape_result(
+            body="Substantive article body. " * 20,
+            html=(
+                "<html><body>"
+                f"{_PARTIAL_CORAL_HTML_FIXTURE}"
+                "<article><h1>Real Article</h1><p>Substantive article body.</p></article>"
+                "</body></html>"
+            ),
+        )
+    )
+    interact_client = _FakeFirecrawlClient(interact_result=_ok_scrape_result())
+
+    async def fetch_detection_html(_url: str) -> str:
+        return _CORAL_DETECTION_HTML_FIXTURE
+
+    monkeypatch.setattr(
+        orchestrator,
+        "_fetch_coral_detection_html",
+        fetch_detection_html,
+    )
+
+    async def fetch_ok(origin: str, story_url: str) -> CoralComments:
+        assert origin == "https://coral.tagesspiegel.de"
+        assert story_url == "https://www.tagesspiegel.de/2026/04/29/example"
+        return CoralComments(
+            comments_markdown="## Comments\n- Great discussion in the comments.",
+            raw_count=1,
+            fetched_at=datetime.now(UTC),
+        )
+
+    monkeypatch.setattr(orchestrator, "fetch_coral_comments", fetch_ok)
+
+    result = await _call_scrape_step(url, scrape_client, interact_client, cache)
+
+    assert "Real Article" in result.markdown
+    assert "Substantive article body." in result.markdown
+    assert "## Comments" in result.markdown
+    assert "Great discussion in the comments." in result.markdown
+    assert (url, "scrape") in cache.store
+    assert (url, "scrape") in cache.puts
+    assert "## Comments" in cache.store[(url, "scrape")].markdown
+    assert len(interact_client.interact_calls) == 0
+
+
 async def test_scrape_step_tier1_coral_graphql_failure_escalates_to_tier2_with_coral_click(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1011,11 +1099,7 @@ async def test_scrape_step_tier1_coral_graphql_failure_escalates_to_tier2_with_c
     assert "Tier 2 rendered comments." in cache.store[(url, "interact")].markdown
     _, interact_kwargs = interact_client.interact_calls[0]
     actions = interact_kwargs["actions"]
-    assert any(
-        action["type"] == "click"
-        and action["selector"] == 'button[data-testid="comments-show-comments-button"]'
-        for action in actions
-    )
+    assert any(action["type"] == "executeJavascript" for action in actions)
 
 
 async def test_scrape_step_tier1_coral_graphql_failure_then_tier2_fail_raises_unsupported_site(
@@ -1062,11 +1146,7 @@ async def test_scrape_step_tier1_coral_graphql_failure_then_tier2_fail_raises_un
     assert len(interact_client.interact_calls) == 1
     _, interact_kwargs = interact_client.interact_calls[0]
     actions = interact_kwargs["actions"]
-    assert any(
-        action["type"] == "click"
-        and action["selector"] == 'button[data-testid="comments-show-comments-button"]'
-        for action in actions
-    )
+    assert any(action["type"] == "executeJavascript" for action in actions)
 
 
 async def test_scrape_step_tier1_cache_hit_with_merged_coral_comments_skips_graphql(
@@ -1130,7 +1210,11 @@ async def test_scrape_step_tier1_non_coral_ok_does_not_call_graphql(
     async def fetch_forbidden(*_args: Any, **_kwargs: Any) -> CoralComments:
         raise AssertionError("fetch_coral_comments should not run for non-coral pages")
 
+    async def fetch_not_called(*_url: str) -> str:
+        raise AssertionError("direct Coral detection fetch should not run for non-coral pages")
+
     monkeypatch.setattr(orchestrator, "fetch_coral_comments", fetch_forbidden)
+    monkeypatch.setattr(orchestrator, "_fetch_coral_detection_html", fetch_not_called)
 
     result = await _call_scrape_step(url, scrape_client, interact_client, cache)
 
