@@ -10,7 +10,7 @@ Coral markers:
    alongside a community hostname and canonical article URL from page metadata.
 3. Iframe `src` contains ``/embed/stream`` and has a `storyURL` query
    parameter with a usable URL.
-3. Optional corroborating markers such as ``coral-talk-stream`` (class name)
+4. Optional corroborating markers such as ``coral-talk-stream`` (class name)
    or ``data-embed-coral`` attributes are accepted but do not by themselves
    cause detection.
 
@@ -48,6 +48,7 @@ class _CoralMarkerParser(HTMLParser):
         self._has_script_signal = False
         self._has_optional_signal = False
         self._has_static_script_signal = False
+        self._static_script_origins: list[str] = []
         self._canonical_urls: list[str] = []
         self._community_hostnames: list[str] = []
         self._canonical_urls_from_state: list[str] = []
@@ -76,9 +77,10 @@ class _CoralMarkerParser(HTMLParser):
             self._has_script_signal = self._has_script_signal or self._script_src_matches(
                 src
             )
-            self._has_static_script_signal = (
-                self._has_static_script_signal or self._static_script_src_matches(src)
-            )
+            static_script_origin = self._static_script_src_origin(src)
+            if static_script_origin is not None:
+                self._has_static_script_signal = True
+                self._static_script_origins.append(static_script_origin)
             return
 
         if normalized_tag == "link":
@@ -115,28 +117,30 @@ class _CoralMarkerParser(HTMLParser):
         if not self._has_static_script_signal:
             return None
 
-        canonical_url = self._first_valid_url(self._canonical_urls + self._canonical_urls_from_state)
+        canonical_url = self._first_valid_url(
+            self._canonical_urls + self._canonical_urls_from_state
+        )
         if not canonical_url:
             return None
 
-        community_hostname = self._first_usable_community_host()
-        if not community_hostname:
-            return None
+        for community_host in self._community_hostnames:
+            community_origin = self._canonical_to_origin(community_host)
+            if not community_origin:
+                continue
 
-        return {
-            "iframe_src": (
-                f"{community_hostname}/embed/stream?"
-                f"{urlencode({'asset_url': canonical_url})}"
-            ),
-            "graphql_origin": community_hostname,
-            "story_url": canonical_url,
-        }
+            matching_script_origin = self._matching_static_script_origin(community_origin)
+            if not matching_script_origin:
+                continue
 
-    def _first_usable_community_host(self) -> str | None:
-        for host in self._community_hostnames:
-            candidate = self._canonical_to_origin(host)
-            if candidate:
-                return candidate
+            return {
+                "iframe_src": (
+                    f"{matching_script_origin}/embed/stream?"
+                    f"{urlencode({'asset_url': canonical_url})}"
+                ),
+                "graphql_origin": matching_script_origin,
+                "story_url": canonical_url,
+            }
+
         return None
 
     def _first_valid_url(self, candidates: list[str]) -> str | None:
@@ -167,10 +171,22 @@ class _CoralMarkerParser(HTMLParser):
         src_lower = src.lower()
         return any(marker in src_lower for marker in _CORAL_SCRIPT_MARKERS)
 
-    def _static_script_src_matches(self, src: str | None) -> bool:
+    def _static_script_src_origin(self, src: str | None) -> str | None:
         if not src:
-            return False
-        return _CORAL_STATIC_EMBED_MARKER in src.lower()
+            return None
+        if _CORAL_STATIC_EMBED_MARKER not in src.lower():
+            return None
+
+        parsed = urlparse(src)
+        if parsed.scheme in {"http", "https"} and parsed.netloc:
+            return f"{parsed.scheme}://{parsed.netloc}"
+        return None
+
+    def _matching_static_script_origin(self, candidate: str) -> str | None:
+        for origin in self._static_script_origins:
+            if origin == candidate:
+                return origin
+        return None
 
     def _contains_optional_markers(self, attrs: dict[str, str | None]) -> bool:
         if "data-embed-coral" in attrs:

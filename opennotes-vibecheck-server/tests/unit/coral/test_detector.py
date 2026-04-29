@@ -130,6 +130,21 @@ def test_returns_none_when_static_embed_community_host_is_unusable() -> None:
     assert detect_coral(html) is None
 
 
+def test_rejects_static_embed_when_script_origin_does_not_match_community_host() -> None:
+    html = """
+    <html>
+      <head>
+        <link rel="canonical" href="https://example.com/story"/>
+        <script src="https://cdn.example.com/static/embed.js"></script>
+        <script>
+          window.__INITIAL_STATE__ = {"communityHostname":"comments.example.com"};
+        </script>
+      </head>
+    </html>
+    """
+    assert detect_coral(html) is None
+
+
 def test_detects_static_embed_from_initial_state_canonical_url() -> None:
     html = """
     <html>
