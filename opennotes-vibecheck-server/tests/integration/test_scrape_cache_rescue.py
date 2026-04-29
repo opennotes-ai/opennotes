@@ -16,6 +16,7 @@ assertion.
 """
 from __future__ import annotations
 
+import asyncio
 from datetime import UTC, datetime
 from typing import Any
 
@@ -23,9 +24,11 @@ import httpx
 import pytest
 
 from src.analyses.schemas import PageKind, SectionSlug
+from src.firecrawl_client import ScrapeMetadata, ScrapeResult
 from src.utterances.schema import UtterancesPayload
 
 from .conftest import (
+    AsyncpgScrapeCache,
     RecordingFirecrawlClient,
     insert_pending_job,
     read_job,
@@ -54,6 +57,119 @@ def _payload(url: str) -> UtterancesPayload:
             ],
         }
     )
+
+
+async def test_cache_get_uses_final_url_from_row(
+    db_pool: Any,
+    scrape_cache: Any,
+) -> None:
+    target_url = "https://example.com/final-url-cache"
+    await scrape_cache.put(
+        target_url,
+        ScrapeResult(
+            markdown="cache body",
+            metadata=ScrapeMetadata(
+                title="Resolved cache source",
+                source_url="https://final.example/cached",
+            ),
+        ),
+        tier="scrape",
+    )
+    cached = await scrape_cache.get(target_url, tier="scrape")
+    assert cached is not None
+    assert cached.metadata is not None
+    assert cached.metadata.source_url == "https://final.example/cached"
+
+
+async def test_evict_with_tier_none_tombstones_all_tiers(
+    db_pool: Any,
+    scrape_cache: Any,
+) -> None:
+    target_url = "https://example.com/tier-none-evict"
+    await scrape_cache.put(
+        target_url,
+        ScrapeResult(
+            markdown="scrape tier body",
+            metadata=ScrapeMetadata(title="Scrape Tier"),
+        ),
+        tier="scrape",
+    )
+    await scrape_cache.put(
+        target_url,
+        ScrapeResult(
+            markdown="interact tier body",
+            metadata=ScrapeMetadata(title="Interact Tier"),
+        ),
+        tier="interact",
+    )
+    await scrape_cache.evict(target_url, tier=None)
+
+    async with db_pool.acquire() as conn:
+        rows = await conn.fetch(
+            """
+            SELECT tier, markdown, evicted_at
+            FROM vibecheck_scrapes
+            WHERE normalized_url = $1
+            """,
+            target_url,
+        )
+    assert len(rows) == 2
+    assert {row["tier"] for row in rows} == {"scrape", "interact"}
+    assert all(row["evicted_at"] is not None for row in rows)
+    assert all(row["markdown"] is None for row in rows)
+
+
+async def test_asyncpg_cache_fence_prevents_resurrection_with_concurrent_evict(
+    db_pool: Any,
+) -> None:
+    target_url = "https://example.com/fence-resurrection"
+    pre_fence = asyncio.Event()
+    release_fence = asyncio.Event()
+    timeout = 5.0
+
+    async def before_fence_read() -> None:
+        pre_fence.set()
+        await release_fence.wait()
+
+    cache = AsyncpgScrapeCache(
+        db_pool, before_fence_read=before_fence_read
+    )
+
+    put_task = asyncio.create_task(
+        cache.put(
+            target_url,
+            ScrapeResult(
+                markdown="resurrect-me",
+                metadata=ScrapeMetadata(title="Resurrect", source_url=target_url),
+            ),
+        )
+    )
+    await asyncio.wait_for(pre_fence.wait(), timeout=timeout)
+    await cache.evict(target_url, tier="scrape")
+    release_fence.set()
+    result = await asyncio.wait_for(put_task, timeout=timeout)
+
+    assert result.storage_key is None
+
+    async with db_pool.acquire() as conn:
+        row = await conn.fetchrow(
+            """
+            SELECT markdown, evicted_at
+            FROM vibecheck_scrapes
+            WHERE normalized_url = $1 AND tier = $2
+            """,
+            target_url,
+            "scrape",
+        )
+        rescue_row = await conn.fetchrow(
+            "SELECT markdown FROM vibecheck_scrapes WHERE normalized_url = $1",
+            target_url,
+        )
+    assert row is not None
+    assert row["markdown"] is None
+    assert row["evicted_at"] is not None
+    assert rescue_row is not None
+    assert await cache.get(target_url, tier="scrape") is None
 
 
 async def test_second_submit_within_ttl_reuses_scrape_cache(
