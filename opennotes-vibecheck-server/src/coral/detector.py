@@ -81,7 +81,7 @@ class _CoralMarkerParser(HTMLParser):
     def iframe_data(self) -> list[dict[str, Any]]:
         return self._iframe_data
 
-    def handle_starttag(self, tag: str, attrs: list[tuple[str | None, str | None]]) -> None:
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         normalized_tag = tag.lower()
         attrs_map: dict[str, str | None] = {
             str(name).lower(): value for name, value in attrs if name is not None

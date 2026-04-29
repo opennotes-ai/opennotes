@@ -26,6 +26,7 @@ def test_merge_appends_comments_markdown_and_html_when_both_exist() -> None:
     merged = merge_coral_into_scrape(scrape, comments)
 
     assert merged.markdown == "Article body.\n\n## Comments\n- [abc] author=alice created_at=2026-04-29T12:00:00+00:00 parent=null\n  Great thread."
+    assert scrape.html is not None
     assert merged.html == scrape.html + _expected_wrapper("## Comments\n- [abc] author=alice created_at=2026-04-29T12:00:00+00:00 parent=null\n  Great thread.")
     assert merged.links == scrape.links
     assert merged.metadata == scrape.metadata
@@ -61,6 +62,7 @@ def test_merge_keeps_html_when_markdown_is_none() -> None:
     merged = merge_coral_into_scrape(scrape, comments)
 
     assert merged.markdown == comments
+    assert scrape.html is not None
     assert merged.html == scrape.html + _expected_wrapper(comments)
 
 

@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import re
 from collections import defaultdict
-from collections.abc import Iterable
+from collections.abc import Sequence
+from datetime import datetime
 from typing import Protocol
 
 
@@ -13,7 +14,7 @@ class _CommentLike(Protocol):
     body: str
     author_username: str | None
     parent_id: str | None
-    created_at: object
+    created_at: datetime
 
 
 _TAG_RE = re.compile(r"<[^>]+>")
@@ -28,7 +29,7 @@ def _indent_lines(text: str, prefix: str) -> str:
     return "\n".join(f"{prefix}{line}" for line in text.splitlines() or [""])
 
 
-def _to_markdown_lines(nodes: Iterable[_CommentLike]) -> list[str]:
+def _to_markdown_lines(nodes: Sequence[_CommentLike]) -> list[str]:
     by_id: dict[str, _CommentLike] = {node.id: node for node in nodes}
     children: dict[str | None, list[_CommentLike]] = defaultdict(list)
 
@@ -63,7 +64,7 @@ def _to_markdown_lines(nodes: Iterable[_CommentLike]) -> list[str]:
     return lines
 
 
-def render_to_markdown(nodes: list[_CommentLike]) -> str:
+def render_to_markdown(nodes: Sequence[_CommentLike]) -> str:
     """Render nodes as indented Markdown grouped by parent-child chains.
 
     The renderer is deliberately simple: it preserves author/timestamp/parent

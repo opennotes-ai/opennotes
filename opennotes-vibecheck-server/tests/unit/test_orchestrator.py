@@ -45,6 +45,11 @@ from src.jobs.orchestrator import (
 )
 from src.utterances.errors import UtteranceExtractionError
 
+
+def _require_markdown(scrape: ScrapeResult) -> str:
+    assert scrape.markdown is not None
+    return scrape.markdown
+
 # ---------------------------------------------------------------------------
 # TASK-1473.59 regression — write_slot DB failure must propagate as
 # TransientError so Cloud Tasks redelivers.
@@ -1083,14 +1088,16 @@ async def test_scrape_step_tier1_coral_detection_merges_graphql_comments(
 
     result = await _call_scrape_step(url, scrape_client, interact_client, cache)
 
-    assert "Real Article" in result.markdown
-    assert "Substantive article body." in result.markdown
-    assert "## Comments" in result.markdown
-    assert "Great discussion" in result.markdown
+    markdown = _require_markdown(result)
+    assert "Real Article" in markdown
+    assert "Substantive article body." in markdown
+    assert "## Comments" in markdown
+    assert "Great discussion" in markdown
     assert (url, "scrape") in cache.store
     assert (url, "scrape") in cache.puts
-    assert "Real Article" in cache.store[(url, "scrape")].markdown
-    assert "## Comments" in cache.store[(url, "scrape")].markdown
+    cached_markdown = _require_markdown(cache.store[(url, "scrape")])
+    assert "Real Article" in cached_markdown
+    assert "## Comments" in cached_markdown
     assert len(interact_client.interact_calls) == 0
 
 
@@ -1138,13 +1145,14 @@ async def test_scrape_step_tier1_partial_coral_markers_triggers_direct_html_fetc
 
     result = await _call_scrape_step(url, scrape_client, interact_client, cache)
 
-    assert "Real Article" in result.markdown
-    assert "Substantive article body." in result.markdown
-    assert "## Comments" in result.markdown
-    assert "Great discussion in the comments." in result.markdown
+    markdown = _require_markdown(result)
+    assert "Real Article" in markdown
+    assert "Substantive article body." in markdown
+    assert "## Comments" in markdown
+    assert "Great discussion in the comments." in markdown
     assert (url, "scrape") in cache.store
     assert (url, "scrape") in cache.puts
-    assert "## Comments" in cache.store[(url, "scrape")].markdown
+    assert "## Comments" in _require_markdown(cache.store[(url, "scrape")])
     assert len(interact_client.interact_calls) == 0
 
 
@@ -1194,10 +1202,13 @@ async def test_scrape_step_tier1_coral_iframe_fallback_success_merges_comments_w
 
     result = await _call_scrape_step(url, scrape_client, interact_client, cache)
 
-    assert "Great discussion in the iframe comments." in result.markdown
+    assert "Great discussion in the iframe comments." in _require_markdown(result)
     assert (url, "scrape") in cache.store
     assert (url, "scrape") in cache.puts
-    assert "Great discussion in the iframe comments." in cache.store[(url, "scrape")].markdown
+    assert (
+        "Great discussion in the iframe comments."
+        in _require_markdown(cache.store[(url, "scrape")])
+    )
     assert len(scrape_client.scrape_calls) == 2
     assert scrape_client.scrape_calls[1][0] == (
         "https://coral.tagesspiegel.de/embed/stream?asset_id=15538543&asset_url="
@@ -1257,10 +1268,14 @@ async def test_scrape_step_tier1_coral_iframe_fallback_rejected_source_url_escal
 
     result = await _call_scrape_step(url, scrape_client, interact_client, cache)
 
-    assert "Should not merge private iframe comments." not in result.markdown
-    assert "Tier 2 rendered comments." in result.markdown
+    markdown = _require_markdown(result)
+    assert "Should not merge private iframe comments." not in markdown
+    assert "Tier 2 rendered comments." in markdown
     assert (url, "scrape") in cache.store
-    assert "Should not merge private iframe comments." not in cache.store[(url, "scrape")].markdown
+    assert (
+        "Should not merge private iframe comments."
+        not in _require_markdown(cache.store[(url, "scrape")])
+    )
     assert len(scrape_client.scrape_calls) == 2
     assert scrape_client.scrape_calls[1][0] == (
         "https://coral.tagesspiegel.de/embed/stream?asset_id=15538543&asset_url="
@@ -1327,12 +1342,13 @@ async def test_scrape_step_tier1_coral_iframe_fallback_malformed_final_url_escal
 
     result = await _call_scrape_step(url, scrape_client, interact_client, cache)
 
-    assert "Should not merge malformed iframe comments." not in result.markdown
-    assert "Tier 2 rendered comments." in result.markdown
+    markdown = _require_markdown(result)
+    assert "Should not merge malformed iframe comments." not in markdown
+    assert "Tier 2 rendered comments." in markdown
     assert (url, "scrape") in cache.store
     assert (
         "Should not merge malformed iframe comments."
-        not in cache.store[(url, "scrape")].markdown
+        not in _require_markdown(cache.store[(url, "scrape")])
     )
     assert len(interact_client.interact_calls) == 1
     assert interact_client.interact_calls[0][0] == url
@@ -1373,12 +1389,14 @@ async def test_scrape_step_tier1_coral_graphql_failure_escalates_to_tier2_with_c
 
     result = await _call_scrape_step(url, scrape_client, interact_client, cache)
 
-    assert "Tier 2 rendered comments." in result.markdown
+    assert "Tier 2 rendered comments." in _require_markdown(result)
     assert len(scrape_client.scrape_calls) == 2
     assert len(interact_client.interact_calls) == 1
     assert (url, "scrape") in cache.store
     assert (url, "interact") in cache.store
-    assert "Tier 2 rendered comments." in cache.store[(url, "interact")].markdown
+    assert "Tier 2 rendered comments." in _require_markdown(
+        cache.store[(url, "interact")]
+    )
     assert scrape_client.scrape_calls[1][0].startswith("https://coral.example.com/embed/stream")
     assert scrape_client.scrape_calls[1][1]["formats"] == ["markdown", "html"]
     assert scrape_client.scrape_calls[1][1]["only_main_content"] is False
@@ -1480,7 +1498,7 @@ async def test_scrape_step_tier1_cache_hit_with_merged_coral_comments_skips_grap
     result = await _call_scrape_step(url, scrape_client, interact_client, cache)
 
     assert result.storage_key == "cached-coral-marked-up"
-    assert "Great discussion in the comments." in result.markdown
+    assert "Great discussion in the comments." in _require_markdown(result)
     assert len(scrape_client.scrape_calls) == 0
     assert len(interact_client.interact_calls) == 0
 

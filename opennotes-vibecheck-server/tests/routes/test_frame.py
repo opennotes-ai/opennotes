@@ -1,5 +1,6 @@
 import asyncio
 import time
+from typing import Any, cast
 from unittest.mock import patch
 
 import pytest
@@ -12,6 +13,10 @@ from src.main import app
 @pytest.fixture
 def client() -> TestClient:
     return TestClient(app)
+
+
+def _client_state(client: TestClient) -> Any:
+    return cast(Any, client.app).state
 
 
 class TestFrameCompat:
@@ -356,7 +361,7 @@ class TestArchivePreview:
         async def stub_lookup(
             pool: object, job_id: object, requested_url: str
         ) -> list[Utterance]:
-            assert pool is client.app.state.db_pool
+            assert pool is _client_state(client).db_pool
             assert requested_url == "https://example.com/article"
             return [
                 Utterance(
@@ -366,7 +371,7 @@ class TestArchivePreview:
                 )
             ]
 
-        client.app.state.db_pool = object()
+        _client_state(client).db_pool = object()
         try:
             with (
                 patch("src.routes.frame.get_scrape_cache", return_value=StubCache()),
@@ -384,7 +389,7 @@ class TestArchivePreview:
                     },
                 )
         finally:
-            del client.app.state.db_pool
+            del _client_state(client).db_pool
 
         assert resp.status_code == 200
         assert 'data-utterance-id="comment-0-aaa"' in resp.text
@@ -425,7 +430,7 @@ class TestArchivePreview:
         ) -> list[object]:
             return []
 
-        client.app.state.db_pool = object()
+        _client_state(client).db_pool = object()
         try:
             with (
                 patch("src.routes.frame.get_scrape_cache", return_value=StubCache()),
@@ -443,7 +448,7 @@ class TestArchivePreview:
                     },
                 )
         finally:
-            del client.app.state.db_pool
+            del _client_state(client).db_pool
 
         assert resp.status_code == 200
         assert "data-utterance-id" not in resp.text
@@ -553,7 +558,7 @@ class TestArchivePreview:
             ]
 
         cache = StubCache()
-        client.app.state.db_pool = object()
+        _client_state(client).db_pool = object()
         try:
             with (
                 patch("src.routes.frame.get_scrape_cache", return_value=cache),
@@ -573,7 +578,7 @@ class TestArchivePreview:
                     },
                 )
         finally:
-            del client.app.state.db_pool
+            del _client_state(client).db_pool
 
         assert resp.status_code == 200
         assert 'data-utterance-id="comment-1-bbb"' in resp.text
