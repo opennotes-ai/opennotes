@@ -1,0 +1,198 @@
+# ADR: Gemini 3.1 Flash-Lite for scrape quality gating (TASK-1488.23)
+
+Date: 2026-04-29
+Status: Proposed
+Task: TASK-1488.23
+
+## Context
+
+`opennotes-vibecheck-server` currently uses a deterministic, fixed-string heuristic classifier (`classify_scrape()`) to decide the `/scrape -> /interact` ladder behavior:
+
+- `classify_scrape()` labels each scrape as `AUTH_WALL`, `INTERSTITIAL`, `LEGITIMATELY_EMPTY`, or `OK`.
+- `/scrape` (`Tier 1`) and `/interact` (`Tier 2`) flow dispatch depends on this classification in `src/jobs/orchestrator.py`.
+- `AUTH_WALL` and `LEGITIMATELY_EMPTY` are terminal; only `INTERSTITIAL` can be escalated to `/interact`.
+- The page content and metadata are attacker-controlled, so the classifier currently avoids regex and uses fixed-string checks and narrowly scoped parsing to reduce parser/regex risk.
+
+Current classification safety properties:
+
+- deterministic behavior for deterministic retries;
+- no network call, no prompt injection surface, no JSON parsing from untrusted LLM output;
+- low latency relative to extraction.
+
+This ADR is to evaluate adding Gemini 3.1 Flash-Lite in front of or instead of this classifier, while keeping runtime behavior unchanged unless strong evidence supports a change.
+
+## Official model facts (as of 2026-04-29)
+
+- Gemini 3.1 Flash-Lite model docs: https://docs.cloud.google.com/vertex-ai/generative-ai/docs/models/gemini/3-1-flash-lite
+- Vertex AI pricing docs: https://cloud.google.com/vertex-ai/generative-ai/pricing
+- As stated in the task brief and cited by current official docs snapshots on 2026-04-29:
+  - model ID: `gemini-3.1-flash-lite-preview`
+  - launch stage: Public preview
+  - release date: 2026-03-03
+  - last updated: 2026-04-23 UTC
+  - pricing:
+    - Standard: input `text/image/video $0.25 / 1M`, audio `$0.50 / 1M`, text output `$1.50 / 1M`
+    - Flex/Batch: input `text/image/video $0.13 / 1M`, audio `$0.25 / 1M`, output `$0.75 / 1M`
+
+## Option 1 — keep current deterministic heuristic only
+
+### Description
+
+Keep `classify_scrape()` as-is and do not call Gemini in the scrape ladder path.
+
+### Cost
+
+No direct model cost.
+
+### Latency and reliability
+
+- Lowest added latency (zero external round trip).
+- Existing reliability remains stable and deterministic.
+- No additional preview-model availability/SDK risks.
+
+### Security and jailbreak posture
+
+- No LLM prompt attack surface.
+- No remote parsing/untrusted text generation required in this decision point.
+- Continues to classify on attacker-provided html/markdown using fixed-string and parser-path checks.
+
+### Failure behavior
+
+- Existing failure behavior preserved exactly.
+- No fallback path needed because there is no new dependency.
+- Deterministic classification preserves replayability on retries.
+
+### Operational and evaluation impact
+
+- Zero additional telemetry changes required.
+- Minimal observability changes beyond existing tier transition metrics in orchestration spans.
+
+## Option 2 — add Gemini 3.1 Flash-Lite as a confirmer for ambiguous cases
+
+### Description
+
+Run the existing heuristic first; only in ambiguous cases (likely `INTERSTITIAL` candidates or low-confidence markers) call Gemini in a verifier role to decide whether to escalate.
+
+### Cost (assumptions)
+
+No grounding for classifier calls.
+
+Assume per-call cost = `(input_tokens / 1_000_000 * input_rate) + (output_tokens / 1_000_000 * output_rate)`
+
+1. 4K input + 100 output
+   - Standard: `(4,000 / 1,000,000 * $0.25) + (100 / 1,000,000 * $1.50) = $0.001000 + $0.000150 = $0.00115` per call
+   - Flex/Batch: `(4,000 / 1,000,000 * $0.13) + (100 / 1,000,000 * $0.75) = $0.00052 + $0.000075 = $0.000595` per call
+2. 20K input + 100 output
+   - Standard: `(20,000 / 1,000,000 * $0.25) + (100 / 1,000,000 * $1.50) = $0.005000 + $0.000150 = $0.00515` per call
+   - Flex/Batch: `(20,000 / 1,000,000 * $0.13) + (100 / 1,000,000 * $0.75) = $0.002600 + $0.000075 = $0.002675` per call
+
+### Latency and reliability
+
+- Adds one network call only for selected cases; end-to-end scrape latency rises for those pages.
+- `interact` already adds latency/complexity in one branch, so this is incremental and bounded by ambiguity rate.
+- Introduces preview model risk and SDK/API failure surface; must enforce hard timeout and fallback.
+
+### Security and jailbreak posture
+
+- Attacker-controlled page text/HTML enters prompt context, creating an indirect prompt-injection risk.
+- Must treat model output as untrusted:
+  - strict schema/enum validation,
+  - deny-list disallowed free-form values,
+  - reject invalid outputs,
+  - default to current deterministic outcome on parse/timeout/error.
+- Keep a hard fail-closed policy for parser failures.
+- Use very small, narrow prompts and explicit constraints.
+
+### Failure behavior
+
+- On timeout/error/parsing/invalid structured output, preserve existing deterministic behavior (no escalation or fallback to raw text).
+- Do not expose raw Gemini text to users.
+- Preserve current terminal vs escalate behavior as source of truth.
+
+### Operational and evaluation impact
+
+- Requires telemetry for confirmer path:
+  - request count, fallback count, timeout/error/parse-fail count,
+  - per-host confirmer invocation and disagreement rate,
+  - added latency by stage.
+- Evaluate by category (e.g., cloudflare-like interstitial, login-wall pages, empty/deleted, normal OK pages, JS-rendered edge pages, and known mixed-content pages).
+- Run in shadow mode first by comparing confirm output with existing classifier outcome and logging a `decision_match` signal.
+
+## Option 3 — replace heuristic classifier entirely with Gemini 3.1 Flash-Lite
+
+### Description
+
+Use LLM output as the single decision source for scrape ladder dispatch.
+
+### Cost
+
+Every scrape attempt can hit Gemini, so costs scale with all traffic:
+- at 4K input + 100 output and 1M calls/month:
+  - ~$1,150/month standard; ~$595/month flex/batch (plus output token count and retries/overhead).
+- at 20K input + 100 output and 1M calls/month:
+  - ~$5,150/month standard; ~$2,675/month flex/batch.
+- Real-world totals likely higher due to retries and malformed payload retries.
+
+### Latency and reliability
+
+- Adds external dependency to all `/scrape` decisions, increasing baseline pipeline latency.
+- Preview API availability/stability becomes a platform dependency for every scrape path.
+- Harder to provide strict SLOs unless extensive caching and async/timeout controls are added.
+
+### Security and jailbreak posture
+
+- Highest prompt-security risk because every decision depends on model interpretation of hostile text/HTML.
+- Same output-schema/validation and fail-closed behavior is mandatory, but there is no deterministic fallback for all cases unless a second classifier is kept as a backup.
+- More extensive prompt-hardening and poisoning tests required.
+
+### Failure behavior
+
+- Must define deterministic fallback behavior for LLM failure states:
+  - timeout/error/degradation.
+- If fallback is `heuristic`, runtime effectively becomes Option 2 in failure.
+- If fallback is `default` (e.g., terminal or escalate), either choice changes system behavior materially.
+
+### Operational and evaluation impact
+
+- Major instrumentation required before rollout:
+  - full calibration by host, by content class, by locale;
+  - false-positive and false-negative tracking against labeled gold set;
+  - cost/latency per site and per page class;
+  - drift and prompt drift monitors.
+- Must add strict output validation and a shadow run at minimum before enforcement.
+
+## Cross-cutting requirements if Gemini is introduced
+
+- No grounding for scrape classifier calls.
+- Strict structured output only (enum-like schema).
+- Deterministic fallback on timeout/error/invalid output; never show user-facing model text.
+- Keep current behavior as the safe base unless proven improvement is quantified.
+- Per-host and per-class error budgets before any hard switch.
+- One-time shadow deployment with operator review first.
+
+## Monitoring/Evals Plan
+
+- Labeling set categories:
+  - AUTH wall pages (forms/status-based),
+  - Cloudflare/JS challenge interstitials,
+  - deleted/empty pages,
+  - normal content pages,
+  - multi-tenant login redirects,
+  - short/low-content pages near heuristic thresholds.
+- Metrics to add:
+  - `false_positive` / `false_negative` by class versus human-labeled set,
+  - agreement/disagreement against current heuristic when shadowing,
+  - timeout/error/parser-fail/error schema reject rates,
+  - cost/latency per request and p95/p99,
+  - per-host breakout (especially top 50 scrape hosts).
+- Evaluation mode:
+ 1. shadow only for 1–2 weeks,
+ 2. no runtime branching change; log only,
+ 3. gate on defined disagreement and cost thresholds.
+
+## Recommendation
+
+For this task, recommend **keep the deterministic heuristic classifier as current runtime behavior**.
+Use Gemini 3.1 Flash-Lite only as a future **shadow-mode confirmer**, then only promote if disagreement/accuracy and cost envelopes are favorable.
+
+This keeps `/scrape -> /interact` control flow stable, avoids immediate dependency on a preview LLM for gating logic, and prevents behavior drift on attacker-controlled inputs while preserving current safety guarantees.
