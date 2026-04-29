@@ -60,6 +60,25 @@ def test_detects_coral_signal_from_static_embed() -> None:
     )
 
 
+def test_detects_static_embed_with_talk_asset_id_in_escaped_props() -> None:
+    html = """
+    <html>
+      <head>
+        <link rel="canonical" href="https://www.tagesspiegel.de/2026/04/29/example"/>
+        <script src="https://coral.tagesspiegel.de/static/embed.js"></script>
+        <div data-hydrate-props="{&amp;escapedquot;talkAssetId&amp;escapedquot;:&amp;escapedquot;15538543&amp;escapedquot;,&amp;escapedquot;communityHostname&amp;escapedquot;:&amp;escapedquot;coral.tagesspiegel.de&amp;escapedquot;,&amp;escapedquot;canonicalUrl&amp;escapedquot;:&amp;escapedquot;https://www.tagesspiegel.de/2026/04/29/example&amp;escapedquot;}" />
+      </head>
+    </html>
+    """
+
+    signal = detect_coral(html)
+    assert signal == CoralSignal(
+        graphql_origin="https://coral.tagesspiegel.de",
+        story_url="https://www.tagesspiegel.de/2026/04/29/example",
+        iframe_src="https://coral.tagesspiegel.de/embed/stream?asset_id=15538543&asset_url=https%3A%2F%2Fwww.tagesspiegel.de%2F2026%2F04%2F29%2Fexample",
+    )
+
+
 @pytest.mark.parametrize(
     "html",
     [

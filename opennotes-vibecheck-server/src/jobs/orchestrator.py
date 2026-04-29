@@ -787,7 +787,7 @@ class _Tier1Outcome:
     coral_outcome: str | None
 
 
-async def _run_tier1(  # noqa: PLR0911
+async def _run_tier1(  # noqa: PLR0911, PLR0912
     url: str,
     scrape_client: FirecrawlClient,
     scrape_cache: SupabaseScrapeCache,
@@ -845,6 +845,44 @@ async def _run_tier1(  # noqa: PLR0911
                 signal.story_url,
             )
         except (CoralFetchError, CoralUnsupportedError) as exc:
+            iframe_markdown: str | None = None
+
+            try:
+                fallback_iframe_url = validate_public_http_url(signal.iframe_src)
+            except InvalidURL:
+                pass
+            else:
+                try:
+                    iframe_scrape = await scrape_client.scrape(
+                        fallback_iframe_url,
+                        formats=["markdown", "html"],
+                        only_main_content=False,
+                    )
+                except Exception:
+                    pass
+                else:
+                    if (
+                        classify_scrape(iframe_scrape) is ScrapeQuality.OK
+                        and isinstance(iframe_scrape.markdown, str)
+                        and iframe_scrape.markdown.strip()
+                    ):
+                        iframe_markdown = iframe_scrape.markdown
+
+            if iframe_markdown is not None:
+                merged = merge_coral_into_scrape(fresh, iframe_markdown)
+                cached_t1 = await _cache_put_or_keyless(
+                    scrape_cache, url, merged, tier="scrape"
+                )
+                return _Tier1Outcome(
+                    cached=cached_t1,
+                    terminal=None,
+                    escalation_reason=None,
+                    tier1_reason="ok",
+                    final_classification="ok",
+                    coral_signal=signal,
+                    coral_outcome="iframe_merged",
+                )
+
             await _cache_put_or_keyless(scrape_cache, url, fresh, tier="scrape")
             return _Tier1Outcome(
                 cached=None,

@@ -33,6 +33,23 @@ _CORAL_COMMUNITY_HOSTNAME_RE = re.compile(
     r'"communityHostname"\s*:\s*"([^"]+)"'
 )
 _CORAL_CANONICAL_URL_RE = re.compile(r'"canonicalUrl"\s*:\s*"([^"]+)"')
+_CORAL_TALK_ASSET_ID_RE = re.compile(r'"talkAssetId"\s*:\s*"([^"]+)"')
+
+
+def _normalize_coral_state_blob(value: str) -> str:
+    """Decode legacy HTML-escaped Coral state blobs into parseable text."""
+    normalized = value
+    for _ in range(2):
+        next_value = html.unescape(normalized)
+        if next_value == normalized:
+            break
+        normalized = next_value
+
+    return (
+        normalized.replace("&escapedquot;", '"')
+        .replace("&#34;", '"')
+        .replace("&quot;", '"')
+    )
 
 
 class CoralSignal(BaseModel):
@@ -52,6 +69,7 @@ class _CoralMarkerParser(HTMLParser):
         self._canonical_urls: list[str] = []
         self._community_hostnames: list[str] = []
         self._canonical_urls_from_state: list[str] = []
+        self._talk_asset_ids: list[str] = []
         self._in_script = False
         self._capture_script_data = False
 
@@ -68,6 +86,9 @@ class _CoralMarkerParser(HTMLParser):
         attrs_map: dict[str, str | None] = {
             str(name).lower(): value for name, value in attrs if name is not None
         }
+        for value in attrs_map.values():
+            if value is not None:
+                self._collect_state_json_values(value)
 
         if normalized_tag == "script":
             self._in_script = True
@@ -110,7 +131,7 @@ class _CoralMarkerParser(HTMLParser):
 
     def handle_data(self, data: str) -> None:
         if self._in_script and self._capture_script_data and data:
-            text = html.unescape(data)
+            text = _normalize_coral_state_blob(data)
             self._collect_state_json_values(text)
 
     def static_signal(self) -> dict[str, str] | None:
@@ -123,6 +144,7 @@ class _CoralMarkerParser(HTMLParser):
         if not canonical_url:
             return None
 
+        asset_id = self._first_value(self._talk_asset_ids)
         for community_host in self._community_hostnames:
             community_origin = self._canonical_to_origin(community_host)
             if not community_origin:
@@ -132,10 +154,14 @@ class _CoralMarkerParser(HTMLParser):
             if not matching_script_origin:
                 continue
 
+            query_params = {"asset_url": canonical_url}
+            if asset_id:
+                query_params = {"asset_id": asset_id, "asset_url": canonical_url}
+
             return {
                 "iframe_src": (
                     f"{matching_script_origin}/embed/stream?"
-                    f"{urlencode({'asset_url': canonical_url})}"
+                    f"{urlencode(query_params)}"
                 ),
                 "graphql_origin": matching_script_origin,
                 "story_url": canonical_url,
@@ -150,11 +176,21 @@ class _CoralMarkerParser(HTMLParser):
                 return candidate
         return None
 
+    @staticmethod
+    def _first_value(candidates: list[str]) -> str | None:
+        for candidate in candidates:
+            if candidate:
+                return candidate
+        return None
+
     def _collect_state_json_values(self, text: str) -> None:
-        for match in _CORAL_COMMUNITY_HOSTNAME_RE.finditer(text):
+        normalized = _normalize_coral_state_blob(text)
+        for match in _CORAL_COMMUNITY_HOSTNAME_RE.finditer(normalized):
             self._community_hostnames.append(match.group(1))
-        for match in _CORAL_CANONICAL_URL_RE.finditer(text):
+        for match in _CORAL_CANONICAL_URL_RE.finditer(normalized):
             self._canonical_urls_from_state.append(match.group(1))
+        for match in _CORAL_TALK_ASSET_ID_RE.finditer(normalized):
+            self._talk_asset_ids.append(match.group(1))
 
     def _capture_canonical_if_present(self, attrs: dict[str, str | None]) -> None:
         rel = attrs.get("rel")
