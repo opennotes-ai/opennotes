@@ -89,6 +89,61 @@ class TestFrameCompat:
         assert body["can_iframe"] is False
         assert body["has_archive"] is True
 
+    def test_has_archive_checks_interact_tier_if_scrape_empty(
+        self, client: TestClient, httpx_mock: HTTPXMock
+    ) -> None:
+        from src.cache.scrape_cache import CachedScrape
+
+        calls: list[str] = []
+
+        class StubCache:
+            async def get(
+                self, url: str, *, tier: str = "scrape"
+            ) -> CachedScrape | None:
+                assert url == "https://interact-cache.example.com/"
+                calls.append(tier)
+                if tier == "scrape":
+                    return None
+                return CachedScrape(html="<main>Interact archived</main>")
+
+        httpx_mock.add_response(
+            method="HEAD",
+            url="https://interact-cache.example.com/",
+            headers={"x-frame-options": "DENY"},
+        )
+        with patch("src.routes.frame.get_scrape_cache", return_value=StubCache()):
+            resp = client.get(
+                "/api/frame-compat", params={"url": "https://interact-cache.example.com/"}
+            )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["can_iframe"] is False
+        assert body["has_archive"] is True
+        assert calls == ["scrape", "interact"]
+
+    def test_has_archive_is_false_when_no_tier_has_html(
+        self, client: TestClient, httpx_mock: HTTPXMock
+    ) -> None:
+        calls: list[str] = []
+
+        class StubCache:
+            async def get(self, url: str, *, tier: str = "scrape") -> None:
+                assert url == "https://archive-miss.example.com/"
+                calls.append(tier)
+
+        httpx_mock.add_response(
+            method="HEAD",
+            url="https://archive-miss.example.com/",
+            headers={"x-frame-options": "DENY"},
+        )
+        with patch("src.routes.frame.get_scrape_cache", return_value=StubCache()):
+            resp = client.get(
+                "/api/frame-compat", params={"url": "https://archive-miss.example.com/"}
+            )
+        assert resp.status_code == 200
+        assert resp.json()["has_archive"] is False
+        assert calls == ["scrape", "interact"]
+
     def test_csp_frame_ancestors_none_blocks(
         self, client: TestClient, httpx_mock: HTTPXMock
     ) -> None:
@@ -311,6 +366,99 @@ class TestScreenshot:
 
 
 class TestArchivePreview:
+    def test_cached_scrape_html_served_for_scrape_tier_even_if_interact_exists(
+        self, client: TestClient
+    ) -> None:
+        from src.cache.scrape_cache import CachedScrape
+
+        calls: list[str] = []
+
+        class StubCache:
+            async def get(
+                self, url: str, *, tier: str = "scrape"
+            ) -> CachedScrape | None:
+                assert url == "https://example.com/article"
+                calls.append(tier)
+                if tier == "scrape":
+                    return CachedScrape(
+                        html="<main><h1>Scrape preview</h1></main>",
+                        raw_html="<script>bad()</script>",
+                    )
+                return CachedScrape(
+                    html="<main><h1>Interact preview</h1></main>",
+                    raw_html="<script>bad()</script>",
+                )
+
+        with patch("src.routes.frame.get_scrape_cache", return_value=StubCache()):
+            resp = client.get(
+                "/api/archive-preview",
+                params={"url": "https://example.com/article"},
+            )
+
+        assert resp.status_code == 200
+        assert "Scrape preview" in resp.text
+        assert "Interact preview" not in resp.text
+        assert calls == ["scrape"]
+
+    def test_cached_scrape_html_served_for_interact_tier_when_scrape_empty(
+        self, client: TestClient
+    ) -> None:
+        from src.cache.scrape_cache import CachedScrape
+
+        calls: list[str] = []
+
+        class StubCache:
+            async def get(
+                self, url: str, *, tier: str = "scrape"
+            ) -> CachedScrape | None:
+                assert url == "https://example.com/fallback"
+                calls.append(tier)
+                if tier == "scrape":
+                    return None
+                return CachedScrape(html="<main><h1>Interact preview</h1></main>")
+
+        with patch("src.routes.frame.get_scrape_cache", return_value=StubCache()):
+            resp = client.get(
+                "/api/archive-preview",
+                params={"url": "https://example.com/fallback"},
+            )
+
+        assert resp.status_code == 200
+        assert "Interact preview" in resp.text
+        assert calls == ["scrape", "interact"]
+
+    def test_archive_preview_eviction_uses_served_tier_for_invalid_final_url(
+        self, client: TestClient
+    ) -> None:
+        from src.cache.scrape_cache import CachedScrape
+        from src.firecrawl_client import ScrapeMetadata
+
+        calls: list[tuple[str, str]] = []
+
+        class StubCache:
+            async def get(
+                self, url: str, *, tier: str = "scrape"
+            ) -> CachedScrape | None:
+                if tier == "scrape":
+                    return None
+                return CachedScrape(
+                    html="<main><p>Unsafe</p></main>",
+                    metadata=ScrapeMetadata(source_url="file:///etc/passwd"),
+                )
+
+            def evict(self, url: str, *, tier: str) -> None:
+                calls.append((url, tier))
+
+        with patch("src.routes.frame.get_scrape_cache", return_value=StubCache()):
+            resp = client.get(
+                "/api/archive-preview",
+                params={"url": "https://example.com/unsafe"},
+            )
+
+        assert resp.status_code == 400
+        assert resp.json() == {"detail": "URL must be an http(s) URL"}
+        assert calls == [("https://example.com/unsafe", "interact")]
+
     def test_returns_cached_sanitized_html_with_restrictive_headers(
         self, client: TestClient
     ) -> None:
@@ -456,10 +604,12 @@ class TestArchivePreview:
     def test_cache_miss_without_generate_returns_archive_unavailable(
         self, client: TestClient
     ) -> None:
+        calls: list[str] = []
+
         class StubCache:
             async def get(self, url: str, *, tier: str = "scrape") -> None:
                 assert url == "https://example.com/miss"
-                assert tier == "scrape"
+                calls.append(tier)
 
         with patch("src.routes.frame.get_scrape_cache", return_value=StubCache()):
             resp = client.get(
@@ -467,6 +617,7 @@ class TestArchivePreview:
             )
         assert resp.status_code == 404
         assert resp.json() == {"detail": "Archive unavailable"}
+        assert calls == ["scrape", "interact"]
 
     def test_generate_scrapes_with_short_budget_and_stores_html(
         self, client: TestClient

@@ -29,6 +29,7 @@ _SCREENSHOT_TIMEOUT_SECONDS = 60.0
 _SCREENSHOT_REQUEST_BUDGET_SECONDS = 90.0
 _ARCHIVE_REQUEST_BUDGET_SECONDS = 8.0
 _BLOCKING_XFO_VALUES = {"deny", "sameorigin"}
+_ARCHIVE_CACHE_TIERS = ("scrape", "interact")
 _PERMISSIVE_FRAME_ANCESTOR_TOKENS = {"*", "https:", "http:", "data:"}
 _ARCHIVE_CSP = (
     "default-src 'none'; img-src https: data:; style-src 'unsafe-inline' https:; "
@@ -193,12 +194,20 @@ def get_scrape_cache() -> SupabaseScrapeCache:
 
 
 async def _has_cached_archive(url: str) -> bool:
+    cached, _ = await _get_cached_archive(url)
+    return bool(cached)
+
+
+async def _get_cached_archive(url: str) -> tuple[CachedScrape | None, str | None]:
     try:
-        cached = await get_scrape_cache().get(url, tier="scrape")
+        for tier in _ARCHIVE_CACHE_TIERS:
+            cached = await get_scrape_cache().get(url, tier=tier)
+            if cached and cached.html:
+                return cached, tier
+        return None, None
     except Exception as exc:
         logger.info("archive cache lookup failed for %s: %s", url, exc)
-        return False
-    return bool(cached and cached.html)
+        return None, None
 
 
 async def _revalidate_archive_final_url(
@@ -206,6 +215,7 @@ async def _revalidate_archive_final_url(
     *,
     original_url: str,
     scrape_cache: Any,
+    tier: str = "scrape",
 ) -> None:
     final = scrape.metadata.source_url if scrape.metadata else None
     if not final:
@@ -216,7 +226,7 @@ async def _revalidate_archive_final_url(
         evict = getattr(scrape_cache, "evict", None)
         if callable(evict):
             try:
-                result = evict(original_url, tier="scrape")
+                result = evict(original_url, tier=tier)
                 if isawaitable(result):
                     await result
             except Exception as exc:
@@ -277,12 +287,12 @@ async def archive_preview(
     _validate_http_url(url)
     parsed_job_id = _parse_archive_job_id(job_id)
     scrape_cache = get_scrape_cache()
-    cached = await scrape_cache.get(url, tier="scrape")
+    cached, cached_tier = await _get_cached_archive(url)
     if cached and cached.html:
         # TODO: If Firecrawl exposes a hosted archive URL in CachedScrape metadata,
         # return a redirect to that URL instead of serving cached sanitized HTML.
         await _revalidate_archive_final_url(
-            cached, original_url=url, scrape_cache=scrape_cache
+            cached, original_url=url, scrape_cache=scrape_cache, tier=cached_tier or "scrape"
         )
         html = await _annotate_archive_html(
             cached.html,
