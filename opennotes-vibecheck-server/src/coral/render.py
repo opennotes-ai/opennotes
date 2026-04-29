@@ -71,4 +71,6 @@ def render_to_markdown(nodes: list[_CommentLike]) -> str:
     text processing can stay predictable.
     """
     lines = _to_markdown_lines(nodes)
-    return "\n".join(lines)
+    if not lines:
+        return "## Comments\n"
+    return "\n".join(["## Comments", *lines])

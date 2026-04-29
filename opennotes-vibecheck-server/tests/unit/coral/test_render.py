@@ -35,6 +35,7 @@ def test_render_to_markdown_preserves_author_timestamp_and_parenting() -> None:
 
     rendered = render_to_markdown(nodes)
 
+    assert rendered.startswith("## Comments\n")
     assert "[comment-1] author=alice" in rendered
     assert "parent=null" in rendered
     assert "created_at=2026-04-29T10:00:00+00:00" in rendered
