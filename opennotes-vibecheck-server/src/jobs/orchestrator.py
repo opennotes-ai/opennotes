@@ -105,6 +105,7 @@ from src.analyses.tone.flashpoint_slot import run_flashpoint
 from src.analyses.tone.scd_slot import run_scd
 from src.cache.scrape_cache import CachedScrape, ScrapeTier, SupabaseScrapeCache
 from src.config import Settings
+from src.coral import CoralSignal
 from src.firecrawl_client import FirecrawlBlocked, FirecrawlClient, FirecrawlError
 from src.jobs.finalize import maybe_finalize_job
 from src.jobs.scrape_quality import ScrapeQuality, classify_scrape
@@ -606,9 +607,27 @@ def _build_firecrawl_tier1_client(settings: Settings) -> FirecrawlClient:
 # — extending the action list would let the ladder masquerade as a richer
 # interaction tier (login flows, scroll, click), which is out of scope for
 # 1488.05 and would risk crossing ToS lines on auth-walled sites.
-_TIER2_DEFAULT_ACTIONS: tuple[dict[str, Any], ...] = (
-    {"type": "wait", "milliseconds": 3000},
-)
+def _tier2_actions_for(coral_signal: CoralSignal | None) -> list[dict[str, Any]]:
+    """Build conservative Tier 2 /interact actions.
+
+    For non-Coral pages we use the legacy single short wait so behavior
+    stays unchanged. When a `CoralSignal` is present, we run a best-effort
+    sequence to reveal comments in the embedded Coral stream. The selector-based
+    steps are only used after upstream Coral detection has already succeeded.
+    """
+    if coral_signal is None:
+        return [{"type": "wait", "milliseconds": 3000}]
+
+    return [
+        {"type": "wait", "milliseconds": 2000},
+        {"type": "scroll", "direction": "down"},
+        {
+            "type": "click",
+            "selector": 'button[data-testid="comments-show-comments-button"]',
+        },
+        {"type": "wait", "milliseconds": 3000},
+        {"type": "scroll", "direction": "down"},
+    ]
 
 
 async def _cache_put_or_keyless(
@@ -807,6 +826,8 @@ async def _run_tier2(
     url: str,
     interact_client: FirecrawlClient,
     scrape_cache: SupabaseScrapeCache,
+    *,
+    coral_signal: CoralSignal | None = None,
 ) -> _Tier2Outcome:
     """Tier 2 /interact escalation. Returns an outcome that the caller
     converts into either a return value or `TerminalError(UNSUPPORTED_SITE)`.
@@ -820,7 +841,7 @@ async def _run_tier2(
     try:
         fresh = await interact_client.interact(
             url,
-            actions=list(_TIER2_DEFAULT_ACTIONS),
+            actions=_tier2_actions_for(coral_signal),
             formats=["markdown", "html", "screenshot@fullPage"],
             only_main_content=True,
         )

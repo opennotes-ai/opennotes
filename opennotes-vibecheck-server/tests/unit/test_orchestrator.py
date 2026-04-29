@@ -18,6 +18,7 @@ import pytest
 from src.analyses.safety._schemas import SafetyLevel, SafetyRecommendation
 from src.analyses.schemas import ErrorCode, SectionSlug, SectionState
 from src.cache.scrape_cache import CachedScrape, SupabaseScrapeCache
+from src.coral import CoralSignal
 from src.firecrawl_client import (
     FirecrawlBlocked,
     FirecrawlClient,
@@ -25,7 +26,13 @@ from src.firecrawl_client import (
     ScrapeMetadata,
     ScrapeResult,
 )
-from src.jobs.orchestrator import TerminalError, TransientError, _run_section
+from src.jobs.orchestrator import (
+    TerminalError,
+    TransientError,
+    _run_section,
+    _run_tier2,
+    _tier2_actions_for,
+)
 from src.utterances.errors import UtteranceExtractionError
 
 # ---------------------------------------------------------------------------
@@ -819,6 +826,85 @@ async def _call_scrape_step(
         cast(FirecrawlClient, cast(object, interact_client)),
         cast(SupabaseScrapeCache, cast(object, cache)),
     )
+
+
+def _sample_coral_signal() -> CoralSignal:
+    return CoralSignal(
+        iframe_src=(
+            "https://talk.example.com/embed/stream/?storyURL="
+            "https://example.com/story"
+        ),
+        graphql_origin="https://talk.example.com",
+        story_url="https://example.com/story",
+    )
+
+
+def test_tier2_actions_for_default_waits_only() -> None:
+    """Without a Coral signal, Tier 2 keeps the legacy single 3s wait."""
+
+    assert _tier2_actions_for(None) == [{"type": "wait", "milliseconds": 3000}]
+
+
+def test_tier2_actions_for_coral_signal_expands_comment_stream() -> None:
+    """Coral detection switches Tier 2 actions to stream-expansion steps."""
+
+    actions = _tier2_actions_for(_sample_coral_signal())
+
+    assert actions[0] == {"type": "wait", "milliseconds": 2000}
+    assert actions[1] == {"type": "scroll", "direction": "down"}
+    assert actions[2] == {
+        "type": "click",
+        "selector": 'button[data-testid="comments-show-comments-button"]',
+    }
+    assert actions[3] == {"type": "wait", "milliseconds": 3000}
+    assert actions[4] == {"type": "scroll", "direction": "down"}
+    assert len(actions) == 5
+
+
+async def test_run_tier2_default_actions_recorded_without_coral_signal() -> None:
+    """`_run_tier2` with no Coral signal sends the legacy default action list."""
+
+    url = "https://example.com/article"
+    cache = _FakeScrapeCache()
+    interact_client = _FakeFirecrawlClient(interact_result=_ok_scrape_result())
+
+    result = await _run_tier2(
+        url,
+        cast(FirecrawlClient, cast(object, interact_client)),
+        cast(SupabaseScrapeCache, cast(object, cache)),
+    )
+
+    assert result.cached is not None
+    assert len(interact_client.interact_calls) == 1
+    _, interact_kwargs = interact_client.interact_calls[0]
+    assert interact_kwargs["actions"] == [{"type": "wait", "milliseconds": 3000}]
+
+
+async def test_run_tier2_records_coral_specific_actions() -> None:
+    """Passing a Coral signal to `_run_tier2` sends stream-expansion actions."""
+
+    url = "https://example.com/article"
+    cache = _FakeScrapeCache()
+    interact_client = _FakeFirecrawlClient(interact_result=_ok_scrape_result())
+
+    result = await _run_tier2(
+        url,
+        cast(FirecrawlClient, cast(object, interact_client)),
+        cast(SupabaseScrapeCache, cast(object, cache)),
+        coral_signal=_sample_coral_signal(),
+    )
+
+    assert result.cached is not None
+    assert len(interact_client.interact_calls) == 1
+    _, interact_kwargs = interact_client.interact_calls[0]
+    actions = interact_kwargs["actions"]
+    assert any(
+        action["type"] == "click"
+        and action["selector"] == 'button[data-testid="comments-show-comments-button"]'
+        for action in actions
+    )
+    assert sum(1 for action in actions if action["type"] == "wait") >= 2
+    assert sum(1 for action in actions if action["type"] == "scroll") >= 2
 
 
 # AC#1, AC#5 — Tier 1 OK: no escalation, span shows tier_attempted=['scrape'].
