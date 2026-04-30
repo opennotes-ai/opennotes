@@ -33,9 +33,10 @@ from __future__ import annotations
 
 import json
 import socket
-from collections.abc import AsyncIterator, Callable, Iterator
+from collections.abc import AsyncIterator, Awaitable, Callable, Iterator
 from datetime import UTC, datetime, timedelta
 from typing import Any
+from urllib.parse import urlparse
 from uuid import UUID, uuid4
 
 import asyncpg
@@ -44,6 +45,7 @@ import pytest
 from testcontainers.postgres import PostgresContainer
 
 from src.cache.scrape_cache import CachedScrape
+from src.cache.supabase_cache import normalize_url
 from src.firecrawl_client import ScrapeMetadata, ScrapeResult
 from src.main import app
 from src.routes import analyze as analyze_route
@@ -271,38 +273,50 @@ class AsyncpgScrapeCache:
     Behavior contract is identical to `SupabaseScrapeCache.get/put/evict`:
     rows live in `vibecheck_scrapes` with a 72h TTL; `get` enforces a
     server-side `expires_at > now()` predicate; `put` UPSERTs on
-    normalized_url; `evict` deletes by normalized_url. We do not exercise
+    normalized_url; `evict` writes tombstones by normalized_url for fence
+    protection. We do not exercise
     the Storage bucket — `signed_screenshot_url` returns None.
 
     `signed_screenshot_url` is async to mirror the production surface so
     callers (the extractor's tool surface) await it without changes.
     """
 
-    def __init__(self, pool: Any, *, ttl_hours: int = 72) -> None:
+    def __init__(
+        self,
+        pool: Any,
+        *,
+        ttl_hours: int = 72,
+        before_fence_read: Callable[[], Awaitable[None]] | None = None,
+        after_fence_read: Callable[[], Awaitable[None]] | None = None,
+    ) -> None:
         self._pool = pool
         self._ttl_hours = ttl_hours
+        self._before_fence_read = before_fence_read
+        self._after_fence_read = after_fence_read
 
     async def get(
         self, url: str, *, tier: str = "scrape"
     ) -> CachedScrape | None:
+        norm = normalize_url(url)
         async with self._pool.acquire() as conn:
             row = await conn.fetchrow(
                 """
-                SELECT url, host, page_title, markdown, html,
+                SELECT url, final_url, host, page_title, markdown, html,
                        screenshot_storage_key
                 FROM vibecheck_scrapes
                 WHERE normalized_url = $1
                   AND tier = $2
                   AND expires_at > now()
                 """,
-                url,
+                norm,
                 tier,
             )
         if row is None:
             return None
+        source_url = row["final_url"] or row["url"]
         metadata = ScrapeMetadata(
             title=row["page_title"],
-            source_url=row["url"],
+            source_url=source_url,
         )
         return CachedScrape(
             markdown=row["markdown"],
@@ -320,24 +334,59 @@ class AsyncpgScrapeCache:
         tier: str = "scrape",
         screenshot_bytes: bytes | None = None,
     ) -> CachedScrape:
-        host = (
-            scrape.metadata.source_url.split("://", 1)[-1].split("/", 1)[0]
-            if scrape.metadata and scrape.metadata.source_url
-            else url.split("://", 1)[-1].split("/", 1)[0]
-        )
+        norm = normalize_url(url)
+        host = urlparse(norm).netloc
+        put_started_at = datetime.now(UTC)
+        metadata = scrape.metadata or ScrapeMetadata()
+        final_url = metadata.source_url or url
+        if self._before_fence_read is not None:
+            await self._before_fence_read()
+        async with self._pool.acquire() as conn:
+            tombstone = await conn.fetchrow(
+                """
+                SELECT evicted_at
+                FROM vibecheck_scrapes
+                WHERE normalized_url = $1
+                  AND tier = $2
+                """,
+                norm,
+                tier,
+            )
+            if (
+                tombstone is not None
+                and tombstone["evicted_at"] is not None
+                and tombstone["evicted_at"] >= put_started_at - timedelta(seconds=1)
+            ):
+                return CachedScrape(
+                    markdown=scrape.markdown,
+                    html=scrape.html,
+                    raw_html=scrape.raw_html,
+                    screenshot=scrape.screenshot,
+                    links=scrape.links,
+                    metadata=scrape.metadata,
+                    warning=scrape.warning,
+                    storage_key=None,
+                )
+        if self._after_fence_read is not None:
+            await self._after_fence_read()
         now = datetime.now(UTC)
         expires = now + timedelta(hours=self._ttl_hours)
         async with self._pool.acquire() as conn:
-            await conn.execute(
+            wrote_row = await conn.fetchval(
                 """
                 INSERT INTO vibecheck_scrapes (
-                    normalized_url, tier, url, host, page_kind, page_title,
+                    normalized_url, tier, url, final_url, host, page_kind,
+                    page_title,
                     markdown, html, screenshot_storage_key,
-                    scraped_at, expires_at
+                    scraped_at, expires_at, evicted_at
                 )
-                VALUES ($1, $2, $3, $4, 'other', $5, $6, $7, NULL, $8, $9)
+                VALUES (
+                    $1, $2, $3, $4, $5, 'other', $6,
+                    $7, $8, NULL, $9, $10, NULL
+                )
                 ON CONFLICT (normalized_url, tier) DO UPDATE
                 SET url = EXCLUDED.url,
+                    final_url = EXCLUDED.final_url,
                     host = EXCLUDED.host,
                     page_kind = EXCLUDED.page_kind,
                     page_title = EXCLUDED.page_title,
@@ -345,17 +394,34 @@ class AsyncpgScrapeCache:
                     html = EXCLUDED.html,
                     screenshot_storage_key = EXCLUDED.screenshot_storage_key,
                     scraped_at = EXCLUDED.scraped_at,
-                    expires_at = EXCLUDED.expires_at
+                    expires_at = EXCLUDED.expires_at,
+                    evicted_at = EXCLUDED.evicted_at
+                WHERE vibecheck_scrapes.evicted_at IS NULL
+                   OR vibecheck_scrapes.evicted_at < $11
+                RETURNING TRUE
                 """,
-                url,
+                norm,
                 tier,
                 url,
+                final_url,
                 host,
-                scrape.metadata.title if scrape.metadata else None,
+                metadata.title,
                 scrape.markdown,
                 scrape.html,
                 now,
                 expires,
+                put_started_at - timedelta(seconds=1),
+            )
+        if not wrote_row:
+            return CachedScrape(
+                markdown=scrape.markdown,
+                html=scrape.html,
+                raw_html=scrape.raw_html,
+                screenshot=scrape.screenshot,
+                links=scrape.links,
+                metadata=scrape.metadata,
+                warning=scrape.warning,
+                storage_key=None,
             )
         return CachedScrape(
             markdown=scrape.markdown,
@@ -369,17 +435,55 @@ class AsyncpgScrapeCache:
         )
 
     async def evict(self, url: str, *, tier: str | None = None) -> None:
+        now = datetime.now(UTC)
+        norm = normalize_url(url)
+        host = urlparse(norm).netloc
+        expired = now - timedelta(hours=1)
         async with self._pool.acquire() as conn:
+            tombstones = ("scrape", "interact") if tier is None else (tier,)
             if tier is None:
                 await conn.execute(
-                    "DELETE FROM vibecheck_scrapes WHERE normalized_url = $1", url
+                    "DELETE FROM vibecheck_scrapes WHERE normalized_url = $1", norm
                 )
             else:
                 await conn.execute(
                     "DELETE FROM vibecheck_scrapes "
                     "WHERE normalized_url = $1 AND tier = $2",
-                    url,
+                    norm,
                     tier,
+                )
+            for tombstone_tier in tombstones:
+                await conn.execute(
+                    """
+                    INSERT INTO vibecheck_scrapes (
+                        normalized_url, tier, url, final_url, host, page_kind,
+                        page_title, markdown, html, screenshot_storage_key,
+                        scraped_at, expires_at, evicted_at
+                    )
+                    VALUES (
+                        $1, $2, $3, NULL, $4, 'other',
+                        NULL, NULL, NULL, NULL,
+                        $5, $6, $7
+                    )
+                    ON CONFLICT (normalized_url, tier) DO UPDATE
+                    SET final_url = EXCLUDED.final_url,
+                        host = EXCLUDED.host,
+                        page_kind = EXCLUDED.page_kind,
+                        page_title = EXCLUDED.page_title,
+                        markdown = EXCLUDED.markdown,
+                        html = EXCLUDED.html,
+                        screenshot_storage_key = EXCLUDED.screenshot_storage_key,
+                        scraped_at = EXCLUDED.scraped_at,
+                        expires_at = EXCLUDED.expires_at,
+                        evicted_at = EXCLUDED.evicted_at
+                    """,
+                    norm,
+                    tombstone_tier,
+                    norm,
+                    host,
+                    now,
+                    expired,
+                    now,
                 )
 
     async def signed_screenshot_url(self, scrape: ScrapeResult) -> str | None:

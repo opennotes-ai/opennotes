@@ -120,10 +120,30 @@ async def test_post_scrape_redirect_to_private_ip_marks_invalid_url(
 
     # Cache eviction: the poisoned scrape row must be gone after revalidate.
     # `_scrape_step` put() the fresh scrape into the cache; revalidate
-    # caught the private redirect and called `cache.evict()` to discard it.
+    # caught the private redirect and called `cache.evict(tier=None)` to
+    # discard both scrape/interact tiers as tombstones (TASK-1488.18).
     async with db_pool.acquire() as conn:
-        rowcount = await conn.fetchval(
-            "SELECT COUNT(*) FROM vibecheck_scrapes WHERE normalized_url = $1",
+        rows = await conn.fetch(
+            """
+            SELECT tier
+            FROM vibecheck_scrapes
+            WHERE normalized_url = $1
+              AND evicted_at IS NOT NULL
+              AND markdown IS NULL
+              AND html IS NULL
+              AND screenshot_storage_key IS NULL
+              AND expires_at < now()
+            """,
             target_url,
         )
-    assert rowcount == 0, "poisoned scrape was not evicted from cache"
+    tiers = {row["tier"] for row in rows}
+    assert tiers == {"scrape", "interact"}, (
+        "evict(tier=None) must write tombstones for both scrape and interact tiers"
+    )
+
+    assert await scrape_cache.get(
+        target_url, tier="scrape"
+    ) is None, "poisoned scrape must not be replayable after evict"
+    assert await scrape_cache.get(
+        target_url, tier="interact"
+    ) is None, "interact tier must also not be replayable after evict"

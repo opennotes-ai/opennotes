@@ -97,6 +97,128 @@ def test_status_code_401_classifies_auth_wall() -> None:
     assert classify_scrape(result) is ScrapeQuality.AUTH_WALL
 
 
+@pytest.mark.parametrize(
+    ("path", "quote"),
+    [
+        ("/login", "\""),
+        ("/signin", "\""),
+        ("/sign-in", "\""),
+        ("/login", "'"),
+        ("/signin", "'"),
+        ("/sign-in", "'"),
+    ],
+)
+def test_root_relative_form_action_variants_classify_auth_wall(
+    path: str, quote: str
+) -> None:
+    result = ScrapeResult(
+        markdown="Sign in to continue",
+        html=(
+            f"<html><body><form action={quote}{path}{quote} method='post'>"
+            f"<input name='email' type='email'></form></body></html>"
+        ),
+        metadata=ScrapeMetadata(status_code=200),
+    )
+
+    assert classify_scrape(result) is ScrapeQuality.AUTH_WALL
+
+
+@pytest.mark.parametrize(
+    ("path", "quote"),
+    [
+        ("/login", "\""),
+        ("/signin", "\""),
+        ("/sign-in", "\""),
+        ("/login", "'"),
+        ("/signin", "'"),
+        ("/sign-in", "'"),
+    ],
+)
+def test_absolute_form_action_variants_classify_auth_wall(
+    path: str, quote: str
+) -> None:
+    result = ScrapeResult(
+        markdown="Sign in to continue",
+        html=(
+            f"<html><body><form action={quote}https://example.com{path}{quote} method='post'>"
+            f"<input name='email' type='email'></form></body></html>"
+        ),
+        metadata=ScrapeMetadata(status_code=200),
+    )
+
+    assert classify_scrape(result) is ScrapeQuality.AUTH_WALL
+
+
+@pytest.mark.parametrize(
+    ("path", "quote"),
+    [
+        ("/login", "\""),
+        ("/signin", "\""),
+        ("/sign-in", "\""),
+        ("/login", "'"),
+        ("/signin", "'"),
+        ("/sign-in", "'"),
+    ],
+)
+def test_root_relative_form_action_with_whitespace(
+    path: str, quote: str
+) -> None:
+    result = ScrapeResult(
+        markdown="Sign in to continue",
+        html=(
+            f"<html><body><form action={quote} {path} {quote} method='post'>"
+            f"<input name='email' type='email'></form></body></html>"
+        ),
+        metadata=ScrapeMetadata(status_code=200),
+    )
+
+    assert classify_scrape(result) is ScrapeQuality.AUTH_WALL
+
+
+@pytest.mark.parametrize(
+    ("path", "quote"),
+    [
+        ("/login", "\""),
+        ("/signin", "\""),
+        ("/sign-in", "\""),
+        ("/login", "'"),
+        ("/signin", "'"),
+        ("/sign-in", "'"),
+    ],
+)
+def test_absolute_form_action_with_whitespace(
+    path: str, quote: str
+) -> None:
+    result = ScrapeResult(
+        markdown="Sign in to continue",
+        html=(
+            f"<html><body><form action={quote} https://example.com{path} {quote} method='post'>"
+            f"<input name='email' type='email'></form></body></html>"
+        ),
+        metadata=ScrapeMetadata(status_code=200),
+    )
+
+    assert classify_scrape(result) is ScrapeQuality.AUTH_WALL
+
+
+def test_public_header_login_anchor_is_not_auth_wall() -> None:
+    result = ScrapeResult(
+        markdown=(
+            "A public article with a login link in the header should still be "
+            "classified as OK when no login form evidence exists in the body."
+            * 3
+        ),
+        html=(
+            "<html><body><header><a href='/login'>Sign in</a>"
+            " <a href=\"https://example.com/signin\">Sign in</a></header>"
+            "<article><h1>Open Notes</h1><p>Readable content below.</p></article></body></html>"
+        ),
+        metadata=ScrapeMetadata(status_code=200),
+    )
+
+    assert classify_scrape(result) is ScrapeQuality.OK
+
+
 # ---------------------------------------------------------------------------
 # AUTH_WALL priority — login wall under a CF interstitial.
 # ---------------------------------------------------------------------------

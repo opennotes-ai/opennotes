@@ -334,6 +334,84 @@ ALTER TABLE public.vibecheck_scrapes
 ALTER TABLE public.vibecheck_scrapes
     ADD COLUMN IF NOT EXISTS evicted_at TIMESTAMPTZ;
 
+-- TASK-1488.18.01: atomically persist a scrape row unless an evict
+-- tombstone landed after the caller's write-fence anchor. The predicate
+-- lives inside `ON CONFLICT DO UPDATE`, so an evict that arrives between
+-- the application preflight read and the final write cannot be overwritten.
+CREATE OR REPLACE FUNCTION public.vibecheck_upsert_scrape_if_not_evicted(
+    p_normalized_url TEXT,
+    p_tier TEXT,
+    p_url TEXT,
+    p_final_url TEXT,
+    p_host TEXT,
+    p_page_kind TEXT,
+    p_page_title TEXT,
+    p_markdown TEXT,
+    p_html TEXT,
+    p_screenshot_storage_key TEXT,
+    p_scraped_at TIMESTAMPTZ,
+    p_expires_at TIMESTAMPTZ,
+    p_put_started_at TIMESTAMPTZ,
+    p_clock_skew_seconds INT DEFAULT 1
+)
+RETURNS BOOLEAN
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, pg_temp
+AS $$
+DECLARE
+    wrote_row BOOLEAN;
+BEGIN
+    INSERT INTO public.vibecheck_scrapes (
+        normalized_url, tier, url, final_url, host, page_kind, page_title,
+        markdown, html, screenshot_storage_key, scraped_at, expires_at,
+        evicted_at
+    )
+    VALUES (
+        p_normalized_url, p_tier, p_url, p_final_url, p_host, p_page_kind,
+        p_page_title, p_markdown, p_html, p_screenshot_storage_key,
+        p_scraped_at, p_expires_at, NULL
+    )
+    ON CONFLICT (normalized_url, tier) DO UPDATE
+    SET url = EXCLUDED.url,
+        final_url = EXCLUDED.final_url,
+        host = EXCLUDED.host,
+        page_kind = EXCLUDED.page_kind,
+        page_title = EXCLUDED.page_title,
+        markdown = EXCLUDED.markdown,
+        html = EXCLUDED.html,
+        screenshot_storage_key = EXCLUDED.screenshot_storage_key,
+        scraped_at = EXCLUDED.scraped_at,
+        expires_at = EXCLUDED.expires_at,
+        evicted_at = EXCLUDED.evicted_at
+    WHERE public.vibecheck_scrapes.evicted_at IS NULL
+       OR public.vibecheck_scrapes.evicted_at < (
+           p_put_started_at
+           - pg_catalog.make_interval(secs => p_clock_skew_seconds::double precision)
+       )
+    RETURNING TRUE INTO wrote_row;
+
+    RETURN COALESCE(wrote_row, FALSE);
+END;
+$$;
+ALTER FUNCTION public.vibecheck_upsert_scrape_if_not_evicted(
+    TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TIMESTAMPTZ,
+    TIMESTAMPTZ, TIMESTAMPTZ, INT
+) OWNER TO postgres;
+REVOKE ALL ON FUNCTION public.vibecheck_upsert_scrape_if_not_evicted(
+    TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TIMESTAMPTZ,
+    TIMESTAMPTZ, TIMESTAMPTZ, INT
+) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.vibecheck_upsert_scrape_if_not_evicted(
+    TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TIMESTAMPTZ,
+    TIMESTAMPTZ, TIMESTAMPTZ, INT
+) TO service_role;
+
+-- PostgREST caches RPC signatures. When startup applies this schema through
+-- `public.exec_sql`, the new atomic scrape-upsert RPC must be visible before
+-- request traffic calls it.
+NOTIFY pgrst, 'reload schema';
+
 -- =========================================================================
 -- vibecheck_job_utterances (per-job utterance cache)
 -- =========================================================================

@@ -14,6 +14,7 @@ from src.cache.scrape_cache import CachedScrape, SupabaseScrapeCache
 from src.cache.screenshot_store import GCSScreenshotStore, InMemoryScreenshotStore, ScreenshotStore
 from src.config import get_settings
 from src.firecrawl_client import FirecrawlClient, ScrapeResult
+from src.jobs.scrape_quality import ScrapeQuality, classify_scrape
 from src.monitoring import get_logger
 from src.utils.html_sanitize import strip_noise
 from src.utils.url_security import InvalidURL, validate_public_http_url
@@ -29,6 +30,7 @@ _SCREENSHOT_TIMEOUT_SECONDS = 60.0
 _SCREENSHOT_REQUEST_BUDGET_SECONDS = 90.0
 _ARCHIVE_REQUEST_BUDGET_SECONDS = 8.0
 _BLOCKING_XFO_VALUES = {"deny", "sameorigin"}
+_ARCHIVE_CACHE_TIERS = ("scrape", "interact")
 _PERMISSIVE_FRAME_ANCESTOR_TOKENS = {"*", "https:", "http:", "data:"}
 _ARCHIVE_CSP = (
     "default-src 'none'; img-src https: data:; style-src 'unsafe-inline' https:; "
@@ -194,11 +196,30 @@ def get_scrape_cache() -> SupabaseScrapeCache:
 
 async def _has_cached_archive(url: str) -> bool:
     try:
-        cached = await get_scrape_cache().get(url, tier="scrape")
+        scrape_cache = get_scrape_cache()
     except Exception as exc:
         logger.info("archive cache lookup failed for %s: %s", url, exc)
         return False
-    return bool(cached and cached.html)
+
+    cached, _ = await _get_cached_archive(url, scrape_cache, require_usable=True)
+    return bool(cached)
+
+
+async def _get_cached_archive(
+    url: str, scrape_cache: SupabaseScrapeCache, *, require_usable: bool = False
+) -> tuple[CachedScrape | None, str | None]:
+    try:
+        tiers = ("interact", "scrape") if require_usable else _ARCHIVE_CACHE_TIERS
+        for tier in tiers:
+            cached = await scrape_cache.get(url, tier=tier)
+            if cached and cached.html:
+                if require_usable and classify_scrape(cached) is not ScrapeQuality.OK:
+                    continue
+                return cached, tier
+        return None, None
+    except Exception as exc:
+        logger.info("archive cache lookup failed for %s: %s", url, exc)
+        return None, None
 
 
 async def _revalidate_archive_final_url(
@@ -206,6 +227,7 @@ async def _revalidate_archive_final_url(
     *,
     original_url: str,
     scrape_cache: Any,
+    tier: str = "scrape",
 ) -> None:
     final = scrape.metadata.source_url if scrape.metadata else None
     if not final:
@@ -216,7 +238,7 @@ async def _revalidate_archive_final_url(
         evict = getattr(scrape_cache, "evict", None)
         if callable(evict):
             try:
-                result = evict(original_url, tier="scrape")
+                result = evict(original_url, tier=tier)
                 if isawaitable(result):
                     await result
             except Exception as exc:
@@ -277,12 +299,14 @@ async def archive_preview(
     _validate_http_url(url)
     parsed_job_id = _parse_archive_job_id(job_id)
     scrape_cache = get_scrape_cache()
-    cached = await scrape_cache.get(url, tier="scrape")
+    cached, cached_tier = await _get_cached_archive(
+        url, scrape_cache, require_usable=True
+    )
     if cached and cached.html:
         # TODO: If Firecrawl exposes a hosted archive URL in CachedScrape metadata,
         # return a redirect to that URL instead of serving cached sanitized HTML.
         await _revalidate_archive_final_url(
-            cached, original_url=url, scrape_cache=scrape_cache
+            cached, original_url=url, scrape_cache=scrape_cache, tier=cached_tier or "scrape"
         )
         html = await _annotate_archive_html(
             cached.html,
@@ -301,11 +325,19 @@ async def archive_preview(
             fc.scrape(url, formats=["html"], only_main_content=True),
             timeout=_ARCHIVE_REQUEST_BUDGET_SECONDS,
         )
-        stored = await scrape_cache.put(url, fresh, tier="scrape")
     except TimeoutError:
         raise HTTPException(status_code=504, detail="Archive unavailable")
     except Exception as exc:
         logger.warning("archive preview scrape failed for %s: %s", url, exc)
+        raise HTTPException(status_code=502, detail="Archive unavailable") from exc
+
+    if classify_scrape(fresh) is not ScrapeQuality.OK:
+        raise HTTPException(status_code=502, detail="Archive unavailable")
+
+    try:
+        stored = await scrape_cache.put(url, fresh, tier="scrape")
+    except Exception as exc:
+        logger.warning("archive preview cache write failed for %s: %s", url, exc)
         raise HTTPException(status_code=502, detail="Archive unavailable") from exc
 
     await _revalidate_archive_final_url(stored, original_url=url, scrape_cache=scrape_cache)

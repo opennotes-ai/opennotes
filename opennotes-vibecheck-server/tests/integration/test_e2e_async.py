@@ -46,7 +46,8 @@ import pytest
 
 from src.analyses.claims._claims_schemas import Claim, ClaimsReport, DedupedClaim
 from src.analyses.opinions._schemas import SentimentScore, SentimentStatsReport, SubjectiveClaim
-from src.analyses.schemas import PageKind, SectionSlug
+from src.analyses.safety._schemas import SafetyLevel, SafetyRecommendation
+from src.analyses.schemas import HeadlineSummary, PageKind, SectionSlug
 from src.analyses.tone._flashpoint_schemas import FlashpointMatch, RiskLevel
 from src.analyses.tone._scd_schemas import SCDReport, SpeakerArc
 from src.utterances.schema import UtterancesPayload
@@ -207,12 +208,47 @@ async def test_post_then_internal_run_then_poll_to_done(
             [],
         ]
 
+    async def _stub_known_misinfo(
+        pool: Any,
+        job_id: UUID,
+        task_attempt: UUID,
+        payload: Any,
+        settings: Any,
+    ) -> dict[str, Any]:
+        return {"known_misinformation": []}
+
+    async def _stub_safety_recommendation(
+        *args: Any, **kwargs: Any
+    ) -> SafetyRecommendation:
+        return SafetyRecommendation(
+            level=SafetyLevel.SAFE,
+            rationale="No safety concerns in the deterministic integration fixture.",
+            top_signals=[],
+            unavailable_inputs=[],
+        )
+
+    async def _stub_headline_summary(*args: Any, **kwargs: Any) -> HeadlineSummary:
+        return HeadlineSummary(
+            text="The discussion moves from a report into criticism.",
+            kind="synthesized",
+            unavailable_inputs=[],
+        )
+
     monkeypatch.setattr(flashpoint_slot, "detect_flashpoints_bulk", _stub_flashpoints)
     monkeypatch.setattr(scd_slot, "analyze_scd", _stub_scd)
     monkeypatch.setattr(dedupe_slot, "extract_claims_bulk", _stub_extract_claims)
     monkeypatch.setattr(dedupe_slot, "dedupe_claims", _stub_dedupe)
     monkeypatch.setattr(sentiment_slot, "compute_sentiment_stats", _stub_sentiment)
     monkeypatch.setattr(subjective_slot, "extract_subjective_claims_bulk", _stub_subjective)
+    monkeypatch.setitem(
+        orchestrator._SECTION_HANDLERS,
+        SectionSlug.FACTS_CLAIMS_KNOWN_MISINFO,
+        _stub_known_misinfo,
+    )
+    monkeypatch.setattr(
+        orchestrator, "run_safety_recommendation", _stub_safety_recommendation
+    )
+    monkeypatch.setattr(orchestrator, "run_headline_summary", _stub_headline_summary)
 
     # 2. POST /api/analyze — fresh submit returns 202 + new job_id.
     resp = await http_client.post(
