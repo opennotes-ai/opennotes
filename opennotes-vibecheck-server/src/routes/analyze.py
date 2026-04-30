@@ -58,8 +58,10 @@ from src.analyses.schemas import (
     SafetySection,
     SectionSlot,
     SectionSlug,
+    SectionState,
     SidebarPayload,
     ToneDynamicsSection,
+    UtteranceAnchor,
     WebRiskSection,
 )
 from src.analyses.tone._scd_schemas import SCDReport
@@ -72,6 +74,7 @@ from src.jobs.preview_description import (
 )
 from src.jobs.recent_cache import _AsyncTTLCache, cache_key, is_cache_disabled
 from src.jobs.recent_query import ScreenshotSigner, list_recent
+from src.jobs.sidebar_payload import assemble_sidebar_payload
 from src.jobs.slots import retry_claim_slot
 from src.monitoring import get_logger
 from src.monitoring_metrics import CACHE_HITS, SINGLE_FLIGHT_LOCK_WAITS
@@ -922,6 +925,10 @@ SELECT
     j.cached,
     j.created_at,
     j.updated_at,
+    j.safety_recommendation,
+    j.headline_summary,
+    j.last_stage,
+    j.heartbeat_at,
     meta.page_title,
     meta.page_kind,
     (
@@ -969,19 +976,43 @@ def _parse_sections(raw: Any) -> dict[SectionSlug, SectionSlot]:
     return out
 
 
+_NON_TERMINAL_STATUSES_POLL = frozenset({"pending", "extracting", "analyzing"})
+
+
 def _row_to_job_state(row: Any) -> JobState:
     status = JobStatus(row["status"])
+    sections = _parse_sections(row["sections"])
     sidebar_raw = _parse_jsonb(row["sidebar_payload"])
-    sidebar_payload = (
-        SidebarPayload.model_validate(sidebar_raw)
-        if sidebar_raw is not None
-        else None
-    )
+    if sidebar_raw is not None:
+        sidebar_payload = SidebarPayload.model_validate(sidebar_raw)
+        sidebar_payload_complete = True
+    elif status.value in _NON_TERMINAL_STATUSES_POLL and any(
+        slot.state == SectionState.DONE and slot.data is not None
+        for slot in sections.values()
+    ):
+        sidebar_payload = assemble_sidebar_payload(
+            row["url"],
+            sections,
+            safety_recommendation=None,
+            headline_summary=None,
+            utterances=[],
+        )
+        sidebar_payload_complete = False
+    else:
+        sidebar_payload = None
+        sidebar_payload_complete = False
+
     page_kind_raw = row.get("page_kind", None)
     page_kind = PageKind(page_kind_raw) if isinstance(page_kind_raw, str) else None
-    utterance_count_raw = (
-        row.get("utterance_count", 0)
-    )
+    utterance_count_raw = row.get("utterance_count", 0)
+
+    if status.value in _NON_TERMINAL_STATUSES_POLL:
+        activity_at = row.get("heartbeat_at", None)
+        activity_label = row.get("last_stage", None)
+    else:
+        activity_at = None
+        activity_label = None
+
     return JobState(
         job_id=row["job_id"],
         url=row["url"],
@@ -992,8 +1023,11 @@ def _row_to_job_state(row: Any) -> JobState:
         error_host=row["error_host"],
         created_at=row["created_at"],
         updated_at=row["updated_at"],
-        sections=_parse_sections(row["sections"]),
+        sections=sections,
         sidebar_payload=sidebar_payload,
+        sidebar_payload_complete=sidebar_payload_complete,
+        activity_at=activity_at,
+        activity_label=activity_label,
         cached=bool(row["cached"]),
         next_poll_ms=_POLL_DELAY_BY_STATUS[status],
         page_title=row.get("page_title", None),
