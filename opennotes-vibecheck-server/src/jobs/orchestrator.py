@@ -1045,56 +1045,60 @@ async def _run_tier2(
     if cached_t2 is not None:
         cached_quality = classify_scrape(cached_t2)
         if cached_quality is ScrapeQuality.OK:
-            return _Tier2Outcome(
+            outcome = _Tier2Outcome(
                 cached=cached_t2, tier2_reason="ok", final_classification="ok"
             )
-        return _Tier2Outcome(
-            cached=None,
-            tier2_reason=cached_quality.value,
-            final_classification=cached_quality.value,
-        )
+        else:
+            outcome = _Tier2Outcome(
+                cached=None,
+                tier2_reason=cached_quality.value,
+                final_classification=cached_quality.value,
+            )
+    else:
+        try:
+            fresh = await interact_client.interact(
+                url,
+                actions=_tier2_actions_for(coral_signal),
+                formats=["markdown", "html", "screenshot@fullPage"],
+                only_main_content=True,
+            )
+        except FirecrawlBlocked as exc:
+            outcome = _Tier2Outcome(
+                cached=None,
+                tier2_reason=f"firecrawl_blocked: {exc}",
+                final_classification="firecrawl_blocked",
+            )
+        except FirecrawlError as exc:
+            outcome = _Tier2Outcome(
+                cached=None,
+                tier2_reason=f"firecrawl_error: {exc}",
+                final_classification="firecrawl_error",
+            )
+        except Exception as exc:
+            outcome = _Tier2Outcome(
+                cached=None,
+                tier2_reason=f"unexpected_error: {exc}",
+                final_classification="unexpected_error",
+            )
+        else:
+            quality = classify_scrape(fresh)
+            if quality is ScrapeQuality.OK:
+                cached_after_t2 = await _cache_put_or_keyless(
+                    scrape_cache, url, fresh, tier="interact"
+                )
+                outcome = _Tier2Outcome(
+                    cached=cached_after_t2,
+                    tier2_reason="ok",
+                    final_classification="ok",
+                )
+            else:
+                outcome = _Tier2Outcome(
+                    cached=None,
+                    tier2_reason=quality.value,
+                    final_classification=quality.value,
+                )
 
-    try:
-        fresh = await interact_client.interact(
-            url,
-            actions=_tier2_actions_for(coral_signal),
-            formats=["markdown", "html", "screenshot@fullPage"],
-            only_main_content=True,
-        )
-    except FirecrawlBlocked as exc:
-        return _Tier2Outcome(
-            cached=None,
-            tier2_reason=f"firecrawl_blocked: {exc}",
-            final_classification="firecrawl_blocked",
-        )
-    except FirecrawlError as exc:
-        return _Tier2Outcome(
-            cached=None,
-            tier2_reason=f"firecrawl_error: {exc}",
-            final_classification="firecrawl_error",
-        )
-    except Exception as exc:
-        return _Tier2Outcome(
-            cached=None,
-            tier2_reason=f"unexpected_error: {exc}",
-            final_classification="unexpected_error",
-        )
-
-    quality = classify_scrape(fresh)
-    if quality is ScrapeQuality.OK:
-        cached_after_t2 = await _cache_put_or_keyless(
-            scrape_cache, url, fresh, tier="interact"
-        )
-        return _Tier2Outcome(
-            cached=cached_after_t2,
-            tier2_reason="ok",
-            final_classification="ok",
-        )
-    return _Tier2Outcome(
-        cached=None,
-        tier2_reason=quality.value,
-        final_classification=quality.value,
-    )
+    return outcome
 
 
 async def _scrape_step(
