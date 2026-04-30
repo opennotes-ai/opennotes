@@ -1101,6 +1101,50 @@ async def test_scrape_step_tier1_coral_detection_merges_graphql_comments(
     assert len(interact_client.interact_calls) == 0
 
 
+async def test_scrape_step_tier1_coral_truncated_marker_stays_cached(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Tier 1 treats capped Coral GraphQL output as a successful partial merge."""
+
+    from src.jobs import orchestrator
+
+    span = _install_recording_span(monkeypatch)
+    url = "https://example.com/post"
+    cache = _FakeScrapeCache()
+    scrape_client = _FakeFirecrawlClient(
+        scrape_result=_ok_scrape_result(
+            body="Substantive article body. " * 20,
+            html=(
+                "<html><body>"
+                f"{_CORAL_HTML_FIXTURE}"
+                "<article><h1>Real Article</h1><p>Substantive article body.</p></article>"
+                "</body></html>"
+            ),
+        )
+    )
+    interact_client = _FakeFirecrawlClient(interact_result=_ok_scrape_result())
+
+    async def fetch_ok(origin: str, story_url: str) -> CoralComments:
+        assert origin == "https://coral.example.com"
+        assert story_url == "https://example.com/post"
+        return CoralComments(
+            comments_markdown="## Comments\n- Great discussion.\n[comments truncated]",
+            raw_count=1,
+            fetched_at=datetime.now(UTC),
+        )
+
+    monkeypatch.setattr(orchestrator, "fetch_coral_comments", fetch_ok)
+
+    result = await _call_scrape_step(url, scrape_client, interact_client, cache)
+
+    markdown = _require_markdown(result)
+    assert "[comments truncated]" in markdown
+    cached_markdown = _require_markdown(cache.store[(url, "scrape")])
+    assert "[comments truncated]" in cached_markdown
+    assert span.attrs.get("coral_outcome") == "merged"
+    assert len(interact_client.interact_calls) == 0
+
+
 async def test_scrape_step_tier1_partial_coral_markers_triggers_direct_html_fetch_for_detection(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

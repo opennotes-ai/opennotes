@@ -47,12 +47,16 @@ def test_render_to_markdown_preserves_author_timestamp_and_parenting() -> None:
     assert rendered.index("comment-2") < rendered.index("comment-3")
 
 
-def test_render_to_markdown_strips_html_tags() -> None:
-    """HTML in comment bodies is converted into plain text for LLM readability."""
+def test_render_to_markdown_preserves_html_body_boundaries() -> None:
+    """Paragraphs, line breaks, lists, nested text, and entities stay readable."""
     nodes = [
         CoralCommentNode(
             id="comment-1",
-            body="<p>Hello <strong>world</strong>! <a href='#'>Go</a>.</p>",
+            body=(
+                "<p>First paragraph &amp; entity.</p>"
+                "<p>Second line<br>after break.</p>"
+                "<ul><li>One <strong>nested</strong> item</li><li>Second item</li></ul>"
+            ),
             author_username="alice",
             parent_id=None,
             created_at=datetime(2026, 4, 29, 10, 0, tzinfo=UTC),
@@ -61,6 +65,30 @@ def test_render_to_markdown_strips_html_tags() -> None:
 
     rendered = render_to_markdown(nodes)
 
-    assert "Hello world! Go." in rendered
+    assert "First paragraph & entity." in rendered
+    assert "Second line\n  after break." in rendered
+    assert "- One nested item" in rendered
+    assert "- Second item" in rendered
     assert "<p>" not in rendered
     assert "</" not in rendered
+
+
+def test_render_to_markdown_preserves_anchor_href_targets() -> None:
+    """Coral comment links keep their target URL for downstream extraction."""
+    nodes = [
+        CoralCommentNode(
+            id="comment-1",
+            body=(
+                '<p>Read the <a href="https://example.com/ref">source</a> '
+                "before replying.</p>"
+            ),
+            author_username="alice",
+            parent_id=None,
+            created_at=datetime(2026, 4, 29, 10, 0, tzinfo=UTC),
+        )
+    ]
+
+    rendered = render_to_markdown(nodes)
+
+    assert "Read the [source](https://example.com/ref) before replying." in rendered
+    assert "<a " not in rendered

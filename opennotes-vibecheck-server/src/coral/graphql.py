@@ -13,9 +13,13 @@ from src.utils.url_security import InvalidURL, validate_public_http_url
 from .render import render_to_markdown
 
 CORAL_GRAPHQL_QUERY = """
-query CoralStoryComments($url: String!, $first: Int = 50) {
+query CoralStoryComments($url: String!, $first: Int = 50, $after: Cursor) {
   stream(url: $url) {
-    comments(first: $first, orderBy: CREATED_AT_ASC) {
+    comments(first: $first, after: $after, orderBy: CREATED_AT_ASC) {
+      pageInfo {
+        endCursor
+        hasNextPage
+      }
       edges {
         node {
           id
@@ -31,6 +35,10 @@ query CoralStoryComments($url: String!, $first: Int = 50) {
 """.strip()
 
 _RETRY_STATUS = {429, 500, 502, 503, 504}
+_DEFAULT_PAGE_SIZE = 50
+# Bound Coral GraphQL work for very large threads while returning partial text.
+_DEFAULT_MAX_COMMENTS = 300
+_TRUNCATION_MARKER = "[comments truncated]"
 
 
 class CoralFetchError(Exception):
@@ -90,8 +98,16 @@ class _CoralCommentEdge(BaseModel):
     node: _CoralCommentNode
 
 
+class _CoralPageInfo(BaseModel):
+    end_cursor: str | None = Field(default=None, validation_alias="endCursor")
+    has_next_page: bool = Field(validation_alias="hasNextPage")
+    model_config = ConfigDict(populate_by_name=True)
+
+
 class _CoralCommentsConnection(BaseModel):
+    page_info: _CoralPageInfo = Field(validation_alias="pageInfo")
     edges: list[_CoralCommentEdge]
+    model_config = ConfigDict(populate_by_name=True)
 
 
 class _CoralStream(BaseModel):
@@ -106,49 +122,47 @@ class _GraphqlResponse(BaseModel):
     data: _CoralPayload
 
 
-def _to_nodes(payload: dict[str, Any]) -> list[CoralCommentNode]:
+def _to_page(payload: dict[str, Any]) -> tuple[list[CoralCommentNode], _CoralPageInfo]:
     parsed = _GraphqlResponse.model_validate(payload)
-    return [edge.node.as_public() for edge in parsed.data.stream.comments.edges]
+    comments = parsed.data.stream.comments
+    return [edge.node.as_public() for edge in comments.edges], comments.page_info
 
 
-def _safe_request_body(url: str) -> dict[str, Any]:
+def _safe_request_body(
+    url: str,
+    *,
+    first: int = _DEFAULT_PAGE_SIZE,
+    after: str | None = None,
+) -> dict[str, Any]:
     return {
         "query": CORAL_GRAPHQL_QUERY,
         "variables": {
             "url": url,
-            "first": 50,
+            "first": first,
+            "after": after,
         },
     }
 
 
-async def fetch_coral_comments(
-    graphql_origin: str,
+def _with_truncation_marker(comments_markdown: str) -> str:
+    return f"{comments_markdown.rstrip()}\n{_TRUNCATION_MARKER}"
+
+
+async def _fetch_coral_page(
+    client: httpx.AsyncClient,
+    endpoint: str,
     story_url: str,
     *,
-    timeout: float = 10.0,
-    max_attempts: int = 2,
-) -> CoralComments:
-    """Fetch Coral comments from ``/api/graphql`` and render markdown.
-
-    The client is intentionally defensive: transient transport conditions are
-    retried while 4xx/GraphQL parse/schema errors are terminal.
-    """
-
-    raw_endpoint = graphql_origin.rstrip("/") + "/api/graphql"
-    try:
-        endpoint = validate_public_http_url(raw_endpoint)
-    except InvalidURL as exc:
-        raise CoralUnsupportedError(
-            f"coral graphql unsafe endpoint: {exc.reason}"
-        ) from exc
-    body = _safe_request_body(story_url)
-
+    first: int,
+    after: str | None,
+    max_attempts: int,
+) -> tuple[list[CoralCommentNode], _CoralPageInfo]:
+    body = _safe_request_body(story_url, first=first, after=after)
     last_error: Exception | None = None
 
     for _ in range(max_attempts):
         try:
-            async with httpx.AsyncClient(timeout=timeout) as client:
-                response = await client.post(endpoint, json=body)
+            response = await client.post(endpoint, json=body)
 
             if response.status_code in _RETRY_STATUS:
                 raise CoralFetchError(
@@ -171,15 +185,9 @@ async def fetch_coral_comments(
                 raise CoralUnsupportedError("coral graphql returned GraphQL errors")
 
             try:
-                nodes = _to_nodes(payload)
+                return _to_page(payload)
             except ValidationError as exc:
                 raise CoralUnsupportedError("coral graphql payload schema mismatch") from exc
-
-            return CoralComments(
-                comments_markdown=render_to_markdown(nodes),
-                raw_count=len(nodes),
-                fetched_at=datetime.now(UTC),
-            )
 
         except (httpx.TimeoutException, httpx.TransportError) as exc:
             last_error = exc
@@ -194,3 +202,80 @@ async def fetch_coral_comments(
         raise CoralFetchError(f"coral graphql failed after retry budget: {last_error!s}")
 
     raise CoralFetchError("coral graphql exhausted retry attempts")
+
+
+async def fetch_coral_comments(
+    graphql_origin: str,
+    story_url: str,
+    *,
+    timeout: float = 10.0,
+    max_attempts: int = 2,
+    page_size: int = _DEFAULT_PAGE_SIZE,
+    max_comments: int = _DEFAULT_MAX_COMMENTS,
+) -> CoralComments:
+    """Fetch Coral comments from ``/api/graphql`` and render markdown.
+
+    The client is intentionally defensive: transient transport conditions are
+    retried while 4xx/GraphQL parse/schema errors are terminal.
+    """
+    if page_size < 1:
+        raise ValueError("page_size must be at least 1")
+    if max_comments < 1:
+        raise ValueError("max_comments must be at least 1")
+
+    raw_endpoint = graphql_origin.rstrip("/") + "/api/graphql"
+    try:
+        endpoint = validate_public_http_url(raw_endpoint)
+    except InvalidURL as exc:
+        raise CoralUnsupportedError(
+            f"coral graphql unsafe endpoint: {exc.reason}"
+        ) from exc
+
+    nodes: list[CoralCommentNode] = []
+    after: str | None = None
+    truncated = False
+
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        while True:
+            remaining = max_comments - len(nodes)
+            if remaining <= 0:
+                truncated = True
+                break
+
+            page_nodes, page_info = await _fetch_coral_page(
+                client,
+                endpoint,
+                story_url,
+                first=min(page_size, remaining),
+                after=after,
+                max_attempts=max_attempts,
+            )
+
+            if len(page_nodes) > remaining:
+                nodes.extend(page_nodes[:remaining])
+                truncated = True
+                break
+
+            nodes.extend(page_nodes)
+
+            if not page_info.has_next_page:
+                break
+
+            if len(nodes) >= max_comments:
+                truncated = True
+                break
+
+            if page_info.end_cursor is None:
+                raise CoralUnsupportedError("coral graphql pagination cursor missing")
+
+            after = page_info.end_cursor
+
+    comments_markdown = render_to_markdown(nodes)
+    if truncated:
+        comments_markdown = _with_truncation_marker(comments_markdown)
+
+    return CoralComments(
+        comments_markdown=comments_markdown,
+        raw_count=len(nodes),
+        fetched_at=datetime.now(UTC),
+    )
