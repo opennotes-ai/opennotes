@@ -158,6 +158,18 @@ def _minimal_sidebar_payload(url: str) -> dict[str, Any]:
     }
 
 
+def _harmful_match(utterance_id: str, text: str) -> dict[str, Any]:
+    return {
+        "utterance_id": utterance_id,
+        "utterance_text": text,
+        "max_score": 0.91,
+        "categories": {"harassment": True},
+        "scores": {"harassment": 0.91},
+        "flagged_categories": ["harassment"],
+        "source": "openai",
+    }
+
+
 async def _insert_job(
     pool: Any,
     *,
@@ -290,7 +302,9 @@ async def test_sections_dict_round_trips(client: httpx.AsyncClient, db_pool: Any
         "safety__moderation": {
             "state": "done",
             "attempt_id": str(uuid4()),
-            "data": {"harmful_content_matches": []},
+            "data": {
+                "harmful_content_matches": [_harmful_match("u-live-safety", "Live safety match")]
+            },
             "finished_at": datetime.now(UTC).isoformat(),
         }
     }
@@ -534,7 +548,9 @@ async def test_analyzing_with_one_done_slot_returns_partial_sidebar_payload(
         "safety__moderation": {
             "state": "done",
             "attempt_id": str(uuid4()),
-            "data": {"harmful_content_matches": []},
+            "data": {
+                "harmful_content_matches": [_harmful_match("u-live-safety", "Live safety match")]
+            },
             "finished_at": datetime.now(UTC).isoformat(),
         },
         "tone_dynamics__flashpoint": {
@@ -552,8 +568,63 @@ async def test_analyzing_with_one_done_slot_returns_partial_sidebar_payload(
     assert body["sidebar_payload_complete"] is False
     assert body["sidebar_payload"]["source_url"] == url
     # Done slot data should be present; running slots get empty defaults
-    assert body["sidebar_payload"]["safety"]["harmful_content_matches"] == []
+    assert body["sidebar_payload"]["safety"]["harmful_content_matches"] == [
+        {
+            "utterance_id": "u-live-safety",
+            "utterance_text": "Live safety match",
+            "max_score": 0.91,
+            "categories": {"harassment": True},
+            "scores": {"harassment": 0.91},
+            "flagged_categories": ["harassment"],
+            "source": "openai",
+        }
+    ]
     assert body["sidebar_payload"]["tone_dynamics"]["flashpoint_matches"] == []
+
+
+async def test_non_terminal_partial_payload_includes_safety_and_headline_columns(
+    client: httpx.AsyncClient, db_pool: Any
+) -> None:
+    """Partial polling payload includes completed aggregate columns."""
+    sections = {
+        "safety__moderation": {
+            "state": "done",
+            "attempt_id": str(uuid4()),
+            "data": {"harmful_content_matches": []},
+            "finished_at": datetime.now(UTC).isoformat(),
+        },
+    }
+    job_id = await _insert_job(
+        db_pool,
+        status="analyzing",
+        sections=sections,
+        safety_recommendation={
+            "level": "caution",
+            "rationale": "Safety coverage is incomplete.",
+            "top_signals": ["web risk unavailable"],
+            "unavailable_inputs": ["web_risk"],
+        },
+        headline_summary={
+            "text": "A developing story with partial analysis.",
+            "kind": "synthesized",
+            "unavailable_inputs": ["opinions"],
+        },
+    )
+    resp = await client.get(f"/api/analyze/{job_id}")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["sidebar_payload_complete"] is False
+    assert body["sidebar_payload"]["safety"]["recommendation"] == {
+        "level": "caution",
+        "rationale": "Safety coverage is incomplete.",
+        "top_signals": ["web risk unavailable"],
+        "unavailable_inputs": ["web_risk"],
+    }
+    assert body["sidebar_payload"]["headline"] == {
+        "text": "A developing story with partial analysis.",
+        "kind": "synthesized",
+        "unavailable_inputs": ["opinions"],
+    }
 
 
 async def test_analyzing_with_zero_done_slots_returns_no_sidebar_payload(
@@ -596,6 +667,29 @@ async def test_done_job_returns_sidebar_payload_complete_true(
     assert body["sidebar_payload_complete"] is True
 
 
+async def test_failed_job_with_payload_is_not_marked_complete(
+    client: httpx.AsyncClient, db_pool: Any
+) -> None:
+    """Failed jobs may carry minimal payloads but are not canonical-complete."""
+    url = "https://example.com/failed-payload"
+    payload = _minimal_sidebar_payload(url)
+    job_id = await _insert_job(
+        db_pool,
+        status="failed",
+        sidebar_payload=payload,
+        error_code="unsupported_site",
+        error_message="unsupported host",
+        finished_at=datetime.now(UTC),
+        url=url,
+    )
+    resp = await client.get(f"/api/analyze/{job_id}")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["status"] == "failed"
+    assert body["sidebar_payload"]["source_url"] == url
+    assert body["sidebar_payload_complete"] is False
+
+
 async def test_non_terminal_job_populates_activity_fields(
     client: httpx.AsyncClient, db_pool: Any
 ) -> None:
@@ -603,14 +697,14 @@ async def test_non_terminal_job_populates_activity_fields(
     heartbeat = datetime.now(UTC)
     job_id = await _insert_job(
         db_pool,
-        status="extracting",
+        status="analyzing",
         last_stage="run_sections",
         heartbeat_at=heartbeat,
     )
     resp = await client.get(f"/api/analyze/{job_id}")
     assert resp.status_code == 200
     body = resp.json()
-    assert body["status"] == "extracting"
+    assert body["status"] == "analyzing"
     assert body["activity_at"] is not None
     assert body["activity_label"] == "Running section analyses"
 
@@ -635,31 +729,36 @@ async def test_terminal_job_has_no_activity_fields(client: httpx.AsyncClient, db
     assert body["activity_label"] is None
 
 
-async def test_activity_label_maps_known_stage_keys(
-    client: httpx.AsyncClient, db_pool: Any
-) -> None:
-    """Known last_stage values are mapped to human-readable activity labels."""
-    cases: list[tuple[str, str]] = [
+@pytest.mark.parametrize(
+    ("stage_key", "expected_label"),
+    [
+        ("extracting", "Extracting page content"),
         ("run_sections", "Running section analyses"),
         ("headline_summary", "Writing summary"),
         ("persist_utterances", "Saving page content"),
         ("set_analyzing", "Preparing analysis"),
         ("safety_recommendation", "Computing safety guidance"),
-        ("finalize", "Finalizing results"),
-    ]
-    for stage_key, expected_label in cases:
-        job_id = await _insert_job(
-            db_pool,
-            status="analyzing",
-            last_stage=stage_key,
-            heartbeat_at=datetime.now(UTC),
-        )
-        resp = await client.get(f"/api/analyze/{job_id}")
-        assert resp.status_code == 200
-        body = resp.json()
-        assert body["activity_label"] == expected_label, (
-            f"stage_key={stage_key!r} expected {expected_label!r}, got {body['activity_label']!r}"
-        )
+        pytest.param(
+            "finalize",
+            "Finalizing results",
+            id="finalize-defensive-terminal-transition-label",
+        ),
+    ],
+)
+async def test_activity_label_maps_known_stage_keys(
+    stage_key: str, expected_label: str, client: httpx.AsyncClient, db_pool: Any
+) -> None:
+    """Known last_stage values are mapped to human-readable activity labels."""
+    job_id = await _insert_job(
+        db_pool,
+        status="analyzing",
+        last_stage=stage_key,
+        heartbeat_at=datetime.now(UTC),
+    )
+    resp = await client.get(f"/api/analyze/{job_id}")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["activity_label"] == expected_label
 
 
 async def test_activity_label_falls_back_for_unknown_stage(
@@ -720,6 +819,13 @@ async def test_stale_persisted_sidebar_payload_ignored_for_non_terminal(
     must not expose stale canonical content (TASK-1473.65.08)."""
     url = "https://example.com/stale"
     stale_payload = _minimal_sidebar_payload(url)
+    stale_payload["facts_claims"]["claims_report"]["deduped_claims"] = [
+        {
+            "claim": "stale canonical claim",
+            "utterance_ids": ["stale-u"],
+            "supporting_text": ["stale text"],
+        }
+    ]
     sections = {
         "safety__moderation": {
             "state": "done",
@@ -748,6 +854,7 @@ async def test_stale_persisted_sidebar_payload_ignored_for_non_terminal(
     assert body["sidebar_payload_complete"] is False
     # Done slot data from current sections should be present
     assert body["sidebar_payload"]["safety"]["harmful_content_matches"] == []
+    assert body["sidebar_payload"]["facts_claims"]["claims_report"]["deduped_claims"] == []
     assert body["sidebar_payload"]["source_url"] == url
 
 

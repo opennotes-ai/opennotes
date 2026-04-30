@@ -105,11 +105,27 @@ describe("<Sidebar /> payload synthesis fallback", () => {
       },
     } as unknown as JobState["sections"];
 
-    render(() => <Sidebar sections={sections} payload={makePayload()} />);
+    render(() => (
+      <Sidebar sections={sections} payload={makePayload()} payloadComplete={true} />
+    ));
 
     expect(getSlotState("safety__moderation")).toBe("running");
     // Other slots remain pending because they weren't in `sections`.
     expect(getSlotState("tone_dynamics__scd")).toBe("pending");
+  });
+
+  it("fills missing slots while analyzing before the server seeds section rows", () => {
+    render(() => (
+      <Sidebar
+        sections={{}}
+        payload={makePayload()}
+        payloadComplete={false}
+        jobStatus="analyzing"
+      />
+    ));
+
+    expect(getSlotState("safety__moderation")).toBe("running");
+    expect(getSlotState("tone_dynamics__scd")).toBe("running");
   });
 
   it("renders populated payload data for the new safety slots", () => {

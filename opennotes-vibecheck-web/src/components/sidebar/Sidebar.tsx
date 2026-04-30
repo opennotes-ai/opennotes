@@ -333,8 +333,8 @@ const OPINIONS_COUNTS: Partial<
 };
 
 function fillMissingSlotsAsRunning(base: SlugToSlots): SlugToSlots {
-  // During the `extracting` phase the orchestrator hasn't seeded any
-  // sections yet, so `base` is typically `{}`. We synthesize a `running`
+  // During the early `extracting` / `analyzing` phases the orchestrator may
+  // not have seeded sections yet, so `base` is typically `{}`. We synthesize a `running`
   // slot for every known slug so the existing per-slug Skeleton renders
   // immediately. Once `analyzing` starts and the server populates a slot
   // (with state `pending` / `running` / `done`), we honor that slot —
@@ -426,7 +426,7 @@ export default function Sidebar(props: SidebarProps) {
       : shouldSynthesize && props.payload
         ? synthesizeSectionsFromPayload(props.payload)
         : {};
-    if (props.jobStatus === "extracting") {
+    if (props.jobStatus === "extracting" || props.jobStatus === "analyzing") {
       return fillMissingSlotsAsRunning(baseline);
     }
     return baseline;

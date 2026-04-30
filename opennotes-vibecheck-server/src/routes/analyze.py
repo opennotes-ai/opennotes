@@ -968,17 +968,20 @@ def _row_to_job_state(row: Any) -> JobState:
     is_non_terminal = status.value in _NON_TERMINAL_STATUSES_POLL
     sections = _parse_sections(row["sections"])
     sidebar_raw = None if is_non_terminal else _parse_jsonb(row["sidebar_payload"])
-    if not is_non_terminal and sidebar_raw is not None:
+    if status in {JobStatus.DONE, JobStatus.PARTIAL} and sidebar_raw is not None:
         sidebar_payload = SidebarPayload.model_validate(sidebar_raw)
         sidebar_payload_complete = True
+    elif not is_non_terminal and sidebar_raw is not None:
+        sidebar_payload = SidebarPayload.model_validate(sidebar_raw)
+        sidebar_payload_complete = False
     elif is_non_terminal and any(
         slot.state == SectionState.DONE and slot.data is not None for slot in sections.values()
     ):
         sidebar_payload = assemble_sidebar_payload(
             row["url"],
             sections,
-            safety_recommendation=None,
-            headline_summary=None,
+            safety_recommendation=row.get("safety_recommendation", None),
+            headline_summary=row.get("headline_summary", None),
             utterances=[],
         )
         sidebar_payload_complete = False
@@ -1021,6 +1024,7 @@ def _row_to_job_state(row: Any) -> JobState:
 
 
 _STAGE_LABEL_MAP: dict[str, str] = {
+    "extracting": "Extracting page content",
     "persist_utterances": "Saving page content",
     "set_analyzing": "Preparing analysis",
     "run_sections": "Running section analyses",

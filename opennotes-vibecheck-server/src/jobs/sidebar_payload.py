@@ -5,6 +5,7 @@ using neutral defaults for missing, pending, running, or failed slots.
 `payload_for_url_cache` serializes a payload for the legacy 72h cache,
 stripping job-scoped utterance anchors.
 """
+
 from __future__ import annotations
 
 import json
@@ -55,6 +56,7 @@ def assemble_sidebar_payload(
     merge rules here are the only place we reconcile slot-level shapes with
     the section-level schemas that `SidebarPayload` requires.
     """
+
     def data_for(slug: SectionSlug) -> dict[str, Any]:
         slot = sections.get(slug)
         if slot is None or slot.state != SectionState.DONE or not isinstance(slot.data, dict):
@@ -93,16 +95,12 @@ def assemble_sidebar_payload(
         findings=[WebRiskFinding.model_validate(f) for f in web_risk_findings]
     )
 
-    image_mod_matches = data_for(SectionSlug.SAFETY_IMAGE_MODERATION).get(
-        "matches", []
-    )
+    image_mod_matches = data_for(SectionSlug.SAFETY_IMAGE_MODERATION).get("matches", [])
     image_moderation = ImageModerationSection(
         matches=[ImageModerationMatch.model_validate(m) for m in image_mod_matches]
     )
 
-    video_mod_matches = data_for(SectionSlug.SAFETY_VIDEO_MODERATION).get(
-        "matches", []
-    )
+    video_mod_matches = data_for(SectionSlug.SAFETY_VIDEO_MODERATION).get("matches", [])
     video_moderation = VideoModerationSection(
         matches=[VideoModerationMatch.model_validate(m) for m in video_mod_matches]
     )
@@ -110,20 +108,25 @@ def assemble_sidebar_payload(
     flashpoint_data = data_for(SectionSlug.TONE_DYNAMICS_FLASHPOINT)
     scd_data = data_for(SectionSlug.TONE_DYNAMICS_SCD)
     tone = ToneDynamicsSection(
-        scd=SCDReport.model_validate(scd_data["scd"]),
+        scd=SCDReport.model_validate(
+            scd_data.get("scd", empty_section_data(SectionSlug.TONE_DYNAMICS_SCD)["scd"])
+        ),
         flashpoint_matches=[
-            FlashpointMatch.model_validate(m)
-            for m in flashpoint_data.get("flashpoint_matches", [])
+            FlashpointMatch.model_validate(m) for m in flashpoint_data.get("flashpoint_matches", [])
         ],
     )
 
     dedup_data = data_for(SectionSlug.FACTS_CLAIMS_DEDUP)
     known_data = data_for(SectionSlug.FACTS_CLAIMS_KNOWN_MISINFO)
     facts = FactsClaimsSection(
-        claims_report=ClaimsReport.model_validate(dedup_data["claims_report"]),
+        claims_report=ClaimsReport.model_validate(
+            dedup_data.get(
+                "claims_report",
+                empty_section_data(SectionSlug.FACTS_CLAIMS_DEDUP)["claims_report"],
+            )
+        ),
         known_misinformation=[
-            FactCheckMatch.model_validate(m)
-            for m in known_data.get("known_misinformation", [])
+            FactCheckMatch.model_validate(m) for m in known_data.get("known_misinformation", [])
         ],
     )
 
@@ -131,16 +134,17 @@ def assemble_sidebar_payload(
     subjective_data = data_for(SectionSlug.OPINIONS_SENTIMENTS_SUBJECTIVE)
     opinions = OpinionsSection(
         opinions_report=OpinionsReport(
-            sentiment_stats=sentiment_data["sentiment_stats"],
+            sentiment_stats=sentiment_data.get(
+                "sentiment_stats",
+                empty_section_data(SectionSlug.OPINIONS_SENTIMENTS_SENTIMENT)["sentiment_stats"],
+            ),
             subjective_claims=subjective_data.get("subjective_claims", []),
         )
     )
 
     headline = (
         HeadlineSummary.model_validate(
-            json.loads(headline_summary)
-            if isinstance(headline_summary, str)
-            else headline_summary
+            json.loads(headline_summary) if isinstance(headline_summary, str) else headline_summary
         )
         if headline_summary is not None
         else None

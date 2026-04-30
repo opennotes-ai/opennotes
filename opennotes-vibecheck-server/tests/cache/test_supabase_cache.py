@@ -73,6 +73,52 @@ class FakeSupabaseClient:
         return FakeQuery(self.store)
 
 
+def _minimal_sidebar_payload(url: str = "https://example.com/article") -> dict[str, Any]:
+    return {
+        "source_url": url,
+        "page_title": "Example",
+        "page_kind": "other",
+        "scraped_at": datetime.now(UTC).isoformat(),
+        "cached": False,
+        "cached_at": None,
+        "safety": {"harmful_content_matches": []},
+        "web_risk": {"findings": []},
+        "image_moderation": {"matches": []},
+        "video_moderation": {"matches": []},
+        "tone_dynamics": {
+            "scd": {
+                "summary": "",
+                "tone_labels": [],
+                "per_speaker_notes": {},
+                "insufficient_conversation": True,
+            },
+            "flashpoint_matches": [],
+        },
+        "facts_claims": {
+            "claims_report": {
+                "deduped_claims": [],
+                "total_claims": 0,
+                "total_unique": 0,
+            },
+            "known_misinformation": [],
+        },
+        "opinions_sentiments": {
+            "opinions_report": {
+                "sentiment_stats": {
+                    "per_utterance": [],
+                    "positive_pct": 0.0,
+                    "negative_pct": 0.0,
+                    "neutral_pct": 0.0,
+                    "mean_valence": 0.0,
+                },
+                "subjective_claims": [],
+            }
+        },
+        "headline": None,
+        "utterances": [],
+    }
+
+
 class TestNormalizeUrl:
     def test_lowercases_scheme_and_host(self) -> None:
         assert normalize_url("HTTPS://Example.COM/Path") == "https://example.com/Path"
@@ -101,10 +147,12 @@ class TestSupabaseCache:
     async def test_put_then_get_returns_payload(self) -> None:
         fake = FakeSupabaseClient()
         cache = SupabaseCache(fake, ttl_hours=72)  # pyright: ignore[reportArgumentType]
-        payload = {"summary": "hello", "claims": [{"text": "a"}]}
+        payload = _minimal_sidebar_payload()
         await cache.put("https://example.com/article", payload)
         got = await cache.get("https://example.com/article")
-        assert got == payload
+        assert got is not None
+        assert got["source_url"] == "https://example.com/article"
+        assert got["utterances"] == []
 
     @pytest.mark.asyncio
     async def test_get_missing_returns_none(self) -> None:
@@ -131,7 +179,10 @@ class TestSupabaseCache:
     async def test_put_normalizes_url(self) -> None:
         fake = FakeSupabaseClient()
         cache = SupabaseCache(fake, ttl_hours=72)  # pyright: ignore[reportArgumentType]
-        await cache.put("HTTPS://Example.com/a/?utm_source=x", {"ok": True})
+        await cache.put(
+            "HTTPS://Example.com/a/?utm_source=x",
+            _minimal_sidebar_payload("https://example.com/a"),
+        )
         assert "https://example.com/a" in fake.store
 
     @pytest.mark.asyncio
@@ -139,7 +190,7 @@ class TestSupabaseCache:
         fake = FakeSupabaseClient()
         cache = SupabaseCache(fake, ttl_hours=72)  # pyright: ignore[reportArgumentType]
         before = datetime.now(UTC)
-        await cache.put("https://example.com/a", {"ok": True})
+        await cache.put("https://example.com/a", _minimal_sidebar_payload("https://example.com/a"))
         after = datetime.now(UTC)
         row = fake.store["https://example.com/a"]
         expires = datetime.fromisoformat(row["expires_at"])
@@ -150,6 +201,23 @@ class TestSupabaseCache:
     async def test_put_then_get_with_differently_cased_url(self) -> None:
         fake = FakeSupabaseClient()
         cache = SupabaseCache(fake, ttl_hours=72)  # pyright: ignore[reportArgumentType]
-        await cache.put("https://Example.COM/a", {"ok": True})
+        payload = _minimal_sidebar_payload("https://Example.COM/a")
+        await cache.put("https://Example.COM/a", payload)
         got = await cache.get("HTTPS://example.com/a")
-        assert got == {"ok": True}
+        assert got is not None
+        assert got["source_url"] == "https://Example.COM/a"
+        assert got["utterances"] == []
+
+    @pytest.mark.asyncio
+    async def test_put_strips_utterance_anchors_from_url_cache_payload(self) -> None:
+        fake = FakeSupabaseClient()
+        cache = SupabaseCache(fake, ttl_hours=72)  # pyright: ignore[reportArgumentType]
+        payload = {
+            **_minimal_sidebar_payload("https://example.com/anchors"),
+            "utterances": [{"position": 1, "utterance_id": "job-local-u1"}],
+        }
+
+        await cache.put("https://example.com/anchors", payload)
+
+        row = fake.store["https://example.com/anchors"]
+        assert row["sidebar_payload"]["utterances"] == []

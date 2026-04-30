@@ -351,6 +351,8 @@ export default function AnalyzePage() {
           url: s.url ?? pendingUrl(),
           errorCode: (s.error_code ?? null) as ErrorCode | null,
           errorHost: s.error_host ?? null,
+          // Failed unsafe-url jobs intentionally carry a minimal web-risk payload
+          // for the failure card; it is not a canonical complete sidebar.
           webRiskFindings: s.sidebar_payload?.web_risk?.findings ?? [],
         };
       }

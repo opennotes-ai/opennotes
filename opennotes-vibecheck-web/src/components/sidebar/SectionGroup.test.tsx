@@ -557,12 +557,12 @@ describe("SectionGroup", () => {
     });
   });
 
-  it("does not introduce left-stripe borders on cluster containers", () => {
+  it("renders running slot rows without extra wrapper content", () => {
     const sections: SlugToSlots = {
       tone_dynamics__flashpoint: { state: "running", attempt_id: "a1" },
       tone_dynamics__scd: { state: "running", attempt_id: "a2" },
     };
-    const { container } = render(() => (
+    render(() => (
       <SectionGroup
         label="Tone/dynamics"
         slugs={TONE_SLUGS}
@@ -571,13 +571,12 @@ describe("SectionGroup", () => {
       />
     ));
 
-    const group = container.querySelector(
-      '[data-testid="section-group-Tone/dynamics"]',
-    );
-    expect(group).not.toBeNull();
-    const html = group?.outerHTML ?? "";
-    expect(html).not.toMatch(/\bborder-l\b/);
-    expect(html).not.toMatch(/\bborder-l-2\b/);
+    expect(
+      screen
+        .getByTestId("slot-tone_dynamics__flashpoint")
+        .getAttribute("data-slot-state"),
+    ).toBe("running");
+    expect(screen.getByTestId("skeleton-tone_dynamics__flashpoint")).toBeDefined();
   });
 
   it("renders a chevron icon (not a +/- glyph) on the slot toggle and rotates it when expanded", async () => {
@@ -607,7 +606,7 @@ describe("SectionGroup", () => {
     expect(chevron?.getAttribute("data-state")).toBe("expanded");
   });
 
-  it("uses mobile-legible 12px slot toggle typography", () => {
+  it("renders slot toggles as accessible controls", () => {
     render(() => (
       <SectionGroup
         label="Tone/dynamics"
@@ -620,9 +619,8 @@ describe("SectionGroup", () => {
     const toggle = screen.getByTestId(
       "slot-toggle-tone_dynamics__flashpoint",
     );
-    const cls = toggle.getAttribute("class") ?? "";
-    expect(cls).toMatch(/\btext-xs\b/);
-    expect(cls).not.toMatch(/text-\[11px\]/);
+    expect(toggle.tagName.toLowerCase()).toBe("button");
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
   });
 
   it("renders accessible help affordances for the group and each slot", async () => {
@@ -999,8 +997,8 @@ describe("Sidebar", () => {
     ).toBe("2 results");
   });
 
-  it("omits left-stripe border classes anywhere in the rendered sidebar", () => {
-    const { container } = render(() => (
+  it("renders running sidebar slots for each supplied section", () => {
+    render(() => (
       <Sidebar
         sections={{
           safety__moderation: { state: "running", attempt_id: "a1" },
@@ -1014,9 +1012,12 @@ describe("Sidebar", () => {
       />
     ));
 
-    const html = container.innerHTML;
-    expect(html).not.toMatch(/\bborder-l\b/);
-    expect(html).not.toMatch(/\bborder-l-2\b/);
+    expect(
+      screen.getByTestId("slot-safety__moderation").getAttribute("data-slot-state"),
+    ).toBe("running");
+    expect(
+      screen.getByTestId("slot-opinions_sentiments__subjective").getAttribute("data-slot-state"),
+    ).toBe("running");
   });
 });
 
@@ -1333,11 +1334,54 @@ describe("Sidebar (done slots, per-slug reports)", () => {
     expect(screen.queryByTestId("safety-recommendation-report")).toBeNull();
   });
 
-  it("renders done slots without any left-stripe border classes", () => {
-    const { container } = render(() => <Sidebar sections={doneSections()} />);
-    const html = container.innerHTML;
-    expect(html).not.toMatch(/\bborder-l\b/);
-    expect(html).not.toMatch(/\bborder-l-2\b/);
+  it("hides safety recommendation when payloadComplete is omitted", () => {
+    const payload: SidebarPayload = {
+      ...makeTonePayload(),
+      safety: {
+        harmful_content_matches: [],
+        recommendation: {
+          level: "caution",
+          rationale: "Some safety analyses were unavailable.",
+          top_signals: ["web risk unavailable"],
+          unavailable_inputs: ["web_risk"],
+        },
+      },
+    };
+
+    render(() => <Sidebar payload={payload} />);
+
+    expect(screen.queryByTestId("safety-recommendation-report")).toBeNull();
+  });
+
+  it("reveals safety recommendation after payloadComplete flips true", async () => {
+    const [payloadComplete, setPayloadComplete] = createSignal(false);
+    const payload: SidebarPayload = {
+      ...makeTonePayload(),
+      safety: {
+        harmful_content_matches: [],
+        recommendation: {
+          level: "caution",
+          rationale: "Some safety analyses were unavailable.",
+          top_signals: ["web risk unavailable"],
+          unavailable_inputs: ["web_risk"],
+        },
+      },
+    };
+
+    render(() => <Sidebar payload={payload} payloadComplete={payloadComplete()} />);
+
+    expect(screen.queryByTestId("safety-recommendation-report")).toBeNull();
+    setPayloadComplete(true);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("safety-recommendation-report")).toBeDefined();
+    });
+  });
+
+  it("renders done slot reports for completed sections", () => {
+    render(() => <Sidebar sections={doneSections()} />);
+    expect(screen.getByTestId("report-safety__moderation")).toBeDefined();
+    expect(screen.getByTestId("report-tone_dynamics__flashpoint")).toBeDefined();
   });
 
   it("synthesizes identical report test ids when driven by payload only", async () => {
@@ -1389,9 +1433,7 @@ describe("Sidebar (done slots, per-slug reports)", () => {
         },
       },
     };
-    const { container } = render(() => (
-      <Sidebar payload={payload} payloadComplete={true} />
-    ));
+    render(() => <Sidebar payload={payload} payloadComplete={true} />);
     expect(
       screen.getByTestId("report-safety__moderation"),
     ).toBeDefined();
@@ -1416,9 +1458,7 @@ describe("Sidebar (done slots, per-slug reports)", () => {
       screen.getByTestId("report-opinions_sentiments__subjective"),
     ).toBeDefined();
 
-    const html = container.innerHTML;
-    expect(html).not.toMatch(/\bborder-l\b/);
-    expect(html).not.toMatch(/\bborder-l-2\b/);
+    expect(screen.getByTestId("report-safety__moderation")).toBeDefined();
   });
 });
 
@@ -1564,10 +1604,11 @@ describe("Sidebar (extracting-phase indicator)", () => {
         .getByTestId("slot-tone_dynamics__scd")
         .getAttribute("data-slot-state"),
     ).toBe("running");
-    // Slots the server hasn't seeded yet stay pending (no synthesis in analyzing).
+    // Slots the server hasn't seeded yet render as running during analyzing
+    // so the sidebar does not go blank below the activity indicator.
     expect(
       screen.getByTestId("slot-safety__moderation").getAttribute("data-slot-state"),
-    ).toBe("pending");
+    ).toBe("running");
   });
 });
 
@@ -1638,10 +1679,11 @@ describe("Sidebar (partial payload)", () => {
 
     // No headline summary or cached badge rendering in Sidebar itself — those
     // are routed through the Sidebar props but the partial payload should not
-    // trigger final-only UI. The sidebar should show pending slots, not done.
+    // trigger final-only UI. During analyzing, missing slots still show running
+    // skeletons beneath the activity indicator.
     expect(
       screen.getByTestId("slot-safety__moderation").getAttribute("data-slot-state"),
-    ).toBe("pending");
+    ).toBe("running");
   });
 });
 

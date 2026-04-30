@@ -66,6 +66,9 @@
   }
 }
 
-[data-cached-hint="1"] .skeleton-pulse {
+[data-cached-hint="1"] .skeleton-pulse,
+[data-cached-hint="1"] .skeleton-pulse-delay-1,
+[data-cached-hint="1"] .skeleton-pulse-delay-2,
+[data-cached-hint="1"] .skeleton-pulse-delay-3 {
   opacity: 0;
 }
