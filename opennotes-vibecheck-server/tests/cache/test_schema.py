@@ -223,10 +223,10 @@ class TestSweeperFunctions:
         # job get a 30s grace period before being failed.
         assert "COALESCE(heartbeat_at, updated_at, created_at)" in schema_sql
 
-    def test_sweepers_pin_search_path(self, schema_sql: str) -> None:
+    def test_security_definer_functions_pin_search_path(self, schema_sql: str) -> None:
         # SECURITY DEFINER without search_path is a hijack vector via
         # untrusted schemas; pin to pg_catalog + pg_temp.
-        assert schema_sql.count("SET search_path = pg_catalog, pg_temp") == 3
+        assert schema_sql.count("SET search_path = pg_catalog, pg_temp") == 4
         assert "SET search_path = public, pg_temp" not in schema_sql
 
     def test_sweepers_revoke_execute_from_public(self, schema_sql: str) -> None:
@@ -245,6 +245,33 @@ class TestSweeperFunctions:
         # search_path on the cron worker is unpredictable; use public.<fn>().
         assert "public.vibecheck_sweep_orphan_jobs()" in schema_sql
         assert "public.vibecheck_purge_terminal_jobs()" in schema_sql
+
+
+class TestScrapeCacheFunctions:
+    def test_atomic_scrape_upsert_function_exists(self, schema_sql: str) -> None:
+        assert (
+            "CREATE OR REPLACE FUNCTION public.vibecheck_upsert_scrape_if_not_evicted("
+            in schema_sql
+        )
+        assert "ON CONFLICT (normalized_url, tier) DO UPDATE" in schema_sql
+        assert "public.vibecheck_scrapes.evicted_at IS NULL" in schema_sql
+        assert "RETURN COALESCE(wrote_row, FALSE)" in schema_sql
+
+    def test_atomic_scrape_upsert_function_is_service_role_only(
+        self, schema_sql: str
+    ) -> None:
+        assert (
+            "ALTER FUNCTION public.vibecheck_upsert_scrape_if_not_evicted("
+            in schema_sql
+        )
+        assert (
+            "REVOKE ALL ON FUNCTION public.vibecheck_upsert_scrape_if_not_evicted("
+            in schema_sql
+        )
+        assert (
+            "GRANT EXECUTE ON FUNCTION public.vibecheck_upsert_scrape_if_not_evicted("
+            in schema_sql
+        )
 
 
 class TestPgCronSchedules:

@@ -8,6 +8,7 @@ surface against a deterministic fake, never the live Postgres or GCS APIs.
 """
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from typing import Any
 from urllib.parse import urlparse
@@ -152,6 +153,32 @@ class _FakeTableQuery:
         return {field: row.get(field) for field in self._selected}
 
 
+class _FakeRpcQuery:
+    def __init__(
+        self,
+        client: _FakeSupabaseClient,
+        name: str,
+        params: dict[str, Any],
+    ) -> None:
+        self._client = client
+        self._name = name
+        self._params = params
+
+    def execute(self) -> _FakeResponse:
+        if self._name != "vibecheck_upsert_scrape_if_not_evicted":
+            raise AssertionError(f"unexpected rpc {self._name}")
+        return _FakeResponse(self._client._execute_atomic_scrape_upsert(self._params))
+
+
+class _FakePostgrest:
+    def __init__(self, client: _FakeSupabaseClient) -> None:
+        self._client = client
+
+    def rpc(self, name: str, params: dict[str, Any]) -> _FakeRpcQuery:
+        self._client.rpc_calls.append((name, params))
+        return _FakeRpcQuery(self._client, name, params)
+
+
 class _FakeSupabaseClient:
     def __init__(self) -> None:
         # Keyed by (normalized_url, tier). The store property exposes a
@@ -164,6 +191,9 @@ class _FakeSupabaseClient:
         # the orphan-blob cleanup path where the DB write fails after a
         # successful screenshot upload.
         self.next_upsert_error: Exception | None = None
+        self.before_atomic_upsert: Callable[[dict[str, Any]], None] | None = None
+        self.rpc_calls: list[tuple[str, dict[str, Any]]] = []
+        self.postgrest = _FakePostgrest(self)
 
     @property
     def store(self) -> _StoreView:
@@ -172,6 +202,53 @@ class _FakeSupabaseClient:
     def table(self, name: str) -> _FakeTableQuery:
         self.tables_called.append(name)
         return _FakeTableQuery(self._rows, client=self)
+
+    def _execute_atomic_scrape_upsert(self, params: dict[str, Any]) -> bool:
+        err = self.next_upsert_error
+        self.next_upsert_error = None
+        if err is not None:
+            raise err
+
+        norm = params["p_normalized_url"]
+        tier = params["p_tier"]
+        assert isinstance(norm, str)
+        assert isinstance(tier, str)
+        row: dict[str, Any] = {
+            "normalized_url": norm,
+            "tier": tier,
+            "url": params["p_url"],
+            "final_url": params["p_final_url"],
+            "host": params["p_host"],
+            "page_kind": params["p_page_kind"],
+            "page_title": params["p_page_title"],
+            "markdown": params["p_markdown"],
+            "html": params["p_html"],
+            "screenshot_storage_key": params["p_screenshot_storage_key"],
+            "scraped_at": params["p_scraped_at"],
+            "expires_at": params["p_expires_at"],
+            "evicted_at": None,
+        }
+        if self.before_atomic_upsert is not None:
+            self.before_atomic_upsert(row)
+
+        key = (norm, tier)
+        existing = self._rows.get(key)
+        if existing is not None:
+            raw_evicted_at = existing.get("evicted_at")
+            evicted_at: datetime | None = None
+            if isinstance(raw_evicted_at, str) and raw_evicted_at:
+                evicted_at = datetime.fromisoformat(raw_evicted_at)
+            elif isinstance(raw_evicted_at, datetime):
+                evicted_at = raw_evicted_at
+            put_started_at = datetime.fromisoformat(params["p_put_started_at"])
+            threshold = put_started_at - timedelta(
+                seconds=int(params["p_clock_skew_seconds"])
+            )
+            if evicted_at is not None and evicted_at >= threshold:
+                return False
+
+        self._rows[key] = row
+        return True
 
 
 class _StoreView:
@@ -1149,6 +1226,51 @@ class TestEvictFenceAndFinalUrl:
         assert row["markdown"] is None
         assert row["evicted_at"] is not None
         # Just-uploaded blob was cleaned up.
+        assert len(store.delete_calls) == 1
+
+    @pytest.mark.asyncio
+    async def test_put_evict_after_fence_read_does_not_overwrite_tombstone(
+        self,
+    ) -> None:
+        """A tombstone written after the preflight fence read but before
+        the DB write must still win. This is the production race closed by
+        the conditional RPC: the no-tombstone read returns clean, then the
+        atomic upsert predicate sees the newer tombstone and skips writing.
+        """
+        fake = _FakeSupabaseClient()
+        cache, store = _make_cache(fake)
+        norm = normalize_url("https://example.com/post-fence-race")
+
+        def write_tombstone(_row: dict[str, Any]) -> None:
+            evicted_at = datetime.now(UTC)
+            fake._rows[(norm, "scrape")] = {  # pyright: ignore[reportPrivateUsage]
+                "normalized_url": norm,
+                "tier": "scrape",
+                "url": norm,
+                "final_url": None,
+                "host": "example.com",
+                "page_kind": "other",
+                "page_title": None,
+                "markdown": None,
+                "html": None,
+                "screenshot_storage_key": None,
+                "scraped_at": evicted_at.isoformat(),
+                "expires_at": (evicted_at - timedelta(hours=1)).isoformat(),
+                "evicted_at": evicted_at.isoformat(),
+            }
+
+        fake.before_atomic_upsert = write_tombstone
+
+        result = await cache.put(
+            "https://example.com/post-fence-race",
+            _make_scrape(markdown="resurrected"),
+            screenshot_bytes=b"pngbytes",
+        )
+
+        assert result.storage_key is None
+        row = fake._rows[(norm, "scrape")]  # pyright: ignore[reportPrivateUsage]
+        assert row["markdown"] is None
+        assert row["evicted_at"] is not None
         assert len(store.delete_calls) == 1
 
     @pytest.mark.asyncio

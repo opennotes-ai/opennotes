@@ -86,6 +86,7 @@ def canonical_cache_key(raw_url: str) -> str:
     return normalize_url(public)
 
 _TABLE_NAME = "vibecheck_scrapes"
+_UPSERT_IF_NOT_EVICTED_RPC = "vibecheck_upsert_scrape_if_not_evicted"
 _SIGNED_URL_TTL_SECONDS = 15 * 60
 
 # TASK-1488.18: small clock-skew tolerance when comparing the put's
@@ -209,15 +210,13 @@ class SupabaseScrapeCache:
           host on a replay. Without this, `_revalidate_final_url` on a
           poisoned redirect retry sees the input URL as both the lookup
           key and the resolved URL and silently skips the SSRF re-check.
-        - Pre-upsert fence: an anchor timestamp `put_started_at` is
-          captured *before* the screenshot upload (which may take up to
-          httpx's 60s timeout). After the upload, the row's `evicted_at`
-          is read; if any tombstone was written at-or-after the anchor
-          (i.e. while this put was in flight), the put aborts and cleans
-          up the orphaned blob. This survives slow uploads — a fixed
-          fence-window threshold would let a stale tombstone be ignored
-          if the upload outlasted the window. Codex 5.5 high review of
-          PR #431 flagged the original 30s window vs 60s httpx timeout.
+        - Evict fence: an anchor timestamp `put_started_at` is captured
+          *before* the screenshot upload (which may take up to httpx's
+          60s timeout). After upload, a cheap preflight reads the row's
+          `evicted_at`; the actual DB write then runs through a Postgres
+          RPC that keeps the same tombstone predicate inside the
+          `ON CONFLICT DO UPDATE`. That closes the race where an evict
+          lands after the preflight read but before the upsert.
         """
         norm = normalize_url(url)
         host = urlparse(norm).netloc
@@ -272,9 +271,7 @@ class SupabaseScrapeCache:
             "evicted_at": None,
         }
         try:
-            self._client.table(_TABLE_NAME).upsert(
-                row, on_conflict="normalized_url,tier"
-            ).execute()
+            wrote_row = self._upsert_if_not_evicted(row, put_started_at)
         except Exception as exc:
             logger.warning(
                 "scrape cache put failed for %s (tier=%s): %s", norm, tier, exc
@@ -285,6 +282,17 @@ class SupabaseScrapeCache:
             if storage_key is not None:
                 self._cleanup_orphan_blob(storage_key)
             storage_key = None
+        else:
+            if not wrote_row:
+                logger.warning(
+                    "scrape cache put skipped by atomic evict fence for %s "
+                    "(tier=%s)",
+                    norm,
+                    tier,
+                )
+                if storage_key is not None:
+                    self._cleanup_orphan_blob(storage_key)
+                storage_key = None
         return CachedScrape(
             markdown=scrape.markdown,
             html=scrape.html,
@@ -295,6 +303,42 @@ class SupabaseScrapeCache:
             warning=scrape.warning,
             storage_key=storage_key,
         )
+
+    def _upsert_if_not_evicted(
+        self, row: dict[str, Any], put_started_at: datetime
+    ) -> bool:
+        """Atomically write a scrape row unless a newer tombstone exists."""
+        resp = (
+            self._client.postgrest.rpc(
+                _UPSERT_IF_NOT_EVICTED_RPC,
+                {
+                    "p_normalized_url": row["normalized_url"],
+                    "p_tier": row["tier"],
+                    "p_url": row["url"],
+                    "p_final_url": row["final_url"],
+                    "p_host": row["host"],
+                    "p_page_kind": row["page_kind"],
+                    "p_page_title": row["page_title"],
+                    "p_markdown": row["markdown"],
+                    "p_html": row["html"],
+                    "p_screenshot_storage_key": row["screenshot_storage_key"],
+                    "p_scraped_at": row["scraped_at"],
+                    "p_expires_at": row["expires_at"],
+                    "p_put_started_at": put_started_at.isoformat(),
+                    "p_clock_skew_seconds": str(_EVICT_FENCE_CLOCK_SKEW_SECONDS),
+                },
+            ).execute()
+        )
+        data = getattr(resp, "data", None)
+        if isinstance(data, bool):
+            return data
+        if isinstance(data, list) and len(data) == 1 and isinstance(data[0], bool):
+            return data[0]
+        if isinstance(data, dict):
+            value = data.get(_UPSERT_IF_NOT_EVICTED_RPC)
+            if isinstance(value, bool):
+                return value
+        return False
 
     def _evict_fence_active(
         self, norm: str, tier: ScrapeTier, *, since: datetime

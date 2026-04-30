@@ -287,10 +287,12 @@ class AsyncpgScrapeCache:
         *,
         ttl_hours: int = 72,
         before_fence_read: Callable[[], Awaitable[None]] | None = None,
+        after_fence_read: Callable[[], Awaitable[None]] | None = None,
     ) -> None:
         self._pool = pool
         self._ttl_hours = ttl_hours
         self._before_fence_read = before_fence_read
+        self._after_fence_read = after_fence_read
 
     async def get(
         self, url: str, *, tier: str = "scrape"
@@ -365,10 +367,12 @@ class AsyncpgScrapeCache:
                     warning=scrape.warning,
                     storage_key=None,
                 )
+        if self._after_fence_read is not None:
+            await self._after_fence_read()
         now = datetime.now(UTC)
         expires = now + timedelta(hours=self._ttl_hours)
         async with self._pool.acquire() as conn:
-            await conn.execute(
+            wrote_row = await conn.fetchval(
                 """
                 INSERT INTO vibecheck_scrapes (
                     normalized_url, tier, url, final_url, host, page_kind,
@@ -392,6 +396,9 @@ class AsyncpgScrapeCache:
                     scraped_at = EXCLUDED.scraped_at,
                     expires_at = EXCLUDED.expires_at,
                     evicted_at = EXCLUDED.evicted_at
+                WHERE vibecheck_scrapes.evicted_at IS NULL
+                   OR vibecheck_scrapes.evicted_at < $11
+                RETURNING TRUE
                 """,
                 norm,
                 tier,
@@ -403,6 +410,18 @@ class AsyncpgScrapeCache:
                 scrape.html,
                 now,
                 expires,
+                put_started_at - timedelta(seconds=1),
+            )
+        if not wrote_row:
+            return CachedScrape(
+                markdown=scrape.markdown,
+                html=scrape.html,
+                raw_html=scrape.raw_html,
+                screenshot=scrape.screenshot,
+                links=scrape.links,
+                metadata=scrape.metadata,
+                warning=scrape.warning,
+                storage_key=None,
             )
         return CachedScrape(
             markdown=scrape.markdown,

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import AsyncIterator, Iterator
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import asyncpg
@@ -68,6 +69,10 @@ async def full_schema_conn(
         await conn.execute(f"DROP TABLE IF EXISTS {table} CASCADE")
     for fn in (
         "public.exec_sql(text)",
+        "public.vibecheck_upsert_scrape_if_not_evicted("
+        "text, text, text, text, text, text, text, text, text, text, "
+        "timestamp with time zone, timestamp with time zone, "
+        "timestamp with time zone, integer)",
         "public.vibecheck_sweep_orphan_jobs()",
         "public.vibecheck_purge_terminal_jobs()",
     ):
@@ -255,3 +260,88 @@ async def test_full_schema_reapply_twice_idempotent(
         "exec_sql must not be owned by vibecheck_schema_admin after re-apply; "
         "ownership must remain with the superuser who seeded it"
     )
+
+
+async def test_atomic_scrape_upsert_rpc_respects_newer_tombstone(
+    full_schema_conn: asyncpg.Connection,
+) -> None:
+    await _apply_full_schema_as_superuser(full_schema_conn)
+
+    now = datetime.now(UTC)
+    wrote = await full_schema_conn.fetchval(
+        """
+        SELECT public.vibecheck_upsert_scrape_if_not_evicted(
+            $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14
+        )
+        """,
+        "https://example.com/rpc",
+        "scrape",
+        "https://example.com/rpc",
+        "https://example.com/rpc",
+        "example.com",
+        "other",
+        "RPC",
+        "fresh",
+        "<main>fresh</main>",
+        None,
+        now,
+        now + timedelta(hours=72),
+        now,
+        1,
+    )
+    assert wrote is True
+
+    tombstone_time = datetime.now(UTC)
+    await full_schema_conn.execute(
+        """
+        UPDATE public.vibecheck_scrapes
+        SET markdown = NULL,
+            html = NULL,
+            expires_at = $2,
+            evicted_at = $3
+        WHERE normalized_url = $1 AND tier = 'scrape'
+        """,
+        "https://example.com/rpc",
+        tombstone_time - timedelta(hours=1),
+        tombstone_time,
+    )
+
+    await full_schema_conn.execute("SET ROLE service_role")
+    try:
+        wrote_after_tombstone = await full_schema_conn.fetchval(
+            """
+            SELECT public.vibecheck_upsert_scrape_if_not_evicted(
+                $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14
+            )
+            """,
+            "https://example.com/rpc",
+            "scrape",
+            "https://example.com/rpc",
+            "https://example.com/rpc",
+            "example.com",
+            "other",
+            "RPC",
+            "resurrected",
+            "<main>resurrected</main>",
+            None,
+            tombstone_time + timedelta(seconds=1),
+            tombstone_time + timedelta(hours=72),
+            tombstone_time - timedelta(seconds=2),
+            1,
+        )
+    finally:
+        await full_schema_conn.execute("RESET ROLE")
+
+    assert wrote_after_tombstone is False
+    row = await full_schema_conn.fetchrow(
+        """
+        SELECT markdown, html, evicted_at
+        FROM public.vibecheck_scrapes
+        WHERE normalized_url = $1 AND tier = 'scrape'
+        """,
+        "https://example.com/rpc",
+    )
+    assert row is not None
+    assert row["markdown"] is None
+    assert row["html"] is None
+    assert row["evicted_at"] == tombstone_time

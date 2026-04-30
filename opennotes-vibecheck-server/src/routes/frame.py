@@ -201,7 +201,7 @@ async def _has_cached_archive(url: str) -> bool:
         logger.info("archive cache lookup failed for %s: %s", url, exc)
         return False
 
-    cached, _ = await _get_cached_archive(url, scrape_cache)
+    cached, _ = await _get_cached_archive(url, scrape_cache, require_usable=True)
     return bool(cached)
 
 
@@ -325,11 +325,19 @@ async def archive_preview(
             fc.scrape(url, formats=["html"], only_main_content=True),
             timeout=_ARCHIVE_REQUEST_BUDGET_SECONDS,
         )
-        stored = await scrape_cache.put(url, fresh, tier="scrape")
     except TimeoutError:
         raise HTTPException(status_code=504, detail="Archive unavailable")
     except Exception as exc:
         logger.warning("archive preview scrape failed for %s: %s", url, exc)
+        raise HTTPException(status_code=502, detail="Archive unavailable") from exc
+
+    if classify_scrape(fresh) is not ScrapeQuality.OK:
+        raise HTTPException(status_code=502, detail="Archive unavailable")
+
+    try:
+        stored = await scrape_cache.put(url, fresh, tier="scrape")
+    except Exception as exc:
+        logger.warning("archive preview cache write failed for %s: %s", url, exc)
         raise HTTPException(status_code=502, detail="Archive unavailable") from exc
 
     await _revalidate_archive_final_url(stored, original_url=url, scrape_cache=scrape_cache)

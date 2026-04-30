@@ -119,21 +119,21 @@ async def test_evict_with_tier_none_tombstones_all_tiers(
     assert all(row["markdown"] is None for row in rows)
 
 
-async def test_asyncpg_cache_fence_prevents_resurrection_with_concurrent_evict(
+async def test_asyncpg_cache_fence_prevents_post_read_evict_resurrection(
     db_pool: Any,
 ) -> None:
     cache_put_url = "https://example.com/cache-parity/?utm_source=x"
     cache_get_url = "https://example.com/cache-parity"
-    pre_fence = asyncio.Event()
-    release_fence = asyncio.Event()
+    after_fence_read = asyncio.Event()
+    release_write = asyncio.Event()
     timeout = 5.0
 
-    async def before_fence_read() -> None:
-        pre_fence.set()
-        await release_fence.wait()
+    async def before_atomic_write() -> None:
+        after_fence_read.set()
+        await release_write.wait()
 
     cache = AsyncpgScrapeCache(
-        db_pool, before_fence_read=before_fence_read
+        db_pool, after_fence_read=before_atomic_write
     )
 
     put_task = asyncio.create_task(
@@ -147,9 +147,9 @@ async def test_asyncpg_cache_fence_prevents_resurrection_with_concurrent_evict(
             ),
         )
     )
-    await asyncio.wait_for(pre_fence.wait(), timeout=timeout)
+    await asyncio.wait_for(after_fence_read.wait(), timeout=timeout)
     await cache.evict(cache_get_url, tier="scrape")
-    release_fence.set()
+    release_write.set()
     result = await asyncio.wait_for(put_task, timeout=timeout)
 
     assert result.storage_key is None
