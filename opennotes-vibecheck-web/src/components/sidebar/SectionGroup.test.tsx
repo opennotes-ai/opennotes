@@ -1296,7 +1296,7 @@ describe("Sidebar (done slots, per-slug reports)", () => {
       },
     };
 
-    const { container } = render(() => <Sidebar payload={payload} />);
+    const { container } = render(() => <Sidebar payload={payload} payloadComplete={true} />);
 
     const recommendation = screen.getByTestId("safety-recommendation-report");
     const firstSlot = screen.getByTestId("slot-safety__moderation");
@@ -1312,6 +1312,25 @@ describe("Sidebar (done slots, per-slug reports)", () => {
         0,
     ).toBe(true);
     expect(container.textContent).toContain("caution");
+  });
+
+  it("hides safety recommendation when payloadComplete is false", () => {
+    const payload: SidebarPayload = {
+      ...makeTonePayload(),
+      safety: {
+        harmful_content_matches: [],
+        recommendation: {
+          level: "caution",
+          rationale: "Some safety analyses were unavailable.",
+          top_signals: ["web risk unavailable"],
+          unavailable_inputs: ["web_risk"],
+        },
+      },
+    };
+
+    render(() => <Sidebar payload={payload} payloadComplete={false} />);
+
+    expect(screen.queryByTestId("safety-recommendation-report")).toBeNull();
   });
 
   it("renders done slots without any left-stripe border classes", () => {

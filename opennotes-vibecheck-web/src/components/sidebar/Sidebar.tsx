@@ -439,7 +439,9 @@ export default function Sidebar(props: SidebarProps) {
       : [],
   );
   const safetyRecommendation = createMemo<SafetyRecommendation | null>(() =>
-    props.payload?.safety?.recommendation ?? null,
+    props.payloadComplete === true
+      ? (props.payload?.safety?.recommendation ?? null)
+      : null,
   );
 
   return (

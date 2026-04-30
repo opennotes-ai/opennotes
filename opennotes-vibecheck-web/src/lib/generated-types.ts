@@ -604,12 +604,16 @@ export interface components {
         };
         /**
          * JobState
-         * @description GET /api/analyze/{job_id} response shape (wired in TASK-1473.14).
+         * @description GET /api/analyze/{job_id} response shape.
          *
          *     Combines job-level lifecycle (status/error_code/error_message), per-slot
-         *     progress (sections), the assembled sidebar (sidebar_payload, populated
-         *     once all slots finish), and an adaptive polling hint (next_poll_ms) so
-         *     clients can back off as the job completes.
+         *     progress (sections), an adaptive polling hint (next_poll_ms), and the
+         *     sidebar payload. During active polling (pending/extracting/analyzing),
+         *     sidebar_payload is assembled from whichever section slots have finished
+         *     and is partial — check sidebar_payload_complete to distinguish partial
+         *     from canonical. Once the job reaches a terminal status (done/partial/
+         *     failed), sidebar_payload holds the persisted canonical result and
+         *     sidebar_payload_complete is true.
          */
         JobState: {
             /**
@@ -647,9 +651,11 @@ export interface components {
             sections?: {
                 [key: string]: components["schemas"]["SectionSlot"];
             };
+            /** @description Assembled sidebar content. During polling (non-terminal status) this is a partial aggregate built from whichever section slots have finished — it is not canonical until sidebar_payload_complete is true. On a terminal job (done/partial/failed) this is the persisted canonical result. */
             sidebar_payload?: components["schemas"]["SidebarPayload"] | null;
             /**
              * Sidebar Payload Complete
+             * @description True only when sidebar_payload holds the final canonical result (terminal job status). False during polling, meaning sidebar_payload may be partial and will keep changing as more section slots finish. Clients must not treat a non-null sidebar_payload as canonical until this flag is true.
              * @default false
              */
             sidebar_payload_complete: boolean;
