@@ -61,7 +61,6 @@ from src.analyses.schemas import (
     SectionState,
     SidebarPayload,
     ToneDynamicsSection,
-    UtteranceAnchor,
     WebRiskSection,
 )
 from src.analyses.tone._scd_schemas import SCDReport

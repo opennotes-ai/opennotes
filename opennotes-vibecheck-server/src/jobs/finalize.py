@@ -31,6 +31,8 @@ from src.jobs.preview_description import (
 )
 from src.jobs.sidebar_payload import (
     assemble_sidebar_payload as _assemble_payload,
+)
+from src.jobs.sidebar_payload import (
     payload_for_url_cache as _payload_for_url_cache,
 )
 

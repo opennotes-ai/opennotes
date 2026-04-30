@@ -9,9 +9,8 @@ import json
 from typing import Any
 from uuid import uuid4
 
-from src.analyses.safety._schemas import HarmfulContentMatch, SafetyLevel
+from src.analyses.safety._schemas import SafetyLevel
 from src.analyses.schemas import (
-    HeadlineSummary,
     SectionSlot,
     SectionSlug,
     SectionState,
