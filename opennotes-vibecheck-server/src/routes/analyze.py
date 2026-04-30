@@ -995,7 +995,10 @@ def _row_to_job_state(row: Any) -> JobState:
 
     if is_non_terminal:
         activity_at = row.get("heartbeat_at", None)
-        activity_label = _activity_label_for_stage(row.get("last_stage", None))
+        stage = row.get("last_stage", None)
+        if stage is None and status is JobStatus.EXTRACTING:
+            stage = "extracting"
+        activity_label = _activity_label_for_stage(stage)
     else:
         activity_at = None
         activity_label = None

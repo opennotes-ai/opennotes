@@ -245,7 +245,9 @@ async def test_extracting_returns_500ms_poll_hint(client: httpx.AsyncClient, db_
     job_id = await _insert_job(db_pool, status="extracting")
     resp = await client.get(f"/api/analyze/{job_id}")
     assert resp.status_code == 200
-    assert resp.json()["next_poll_ms"] == 500
+    body = resp.json()
+    assert body["next_poll_ms"] == 500
+    assert body["activity_label"] == "Extracting page content"
 
 
 async def test_analyzing_returns_1500ms_poll_hint(client: httpx.AsyncClient, db_pool: Any) -> None:
