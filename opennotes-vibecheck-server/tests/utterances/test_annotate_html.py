@@ -1,4 +1,5 @@
 from bs4 import BeautifulSoup
+from bs4.element import Tag
 
 from src.utterances.annotate_html import annotate_utterances_in_html
 from src.utterances.schema import Utterance
@@ -8,6 +9,12 @@ def utterance(utterance_id: str, text: str) -> Utterance:
     return Utterance(utterance_id=utterance_id, kind="comment", text=text)
 
 
+def find_tag(soup: BeautifulSoup, name: str) -> Tag:
+    tag = soup.find(name)
+    assert isinstance(tag, Tag)
+    return tag
+
+
 def test_annotates_single_block_element() -> None:
     annotated = annotate_utterances_in_html(
         "<main><p>Alice opens the thread calmly.</p></main>",
@@ -15,7 +22,7 @@ def test_annotates_single_block_element() -> None:
     )
 
     soup = BeautifulSoup(annotated, "html.parser")
-    assert soup.find("p")["data-utterance-id"] == "comment-0-aaa"
+    assert find_tag(soup, "p")["data-utterance-id"] == "comment-0-aaa"
 
 
 def test_annotates_parent_when_utterance_spans_inline_children() -> None:
@@ -25,7 +32,7 @@ def test_annotates_parent_when_utterance_spans_inline_children() -> None:
     )
 
     soup = BeautifulSoup(annotated, "html.parser")
-    assert soup.find("p")["data-utterance-id"] == "comment-1-bbb"
+    assert find_tag(soup, "p")["data-utterance-id"] == "comment-1-bbb"
 
 
 def test_unmatched_utterance_does_not_block_other_matches() -> None:
@@ -38,7 +45,7 @@ def test_unmatched_utterance_does_not_block_other_matches() -> None:
     )
 
     soup = BeautifulSoup(annotated, "html.parser")
-    assert soup.find("p")["data-utterance-id"] == "comment-1-hit"
+    assert find_tag(soup, "p")["data-utterance-id"] == "comment-1-hit"
 
 
 def test_repeated_text_marks_only_first_unannotated_occurrence() -> None:
@@ -62,7 +69,7 @@ def test_whitespace_differences_do_not_prevent_matching() -> None:
     )
 
     soup = BeautifulSoup(annotated, "html.parser")
-    assert soup.find("p")["data-utterance-id"] == "comment-2-space"
+    assert find_tag(soup, "p")["data-utterance-id"] == "comment-2-space"
 
 
 def test_idempotent_for_already_annotated_html() -> None:

@@ -45,7 +45,7 @@ from src.analyses.schemas import PageKind
 from src.cache.scrape_cache import CachedScrape, SupabaseScrapeCache
 from src.config import Settings, get_settings
 from src.firecrawl_client import FirecrawlClient
-from src.services.gemini_agent import build_agent
+from src.services.gemini_agent import build_agent, google_vertex_model_name
 from src.services.vertex_limiter import vertex_slot
 from src.utils.html_sanitize import strip_noise
 from src.utterances.errors import (
@@ -169,7 +169,10 @@ async def extract_utterances(
         _register_tools(agent)
         deps = ExtractorDeps(scrape=scrape, scrape_cache=scrape_cache)
 
-        model_name = agent.model.model_name
+        model_name = google_vertex_model_name(
+            settings.VERTEXAI_FAST_MODEL,
+            setting_name="VERTEXAI_FAST_MODEL",
+        )
         try:
             async with vertex_slot(settings):
                 result = await agent.run(markdown, deps=deps)  # pyright: ignore[reportArgumentType]

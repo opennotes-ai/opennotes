@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import pytest
 from pydantic import BaseModel
+from pydantic_ai.models.google import GoogleModel
 
 from src.config import Settings
 from src.services.gemini_agent import build_agent, google_vertex_model_name
@@ -43,6 +44,7 @@ def test_build_agent_omits_name_when_unspecified(settings: Settings) -> None:
 def test_build_agent_defaults_to_fast_model(settings: Settings) -> None:
     agent = build_agent(settings, output_type=_Out, system_prompt="ignored")
 
+    assert isinstance(agent.model, GoogleModel)
     assert agent.model.model_name == "gemini-3-flash-preview"
 
 
@@ -54,6 +56,7 @@ def test_build_agent_synthesis_tier_uses_pro_model(settings: Settings) -> None:
         tier="synthesis",
     )
 
+    assert isinstance(agent.model, GoogleModel)
     assert agent.model.model_name == "gemini-3.1-pro-preview"
 
 

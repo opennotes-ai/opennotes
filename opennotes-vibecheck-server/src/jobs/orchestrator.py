@@ -64,6 +64,7 @@ from urllib.parse import urlparse
 from uuid import UUID, uuid4
 
 import asyncpg
+import httpx
 import logfire
 
 from src.analyses.claims._claims_schemas import ClaimsReport
@@ -105,7 +106,15 @@ from src.analyses.tone.flashpoint_slot import run_flashpoint
 from src.analyses.tone.scd_slot import run_scd
 from src.cache.scrape_cache import CachedScrape, ScrapeTier, SupabaseScrapeCache
 from src.config import Settings
-from src.firecrawl_client import FirecrawlBlocked, FirecrawlClient, FirecrawlError
+from src.coral import (
+    CoralFetchError,
+    CoralSignal,
+    CoralUnsupportedError,
+    detect_coral,
+    fetch_coral_comments,
+    merge_coral_into_scrape,
+)
+from src.firecrawl_client import FirecrawlBlocked, FirecrawlClient, FirecrawlError, ScrapeResult
 from src.jobs.finalize import maybe_finalize_job
 from src.jobs.scrape_quality import ScrapeQuality, classify_scrape
 from src.jobs.section_defaults import empty_section_data as _empty_section_data
@@ -123,7 +132,11 @@ from src.monitoring_metrics import (
     SECTION_FAILURES,
     classify_error,
 )
-from src.utils.url_security import InvalidURL, revalidate_redirect_target
+from src.utils.url_security import (
+    InvalidURL,
+    revalidate_redirect_target,
+    validate_public_http_url,
+)
 from src.utterances.errors import (
     TransientExtractionError,
     UtteranceExtractionError,
@@ -145,6 +158,18 @@ transient extraction failure, flip the row to TerminalError(UPSTREAM_ERROR)
 so the user sees a stable error instead of waiting on a silently-dropped 3rd
 delivery. Subtract 1 to keep the terminal flip strictly before exhaustion.
 """
+
+
+_CORAL_PARTIAL_MARKERS: tuple[str, ...] = (
+    "coral_talk_stream",
+    'data-gtm-class="open-community"',
+    'data-gtm-class=\'open-community\'',
+    'comments-show-comments-button',
+    "coral-talk-stream",
+    "data-embed-coral",
+)
+
+_CORAL_DETECTION_FETCH_TIMEOUT_SECONDS: float = 1.5
 
 
 class TransientError(Exception):
@@ -601,14 +626,110 @@ def _build_firecrawl_tier1_client(settings: Settings) -> FirecrawlClient:
     return FirecrawlClient(api_key=settings.FIRECRAWL_API_KEY, max_attempts=1)
 
 
+def _has_partial_coral_marker(html: str) -> bool:
+    """Return True when the cleaned HTML has hints that a Coral embed is present.
+
+    The fast /scrape pass strips more aggressive script/state metadata than
+    full-page fetches. We treat these as "partial" Coral markers and only
+    escalate to a bounded direct fetch when they are present and primary
+    detection fails.
+    """
+    lowered = html.lower()
+    return any(marker in lowered for marker in _CORAL_PARTIAL_MARKERS)
+
+
+async def _fetch_coral_detection_html(url: str) -> str | None:
+    """Fetch article HTML directly for a bounded Coral signature check.
+
+    Only public URLs are fetched and failures are intentionally swallowed so
+    detector misses are never terminal.
+    """
+    try:
+        safe_url = validate_public_http_url(url)
+    except InvalidURL:
+        return None
+
+    timeout = httpx.Timeout(_CORAL_DETECTION_FETCH_TIMEOUT_SECONDS)
+    try:
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            response = await client.get(safe_url)
+            response.raise_for_status()
+    except Exception:
+        return None
+
+    content = response.text
+    if not content:
+        return None
+    return content
+
+
+async def _detect_coral_signal(url: str, scrape: ScrapeResult) -> CoralSignal | None:
+    """Run staged Coral detection on scraped and optionally direct HTML."""
+    candidates = [scrape.raw_html or "", scrape.html or ""]
+
+    has_partial_marker = any(_has_partial_coral_marker(html) for html in candidates)
+
+    for html in candidates:
+        signal = detect_coral(html)
+        if signal is not None:
+            return signal
+
+    if not has_partial_marker:
+        return None
+
+    full_html = await _fetch_coral_detection_html(url)
+    if full_html is None:
+        return None
+
+    return detect_coral(full_html)
+
+
 # Tier 2 /interact action list. Default to a single 3s wait so JS-rendered
 # pages have a chance to load before content is captured. Kept conservative
 # — extending the action list would let the ladder masquerade as a richer
 # interaction tier (login flows, scroll, click), which is out of scope for
 # 1488.05 and would risk crossing ToS lines on auth-walled sites.
-_TIER2_DEFAULT_ACTIONS: tuple[dict[str, Any], ...] = (
-    {"type": "wait", "milliseconds": 3000},
-)
+def _tier2_actions_for(coral_signal: CoralSignal | None) -> list[dict[str, Any]]:
+    """Build conservative Tier 2 /interact actions.
+
+    For non-Coral pages we use the legacy single short wait so behavior
+    stays unchanged. When a `CoralSignal` is present, we run a best-effort
+    sequence to reveal comments in the embedded Coral stream. The selector-based
+    steps are only used after upstream Coral detection has already succeeded.
+    """
+    if coral_signal is None:
+        return [{"type": "wait", "milliseconds": 3000}]
+
+    return [
+        {"type": "wait", "milliseconds": 2000},
+        {"type": "scroll", "direction": "down"},
+        {
+            "type": "executeJavascript",
+            "script": """
+                (() => {
+                    const selectors = [
+                        'button[data-testid="comments-show-comments-button"]',
+                        'button[data-gtm-class="open-community"]',
+                        '#coral_talk_stream button',
+                        '#coral_thread button',
+                        '[data-embed-coral] button',
+                    ];
+
+                    for (const selector of selectors) {
+                        const button = document.querySelector(selector);
+                        if (button) {
+                            button.click();
+                            return `clicked ${selector}`;
+                        }
+                    }
+
+                    return "no-op";
+                })();
+            """,
+        },
+        {"type": "wait", "milliseconds": 3000},
+        {"type": "scroll", "direction": "down"},
+    ]
 
 
 async def _cache_put_or_keyless(
@@ -644,11 +765,14 @@ async def _cache_put_or_keyless(
 class _Tier1Outcome:
     """Result of running Tier 1. The caller dispatches on these fields:
 
-      - `cached` is set on Tier 1 OK (return immediately).
-      - `terminal` is set on AUTH_WALL / LEGITIMATELY_EMPTY (raise without
-        escalating).
-      - Otherwise, `escalation_reason` + `tier1_reason` describe why we
-        need Tier 2.
+    - `cached` is set on Tier 1 OK (return immediately).
+    - `terminal` is set on AUTH_WALL / LEGITIMATELY_EMPTY (raise without
+      escalating).
+    - Otherwise, `escalation_reason` + `tier1_reason` describe why we
+      need Tier 2.
+    - `coral_signal` carries the detected Coral signal (if any) when
+      Tier 1 succeeds/partially succeeds, and `coral_outcome` captures
+      whether we merged comments or hit a GraphQL fallback.
 
     `final_classification` is always populated so the orchestrator can
     record it on the span even when we're about to raise.
@@ -659,9 +783,11 @@ class _Tier1Outcome:
     escalation_reason: str | None
     tier1_reason: str
     final_classification: str
+    coral_signal: CoralSignal | None
+    coral_outcome: str | None
 
 
-async def _run_tier1(
+async def _run_tier1(  # noqa: PLR0911, PLR0912
     url: str,
     scrape_client: FirecrawlClient,
     scrape_cache: SupabaseScrapeCache,
@@ -676,7 +802,7 @@ async def _run_tier1(
     try:
         fresh = await scrape_client.scrape(
             url,
-            formats=["markdown", "html", "screenshot@fullPage"],
+            formats=["markdown", "html", "rawHtml", "screenshot@fullPage"],
             only_main_content=True,
         )
     except FirecrawlBlocked as exc:
@@ -688,6 +814,8 @@ async def _run_tier1(
             # No classification ran — we never saw a bundle. Track the
             # refusal as the "classification" for span observability.
             final_classification="firecrawl_blocked",
+            coral_signal=None,
+            coral_outcome=None,
         )
     except FirecrawlError as exc:
         raise TransientError(f"firecrawl scrape failed: {exc}") from exc
@@ -696,8 +824,92 @@ async def _run_tier1(
 
     quality = classify_scrape(fresh)
     if quality is ScrapeQuality.OK:
+        signal = await _detect_coral_signal(url, fresh)
+        if signal is None:
+            cached_t1 = await _cache_put_or_keyless(
+                scrape_cache, url, fresh, tier="scrape"
+            )
+            return _Tier1Outcome(
+                cached=cached_t1,
+                terminal=None,
+                escalation_reason=None,
+                tier1_reason="ok",
+                final_classification="ok",
+                coral_signal=None,
+                coral_outcome=None,
+            )
+
+        try:
+            comments = await fetch_coral_comments(
+                signal.graphql_origin,
+                signal.story_url,
+            )
+        except (CoralFetchError, CoralUnsupportedError) as exc:
+            iframe_markdown: str | None = None
+
+            try:
+                fallback_iframe_url = validate_public_http_url(signal.iframe_src)
+            except InvalidURL:
+                pass
+            else:
+                try:
+                    iframe_scrape = await scrape_client.scrape(
+                        fallback_iframe_url,
+                        formats=["markdown", "html"],
+                        only_main_content=False,
+                    )
+                except Exception:
+                    pass
+                else:
+                    if (
+                        classify_scrape(iframe_scrape) is ScrapeQuality.OK
+                        and isinstance(iframe_scrape.markdown, str)
+                        and iframe_scrape.markdown.strip()
+                    ):
+                        final_iframe_source_url = (
+                            iframe_scrape.metadata.source_url
+                            if iframe_scrape.metadata
+                            else None
+                        )
+                        if final_iframe_source_url is None:
+                            iframe_markdown = iframe_scrape.markdown
+                        else:
+                            try:
+                                revalidate_redirect_target(final_iframe_source_url)
+                            except (InvalidURL, ValueError):
+                                pass
+                            else:
+                                iframe_markdown = iframe_scrape.markdown
+
+            if iframe_markdown is not None:
+                merged = merge_coral_into_scrape(fresh, iframe_markdown)
+                cached_t1 = await _cache_put_or_keyless(
+                    scrape_cache, url, merged, tier="scrape"
+                )
+                return _Tier1Outcome(
+                    cached=cached_t1,
+                    terminal=None,
+                    escalation_reason=None,
+                    tier1_reason="ok",
+                    final_classification="ok",
+                    coral_signal=signal,
+                    coral_outcome="iframe_merged",
+                )
+
+            await _cache_put_or_keyless(scrape_cache, url, fresh, tier="scrape")
+            return _Tier1Outcome(
+                cached=None,
+                terminal=None,
+                escalation_reason="coral_graphql_failed",
+                tier1_reason=f"coral_graphql_failed: {exc}",
+                final_classification="ok",
+                coral_signal=signal,
+                coral_outcome="graphql_failed",
+            )
+
+        merged = merge_coral_into_scrape(fresh, comments.comments_markdown)
         cached_t1 = await _cache_put_or_keyless(
-            scrape_cache, url, fresh, tier="scrape"
+            scrape_cache, url, merged, tier="scrape"
         )
         return _Tier1Outcome(
             cached=cached_t1,
@@ -705,6 +917,8 @@ async def _run_tier1(
             escalation_reason=None,
             tier1_reason="ok",
             final_classification="ok",
+            coral_signal=signal,
+            coral_outcome="merged",
         )
     if quality is ScrapeQuality.AUTH_WALL:
         return _Tier1Outcome(
@@ -716,6 +930,8 @@ async def _run_tier1(
             escalation_reason=None,
             tier1_reason="auth_wall",
             final_classification="auth_wall",
+            coral_signal=None,
+            coral_outcome=None,
         )
     if quality is ScrapeQuality.LEGITIMATELY_EMPTY:
         return _Tier1Outcome(
@@ -727,6 +943,8 @@ async def _run_tier1(
             escalation_reason=None,
             tier1_reason="legitimately_empty",
             final_classification="legitimately_empty",
+            coral_signal=None,
+            coral_outcome=None,
         )
     # INTERSTITIAL: cache the Tier 1 row so a retry can skip the classifier,
     # then signal escalation.
@@ -738,6 +956,8 @@ async def _run_tier1(
         escalation_reason="interstitial",
         tier1_reason="interstitial",
         final_classification="interstitial",
+        coral_signal=None,
+        coral_outcome=None,
     )
 
 
@@ -760,6 +980,8 @@ def _classify_cached_tier1(cached: CachedScrape) -> _Tier1Outcome:
             escalation_reason=None,
             tier1_reason="ok",
             final_classification="ok",
+            coral_signal=None,
+            coral_outcome=None,
         )
     if quality is ScrapeQuality.AUTH_WALL:
         return _Tier1Outcome(
@@ -771,6 +993,8 @@ def _classify_cached_tier1(cached: CachedScrape) -> _Tier1Outcome:
             escalation_reason=None,
             tier1_reason="auth_wall",
             final_classification="auth_wall",
+            coral_signal=None,
+            coral_outcome=None,
         )
     if quality is ScrapeQuality.LEGITIMATELY_EMPTY:
         return _Tier1Outcome(
@@ -782,6 +1006,8 @@ def _classify_cached_tier1(cached: CachedScrape) -> _Tier1Outcome:
             escalation_reason=None,
             tier1_reason="legitimately_empty",
             final_classification="legitimately_empty",
+            coral_signal=None,
+            coral_outcome=None,
         )
     assert quality is ScrapeQuality.INTERSTITIAL
     return _Tier1Outcome(
@@ -790,6 +1016,8 @@ def _classify_cached_tier1(cached: CachedScrape) -> _Tier1Outcome:
         escalation_reason="interstitial",
         tier1_reason="interstitial",
         final_classification="interstitial",
+        coral_signal=None,
+        coral_outcome=None,
     )
 
 
@@ -807,6 +1035,8 @@ async def _run_tier2(
     url: str,
     interact_client: FirecrawlClient,
     scrape_cache: SupabaseScrapeCache,
+    *,
+    coral_signal: CoralSignal | None = None,
 ) -> _Tier2Outcome:
     """Tier 2 /interact escalation. Returns an outcome that the caller
     converts into either a return value or `TerminalError(UNSUPPORTED_SITE)`.
@@ -820,7 +1050,7 @@ async def _run_tier2(
     try:
         fresh = await interact_client.interact(
             url,
-            actions=list(_TIER2_DEFAULT_ACTIONS),
+            actions=_tier2_actions_for(coral_signal),
             formats=["markdown", "html", "screenshot@fullPage"],
             only_main_content=True,
         )
@@ -916,6 +1146,8 @@ async def _scrape_step(
     tier_success: str | None = None
     escalation_reason: str | None = None
     final_classification: str = "ok"
+    coral_detected = False
+    coral_outcome: str | None = None
 
     span = logfire.span("vibecheck.scrape_step", url=url)
     with span:
@@ -950,6 +1182,8 @@ async def _scrape_step(
                 tier_attempted.append("scrape")
                 cached_t1 = _classify_cached_tier1(cached)
                 final_classification = cached_t1.final_classification
+                coral_detected = cached_t1.coral_signal is not None
+                coral_outcome = cached_t1.coral_outcome
                 if cached_t1.cached is not None:
                     tier_success = "scrape"
                     return cached_t1.cached
@@ -960,7 +1194,11 @@ async def _scrape_step(
                 assert cached_t1.escalation_reason is not None
                 escalation_reason = cached_t1.escalation_reason
                 tier_attempted.append("interact")
-                t2_cached = await _run_tier2(url, interact_client, scrape_cache)
+                t2_cached = await _run_tier2(
+                    url,
+                    interact_client,
+                    scrape_cache,
+                )
                 final_classification = t2_cached.final_classification
                 if t2_cached.cached is not None:
                     tier_success = "interact"
@@ -976,6 +1214,8 @@ async def _scrape_step(
             tier_attempted.append("scrape")
             t1 = await _run_tier1(url, scrape_client, scrape_cache)
             final_classification = t1.final_classification
+            coral_detected = t1.coral_signal is not None
+            coral_outcome = t1.coral_outcome
             if t1.cached is not None:
                 tier_success = "scrape"
                 return t1.cached
@@ -987,7 +1227,7 @@ async def _scrape_step(
             assert t1.escalation_reason is not None
             escalation_reason = t1.escalation_reason
             tier_attempted.append("interact")
-            t2 = await _run_tier2(url, interact_client, scrape_cache)
+            t2 = await _run_tier2(url, interact_client, scrape_cache, coral_signal=t1.coral_signal)
             final_classification = t2.final_classification
             if t2.cached is not None:
                 tier_success = "interact"
@@ -1007,6 +1247,8 @@ async def _scrape_step(
             span.set_attribute("tier_success", tier_success)
             span.set_attribute("escalation_reason", escalation_reason)
             span.set_attribute("final_classification", final_classification)
+            span.set_attribute("coral_detected", coral_detected)
+            span.set_attribute("coral_outcome", coral_outcome)
 
 
 async def _revalidate_final_url(

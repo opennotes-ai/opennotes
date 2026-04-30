@@ -7,7 +7,12 @@ without standing up Postgres or the FastAPI app.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
+import shutil
+import subprocess
+from collections.abc import Callable
+from datetime import UTC, datetime
 from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
@@ -18,6 +23,12 @@ import pytest
 from src.analyses.safety._schemas import SafetyLevel, SafetyRecommendation
 from src.analyses.schemas import ErrorCode, SectionSlug, SectionState
 from src.cache.scrape_cache import CachedScrape, SupabaseScrapeCache
+from src.coral import (
+    CoralComments,
+    CoralFetchError,
+    CoralSignal,
+    CoralUnsupportedError,
+)
 from src.firecrawl_client import (
     FirecrawlBlocked,
     FirecrawlClient,
@@ -25,8 +36,19 @@ from src.firecrawl_client import (
     ScrapeMetadata,
     ScrapeResult,
 )
-from src.jobs.orchestrator import TerminalError, TransientError, _run_section
+from src.jobs.orchestrator import (
+    TerminalError,
+    TransientError,
+    _run_section,
+    _run_tier2,
+    _tier2_actions_for,
+)
 from src.utterances.errors import UtteranceExtractionError
+
+
+def _require_markdown(scrape: ScrapeResult) -> str:
+    assert scrape.markdown is not None
+    return scrape.markdown
 
 # ---------------------------------------------------------------------------
 # TASK-1473.59 regression — write_slot DB failure must propagate as
@@ -763,11 +785,37 @@ class _FakeFirecrawlClient:
         return cast(ScrapeResult, result)
 
 
-def _ok_scrape_result(*, body: str = "Substantive article body. " * 20) -> ScrapeResult:
+def _scrape_results(*results: Any) -> Callable[[], Any]:
+    iterator = iter(results)
+
+    def _next() -> Any:
+        return cast(Any, next(iterator))
+
+    return _next
+
+
+def _ok_scrape_result(
+    *,
+    body: str = "Substantive article body. " * 20,
+    html: str | None = None,
+) -> ScrapeResult:
+    if html is None:
+        html = f"<html><body><article><h1>Real Article</h1><p>{body}</p></article></body></html>"
     return ScrapeResult(
         markdown=f"# Real Article\n\n{body}",
-        html=f"<html><body><article><h1>Real Article</h1><p>{body}</p></article></body></html>",
+        html=html,
         metadata=ScrapeMetadata(status_code=200, source_url="https://example.com/post"),
+    )
+
+
+def _comment_scrape_result(
+    *,
+    body: str = "## Comments\n- Great discussion in the comments.",
+) -> ScrapeResult:
+    return ScrapeResult(
+        markdown=body,
+        html="<html><body><section>Coral comments iframe</section></body></html>",
+        metadata=ScrapeMetadata(status_code=200, source_url="https://example.com/coral-comments"),
     )
 
 
@@ -819,6 +867,712 @@ async def _call_scrape_step(
         cast(FirecrawlClient, cast(object, interact_client)),
         cast(SupabaseScrapeCache, cast(object, cache)),
     )
+
+
+_CORAL_HTML_FIXTURE = """\
+<script src="https://assets.coralproject.net/assets/js/embed.js"></script>
+<iframe class="coral-talk-stream" src="https://coral.example.com/embed/stream?storyURL=https%3A%2F%2Fexample.com%2Fpost"></iframe>"""
+
+_PARTIAL_CORAL_HTML_FIXTURE = """
+<div id="coral_talk_stream">
+  <button class="comment-button" data-gtm-class="open-community">2 Kommentare</button>
+</div>"""
+
+_CORAL_DETECTION_HTML_FIXTURE = """
+<html>
+  <head>
+    <link rel="canonical" href="https://www.tagesspiegel.de/2026/04/29/example"/>
+    <script src="https://coral.tagesspiegel.de/static/embed.js"></script>
+    <div data-hydrate-props="{&amp;escapedquot;talkAssetId&amp;escapedquot;:&amp;escapedquot;15538543&amp;escapedquot;,&amp;escapedquot;communityHostname&amp;escapedquot;:&amp;escapedquot;coral.tagesspiegel.de&amp;escapedquot;,&amp;escapedquot;canonicalUrl&amp;escapedquot;:&amp;escapedquot;https://www.tagesspiegel.de/2026/04/29/example&amp;escapedquot;}" />
+    <script>
+      window.__INITIAL_STATE__ = {"communityHostname":"coral.tagesspiegel.de"};
+    </script>
+  </head>
+  <body>
+    <article>
+      <h1>Tagesspiegel Article</h1>
+      <p>Visible article body</p>
+    </article>
+  </body>
+</html>"""
+
+
+def _eval_execute_javascript(script: str, *, match_selectors: list[str] | tuple[str, ...]) -> tuple[str, str | None]:
+    """Run a generated executeJavascript payload against a stubbed document."""
+
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("node.js is required to execute generated executeJavascript payloads")
+
+    driver = r"""
+const payload = JSON.parse(process.argv[1]);
+const matchingSelectors = new Set(payload.matchingSelectors);
+let clickedSelector = null;
+
+global.document = {
+    querySelector(selector) {
+        if (!matchingSelectors.has(selector)) {
+            return null;
+        }
+
+        return {
+            click() {
+                clickedSelector = selector;
+            },
+        };
+    },
+};
+
+const result = eval(payload.script);
+const output = {
+    result: typeof result === "string" ? result : String(result),
+    clickedSelector,
+};
+console.log(JSON.stringify(output));
+"""
+
+    completed = subprocess.run(
+        [
+            node,
+            "-e",
+            driver,
+            json.dumps(
+                {
+                    "script": script,
+                    "matchingSelectors": list(match_selectors),
+                }
+            ),
+        ],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+
+    output = json.loads(completed.stdout.strip())
+    return output["result"], output["clickedSelector"]
+
+
+def _sample_coral_signal() -> CoralSignal:
+    return CoralSignal(
+        iframe_src=(
+            "https://talk.example.com/embed/stream/?storyURL="
+            "https://example.com/story"
+        ),
+        graphql_origin="https://talk.example.com",
+        story_url="https://example.com/story",
+    )
+
+
+def test_tier2_actions_for_default_waits_only() -> None:
+    """Without a Coral signal, Tier 2 keeps the legacy single 3s wait."""
+
+    assert _tier2_actions_for(None) == [{"type": "wait", "milliseconds": 3000}]
+
+
+def test_tier2_actions_for_coral_signal_expands_comment_stream() -> None:
+    """Coral detection switches Tier 2 actions to stream-expansion steps."""
+
+    actions = _tier2_actions_for(_sample_coral_signal())
+
+    assert actions[0] == {"type": "wait", "milliseconds": 2000}
+    assert actions[1] == {"type": "scroll", "direction": "down"}
+    assert actions[2]["type"] == "executeJavascript"
+    js = actions[2]["script"]
+    assert "button[data-testid=\"comments-show-comments-button\"]" in js
+    assert "button[data-gtm-class=\"open-community\"]" in js
+    assert "#coral_talk_stream button" in js
+    assert "#coral_thread button" in js
+    assert "[data-embed-coral] button" in js
+    returned, clicked = _eval_execute_javascript(
+        js,
+        match_selectors=["button[data-gtm-class=\"open-community\"]"],
+    )
+    assert clicked == 'button[data-gtm-class="open-community"]'
+    assert returned == 'clicked button[data-gtm-class="open-community"]'
+
+    returned, clicked = _eval_execute_javascript(js, match_selectors=[])
+    assert clicked is None
+    assert returned == "no-op"
+    assert actions[3] == {"type": "wait", "milliseconds": 3000}
+    assert actions[4] == {"type": "scroll", "direction": "down"}
+    assert len(actions) == 5
+
+
+async def test_run_tier2_default_actions_recorded_without_coral_signal() -> None:
+    """`_run_tier2` with no Coral signal sends the legacy default action list."""
+
+    url = "https://example.com/article"
+    cache = _FakeScrapeCache()
+    interact_client = _FakeFirecrawlClient(interact_result=_ok_scrape_result())
+
+    result = await _run_tier2(
+        url,
+        cast(FirecrawlClient, cast(object, interact_client)),
+        cast(SupabaseScrapeCache, cast(object, cache)),
+    )
+
+    assert result.cached is not None
+    assert len(interact_client.interact_calls) == 1
+    _, interact_kwargs = interact_client.interact_calls[0]
+    assert interact_kwargs["actions"] == [{"type": "wait", "milliseconds": 3000}]
+
+
+async def test_run_tier2_records_coral_specific_actions() -> None:
+    """Passing a Coral signal to `_run_tier2` sends stream-expansion actions."""
+
+    url = "https://example.com/article"
+    cache = _FakeScrapeCache()
+    interact_client = _FakeFirecrawlClient(interact_result=_ok_scrape_result())
+
+    result = await _run_tier2(
+        url,
+        cast(FirecrawlClient, cast(object, interact_client)),
+        cast(SupabaseScrapeCache, cast(object, cache)),
+        coral_signal=_sample_coral_signal(),
+    )
+
+    assert result.cached is not None
+    assert len(interact_client.interact_calls) == 1
+    _, interact_kwargs = interact_client.interact_calls[0]
+    actions = interact_kwargs["actions"]
+    js_actions = [
+        action
+        for action in actions
+        if action["type"] == "executeJavascript"
+    ]
+    assert len(js_actions) == 1
+    js = js_actions[0]["script"]
+    assert "button[data-testid=\"comments-show-comments-button\"]" in js
+    assert "button[data-gtm-class=\"open-community\"]" in js
+    assert "#coral_talk_stream button" in js
+    assert "#coral_thread button" in js
+    assert "[data-embed-coral] button" in js
+    assert sum(1 for action in actions if action["type"] == "wait") >= 2
+    assert sum(1 for action in actions if action["type"] == "scroll") >= 2
+
+
+async def test_scrape_step_tier1_coral_detection_merges_graphql_comments(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Tier 1 Coral detection + successful GraphQL merge appends a `## Comments`
+    section in the returned scrape and caches under `tier='scrape'`.
+    """
+
+    from src.jobs import orchestrator
+
+    url = "https://example.com/post"
+    cache = _FakeScrapeCache()
+    scrape_client = _FakeFirecrawlClient(
+        scrape_result=_ok_scrape_result(
+            body="Substantive article body. " * 20,
+            html=(
+                "<html><body>"
+                f"{_CORAL_HTML_FIXTURE}"
+                "<article><h1>Real Article</h1><p>Substantive article body.</p></article>"
+                "</body></html>"
+            ),
+        )
+    )
+    interact_client = _FakeFirecrawlClient(interact_result=_ok_scrape_result())
+
+    async def fetch_ok(origin: str, story_url: str) -> CoralComments:
+        assert origin == "https://coral.example.com"
+        assert story_url == "https://example.com/post"
+        return CoralComments(
+            comments_markdown="## Comments\n- Great discussion in the comments.",
+            raw_count=1,
+            fetched_at=datetime.now(UTC),
+        )
+
+    monkeypatch.setattr(orchestrator, "fetch_coral_comments", fetch_ok)
+
+    result = await _call_scrape_step(url, scrape_client, interact_client, cache)
+
+    markdown = _require_markdown(result)
+    assert "Real Article" in markdown
+    assert "Substantive article body." in markdown
+    assert "## Comments" in markdown
+    assert "Great discussion" in markdown
+    assert (url, "scrape") in cache.store
+    assert (url, "scrape") in cache.puts
+    cached_markdown = _require_markdown(cache.store[(url, "scrape")])
+    assert "Real Article" in cached_markdown
+    assert "## Comments" in cached_markdown
+    assert len(interact_client.interact_calls) == 0
+
+
+async def test_scrape_step_tier1_coral_truncated_marker_stays_cached(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Tier 1 treats capped Coral GraphQL output as a successful partial merge."""
+
+    from src.jobs import orchestrator
+
+    span = _install_recording_span(monkeypatch)
+    url = "https://example.com/post"
+    cache = _FakeScrapeCache()
+    scrape_client = _FakeFirecrawlClient(
+        scrape_result=_ok_scrape_result(
+            body="Substantive article body. " * 20,
+            html=(
+                "<html><body>"
+                f"{_CORAL_HTML_FIXTURE}"
+                "<article><h1>Real Article</h1><p>Substantive article body.</p></article>"
+                "</body></html>"
+            ),
+        )
+    )
+    interact_client = _FakeFirecrawlClient(interact_result=_ok_scrape_result())
+
+    async def fetch_ok(origin: str, story_url: str) -> CoralComments:
+        assert origin == "https://coral.example.com"
+        assert story_url == "https://example.com/post"
+        return CoralComments(
+            comments_markdown="## Comments\n- Great discussion.\n[comments truncated]",
+            raw_count=1,
+            fetched_at=datetime.now(UTC),
+        )
+
+    monkeypatch.setattr(orchestrator, "fetch_coral_comments", fetch_ok)
+
+    result = await _call_scrape_step(url, scrape_client, interact_client, cache)
+
+    markdown = _require_markdown(result)
+    assert "[comments truncated]" in markdown
+    cached_markdown = _require_markdown(cache.store[(url, "scrape")])
+    assert "[comments truncated]" in cached_markdown
+    assert span.attrs.get("coral_outcome") == "merged"
+    assert len(interact_client.interact_calls) == 0
+
+
+async def test_scrape_step_tier1_partial_coral_markers_triggers_direct_html_fetch_for_detection(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Tagesspiegel-style partial Coral evidence triggers direct fetch and GraphQL merge."""
+
+    from src.jobs import orchestrator
+
+    url = "https://www.tagesspiegel.de/example/article"
+    cache = _FakeScrapeCache()
+    scrape_client = _FakeFirecrawlClient(
+        scrape_result=_ok_scrape_result(
+            body="Substantive article body. " * 20,
+            html=(
+                "<html><body>"
+                f"{_PARTIAL_CORAL_HTML_FIXTURE}"
+                "<article><h1>Real Article</h1><p>Substantive article body.</p></article>"
+                "</body></html>"
+            ),
+        )
+    )
+    interact_client = _FakeFirecrawlClient(interact_result=_ok_scrape_result())
+
+    async def fetch_detection_html(_url: str) -> str:
+        return _CORAL_DETECTION_HTML_FIXTURE
+
+    monkeypatch.setattr(
+        orchestrator,
+        "_fetch_coral_detection_html",
+        fetch_detection_html,
+    )
+
+    async def fetch_ok(origin: str, story_url: str) -> CoralComments:
+        assert origin == "https://coral.tagesspiegel.de"
+        assert story_url == "https://www.tagesspiegel.de/2026/04/29/example"
+        return CoralComments(
+            comments_markdown="## Comments\n- Great discussion in the comments.",
+            raw_count=1,
+            fetched_at=datetime.now(UTC),
+        )
+
+    monkeypatch.setattr(orchestrator, "fetch_coral_comments", fetch_ok)
+
+    result = await _call_scrape_step(url, scrape_client, interact_client, cache)
+
+    markdown = _require_markdown(result)
+    assert "Real Article" in markdown
+    assert "Substantive article body." in markdown
+    assert "## Comments" in markdown
+    assert "Great discussion in the comments." in markdown
+    assert (url, "scrape") in cache.store
+    assert (url, "scrape") in cache.puts
+    assert "## Comments" in _require_markdown(cache.store[(url, "scrape")])
+    assert len(interact_client.interact_calls) == 0
+
+
+async def test_scrape_step_tier1_coral_iframe_fallback_success_merges_comments_without_tier2(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """GraphQL failure falls back to iframe scrape, merges comment markdown, and
+    returns Tier-1 success."""
+
+    from src.jobs import orchestrator
+
+    url = "https://example.com/post"
+    cache = _FakeScrapeCache()
+    scrape_client = _FakeFirecrawlClient(
+        scrape_result=_scrape_results(
+            _ok_scrape_result(
+                html=(
+                    "<html><body>"
+                    f"{_PARTIAL_CORAL_HTML_FIXTURE}"
+                    "<article><h1>Real Article</h1><p>Substantive article body.</p></article>"
+                    "</body></html>"
+                )
+            ),
+            _comment_scrape_result(
+                body="## Comments\n- Great discussion in the iframe comments.",
+            ),
+        )
+    )
+    interact_client = _FakeFirecrawlClient(
+        interact_result=lambda: (_ for _ in ()).throw(
+            AssertionError("/interact should not run after iframe fallback merge")
+        )
+    )
+
+    async def fetch_fails(*_args: Any, **_kwargs: Any) -> CoralComments:
+        raise CoralFetchError("temporary coral graphql error")
+
+    async def fetch_detection_html(_url: str) -> str:
+        return _CORAL_DETECTION_HTML_FIXTURE
+
+    monkeypatch.setattr(
+        orchestrator,
+        "_fetch_coral_detection_html",
+        fetch_detection_html,
+    )
+    monkeypatch.setattr(orchestrator, "fetch_coral_comments", fetch_fails)
+
+    result = await _call_scrape_step(url, scrape_client, interact_client, cache)
+
+    assert "Great discussion in the iframe comments." in _require_markdown(result)
+    assert (url, "scrape") in cache.store
+    assert (url, "scrape") in cache.puts
+    assert (
+        "Great discussion in the iframe comments."
+        in _require_markdown(cache.store[(url, "scrape")])
+    )
+    assert len(scrape_client.scrape_calls) == 2
+    assert scrape_client.scrape_calls[1][0] == (
+        "https://coral.tagesspiegel.de/embed/stream?asset_id=15538543&asset_url="
+        "https%3A%2F%2Fwww.tagesspiegel.de%2F2026%2F04%2F29%2Fexample"
+    )
+    assert scrape_client.scrape_calls[1][1]["formats"] == ["markdown", "html"]
+    assert scrape_client.scrape_calls[1][1]["only_main_content"] is False
+    assert len(interact_client.interact_calls) == 0
+
+
+async def test_scrape_step_tier1_coral_iframe_fallback_rejected_source_url_escalates_to_tier2(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Private iframe redirect targets are treated as SSRF risk and keep
+    Coral fallback best-effort."""
+
+    from src.jobs import orchestrator
+
+    url = "https://example.com/post"
+    cache = _FakeScrapeCache()
+    scrape_client = _FakeFirecrawlClient(
+        scrape_result=_scrape_results(
+            _ok_scrape_result(
+                html=(
+                    "<html><body>"
+                    f"{_PARTIAL_CORAL_HTML_FIXTURE}"
+                    "<article><h1>Real Article</h1><p>Substantive article body.</p></article>"
+                    "</body></html>"
+                )
+            ),
+            ScrapeResult(
+                markdown="## Comments\n- Should not merge private iframe comments.",
+                html="<html><body><section>Coral comments iframe</section></body></html>",
+                metadata=ScrapeMetadata(
+                    status_code=200,
+                    source_url="http://127.0.0.1/comments",
+                ),
+            ),
+        )
+    )
+    interact_client = _FakeFirecrawlClient(
+        interact_result=_ok_scrape_result(body="## Comments\n- Tier 2 rendered comments.")
+    )
+
+    async def fetch_fails(*_args: Any, **_kwargs: Any) -> CoralComments:
+        raise CoralFetchError("temporary coral graphql error")
+
+    async def fetch_detection_html(_url: str) -> str:
+        return _CORAL_DETECTION_HTML_FIXTURE
+
+    monkeypatch.setattr(
+        orchestrator,
+        "_fetch_coral_detection_html",
+        fetch_detection_html,
+    )
+    monkeypatch.setattr(orchestrator, "fetch_coral_comments", fetch_fails)
+
+    result = await _call_scrape_step(url, scrape_client, interact_client, cache)
+
+    markdown = _require_markdown(result)
+    assert "Should not merge private iframe comments." not in markdown
+    assert "Tier 2 rendered comments." in markdown
+    assert (url, "scrape") in cache.store
+    assert (
+        "Should not merge private iframe comments."
+        not in _require_markdown(cache.store[(url, "scrape")])
+    )
+    assert len(scrape_client.scrape_calls) == 2
+    assert scrape_client.scrape_calls[1][0] == (
+        "https://coral.tagesspiegel.de/embed/stream?asset_id=15538543&asset_url="
+        "https%3A%2F%2Fwww.tagesspiegel.de%2F2026%2F04%2F29%2Fexample"
+    )
+    assert len(interact_client.interact_calls) == 1
+    assert interact_client.interact_calls[0][0] == url
+    actions = interact_client.interact_calls[0][1]["actions"]
+    assert len(actions) == 5
+    assert actions[0] == {"type": "wait", "milliseconds": 2000}
+    assert actions[1] == {"type": "scroll", "direction": "down"}
+    assert actions[3] == {"type": "wait", "milliseconds": 3000}
+    assert actions[4] == {"type": "scroll", "direction": "down"}
+    assert "executeJavascript" in actions[2]["type"]
+    assert "#coral_talk_stream button" in actions[2]["script"]
+    assert (url, "interact") in cache.store
+
+
+async def test_scrape_step_tier1_coral_iframe_fallback_malformed_final_url_escalates_to_tier2(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Malformed iframe final URLs are treated as fallback failure and escalate to Tier 2."""
+
+    from src.jobs import orchestrator
+
+    url = "https://example.com/post"
+    cache = _FakeScrapeCache()
+    scrape_client = _FakeFirecrawlClient(
+        scrape_result=_scrape_results(
+            _ok_scrape_result(
+                html=(
+                    "<html><body>"
+                    f"{_PARTIAL_CORAL_HTML_FIXTURE}"
+                    "<article><h1>Real Article</h1><p>Substantive article body.</p></article>"
+                    "</body></html>"
+                )
+            ),
+            ScrapeResult(
+                markdown="## Comments\n- Should not merge malformed iframe comments.",
+                html="<html><body><section>Coral comments iframe</section></body></html>",
+                metadata=ScrapeMetadata(
+                    status_code=200,
+                    source_url="http://[::1",
+                ),
+            ),
+        )
+    )
+    interact_client = _FakeFirecrawlClient(
+        interact_result=_ok_scrape_result(body="## Comments\n- Tier 2 rendered comments.")
+    )
+
+    async def fetch_fails(*_args: Any, **_kwargs: Any) -> CoralComments:
+        raise CoralFetchError("temporary coral graphql error")
+
+    async def fetch_detection_html(_url: str) -> str:
+        return _CORAL_DETECTION_HTML_FIXTURE
+
+    monkeypatch.setattr(
+        orchestrator,
+        "_fetch_coral_detection_html",
+        fetch_detection_html,
+    )
+    monkeypatch.setattr(orchestrator, "fetch_coral_comments", fetch_fails)
+
+    result = await _call_scrape_step(url, scrape_client, interact_client, cache)
+
+    markdown = _require_markdown(result)
+    assert "Should not merge malformed iframe comments." not in markdown
+    assert "Tier 2 rendered comments." in markdown
+    assert (url, "scrape") in cache.store
+    assert (
+        "Should not merge malformed iframe comments."
+        not in _require_markdown(cache.store[(url, "scrape")])
+    )
+    assert len(interact_client.interact_calls) == 1
+    assert interact_client.interact_calls[0][0] == url
+    assert (url, "interact") in cache.store
+
+
+async def test_scrape_step_tier1_coral_graphql_failure_escalates_to_tier2_with_coral_click(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Coral GraphQL fetch failure caches the tier-1 row and escalates to tier2
+    with the Coral click selector so the comment stream still has a chance."""
+
+    from src.jobs import orchestrator
+
+    url = "https://example.com/post"
+    cache = _FakeScrapeCache()
+    scrape_client = _FakeFirecrawlClient(
+        scrape_result=_scrape_results(
+            _ok_scrape_result(
+                html=(
+                    "<html><body>"
+                    f"{_CORAL_HTML_FIXTURE}"
+                    "<article><h1>Real Article</h1><p>Substantive article body.</p></article>"
+                    "</body></html>"
+                )
+            ),
+            _interstitial_scrape_result(),
+        )
+    )
+    interact_client = _FakeFirecrawlClient(
+        interact_result=_ok_scrape_result(body="Tier 2 rendered comments. " * 20)
+    )
+
+    async def fetch_fails(*_args: Any, **_kwargs: Any) -> CoralComments:
+        raise CoralFetchError("temporary coral graphql error")
+
+    monkeypatch.setattr(orchestrator, "fetch_coral_comments", fetch_fails)
+
+    result = await _call_scrape_step(url, scrape_client, interact_client, cache)
+
+    assert "Tier 2 rendered comments." in _require_markdown(result)
+    assert len(scrape_client.scrape_calls) == 2
+    assert len(interact_client.interact_calls) == 1
+    assert (url, "scrape") in cache.store
+    assert (url, "interact") in cache.store
+    assert "Tier 2 rendered comments." in _require_markdown(
+        cache.store[(url, "interact")]
+    )
+    assert scrape_client.scrape_calls[1][0].startswith("https://coral.example.com/embed/stream")
+    assert scrape_client.scrape_calls[1][1]["formats"] == ["markdown", "html"]
+    assert scrape_client.scrape_calls[1][1]["only_main_content"] is False
+    _, interact_kwargs = interact_client.interact_calls[0]
+    actions = interact_kwargs["actions"]
+    assert any(action["type"] == "executeJavascript" for action in actions)
+
+
+async def test_scrape_step_tier1_coral_graphql_failure_then_tier2_fail_raises_unsupported_site(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Coral GraphQL failure then tier-2 failure is terminal with both-tier reasons."""
+
+    from src.jobs import orchestrator
+
+    url = "https://example.com/post"
+    cache = _FakeScrapeCache()
+    scrape_client = _FakeFirecrawlClient(
+        scrape_result=_scrape_results(
+            _ok_scrape_result(
+                html=(
+                    "<html><body>"
+                    f"{_CORAL_HTML_FIXTURE}"
+                    "<article><h1>Real Article</h1><p>Substantive article body.</p></article>"
+                    "</body></html>"
+                )
+            ),
+            _interstitial_scrape_result(),
+        )
+    )
+    interact_client = _FakeFirecrawlClient(
+        interact_result=_interstitial_scrape_result()
+    )
+
+    async def fetch_fails(*_args: Any, **_kwargs: Any) -> CoralComments:
+        raise CoralFetchError("temporary coral graphql error")
+
+    monkeypatch.setattr(orchestrator, "fetch_coral_comments", fetch_fails)
+
+    with pytest.raises(TerminalError) as exc_info:
+        await _call_scrape_step(url, scrape_client, interact_client, cache)
+
+    assert exc_info.value.error_code is ErrorCode.UNSUPPORTED_SITE
+    msg = exc_info.value.error_detail.lower()
+    assert "tier 1:" in msg
+    assert "coral_graphql_failed" in msg
+    assert "temporary coral graphql error" in msg
+    assert "tier 2:" in msg
+    assert "interstitial" in msg
+    assert (url, "interact") not in cache.store
+    assert (url, "scrape") in cache.store
+    assert len(scrape_client.scrape_calls) == 2
+    assert scrape_client.scrape_calls[1][0].startswith("https://coral.example.com/embed/stream")
+    assert scrape_client.scrape_calls[1][1]["formats"] == ["markdown", "html"]
+    assert scrape_client.scrape_calls[1][1]["only_main_content"] is False
+    assert len(interact_client.interact_calls) == 1
+    _, interact_kwargs = interact_client.interact_calls[0]
+    actions = interact_kwargs["actions"]
+    assert any(action["type"] == "executeJavascript" for action in actions)
+
+
+async def test_scrape_step_tier1_cache_hit_with_merged_coral_comments_skips_graphql(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Cached merged Tier-1 Coral row is reused; no scrape or GraphQL re-fetch."""
+
+    from src.jobs import orchestrator
+
+    url = "https://example.com/cached-coral-post"
+    cache = _FakeScrapeCache()
+    cache.store[(url, "scrape")] = CachedScrape(
+        markdown=(
+            "# Real Article\n\nSubstantive article body.\n\n"
+            "## Comments\n- Great discussion in the comments."
+        ),
+        html=(
+            "<html><body>"
+            f"{_CORAL_HTML_FIXTURE}"
+            "<article><h1>Real Article</h1><p>Substantive article body.</p></article>"
+            "</body></html>"
+        ),
+        metadata=ScrapeMetadata(status_code=200, source_url=url),
+        storage_key="cached-coral-marked-up",
+    )
+    scrape_client = _FakeFirecrawlClient(
+        scrape_result=lambda: (_ for _ in ()).throw(
+            AssertionError("scrape must not run on scrape cache hit")
+        )
+    )
+    interact_client = _FakeFirecrawlClient(interact_result=_ok_scrape_result())
+
+    async def fetch_forbidden(*_args: Any, **_kwargs: Any) -> CoralComments:
+        raise AssertionError(
+            "fetch_coral_comments should not run on scraped-tier cache hit"
+        )
+
+    monkeypatch.setattr(orchestrator, "fetch_coral_comments", fetch_forbidden)
+
+    result = await _call_scrape_step(url, scrape_client, interact_client, cache)
+
+    assert result.storage_key == "cached-coral-marked-up"
+    assert "Great discussion in the comments." in _require_markdown(result)
+    assert len(scrape_client.scrape_calls) == 0
+    assert len(interact_client.interact_calls) == 0
+
+
+async def test_scrape_step_tier1_non_coral_ok_does_not_call_graphql(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Non-Coral pages should never call Coral GraphQL, even with an OK Tier-1
+    classification."""
+
+    from src.jobs import orchestrator
+
+    url = "https://example.com/post"
+    cache = _FakeScrapeCache()
+    scrape_client = _FakeFirecrawlClient(scrape_result=_ok_scrape_result())
+    interact_client = _FakeFirecrawlClient(interact_result=_ok_scrape_result())
+
+    async def fetch_forbidden(*_args: Any, **_kwargs: Any) -> CoralComments:
+        raise AssertionError("fetch_coral_comments should not run for non-coral pages")
+
+    async def fetch_not_called(*_url: str) -> str:
+        raise AssertionError("direct Coral detection fetch should not run for non-coral pages")
+
+    monkeypatch.setattr(orchestrator, "fetch_coral_comments", fetch_forbidden)
+    monkeypatch.setattr(orchestrator, "_fetch_coral_detection_html", fetch_not_called)
+
+    result = await _call_scrape_step(url, scrape_client, interact_client, cache)
+
+    assert result.markdown is not None
+    assert len(interact_client.interact_calls) == 0
 
 
 # AC#1, AC#5 — Tier 1 OK: no escalation, span shows tier_attempted=['scrape'].
@@ -1301,6 +2055,91 @@ async def test_scrape_step_logfire_span_records_attributes_on_ok(
     assert span.attrs.get("tier_success") == "scrape"
     assert span.attrs.get("escalation_reason") is None
     assert span.attrs.get("final_classification") == "ok"
+    assert span.attrs.get("coral_detected") is False
+    assert span.attrs.get("coral_outcome") is None
+
+
+async def test_scrape_step_logfire_span_records_coral_merge_attributes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Coral merge success on Tier 1 sets Coral attributes in the span."""
+
+    from src.jobs import orchestrator
+
+    span = _install_recording_span(monkeypatch)
+    url = "https://example.com/post"
+    cache = _FakeScrapeCache()
+    scrape_client = _FakeFirecrawlClient(
+        scrape_result=_scrape_results(
+            _ok_scrape_result(
+                html=(
+                    "<html><body>"
+                    f"{_CORAL_HTML_FIXTURE}"
+                    "<article><h1>Real Article</h1><p>Substantive article body.</p></article>"
+                    "</body></html>"
+                )
+            ),
+            _interstitial_scrape_result(),
+        )
+    )
+    interact_client = _FakeFirecrawlClient(interact_result=_ok_scrape_result())
+
+    async def fetch_ok(origin: str, story_url: str) -> CoralComments:
+        return CoralComments(
+            comments_markdown="## Comments\n- Great discussion",
+            raw_count=1,
+            fetched_at=datetime.now(UTC),
+        )
+
+    monkeypatch.setattr(orchestrator, "fetch_coral_comments", fetch_ok)
+
+    await _call_scrape_step(url, scrape_client, interact_client, cache)
+
+    assert span.attrs.get("coral_detected") is True
+    assert span.attrs.get("coral_outcome") == "merged"
+    assert span.attrs.get("tier_attempted") == ["scrape"]
+    assert span.attrs.get("tier_success") == "scrape"
+    assert span.attrs.get("escalation_reason") is None
+
+
+async def test_scrape_step_logfire_span_records_coral_graphql_failed_attributes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Coral GraphQL failure path sets `coral_outcome='graphql_failed'`."""
+
+    from src.jobs import orchestrator
+
+    span = _install_recording_span(monkeypatch)
+    url = "https://example.com/post"
+    cache = _FakeScrapeCache()
+    scrape_client = _FakeFirecrawlClient(
+        scrape_result=_scrape_results(
+            _ok_scrape_result(
+                html=(
+                    "<html><body>"
+                    f"{_CORAL_HTML_FIXTURE}"
+                    "<article><h1>Real Article</h1><p>Substantive article body.</p></article>"
+                    "</body></html>"
+                )
+            ),
+            _interstitial_scrape_result(),
+        )
+    )
+    interact_client = _FakeFirecrawlClient(interact_result=_ok_scrape_result())
+
+    async def fetch_fails(*_args: Any, **_kwargs: Any) -> CoralComments:
+        raise CoralUnsupportedError("unsupported comments endpoint")
+
+    monkeypatch.setattr(orchestrator, "fetch_coral_comments", fetch_fails)
+
+    await _call_scrape_step(url, scrape_client, interact_client, cache)
+
+    assert span.attrs.get("coral_detected") is True
+    assert span.attrs.get("coral_outcome") == "graphql_failed"
+    assert span.attrs.get("tier_attempted") == ["scrape", "interact"]
+    assert span.attrs.get("tier_success") == "interact"
+    assert span.attrs.get("escalation_reason") == "coral_graphql_failed"
+    assert len(scrape_client.scrape_calls) == 2
 
 
 async def test_scrape_step_logfire_span_records_attributes_on_escalation_success(
