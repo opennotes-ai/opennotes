@@ -168,6 +168,15 @@ _CORAL_PARTIAL_MARKERS: tuple[str, ...] = (
     "coral-talk-stream",
     "data-embed-coral",
 )
+_CORAL_TIER2_ACTION_SELECTORS: Final[tuple[str, ...]] = (
+    'button[data-testid="comments-show-comments-button"]',
+    'button[data-gtm-class="open-community"]',
+    "#coral_talk_stream button",
+    "#coral_thread button",
+    "[data-embed-coral] button",
+    "ps-comments#coral_talk_stream button",
+    "ps-comments#coral_talk_stream",
+)
 
 _CORAL_DETECTION_FETCH_TIMEOUT_SECONDS: float = 1.5
 
@@ -707,13 +716,7 @@ def _tier2_actions_for(coral_signal: CoralSignal | None) -> list[dict[str, Any]]
             "type": "executeJavascript",
             "script": """
                 (() => {
-                    const selectors = [
-                        'button[data-testid="comments-show-comments-button"]',
-                        'button[data-gtm-class="open-community"]',
-                        '#coral_talk_stream button',
-                        '#coral_thread button',
-                        '[data-embed-coral] button',
-                    ];
+                    const selectors = __CORAL_TIER2_ACTION_SELECTORS__;
 
                     for (const selector of selectors) {
                         const button = document.querySelector(selector);
@@ -725,7 +728,10 @@ def _tier2_actions_for(coral_signal: CoralSignal | None) -> list[dict[str, Any]]
 
                     return "no-op";
                 })();
-            """,
+            """.replace(
+                "__CORAL_TIER2_ACTION_SELECTORS__",
+                json.dumps(list(_CORAL_TIER2_ACTION_SELECTORS)),
+            ),
         },
         {"type": "wait", "milliseconds": 3000},
         {"type": "scroll", "direction": "down"},
@@ -837,6 +843,17 @@ async def _run_tier1(  # noqa: PLR0911, PLR0912
                 final_classification="ok",
                 coral_signal=None,
                 coral_outcome=None,
+            )
+
+        if not signal.supports_graphql:
+            return _Tier1Outcome(
+                cached=None,
+                terminal=None,
+                escalation_reason="coral_graphql_unsupported",
+                tier1_reason="coral_graphql_unsupported",
+                final_classification="ok",
+                coral_signal=signal,
+                coral_outcome="render_only",
             )
 
         try:

@@ -878,6 +878,14 @@ _PARTIAL_CORAL_HTML_FIXTURE = """
   <button class="comment-button" data-gtm-class="open-community">2 Kommentare</button>
 </div>"""
 
+_LA_TIMES_PS_COMMENTS_FIXTURE = """
+<ps-comments
+  id="coral_talk_stream"
+  data-embed-url="https://latimes.coral.coralproject.net/assets/js/embed.js"
+  data-env-url="https://latimes.coral.coralproject.net"
+  data-story-id="0000019d-ccf9-ddcd-adfd-deff9ae80000"
+>Show Comments</ps-comments>"""
+
 _CORAL_DETECTION_HTML_FIXTURE = """
 <html>
   <head>
@@ -897,7 +905,12 @@ _CORAL_DETECTION_HTML_FIXTURE = """
 </html>"""
 
 
-def _eval_execute_javascript(script: str, *, match_selectors: list[str] | tuple[str, ...]) -> tuple[str, str | None]:
+def _eval_execute_javascript(
+    script: str,
+    *,
+    match_selectors: list[str] | tuple[str, ...],
+    html_fixture: str | None = None,
+) -> tuple[str, str | None]:
     """Run a generated executeJavascript payload against a stubbed document."""
 
     node = shutil.which("node")
@@ -907,11 +920,37 @@ def _eval_execute_javascript(script: str, *, match_selectors: list[str] | tuple[
     driver = r"""
 const payload = JSON.parse(process.argv[1]);
 const matchingSelectors = new Set(payload.matchingSelectors);
+const htmlFixture = payload.htmlFixture || "";
 let clickedSelector = null;
+
+function psCommentsBlock() {
+    const match = htmlFixture.match(/<ps-comments\b([^>]*)>([\s\S]*?)<\/ps-comments>/i);
+    if (!match) {
+        return null;
+    }
+    if (!/\bid\s*=\s*["']coral_talk_stream["']/i.test(match[1])) {
+        return null;
+    }
+    return { attrs: match[1], body: match[2] };
+}
+
+function selectorMatchesFixture(selector) {
+    const block = psCommentsBlock();
+    if (!block) {
+        return false;
+    }
+    if (selector === "ps-comments#coral_talk_stream") {
+        return true;
+    }
+    if (selector === "ps-comments#coral_talk_stream button") {
+        return /<button\b/i.test(block.body);
+    }
+    return false;
+}
 
 global.document = {
     querySelector(selector) {
-        if (!matchingSelectors.has(selector)) {
+        if (!matchingSelectors.has(selector) && !selectorMatchesFixture(selector)) {
             return null;
         }
 
@@ -940,6 +979,7 @@ console.log(JSON.stringify(output));
                 {
                     "script": script,
                     "matchingSelectors": list(match_selectors),
+                    "htmlFixture": html_fixture,
                 }
             ),
         ],
@@ -963,6 +1003,10 @@ def _sample_coral_signal() -> CoralSignal:
     )
 
 
+def _assert_generated_js_contains_selector(script: str, selector: str) -> None:
+    assert json.dumps(selector) in script
+
+
 def test_tier2_actions_for_default_waits_only() -> None:
     """Without a Coral signal, Tier 2 keeps the legacy single 3s wait."""
 
@@ -978,11 +1022,15 @@ def test_tier2_actions_for_coral_signal_expands_comment_stream() -> None:
     assert actions[1] == {"type": "scroll", "direction": "down"}
     assert actions[2]["type"] == "executeJavascript"
     js = actions[2]["script"]
-    assert "button[data-testid=\"comments-show-comments-button\"]" in js
-    assert "button[data-gtm-class=\"open-community\"]" in js
-    assert "#coral_talk_stream button" in js
-    assert "#coral_thread button" in js
-    assert "[data-embed-coral] button" in js
+    _assert_generated_js_contains_selector(
+        js, 'button[data-testid="comments-show-comments-button"]'
+    )
+    _assert_generated_js_contains_selector(js, 'button[data-gtm-class="open-community"]')
+    _assert_generated_js_contains_selector(js, "#coral_talk_stream button")
+    _assert_generated_js_contains_selector(js, "#coral_thread button")
+    _assert_generated_js_contains_selector(js, "[data-embed-coral] button")
+    _assert_generated_js_contains_selector(js, "ps-comments#coral_talk_stream button")
+    _assert_generated_js_contains_selector(js, "ps-comments#coral_talk_stream")
     returned, clicked = _eval_execute_javascript(
         js,
         match_selectors=["button[data-gtm-class=\"open-community\"]"],
@@ -996,6 +1044,29 @@ def test_tier2_actions_for_coral_signal_expands_comment_stream() -> None:
     assert actions[3] == {"type": "wait", "milliseconds": 3000}
     assert actions[4] == {"type": "scroll", "direction": "down"}
     assert len(actions) == 5
+
+
+def test_tier2_actions_for_coral_signal_expands_la_times_ps_comments() -> None:
+    """Coral Tier 2 actions click LA Times `ps-comments` Show Comments controls."""
+
+    actions = _tier2_actions_for(_sample_coral_signal())
+    js = actions[2]["script"]
+
+    returned, clicked = _eval_execute_javascript(
+        js,
+        match_selectors=[],
+        html_fixture=_LA_TIMES_PS_COMMENTS_FIXTURE,
+    )
+    assert clicked == "ps-comments#coral_talk_stream"
+    assert returned == "clicked ps-comments#coral_talk_stream"
+
+    returned, clicked = _eval_execute_javascript(
+        js,
+        match_selectors=[],
+        html_fixture="<div></div>",
+    )
+    assert clicked is None
+    assert returned == "no-op"
 
 
 async def test_run_tier2_default_actions_recorded_without_coral_signal() -> None:
@@ -1042,11 +1113,13 @@ async def test_run_tier2_records_coral_specific_actions() -> None:
     ]
     assert len(js_actions) == 1
     js = js_actions[0]["script"]
-    assert "button[data-testid=\"comments-show-comments-button\"]" in js
-    assert "button[data-gtm-class=\"open-community\"]" in js
-    assert "#coral_talk_stream button" in js
-    assert "#coral_thread button" in js
-    assert "[data-embed-coral] button" in js
+    _assert_generated_js_contains_selector(
+        js, 'button[data-testid="comments-show-comments-button"]'
+    )
+    _assert_generated_js_contains_selector(js, 'button[data-gtm-class="open-community"]')
+    _assert_generated_js_contains_selector(js, "#coral_talk_stream button")
+    _assert_generated_js_contains_selector(js, "#coral_thread button")
+    _assert_generated_js_contains_selector(js, "[data-embed-coral] button")
     assert sum(1 for action in actions if action["type"] == "wait") >= 2
     assert sum(1 for action in actions if action["type"] == "scroll") >= 2
 
@@ -1099,6 +1172,75 @@ async def test_scrape_step_tier1_coral_detection_merges_graphql_comments(
     assert "Real Article" in cached_markdown
     assert "## Comments" in cached_markdown
     assert len(interact_client.interact_calls) == 0
+
+
+async def test_scrape_step_la_times_ps_comments_caches_expanded_result_as_interact_only(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Canonical LA Times `ps-comments` ladder regression caches expanded output
+    at `tier='interact'` and skips `tier='scrape'` caching.
+
+    The route should detect LA Times Coral, run only the interact expansion
+    ladder, include both article + comment content in the final result, and
+    avoid writing a scrape-tier cache row.
+    """
+
+    from src.jobs import orchestrator
+
+    url = "https://www.latimes.com/example/article"
+    cache = _FakeScrapeCache()
+    article_markdown = "Real Article\n\nSubstantive article body. " * 5
+    comment_markdown = "## Comments\n- Great discussion in the comments."
+    scrape_client = _FakeFirecrawlClient(
+        scrape_result=_ok_scrape_result(
+            body=article_markdown,
+            html=(
+                "<html><body>"
+                f"{_LA_TIMES_PS_COMMENTS_FIXTURE}"
+                "<article><h1>Real Article</h1><p>Substantive article body.</p></article>"
+                "</body></html>"
+            ),
+        )
+    )
+    interact_client = _FakeFirecrawlClient(
+        interact_result=_ok_scrape_result(
+            body=f"{article_markdown}\n\n{comment_markdown}"
+        )
+    )
+
+    async def fetch_forbidden(*_args: Any, **_kwargs: Any) -> CoralComments:
+        raise AssertionError("fetch_coral_comments should not run for LA Times render-only")
+
+    monkeypatch.setattr(orchestrator, "fetch_coral_comments", fetch_forbidden)
+
+    result = await _call_scrape_step(url, scrape_client, interact_client, cache)
+
+    markdown = _require_markdown(result)
+    assert "Real Article" in markdown
+    assert "Substantive article body." in markdown
+    assert "Great discussion in the comments." in markdown
+    assert len(scrape_client.scrape_calls) == 1
+    assert len(interact_client.interact_calls) == 1
+    interact_url, interact_kwargs = interact_client.interact_calls[0]
+    assert interact_url == url
+    actions = interact_kwargs["actions"]
+    execute_js = next(
+        action for action in actions if action["type"] == "executeJavascript"
+    )
+    _assert_generated_js_contains_selector(
+        execute_js["script"], "ps-comments#coral_talk_stream"
+    )
+    _, clicked = _eval_execute_javascript(
+        execute_js["script"],
+        match_selectors=[],
+        html_fixture=_LA_TIMES_PS_COMMENTS_FIXTURE,
+    )
+    assert clicked == "ps-comments#coral_talk_stream"
+
+    assert (url, "interact") in cache.store
+    assert (url, "interact") in cache.puts
+    assert (url, "scrape") not in cache.store
+    assert (url, "scrape") not in cache.puts
 
 
 async def test_scrape_step_tier1_coral_truncated_marker_stays_cached(

@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import html
 import re
+from dataclasses import dataclass
 from html.parser import HTMLParser
 from typing import Any
 from urllib.parse import parse_qs, urlencode, urlparse
@@ -56,6 +57,18 @@ class CoralSignal(BaseModel):
     graphql_origin: str
     story_url: str
     iframe_src: str
+    story_id: str | None = None
+    supports_graphql: bool = True
+    embed_origin: str | None = None
+    env_origin: str | None = None
+
+
+@dataclass
+class _LatimesSignalCandidate:
+    embed_origin: str
+    env_origin: str
+    story_id: str
+    has_coral_signal_marker: bool = False
 
 
 class _CoralMarkerParser(HTMLParser):
@@ -65,6 +78,8 @@ class _CoralMarkerParser(HTMLParser):
         self._has_script_signal = False
         self._has_optional_signal = False
         self._has_static_script_signal = False
+        self._latimes_signal_stack: list[_LatimesSignalCandidate] = []
+        self._latimes_signals: list[_LatimesSignalCandidate] = []
         self._static_script_origins: list[str] = []
         self._canonical_urls: list[str] = []
         self._community_hostnames: list[str] = []
@@ -75,7 +90,9 @@ class _CoralMarkerParser(HTMLParser):
 
     @property
     def has_signal(self) -> bool:
-        return self._has_script_signal or self._has_optional_signal
+        return self._has_script_signal or self._has_optional_signal or bool(
+            self._latimes_signals
+        )
 
     @property
     def iframe_data(self) -> list[dict[str, Any]]:
@@ -86,6 +103,9 @@ class _CoralMarkerParser(HTMLParser):
         attrs_map: dict[str, str | None] = {
             str(name).lower(): value for name, value in attrs if name is not None
         }
+        if self._contains_optional_markers(attrs_map):
+            self._has_optional_signal = True
+
         for value in attrs_map.values():
             if value is not None:
                 self._collect_state_json_values(value)
@@ -104,14 +124,17 @@ class _CoralMarkerParser(HTMLParser):
                 self._static_script_origins.append(static_script_origin)
             return
 
+        if normalized_tag == "ps-comments":
+            signal = self._capture_latimes_signal(attrs_map)
+            if signal is not None:
+                self._latimes_signal_stack.append(signal)
+            return
+
         if normalized_tag == "link":
             self._capture_canonical_if_present(attrs_map)
             return
 
         if normalized_tag == "iframe":
-            if self._contains_optional_markers(attrs_map):
-                self._has_optional_signal = True
-
             src = attrs_map.get("src")
             if src is None:
                 return
@@ -121,18 +144,49 @@ class _CoralMarkerParser(HTMLParser):
                 self._iframe_data.append(entry)
             return
 
-        if self._contains_optional_markers(attrs_map):
-            self._has_optional_signal = True
-
     def handle_endtag(self, tag: str) -> None:
         if tag.lower() == "script":
             self._in_script = False
             self._capture_script_data = False
+            return
+
+        if tag.lower() == "ps-comments":
+            if not self._latimes_signal_stack:
+                return
+
+            signal = self._latimes_signal_stack.pop()
+            if not signal.has_coral_signal_marker:
+                return
+
+            if not signal.story_id:
+                return
+
+            self._latimes_signals.append(signal)
 
     def handle_data(self, data: str) -> None:
         if self._in_script and self._capture_script_data and data:
             text = _normalize_coral_state_blob(data)
             self._collect_state_json_values(text)
+
+        if self._latimes_signal_stack and data and "show comments" in data.lower():
+            self._latimes_signal_stack[-1].has_coral_signal_marker = True
+
+    def latimes_signal(self) -> CoralSignal | None:
+        if not self._latimes_signals:
+            return None
+
+        signal = self._latimes_signals[0]
+        story_id = signal.story_id
+
+        return CoralSignal(
+            iframe_src=f"{signal.env_origin}/embed/stream?storyID={story_id}",
+            graphql_origin=signal.env_origin,
+            story_url=story_id,
+            supports_graphql=False,
+            story_id=story_id,
+            embed_origin=signal.embed_origin,
+            env_origin=signal.env_origin,
+        )
 
     def static_signal(self) -> dict[str, str] | None:
         if not self._has_static_script_signal:
@@ -200,6 +254,51 @@ class _CoralMarkerParser(HTMLParser):
         rel_values = rel.lower().split()
         if "canonical" in rel_values:
             self._canonical_urls.append(href)
+
+    def _capture_latimes_signal(  # noqa: PLR0911
+        self, attrs: dict[str, str | None]
+    ) -> _LatimesSignalCandidate | None:
+        if attrs.get("id") != "coral_talk_stream":
+            return None
+
+        data_embed_url = attrs.get("data-embed-url")
+        data_env_url = attrs.get("data-env-url")
+        story_id = (attrs.get("data-story-id") or "").strip()
+
+        if not data_embed_url or not data_env_url or not story_id:
+            return None
+
+        embed_origin = self._parse_http_origin(data_embed_url)
+        env_origin = self._parse_http_origin(data_env_url)
+        if not embed_origin or not env_origin:
+            return None
+
+        parsed_embed = urlparse(data_embed_url)
+        embed_host = parsed_embed.hostname
+        if (
+            not parsed_embed.path.endswith("/assets/js/embed.js")
+            or embed_host is None
+            or not self._is_coral_host(embed_host)
+        ):
+            return None
+
+        parsed_env = urlparse(data_env_url)
+        env_host = parsed_env.hostname
+        if (
+            env_host is None
+            or not self._is_coral_host(env_host)
+            or parsed_env.path not in {"", "/"}
+        ):
+            return None
+
+        if embed_origin != env_origin:
+            return None
+
+        return _LatimesSignalCandidate(
+            embed_origin=embed_origin,
+            env_origin=env_origin,
+            story_id=story_id,
+        )
 
     def _script_src_matches(self, src: str | None) -> bool:
         if not src:
@@ -277,8 +376,31 @@ class _CoralMarkerParser(HTMLParser):
                     graphql_origin = f"https://{fallback.netloc}"
         return graphql_origin
 
+    def _parse_http_origin(self, candidate: str) -> str | None:
+        parsed = urlparse(candidate)
+        if (
+            parsed.scheme in {"http", "https"}
+            and parsed.hostname
+            and parsed.username is None
+            and parsed.password is None
+        ):
+            try:
+                port = parsed.port
+            except ValueError:
+                return None
+            port_suffix = f":{port}" if port is not None else ""
+            return f"{parsed.scheme}://{parsed.hostname.lower()}{port_suffix}"
+        return None
 
-def detect_coral(html: str) -> CoralSignal | None:
+    @staticmethod
+    def _is_coral_host(hostname: str) -> bool:
+        host = hostname.lower()
+        return host == "coral.coralproject.net" or host.endswith(
+            ".coral.coralproject.net"
+        )
+
+
+def detect_coral(html: str) -> CoralSignal | None:  # noqa: PLR0911
     """Return a `CoralSignal` when Coral markers and a usable stream iframe
     are both present; return `None` otherwise."""
     try:
@@ -293,13 +415,19 @@ def detect_coral(html: str) -> CoralSignal | None:
         return None
 
     if parser.iframe_data:
-        signal = parser.iframe_data[0]
-    else:
-        if static_signal is None:
+        try:
+            return CoralSignal(**parser.iframe_data[0])
+        except Exception:
             return None
-        signal = static_signal
 
-    try:
-        return CoralSignal(**signal)
-    except Exception:
-        return None
+    if static_signal is not None:
+        try:
+            return CoralSignal(
+                graphql_origin=static_signal["graphql_origin"],
+                story_url=static_signal["story_url"],
+                iframe_src=static_signal["iframe_src"],
+            )
+        except Exception:
+            return None
+
+    return parser.latimes_signal()

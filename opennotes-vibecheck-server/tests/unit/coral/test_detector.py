@@ -60,6 +60,58 @@ def test_detects_coral_signal_from_static_embed() -> None:
     )
 
 
+def test_detects_coral_signal_from_latimes_ps_comments_shape() -> None:
+    html = """
+    <html>
+      <body>
+        <ps-comments
+          id="coral_talk_stream"
+          data-embed-url="https://latimes.coral.coralproject.net/assets/js/embed.js"
+          data-env-url="https://latimes.coral.coralproject.net"
+          data-story-id="0000019d-ccf9-ddcd-adfd-deff9ae80000"
+        >Show Comments</ps-comments>
+      </body>
+    </html>
+    """
+
+    signal = detect_coral(html)
+
+    assert isinstance(signal, CoralSignal)
+    assert signal.graphql_origin == "https://latimes.coral.coralproject.net"
+    assert signal.story_id == "0000019d-ccf9-ddcd-adfd-deff9ae80000"
+    assert signal.supports_graphql is False
+    assert signal.env_origin == "https://latimes.coral.coralproject.net"
+    assert signal.embed_origin == "https://latimes.coral.coralproject.net"
+    assert signal.story_url == "0000019d-ccf9-ddcd-adfd-deff9ae80000"
+    assert (
+        signal.iframe_src
+        == "https://latimes.coral.coralproject.net/embed/stream?storyID="
+        "0000019d-ccf9-ddcd-adfd-deff9ae80000"
+    )
+
+
+def test_detects_coral_signal_from_valid_iframe_with_ps_comments_optional_marker() -> None:
+    html = """
+    <html>
+      <body>
+        <ps-comments id="coral_talk_stream" class="coral-talk-stream">
+          Show Comments
+        </ps-comments>
+        <iframe
+          src="https://coral.npr.org/embed/stream?storyURL=https%3A%2F%2Fwww.npr.org%2F2026%2F04%2F29%2Fexample"
+        ></iframe>
+      </body>
+    </html>
+    """
+
+    signal = detect_coral(html)
+    assert signal == CoralSignal(
+        graphql_origin="https://coral.npr.org",
+        story_url="https://www.npr.org/2026/04/29/example",
+        iframe_src="https://coral.npr.org/embed/stream?storyURL=https%3A%2F%2Fwww.npr.org%2F2026%2F04%2F29%2Fexample",
+    )
+
+
 def test_detects_static_embed_with_talk_asset_id_in_escaped_props() -> None:
     html = """
     <html>
@@ -77,6 +129,112 @@ def test_detects_static_embed_with_talk_asset_id_in_escaped_props() -> None:
         story_url="https://www.tagesspiegel.de/2026/04/29/example",
         iframe_src="https://coral.tagesspiegel.de/embed/stream?asset_id=15538543&asset_url=https%3A%2F%2Fwww.tagesspiegel.de%2F2026%2F04%2F29%2Fexample",
     )
+
+
+@pytest.mark.parametrize(
+    "html",
+    [
+        """
+        <html>
+          <body>
+            <ps-comments
+              id="coral_talk_stream"
+              data-embed-url="latimes.coral.coralproject.net/assets/js/embed.js"
+              data-env-url="https://latimes.coral.coralproject.net"
+              data-story-id="0000019d-ccf9-ddcd-adfd-deff9ae80000"
+            >Show Comments</ps-comments>
+          </body>
+        </html>
+        """,
+        """
+        <html>
+          <body>
+            <ps-comments
+              id="coral_talk_stream"
+              data-embed-url="https://latimes.coral.coralproject.net/other/path.js"
+              data-env-url="https://latimes.coral.coralproject.net"
+              data-story-id="0000019d-ccf9-ddcd-adfd-deff9ae80000"
+            >Show Comments</ps-comments>
+          </body>
+        </html>
+        """,
+        """
+        <html>
+          <body>
+            <ps-comments
+              id="coral_talk_stream"
+              data-embed-url="https://latimes.coral.coralproject.net/assets/js/embed.js"
+              data-env-url="https://other.coral.coralproject.net"
+              data-story-id="0000019d-ccf9-ddcd-adfd-deff9ae80000"
+            >Show Comments</ps-comments>
+          </body>
+        </html>
+        """,
+        """
+        <html>
+          <body>
+            <ps-comments
+              id="coral_talk_stream"
+              data-embed-url="https://latimes.coral.coralproject.net/assets/js/embed.js"
+              data-env-url="https://latimes.coral.coralproject.net"
+              data-story-id="0000019d-ccf9-ddcd-adfd-deff9ae80000"
+            ><button>open</button></ps-comments>
+          </body>
+        </html>
+        """,
+        """
+        <html>
+          <body>
+            <ps-comments
+              id="coral_talk_stream"
+              data-embed-url="https://latimes.coral.coralproject.net/assets/js/embed.js"
+              data-env-url="ftp://latimes.coral.coralproject.net"
+              data-story-id="0000019d-ccf9-ddcd-adfd-deff9ae80000"
+            >Show Comments</ps-comments>
+          </body>
+        </html>
+        """,
+        """
+        <html>
+          <body>
+            <ps-comments
+              id="coral_talk_stream"
+              data-embed-url="ftp://latimes.coral.coralproject.net/assets/js/embed.js"
+              data-env-url="https://latimes.coral.coralproject.net"
+              data-story-id="0000019d-ccf9-ddcd-adfd-deff9ae80000"
+            >Show Comments</ps-comments>
+          </body>
+        </html>
+        """,
+        """
+        <html>
+          <body>
+            <ps-comments
+              id="coral_talk_stream"
+              data-embed-url="https://latimes.coral.coralproject.net@attacker.example/assets/js/embed.js"
+              data-env-url="https://latimes.coral.coralproject.net@attacker.example"
+              data-story-id="0000019d-ccf9-ddcd-adfd-deff9ae80000"
+            >Show Comments</ps-comments>
+          </body>
+        </html>
+        """,
+        """
+        <html>
+          <body>
+            <ps-comments
+              id="coral_talk_stream"
+              data-embed-url="https://latimes.coral.coralproject.net.attacker.example/assets/js/embed.js"
+              data-env-url="https://latimes.coral.coralproject.net.attacker.example"
+              data-story-id="0000019d-ccf9-ddcd-adfd-deff9ae80000"
+            >Show Comments</ps-comments>
+          </body>
+        </html>
+        """,
+    ],
+)
+def test_rejects_malformed_latimes_ps_comments_urls(html: str) -> None:
+    # Explicitly assert malformed values are rejected and do not produce partial signals.
+    assert detect_coral(html) is None
 
 
 @pytest.mark.parametrize(
