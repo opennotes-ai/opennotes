@@ -340,6 +340,65 @@ async def test_retry_on_done_job_refreshes_heartbeat(
     )
 
 
+async def test_retry_on_done_job_resets_stale_activity_and_aggregate_state(
+    client: httpx.AsyncClient,
+    db_pool: Any,
+    enqueue_section_mock: AsyncMock,
+) -> None:
+    """A section retry must not poll or finalize from stale terminal metadata."""
+    slug = SectionSlug.SAFETY_MODERATION
+    job_id, _ = await _insert_job_with_slot(
+        db_pool, job_status="done", slug=slug, slot_state="failed"
+    )
+    async with db_pool.acquire() as conn:
+        await conn.execute(
+            """
+            UPDATE vibecheck_jobs
+            SET last_stage = 'finalize',
+                safety_recommendation = $2::jsonb,
+                headline_summary = $3::jsonb,
+                sidebar_payload = $4::jsonb,
+                preview_description = 'stale preview'
+            WHERE job_id = $1
+            """,
+            job_id,
+            json.dumps({
+                "level": "unsafe",
+                "rationale": "stale pre-retry safety",
+                "top_signals": ["stale"],
+                "unavailable_inputs": ["retried_slot"],
+            }),
+            json.dumps({
+                "text": "Stale pre-retry headline.",
+                "kind": "synthesized",
+                "unavailable_inputs": ["retried_slot"],
+            }),
+            json.dumps({"source_url": "https://example.com/stale"}),
+        )
+
+    resp = await client.post(f"/api/analyze/{job_id}/retry/{slug.value}")
+    assert resp.status_code == 202, resp.text
+    assert enqueue_section_mock.await_count == 1
+
+    async with db_pool.acquire() as conn:
+        row = await conn.fetchrow(
+            """
+            SELECT status, last_stage, safety_recommendation, headline_summary,
+                   sidebar_payload, preview_description
+            FROM vibecheck_jobs
+            WHERE job_id = $1
+            """,
+            job_id,
+        )
+    assert row is not None
+    assert row["status"] == "analyzing"
+    assert row["last_stage"] == "run_sections"
+    assert row["safety_recommendation"] is None
+    assert row["headline_summary"] is None
+    assert row["sidebar_payload"] is None
+    assert row["preview_description"] is None
+
+
 # =========================================================================
 # Retry endpoint — gate failures (AC #1)
 # =========================================================================
@@ -624,14 +683,26 @@ async def test_section_retry_worker_runs_analysis_and_finalizes(
         job_id = await conn.fetchval(
             """
             INSERT INTO vibecheck_jobs (
-                url, normalized_url, host, status, attempt_id, sections
+                url, normalized_url, host, status, attempt_id, sections,
+                safety_recommendation, headline_summary
             )
-            VALUES ($1, $1, 'example.com', 'analyzing', $2, $3::jsonb)
+            VALUES ($1, $1, 'example.com', 'analyzing', $2, $3::jsonb, $4::jsonb, $5::jsonb)
             RETURNING job_id
             """,
             url,
             task_attempt,
             json.dumps(sections),
+            json.dumps({
+                "level": "unsafe",
+                "rationale": "stale pre-retry safety",
+                "top_signals": ["stale"],
+                "unavailable_inputs": ["retried_slot"],
+            }),
+            json.dumps({
+                "text": "Stale pre-retry headline.",
+                "kind": "synthesized",
+                "unavailable_inputs": ["retried_slot"],
+            }),
         )
         await conn.execute(
             """
@@ -670,6 +741,60 @@ async def test_section_retry_worker_runs_analysis_and_finalizes(
 
     monkeypatch.setitem(orchestrator._SECTION_HANDLERS, target_slug, _retry_handler)
 
+    async def _write_fresh_safety(
+        pool: Any,
+        job_id: UUID,
+        task_attempt: UUID,
+        settings: Any,
+    ) -> None:
+        del settings
+        async with pool.acquire() as conn:
+            await conn.execute(
+                """
+                UPDATE vibecheck_jobs
+                SET safety_recommendation = $2::jsonb
+                WHERE job_id = $1 AND attempt_id = $3
+                """,
+                job_id,
+                json.dumps({
+                    "level": "safe",
+                    "rationale": "fresh retry safety",
+                    "top_signals": ["fresh"],
+                    "unavailable_inputs": [],
+                }),
+                task_attempt,
+            )
+
+    async def _write_fresh_headline(
+        pool: Any,
+        job_id: UUID,
+        task_attempt: UUID,
+        settings: Any,
+    ) -> None:
+        del settings
+        async with pool.acquire() as conn:
+            await conn.execute(
+                """
+                UPDATE vibecheck_jobs
+                SET headline_summary = $2::jsonb
+                WHERE job_id = $1 AND attempt_id = $3
+                """,
+                job_id,
+                json.dumps({
+                    "text": "Fresh retry headline.",
+                    "kind": "synthesized",
+                    "unavailable_inputs": [],
+                }),
+                task_attempt,
+            )
+
+    monkeypatch.setattr(
+        orchestrator, "_run_safety_recommendation_step", _write_fresh_safety
+    )
+    monkeypatch.setattr(
+        orchestrator, "_run_headline_summary_step", _write_fresh_headline
+    )
+
     async def _fail_if_loaded(*args: Any, **kwargs: Any) -> object:
         pytest.fail("section retry should not eagerly load utterances")
 
@@ -697,6 +822,13 @@ async def test_section_retry_worker_runs_analysis_and_finalizes(
             url,
         )
     assert cache_row is not None, "maybe_finalize_job should have UPSERTed cache"
+    payload = (
+        json.loads(cache_row["sidebar_payload"])
+        if isinstance(cache_row["sidebar_payload"], str)
+        else dict(cache_row["sidebar_payload"])
+    )
+    assert payload["safety"]["recommendation"]["rationale"] == "fresh retry safety"
+    assert payload["headline"]["text"] == "Fresh retry headline."
 
 
 async def test_section_retry_worker_idempotent_on_stale_slot_attempt(

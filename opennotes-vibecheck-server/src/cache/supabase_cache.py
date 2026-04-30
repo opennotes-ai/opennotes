@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from supabase import Client
 
+from src.analyses.schemas import SidebarPayload
 from src.cache.normalize import normalize_url
+from src.jobs.sidebar_payload import payload_for_url_cache
 from src.monitoring import get_logger
 
 # Re-exported for backwards compatibility with callers that imported
@@ -50,9 +53,10 @@ class SupabaseCache:
         norm = normalize_url(url)
         now = datetime.now(UTC)
         expires = now + timedelta(hours=self._ttl_hours)
+        cache_payload = SidebarPayload.model_validate(payload)
         row = {
             "url": norm,
-            "sidebar_payload": payload,
+            "sidebar_payload": json.loads(payload_for_url_cache(cache_payload)),
             "created_at": now.isoformat(),
             "expires_at": expires.isoformat(),
         }

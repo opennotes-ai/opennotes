@@ -1119,7 +1119,37 @@
               {
                 "type": "null"
               }
-            ]
+            ],
+            "description": "Assembled sidebar content. During polling (non-terminal status) this is a partial aggregate built from whichever section slots have finished \u2014 it is not canonical until sidebar_payload_complete is true. On done/partial terminal jobs this is the persisted canonical result. Failed jobs may carry a minimal persisted payload and keep sidebar_payload_complete false."
+          },
+          "sidebar_payload_complete": {
+            "type": "boolean",
+            "title": "Sidebar Payload Complete",
+            "description": "True only when sidebar_payload holds the final canonical result for done or partial terminal jobs. False during polling, meaning sidebar_payload may be partial and will keep changing as more section slots finish. False for failed jobs that carry only a minimal error payload. Clients must not treat a non-null sidebar_payload as canonical until this flag is true.",
+            "default": false
+          },
+          "activity_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Activity At"
+          },
+          "activity_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Activity Label"
           },
           "cached": {
             "type": "boolean",
@@ -1172,7 +1202,7 @@
           "updated_at"
         ],
         "title": "JobState",
-        "description": "GET /api/analyze/{job_id} response shape (wired in TASK-1473.14).\n\nCombines job-level lifecycle (status/error_code/error_message), per-slot\nprogress (sections), the assembled sidebar (sidebar_payload, populated\nonce all slots finish), and an adaptive polling hint (next_poll_ms) so\nclients can back off as the job completes."
+        "description": "GET /api/analyze/{job_id} response shape.\n\nCombines job-level lifecycle (status/error_code/error_message), per-slot\nprogress (sections), an adaptive polling hint (next_poll_ms), and the\nsidebar payload. During active polling (pending/extracting/analyzing),\nsidebar_payload is assembled from whichever section slots have finished\nand is partial \u2014 check sidebar_payload_complete to distinguish partial\nfrom canonical. Once the job reaches a terminal status (done/partial/\nfailed), sidebar_payload holds the persisted result. sidebar_payload_complete\nis true only for done/partial jobs whose persisted payload represents the\nfinal canonical sidebar; failed jobs may carry a deliberately minimal\npayload and keep sidebar_payload_complete false."
       },
       "JobStatus": {
         "type": "string",

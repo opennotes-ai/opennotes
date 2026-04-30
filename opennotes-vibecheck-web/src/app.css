@@ -26,6 +26,10 @@
   animation-delay: 0s;
 }
 
+.skeleton-pulse-delay-1 { animation-delay: 0ms; }
+.skeleton-pulse-delay-2 { animation-delay: 200ms; }
+.skeleton-pulse-delay-3 { animation-delay: 400ms; }
+
 @keyframes section-reveal-kf {
   from {
     opacity: 0;
@@ -51,11 +55,20 @@
     animation: none;
     opacity: 0.55;
   }
+  .skeleton-pulse-delay-1,
+  .skeleton-pulse-delay-2,
+  .skeleton-pulse-delay-3 {
+    animation: none;
+    opacity: 0.55;
+  }
   .section-reveal {
     animation: none;
   }
 }
 
-[data-cached-hint="1"] .skeleton-pulse {
+[data-cached-hint="1"] .skeleton-pulse,
+[data-cached-hint="1"] .skeleton-pulse-delay-1,
+[data-cached-hint="1"] .skeleton-pulse-delay-2,
+[data-cached-hint="1"] .skeleton-pulse-delay-3 {
   opacity: 0;
 }

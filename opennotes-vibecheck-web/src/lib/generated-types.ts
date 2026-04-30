@@ -604,12 +604,18 @@ export interface components {
         };
         /**
          * JobState
-         * @description GET /api/analyze/{job_id} response shape (wired in TASK-1473.14).
+         * @description GET /api/analyze/{job_id} response shape.
          *
          *     Combines job-level lifecycle (status/error_code/error_message), per-slot
-         *     progress (sections), the assembled sidebar (sidebar_payload, populated
-         *     once all slots finish), and an adaptive polling hint (next_poll_ms) so
-         *     clients can back off as the job completes.
+         *     progress (sections), an adaptive polling hint (next_poll_ms), and the
+         *     sidebar payload. During active polling (pending/extracting/analyzing),
+         *     sidebar_payload is assembled from whichever section slots have finished
+         *     and is partial — check sidebar_payload_complete to distinguish partial
+         *     from canonical. Once the job reaches a terminal status (done/partial/
+         *     failed), sidebar_payload holds the persisted result. sidebar_payload_complete
+         *     is true only for done/partial jobs whose persisted payload represents the
+         *     final canonical sidebar; failed jobs may carry a deliberately minimal
+         *     payload and keep sidebar_payload_complete false.
          */
         JobState: {
             /**
@@ -647,7 +653,18 @@ export interface components {
             sections?: {
                 [key: string]: components["schemas"]["SectionSlot"];
             };
+            /** @description Assembled sidebar content. During polling (non-terminal status) this is a partial aggregate built from whichever section slots have finished — it is not canonical until sidebar_payload_complete is true. On done/partial terminal jobs this is the persisted canonical result. Failed jobs may carry a minimal persisted payload and keep sidebar_payload_complete false. */
             sidebar_payload?: components["schemas"]["SidebarPayload"] | null;
+            /**
+             * Sidebar Payload Complete
+             * @description True only when sidebar_payload holds the final canonical result for done or partial terminal jobs. False during polling, meaning sidebar_payload may be partial and will keep changing as more section slots finish. False for failed jobs that carry only a minimal error payload. Clients must not treat a non-null sidebar_payload as canonical until this flag is true.
+             * @default false
+             */
+            sidebar_payload_complete: boolean;
+            /** Activity At */
+            activity_at?: string | null;
+            /** Activity Label */
+            activity_label?: string | null;
             /**
              * Cached
              * @default false

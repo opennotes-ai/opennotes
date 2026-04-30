@@ -2296,6 +2296,33 @@ async def run_section_retry(
                     )
                     return RunResult(status_code=200)
 
+                with logfire.span(
+                    "vibecheck.section_retry.safety_recommendation",
+                    job_id=str(job_id),
+                    attempt_id=str(task_attempt),
+                    slug=slug.value,
+                ):
+                    await _set_last_stage(
+                        pool, job_id, task_attempt, _STAGE_SAFETY_RECOMMENDATION
+                    )
+                    await _run_safety_recommendation_step(
+                        pool, job_id, task_attempt, settings
+                    )
+
+                with logfire.span(
+                    "vibecheck.section_retry.headline_summary",
+                    job_id=str(job_id),
+                    attempt_id=str(task_attempt),
+                    slug=slug.value,
+                ):
+                    await _set_last_stage(
+                        pool, job_id, task_attempt, _STAGE_HEADLINE_SUMMARY
+                    )
+                    await _run_headline_summary_step(
+                        pool, job_id, task_attempt, settings
+                    )
+
+                await _set_last_stage(pool, job_id, task_attempt, _STAGE_FINALIZE)
                 await maybe_finalize_job(
                     pool, job_id, expected_task_attempt=task_attempt
                 )

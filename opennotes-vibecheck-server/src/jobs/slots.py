@@ -67,7 +67,8 @@ WHERE job_id = $1
 #      moved back to `running` by another retry path doesn't get stomped.
 #   3. Rotates the slot to state=`running` with a fresh attempt_id.
 #   4. Flips the job's top-level `status` back to `analyzing` and clears
-#      `finished_at`/`error_code`/`error_message` so the downstream
+#      terminal / aggregate fields so poll and finalization cannot reuse
+#      stale state from the pre-retry terminal row. The downstream
 #      `mark_slot_done`/`mark_slot_failed` and `maybe_finalize_job`
 #      guards (which require status IN ('pending','extracting','analyzing'))
 #      accept the worker's writes. The job's `attempt_id` is intentionally
@@ -84,6 +85,11 @@ SET sections = sections || jsonb_build_object($2::text, $3::jsonb),
     error_code = NULL,
     error_message = NULL,
     error_host = NULL,
+    safety_recommendation = NULL,
+    headline_summary = NULL,
+    sidebar_payload = NULL,
+    preview_description = NULL,
+    last_stage = 'run_sections',
     finished_at = NULL,
     updated_at = now(),
     heartbeat_at = now()

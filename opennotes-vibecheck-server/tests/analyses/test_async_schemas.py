@@ -247,6 +247,59 @@ class TestJobState:
                 }
             )
 
+    def test_sidebar_payload_complete_defaults_to_false(self) -> None:
+        job = JobState(
+            job_id=uuid4(),
+            url="https://example.com",
+            status=JobStatus.ANALYZING,
+            attempt_id=uuid4(),
+            created_at=self._now(),
+            updated_at=self._now(),
+        )
+        assert job.sidebar_payload_complete is False
+
+    def test_terminal_job_may_set_sidebar_payload_complete_true(self) -> None:
+        sidebar = _empty_sidebar_payload(self._now())
+        job = JobState(
+            job_id=uuid4(),
+            url="https://example.com",
+            status=JobStatus.DONE,
+            attempt_id=uuid4(),
+            created_at=self._now(),
+            updated_at=self._now(),
+            sidebar_payload=sidebar,
+            sidebar_payload_complete=True,
+        )
+        assert job.sidebar_payload_complete is True
+        assert job.sidebar_payload is not None
+
+    def test_activity_fields_default_to_none(self) -> None:
+        job = JobState(
+            job_id=uuid4(),
+            url="https://example.com",
+            status=JobStatus.PENDING,
+            attempt_id=uuid4(),
+            created_at=self._now(),
+            updated_at=self._now(),
+        )
+        assert job.activity_at is None
+        assert job.activity_label is None
+
+    def test_activity_fields_may_be_populated(self) -> None:
+        now = self._now()
+        job = JobState(
+            job_id=uuid4(),
+            url="https://example.com",
+            status=JobStatus.ANALYZING,
+            attempt_id=uuid4(),
+            created_at=now,
+            updated_at=now,
+            activity_at=now,
+            activity_label="Scoring safety section",
+        )
+        assert job.activity_at == now
+        assert job.activity_label == "Scoring safety section"
+
 
 class TestSidebarPayloadPageKindUpgrade:
     """SidebarPayload now accepts the expanded PageKind set."""

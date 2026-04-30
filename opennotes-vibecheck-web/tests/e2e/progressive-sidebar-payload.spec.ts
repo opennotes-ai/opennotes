@@ -6,29 +6,29 @@ import { fileURLToPath } from "node:url";
 import { ALL_SECTION_SLUGS } from "./fixtures/quizlet";
 
 /**
- * AC5 — TASK-1474.22 visual progress feedback during extracting phase.
+ * TASK-1473.65.07 — Progressive sidebar payload poll sequence and cache-hit
+ * no-flash verification.
  *
- * Drives a job through `extracting → analyzing → done` via a mock API
- * server scripted by poll count. Asserts:
+ * Drives a job through a scripted mock-API state machine:
  *
- *   1. While status=extracting, the [data-testid="extracting-indicator"]
- *      is visible AND every section slot is in `running` state with a
- *      content-shape skeleton mounted (so the user perceives motion).
- *   2. Once status flips to `analyzing` and the server seeds real slot
- *      states, the indicator disappears but the per-slot skeletons
- *      stay (smooth handoff).
- *   3. Once status reaches `done`, the indicator stays absent.
- *   4. Negative path: a `failed` status shows the JobFailureCard and
- *      the Sidebar (and therefore the indicator) is not rendered.
- *   5. Cached-hit path: when the very first poll returns `done`, the
- *      indicator must NOT flash on screen.
+ *   poll 1  → extracting, sections empty, sidebar_payload=null
+ *   poll 2  → analyzing, one done slot + one running slot,
+ *             sidebar_payload=aggregate defaults, sidebar_payload_complete=false
+ *   poll 3+ → done, all slots done, sidebar_payload_complete=true
+ *
+ * Asserts:
+ *
+ *   1. During analyzing the done slot renders real report content (not a
+ *      skeleton) while the running slot keeps its skeleton visible.
+ *   2. Once the terminal poll arrives, every slot flips to done, skeletons
+ *      disappear, and sidebar_payload_complete=true stops polling.
+ *   3. A cache-hit first render (done + sidebar_payload_complete=true from
+ *      t=0) never shows the extracting indicator and never mounts skeletons.
  */
 
-const JOB_ID = "11111111-1111-7111-8111-111111111111";
-const URL_READY_JOB_ID = "44444444-4444-7444-8444-444444444444";
-const FAILED_JOB_ID = "22222222-2222-7222-8222-222222222222";
-const CACHED_JOB_ID = "33333333-3333-7333-8333-333333333333";
-const ATTEMPT_ID = "aaaaaaaa-aaaa-7aaa-8aaa-aaaaaaaaaaaa";
+const JOB_ID = "55555555-5555-7555-8555-555555555555";
+const CACHED_JOB_ID = "66666666-6666-7666-8666-666666666666";
+const ATTEMPT_ID = "bbbbbbbb-bbbb-7bbb-8bbb-bbbbbbbbbbbb";
 const SOURCE_URL = "https://quizlet.com/blog/groups-are-now-classes/";
 
 let apiServer: Server;
@@ -83,7 +83,19 @@ async function expectAppToStayMounted(page: Page) {
 }
 
 function sectionDataFor(slug: string): Record<string, unknown> {
-  if (slug === "safety__moderation") return { harmful_content_matches: [] };
+  if (slug === "safety__moderation") {
+    return {
+      harmful_content_matches: [
+        {
+          source: "openai",
+          utterance_id: "u-0",
+          utterance_text: "Test match text",
+          max_score: 0.85,
+          flagged_categories: ["harassment"],
+        },
+      ],
+    };
+  }
   if (slug === "safety__web_risk") return { findings: [] };
   if (slug === "safety__image_moderation") return { matches: [] };
   if (slug === "safety__video_moderation") return { matches: [] };
@@ -127,11 +139,9 @@ interface JobStateOverrides {
   status: "pending" | "extracting" | "analyzing" | "done" | "failed";
   sections?: Record<string, unknown>;
   cached?: boolean;
-  errorCode?: string | null;
-  errorMessage?: string | null;
-  activityLabel?: string | null;
   sidebarPayload?: Record<string, unknown> | null;
   sidebarPayloadComplete?: boolean;
+  activityLabel?: string | null;
 }
 
 function jobState(overrides: JobStateOverrides): Record<string, unknown> {
@@ -140,8 +150,8 @@ function jobState(overrides: JobStateOverrides): Record<string, unknown> {
     url: SOURCE_URL,
     status: overrides.status,
     attempt_id: ATTEMPT_ID,
-    error_code: overrides.errorCode ?? null,
-    error_message: overrides.errorMessage ?? null,
+    error_code: null,
+    error_message: null,
     error_host: null,
     created_at: "2026-04-23T22:08:00Z",
     updated_at: "2026-04-23T22:09:00Z",
@@ -172,29 +182,85 @@ function allDoneSections(): Record<string, unknown> {
   );
 }
 
+function aggregateDefaultsPayload(): Record<string, unknown> {
+  return {
+    source_url: SOURCE_URL,
+    page_title: null,
+    page_kind: "other",
+    scraped_at: "2026-04-23T22:08:00Z",
+    cached: false,
+    safety: { harmful_content_matches: [], recommendation: null },
+    tone_dynamics: {
+      scd: {
+        narrative: "",
+        summary: "",
+        tone_labels: [],
+        per_speaker_notes: {},
+        speaker_arcs: [],
+        insufficient_conversation: true,
+      },
+      flashpoint_matches: [],
+    },
+    facts_claims: {
+      claims_report: {
+        deduped_claims: [],
+        total_claims: 0,
+        total_unique: 0,
+      },
+      known_misinformation: [],
+    },
+    opinions_sentiments: {
+      opinions_report: {
+        sentiment_stats: {
+          per_utterance: [],
+          positive_pct: 0,
+          negative_pct: 0,
+          neutral_pct: 100,
+          mean_valence: 0,
+        },
+        subjective_claims: [],
+      },
+    },
+    web_risk: { findings: [] },
+    image_moderation: { matches: [] },
+    video_moderation: { matches: [] },
+  };
+}
+
 function jobStateForCount(jobId: string, count: number): Record<string, unknown> {
-  // Drive a deterministic state machine from the polling cadence so the
-  // assertions below can rely on observable, ordered transitions.
-  //   poll 1            → extracting (sections: {}, activity_label set)
-  //   poll 2            → still extracting (gives the test time to read
-  //                       the indicator without races)
-  //   poll 3            → analyzing (every slot seeded as `running`,
-  //                       activity_label changes)
-  //   poll 4 and after  → done (every slot done)
+  // Three-phase deterministic state machine.
+  //   polls 1-2  → extracting (empty sections, no payload)
+  //   polls 3-5  → analyzing (one done + one running, aggregate defaults payload)
+  //   poll 6+    → done (all slots done, complete payload)
   if (count <= 2) {
-    return jobState({ jobId, status: "extracting", activityLabel: "Extracting page content" });
+    return jobState({
+      jobId,
+      status: "extracting",
+      sections: {},
+      sidebarPayload: null,
+      sidebarPayloadComplete: false,
+      activityLabel: "Extracting page content",
+    });
   }
-  if (count === 3) {
-    const runningSections = Object.fromEntries(
-      ALL_SECTION_SLUGS.map((slug) => [
-        slug,
-        { state: "running", attempt_id: ATTEMPT_ID },
-      ]),
-    );
+  if (count >= 3 && count <= 5) {
+    const sections: Record<string, unknown> = {
+      safety__moderation: {
+        state: "done",
+        attempt_id: ATTEMPT_ID,
+        data: sectionDataFor("safety__moderation"),
+        finished_at: "2026-04-23T22:09:00Z",
+      },
+      safety__web_risk: {
+        state: "running",
+        attempt_id: ATTEMPT_ID,
+      },
+    };
     return jobState({
       jobId,
       status: "analyzing",
-      sections: runningSections,
+      sections,
+      sidebarPayload: aggregateDefaultsPayload(),
+      sidebarPayloadComplete: false,
       activityLabel: "Running section analyses",
     });
   }
@@ -202,6 +268,7 @@ function jobStateForCount(jobId: string, count: number): Record<string, unknown>
     jobId,
     status: "done",
     sections: allDoneSections(),
+    sidebarPayload: aggregateDefaultsPayload(),
     sidebarPayloadComplete: true,
   });
 }
@@ -217,29 +284,10 @@ test.beforeAll(async () => {
     const requestUrl = new URL(request.url ?? "/", apiBaseUrl || "http://x");
     if (
       request.method === "GET" &&
-      (requestUrl.pathname === `/api/analyze/${JOB_ID}` ||
-        requestUrl.pathname === `/api/analyze/${URL_READY_JOB_ID}`)
-    ) {
-      const jobId = requestUrl.pathname.split("/").at(-1) ?? JOB_ID;
-      response.writeHead(200, { "content-type": "application/json" });
-      response.end(JSON.stringify(nextJobState(jobId)));
-      return;
-    }
-    if (
-      request.method === "GET" &&
-      requestUrl.pathname === `/api/analyze/${FAILED_JOB_ID}`
+      requestUrl.pathname === `/api/analyze/${JOB_ID}`
     ) {
       response.writeHead(200, { "content-type": "application/json" });
-      response.end(
-        JSON.stringify(
-          jobState({
-            jobId: FAILED_JOB_ID,
-            status: "failed",
-            errorCode: "unsafe_url",
-            errorMessage: "Blocked by web_risk",
-          }),
-        ),
-      );
+      response.end(JSON.stringify(nextJobState(JOB_ID)));
       return;
     }
     if (
@@ -253,8 +301,9 @@ test.beforeAll(async () => {
             jobId: CACHED_JOB_ID,
             status: "done",
             sections: allDoneSections(),
-            cached: true,
+            sidebarPayload: aggregateDefaultsPayload(),
             sidebarPayloadComplete: true,
+            cached: true,
           }),
         ),
       );
@@ -322,156 +371,125 @@ test.beforeEach(() => {
   pollCounts = new Map<string, number>();
 });
 
-test("AC5: extracting indicator is visible during extracting and disappears on done", async ({
+test("AC1: analyzing phase shows real content for done slot and skeleton for running slot", async ({
   page,
 }) => {
   await page.goto(`${webBaseUrl}/analyze?job=${JOB_ID}`);
 
+  const sidebar = page.locator('[data-testid="analysis-sidebar"]');
   const indicator = page.locator('[data-testid="extracting-indicator"]');
-  const sidebar = page.locator('[data-testid="analysis-sidebar"]');
 
-  // The indicator must be visible while the job is in the extracting phase.
+  // Extracting phase: indicator visible, all slots synthesized as running.
   await expect(indicator).toBeVisible({ timeout: 10_000 });
-  await expect(sidebar).toHaveAttribute("data-job-status", "extracting");
-  await expectAppToStayMounted(page);
-
-  // Per AC1: every section slot must be in `running` state during extracting
-  // so that the per-slug content-shape skeleton renders. This is what
-  // produces the motion-bearing visual the user sees in the sidebar.
-  for (const slug of ALL_SECTION_SLUGS) {
-    await expect(page.locator(`[data-testid="slot-${slug}"]`)).toHaveAttribute(
-      "data-slot-state",
-      "running",
-      { timeout: 10_000 },
-    );
-  }
-
-  // The indicator's pulse marker must use the shared .skeleton-pulse class
-  // so motion is uniform with the per-slug skeletons.
-  const pulseCount = await indicator.locator(".skeleton-pulse").count();
-  expect(pulseCount).toBeGreaterThan(0);
-
-  // AC3 smooth handoff: once status flips to `analyzing` the indicator
-  // stays visible (now showing the backend activity label) while per-slot
-  // skeletons remain mounted in `running`.
-  await expect(sidebar).toHaveAttribute("data-job-status", "analyzing", {
-    timeout: 10_000,
-  });
-  await expect(indicator).toBeVisible({ timeout: 10_000 });
-  await expect(indicator).toContainText("Running section analyses", {
-    timeout: 10_000,
-  });
-  await expectAppToStayMounted(page);
-
-  // The per-slot skeletons should still be mounted during analyzing —
-  // proves continuity of the visual feedback across the handoff.
-  for (const slug of ALL_SECTION_SLUGS) {
-    await expect(page.locator(`[data-testid="slot-${slug}"]`)).toHaveAttribute(
-      "data-slot-state",
-      "running",
-    );
-  }
-
-  // Eventually status reaches `done`; indicator disappears and slots
-  // flip to `done`.
-  await expect(sidebar).toHaveAttribute("data-job-status", "done", {
-    timeout: 15_000,
-  });
-  await expect(indicator).toHaveCount(0);
-  await expectAppToStayMounted(page);
-  for (const slug of ALL_SECTION_SLUGS) {
-    await expect(page.locator(`[data-testid="slot-${slug}"]`)).toHaveAttribute(
-      "data-slot-state",
-      "done",
-      { timeout: 15_000 },
-    );
-  }
-});
-
-test("TASK-1474.24: analyze DOM stays mounted when the URL is available before the first poll", async ({
-  page,
-}) => {
-  await page.goto(
-    `${webBaseUrl}/analyze?job=${URL_READY_JOB_ID}&url=${encodeURIComponent(
-      SOURCE_URL,
-    )}`,
-  );
-
-  const sidebar = page.locator('[data-testid="analysis-sidebar"]');
-  await expect(sidebar).toBeVisible({ timeout: 10_000 });
-  await expectAppToStayMounted(page);
-
-  await expect(sidebar).toHaveAttribute("data-job-status", "done", {
-    timeout: 15_000,
-  });
-  await expectAppToStayMounted(page);
-});
-
-test("AC4 negative: failed-job path shows the failure card and never the extracting indicator", async ({
-  page,
-}) => {
-  await page.goto(`${webBaseUrl}/analyze?job=${FAILED_JOB_ID}`);
-
-  // Failure card must appear; sidebar (and therefore the indicator)
-  // must not.
-  await expect(page.locator('[data-testid="job-failure-card"]')).toBeVisible({
-    timeout: 10_000,
-  });
-  await expect(
-    page.locator('[data-testid="extracting-indicator"]'),
-  ).toHaveCount(0);
-  await expect(page.locator('[data-testid="analysis-sidebar"]')).toHaveCount(0);
-});
-
-test("AC4 negative: cached-hit (status=done on first poll) never shows the extracting indicator", async ({
-  page,
-}) => {
-  // The cached job's first (and only) poll returns status=done with all
-  // sections seeded. The indicator must never become visible.
-  await page.goto(`${webBaseUrl}/analyze?job=${CACHED_JOB_ID}`);
-
-  // Wait for sidebar to mount and confirm the data-job-status flipped
-  // straight to "done" without ever passing through "extracting".
-  const sidebar = page.locator('[data-testid="analysis-sidebar"]');
-  await expect(sidebar).toBeVisible({ timeout: 10_000 });
-  await expect(sidebar).toHaveAttribute("data-job-status", "done", {
-    timeout: 10_000,
-  });
-
-  // Indicator must not appear at any point.
-  await expect(
-    page.locator('[data-testid="extracting-indicator"]'),
-  ).toHaveCount(0);
-});
-
-test("AC6: extracting indicator shows backend activity label during extracting and analyzing", async ({
-  page,
-}) => {
-  await page.goto(`${webBaseUrl}/analyze?job=${JOB_ID}`);
-
-  const indicator = page.locator('[data-testid="extracting-indicator"]');
-  const sidebar = page.locator('[data-testid="analysis-sidebar"]');
-
-  // During extracting phase, the activity label from the backend should appear.
-  await expect(indicator).toBeVisible({ timeout: 10_000 });
-  await expect(indicator).toContainText("Extracting page content", {
-    timeout: 10_000,
-  });
   await expect(sidebar).toHaveAttribute("data-job-status", "extracting", {
     timeout: 10_000,
   });
+  await expectAppToStayMounted(page);
 
-  // Once status flips to analyzing, the activity label should update.
+  // Transition to analyzing: indicator stays visible with new label.
   await expect(sidebar).toHaveAttribute("data-job-status", "analyzing", {
     timeout: 10_000,
   });
+  await expect(indicator).toBeVisible({ timeout: 10_000 });
   await expect(indicator).toContainText("Running section analyses", {
     timeout: 10_000,
   });
 
-  // Once done, the indicator disappears.
+  // The done slot must NOT contain a skeleton — real report content is
+  // rendered instead. Because harmful_content_matches is non-empty the
+  // section body defaults to open.
+  const doneSlot = page.locator('[data-testid="slot-safety__moderation"]');
+  await expect(doneSlot).toHaveAttribute("data-slot-state", "done", {
+    timeout: 10_000,
+  });
+  await expect(
+    doneSlot.locator('[data-testid="skeleton-safety__moderation"]'),
+  ).toHaveCount(0);
+  await expect(
+    doneSlot.locator('[data-testid="report-safety__moderation"]'),
+  ).toBeVisible({ timeout: 10_000 });
+
+  // The running slot must contain its skeleton.
+  const runningSlot = page.locator('[data-testid="slot-safety__web_risk"]');
+  await expect(runningSlot).toHaveAttribute("data-slot-state", "running", {
+    timeout: 10_000,
+  });
+  // Safety-related skeletons reuse the same component; assert by class.
+  await expect(
+    runningSlot.locator(".skeleton-pulse").first(),
+  ).toBeVisible({ timeout: 10_000 });
+
+  // Pending slots have no body rendered at all.
+  const pendingSlot = page.locator('[data-testid="slot-tone_dynamics__scd"]');
+  await expect(pendingSlot).toHaveAttribute("data-slot-state", "pending");
+
+  await expectAppToStayMounted(page);
+});
+
+test("AC2: terminal poll removes skeletons and shows complete content", async ({
+  page,
+}) => {
+  await page.goto(`${webBaseUrl}/analyze?job=${JOB_ID}`);
+
+  const sidebar = page.locator('[data-testid="analysis-sidebar"]');
+
+  // Wait until the job reaches done.
   await expect(sidebar).toHaveAttribute("data-job-status", "done", {
     timeout: 15_000,
   });
-  await expect(indicator).toHaveCount(0);
+
+  // Extracting indicator must be gone.
+  await expect(
+    page.locator('[data-testid="extracting-indicator"]'),
+  ).toHaveCount(0);
+
+  // Every slot must be done and contain no skeletons.
+  for (const slug of ALL_SECTION_SLUGS) {
+    const slot = page.locator(`[data-testid="slot-${slug}"]`);
+    await expect(slot).toHaveAttribute("data-slot-state", "done", {
+      timeout: 15_000,
+    });
+    await expect(
+      slot.locator(`[data-testid="skeleton-${slug}"]`),
+    ).toHaveCount(0);
+  }
+
+  await expectAppToStayMounted(page);
+});
+
+test("AC3: cache-hit first render has no extracting indicator and no skeleton flash", async ({
+  page,
+}) => {
+  // The cached job's first (and only) poll returns done with
+  // sidebar_payload_complete=true. The sidebar must synthesize every
+  // section from the payload immediately, so there is no skeleton
+  // mount at any point.
+  await page.goto(`${webBaseUrl}/analyze?job=${CACHED_JOB_ID}&c=1`);
+
+  const sidebar = page.locator('[data-testid="analysis-sidebar"]');
+  await expect(sidebar).toBeVisible({ timeout: 10_000 });
+
+  // Status must reach done without ever showing extracting.
+  await expect(sidebar).toHaveAttribute("data-job-status", "done", {
+    timeout: 10_000,
+  });
+
+  // Extracting indicator must never appear.
+  await expect(
+    page.locator('[data-testid="extracting-indicator"]'),
+  ).toHaveCount(0);
+
+  // No skeleton should exist for any slot — the payload synthesis path
+  // renders every section as done from the first paint.
+  for (const slug of ALL_SECTION_SLUGS) {
+    const slot = page.locator(`[data-testid="slot-${slug}"]`);
+    await expect(slot).toHaveAttribute("data-slot-state", "done", {
+      timeout: 10_000,
+    });
+    await expect(
+      slot.locator(`[data-testid="skeleton-${slug}"]`),
+    ).toHaveCount(0);
+  }
+
+  await expectAppToStayMounted(page);
 });

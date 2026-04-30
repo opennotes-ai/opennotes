@@ -10,6 +10,7 @@ and `test_slot_writes.py`) plus an httpx.AsyncClient over the FastAPI
 ASGI app so the fixture's asyncpg pool and the request handler share one
 event loop.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -108,9 +109,7 @@ async def client(db_pool: Any) -> AsyncIterator[httpx.AsyncClient]:
     analyze_route.limiter.reset()
     analyze_route.poll_rate_reset()
     transport = httpx.ASGITransport(app=app)
-    async with httpx.AsyncClient(
-        transport=transport, base_url="http://test"
-    ) as c:
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as c:
         yield c
     app.state.db_pool = None
     analyze_route.limiter.reset()
@@ -159,6 +158,18 @@ def _minimal_sidebar_payload(url: str) -> dict[str, Any]:
     }
 
 
+def _harmful_match(utterance_id: str, text: str) -> dict[str, Any]:
+    return {
+        "utterance_id": utterance_id,
+        "utterance_text": text,
+        "max_score": 0.91,
+        "categories": {"harassment": True},
+        "scores": {"harassment": 0.91},
+        "flagged_categories": ["harassment"],
+        "source": "openai",
+    }
+
+
 async def _insert_job(
     pool: Any,
     *,
@@ -169,21 +180,33 @@ async def _insert_job(
     error_message: str | None = None,
     finished_at: datetime | None = None,
     url: str = "https://example.com/a",
+    last_stage: str | None = None,
+    heartbeat_at: datetime | None = None,
+    safety_recommendation: dict[str, Any] | None = None,
+    headline_summary: dict[str, Any] | None = None,
 ) -> UUID:
     attempt_id = uuid4()
     sections_json = json.dumps(sections or {})
-    payload_json = (
-        json.dumps(sidebar_payload) if sidebar_payload is not None else None
-    )
+    payload_json = json.dumps(sidebar_payload) if sidebar_payload is not None else None
+    safety_json = json.dumps(safety_recommendation) if safety_recommendation is not None else None
+    headline_json = json.dumps(headline_summary) if headline_summary is not None else None
     async with pool.acquire() as conn:
         job_id = await conn.fetchval(
             """
             INSERT INTO vibecheck_jobs (
                 url, normalized_url, host, status, attempt_id,
                 sections, sidebar_payload,
-                error_code, error_message, finished_at
+                error_code, error_message, finished_at,
+                last_stage, heartbeat_at,
+                safety_recommendation, headline_summary
             )
-            VALUES ($1, $1, 'example.com', $2, $3, $4::jsonb, $5::jsonb, $6, $7, $8)
+            VALUES (
+                $1, $1, 'example.com', $2, $3,
+                $4::jsonb, $5::jsonb,
+                $6, $7, $8,
+                $9, $10,
+                $11::jsonb, $12::jsonb
+            )
             RETURNING job_id
             """,
             url,
@@ -194,6 +217,10 @@ async def _insert_job(
             error_code,
             error_message,
             finished_at,
+            last_stage,
+            heartbeat_at,
+            safety_json,
+            headline_json,
         )
     assert isinstance(job_id, UUID)
     return job_id
@@ -202,9 +229,7 @@ async def _insert_job(
 # --- AC #1 + #4: shape + next_poll_ms ladder -------------------------------
 
 
-async def test_pending_job_returns_500ms_poll_hint(
-    client: httpx.AsyncClient, db_pool: Any
-) -> None:
+async def test_pending_job_returns_500ms_poll_hint(client: httpx.AsyncClient, db_pool: Any) -> None:
     job_id = await _insert_job(db_pool, status="pending")
     resp = await client.get(f"/api/analyze/{job_id}")
     assert resp.status_code == 200
@@ -216,18 +241,16 @@ async def test_pending_job_returns_500ms_poll_hint(
     assert body["sections"] == {}
 
 
-async def test_extracting_returns_500ms_poll_hint(
-    client: httpx.AsyncClient, db_pool: Any
-) -> None:
+async def test_extracting_returns_500ms_poll_hint(client: httpx.AsyncClient, db_pool: Any) -> None:
     job_id = await _insert_job(db_pool, status="extracting")
     resp = await client.get(f"/api/analyze/{job_id}")
     assert resp.status_code == 200
-    assert resp.json()["next_poll_ms"] == 500
+    body = resp.json()
+    assert body["next_poll_ms"] == 500
+    assert body["activity_label"] == "Extracting page content"
 
 
-async def test_analyzing_returns_1500ms_poll_hint(
-    client: httpx.AsyncClient, db_pool: Any
-) -> None:
+async def test_analyzing_returns_1500ms_poll_hint(client: httpx.AsyncClient, db_pool: Any) -> None:
     job_id = await _insert_job(db_pool, status="analyzing")
     resp = await client.get(f"/api/analyze/{job_id}")
     assert resp.status_code == 200
@@ -276,14 +299,14 @@ async def test_failed_returns_zero_poll_hint_and_error(
     assert body["error_message"] == "firecrawl 500"
 
 
-async def test_sections_dict_round_trips(
-    client: httpx.AsyncClient, db_pool: Any
-) -> None:
+async def test_sections_dict_round_trips(client: httpx.AsyncClient, db_pool: Any) -> None:
     sections = {
         "safety__moderation": {
             "state": "done",
             "attempt_id": str(uuid4()),
-            "data": {"harmful_content_matches": []},
+            "data": {
+                "harmful_content_matches": [_harmful_match("u-live-safety", "Live safety match")]
+            },
             "finished_at": datetime.now(UTC).isoformat(),
         }
     }
@@ -298,9 +321,7 @@ async def test_sections_dict_round_trips(
 # --- AC #2: GET must not mutate the row ------------------------------------
 
 
-async def test_poll_does_not_mutate_job_row(
-    client: httpx.AsyncClient, db_pool: Any
-) -> None:
+async def test_poll_does_not_mutate_job_row(client: httpx.AsyncClient, db_pool: Any) -> None:
     """Baseline snapshot of mutable columns; poll; compare."""
     job_id = await _insert_job(db_pool, status="pending")
     async with db_pool.acquire() as conn:
@@ -515,3 +536,346 @@ async def test_retry_after_per_second_bucket_caps_at_one_second(
     assert int(retry_after_raw) == 1
 
     get_settings.cache_clear()
+
+
+# --- TASK-1473.65.03: partial sidebar payload + activity fields -------------
+
+
+async def test_analyzing_with_one_done_slot_returns_partial_sidebar_payload(
+    client: httpx.AsyncClient, db_pool: Any
+) -> None:
+    """Non-terminal job with at least one done slot yields partial payload."""
+    url = "https://example.com/partial"
+    sections = {
+        "safety__moderation": {
+            "state": "done",
+            "attempt_id": str(uuid4()),
+            "data": {
+                "harmful_content_matches": [_harmful_match("u-live-safety", "Live safety match")]
+            },
+            "finished_at": datetime.now(UTC).isoformat(),
+        },
+        "tone_dynamics__flashpoint": {
+            "state": "running",
+            "attempt_id": str(uuid4()),
+            "started_at": datetime.now(UTC).isoformat(),
+        },
+    }
+    job_id = await _insert_job(db_pool, status="analyzing", sections=sections, url=url)
+    resp = await client.get(f"/api/analyze/{job_id}")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["status"] == "analyzing"
+    assert body["sidebar_payload"] is not None
+    assert body["sidebar_payload_complete"] is False
+    assert body["sidebar_payload"]["source_url"] == url
+    # Done slot data should be present; running slots get empty defaults
+    assert body["sidebar_payload"]["safety"]["harmful_content_matches"] == [
+        {
+            "utterance_id": "u-live-safety",
+            "utterance_text": "Live safety match",
+            "max_score": 0.91,
+            "categories": {"harassment": True},
+            "scores": {"harassment": 0.91},
+            "flagged_categories": ["harassment"],
+            "source": "openai",
+        }
+    ]
+    assert body["sidebar_payload"]["tone_dynamics"]["flashpoint_matches"] == []
+
+
+async def test_non_terminal_partial_payload_includes_safety_and_headline_columns(
+    client: httpx.AsyncClient, db_pool: Any
+) -> None:
+    """Partial polling payload includes completed aggregate columns."""
+    sections = {
+        "safety__moderation": {
+            "state": "done",
+            "attempt_id": str(uuid4()),
+            "data": {"harmful_content_matches": []},
+            "finished_at": datetime.now(UTC).isoformat(),
+        },
+    }
+    job_id = await _insert_job(
+        db_pool,
+        status="analyzing",
+        sections=sections,
+        safety_recommendation={
+            "level": "caution",
+            "rationale": "Safety coverage is incomplete.",
+            "top_signals": ["web risk unavailable"],
+            "unavailable_inputs": ["web_risk"],
+        },
+        headline_summary={
+            "text": "A developing story with partial analysis.",
+            "kind": "synthesized",
+            "unavailable_inputs": ["opinions"],
+        },
+    )
+    resp = await client.get(f"/api/analyze/{job_id}")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["sidebar_payload_complete"] is False
+    assert body["sidebar_payload"]["safety"]["recommendation"] == {
+        "level": "caution",
+        "rationale": "Safety coverage is incomplete.",
+        "top_signals": ["web risk unavailable"],
+        "unavailable_inputs": ["web_risk"],
+    }
+    assert body["sidebar_payload"]["headline"] == {
+        "text": "A developing story with partial analysis.",
+        "kind": "synthesized",
+        "unavailable_inputs": ["opinions"],
+    }
+
+
+async def test_analyzing_with_zero_done_slots_returns_no_sidebar_payload(
+    client: httpx.AsyncClient, db_pool: Any
+) -> None:
+    """Non-terminal job with no done slots must not fabricate a payload."""
+    sections = {
+        "safety__moderation": {
+            "state": "running",
+            "attempt_id": str(uuid4()),
+            "started_at": datetime.now(UTC).isoformat(),
+        },
+    }
+    job_id = await _insert_job(db_pool, status="analyzing", sections=sections)
+    resp = await client.get(f"/api/analyze/{job_id}")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["sidebar_payload"] is None
+    assert body["sidebar_payload_complete"] is False
+
+
+async def test_done_job_returns_sidebar_payload_complete_true(
+    client: httpx.AsyncClient, db_pool: Any
+) -> None:
+    """Terminal done job with persisted payload marks it complete."""
+    url = "https://example.com/complete"
+    payload = _minimal_sidebar_payload(url)
+    job_id = await _insert_job(
+        db_pool,
+        status="done",
+        sidebar_payload=payload,
+        finished_at=datetime.now(UTC),
+        url=url,
+    )
+    resp = await client.get(f"/api/analyze/{job_id}")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["status"] == "done"
+    assert body["sidebar_payload"] is not None
+    assert body["sidebar_payload_complete"] is True
+
+
+async def test_failed_job_with_payload_is_not_marked_complete(
+    client: httpx.AsyncClient, db_pool: Any
+) -> None:
+    """Failed jobs may carry minimal payloads but are not canonical-complete."""
+    url = "https://example.com/failed-payload"
+    payload = _minimal_sidebar_payload(url)
+    job_id = await _insert_job(
+        db_pool,
+        status="failed",
+        sidebar_payload=payload,
+        error_code="unsupported_site",
+        error_message="unsupported host",
+        finished_at=datetime.now(UTC),
+        url=url,
+    )
+    resp = await client.get(f"/api/analyze/{job_id}")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["status"] == "failed"
+    assert body["sidebar_payload"]["source_url"] == url
+    assert body["sidebar_payload_complete"] is False
+
+
+async def test_non_terminal_job_populates_activity_fields(
+    client: httpx.AsyncClient, db_pool: Any
+) -> None:
+    """Analyzing/extracting jobs surface heartbeat and mapped activity label."""
+    heartbeat = datetime.now(UTC)
+    job_id = await _insert_job(
+        db_pool,
+        status="analyzing",
+        last_stage="run_sections",
+        heartbeat_at=heartbeat,
+    )
+    resp = await client.get(f"/api/analyze/{job_id}")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["status"] == "analyzing"
+    assert body["activity_at"] is not None
+    assert body["activity_label"] == "Running section analyses"
+
+
+async def test_terminal_job_has_no_activity_fields(client: httpx.AsyncClient, db_pool: Any) -> None:
+    """Done/failed jobs should not expose activity metadata."""
+    url = "https://example.com/terminal"
+    payload = _minimal_sidebar_payload(url)
+    job_id = await _insert_job(
+        db_pool,
+        status="done",
+        sidebar_payload=payload,
+        finished_at=datetime.now(UTC),
+        url=url,
+        last_stage="finalize",
+        heartbeat_at=datetime.now(UTC),
+    )
+    resp = await client.get(f"/api/analyze/{job_id}")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["activity_at"] is None
+    assert body["activity_label"] is None
+
+
+@pytest.mark.parametrize(
+    ("stage_key", "expected_label"),
+    [
+        ("extracting", "Extracting page content"),
+        ("run_sections", "Running section analyses"),
+        ("headline_summary", "Writing summary"),
+        ("persist_utterances", "Saving page content"),
+        ("set_analyzing", "Preparing analysis"),
+        ("safety_recommendation", "Computing safety guidance"),
+        pytest.param(
+            "finalize",
+            "Finalizing results",
+            id="finalize-defensive-terminal-transition-label",
+        ),
+    ],
+)
+async def test_activity_label_maps_known_stage_keys(
+    stage_key: str, expected_label: str, client: httpx.AsyncClient, db_pool: Any
+) -> None:
+    """Known last_stage values are mapped to human-readable activity labels."""
+    job_id = await _insert_job(
+        db_pool,
+        status="analyzing",
+        last_stage=stage_key,
+        heartbeat_at=datetime.now(UTC),
+    )
+    resp = await client.get(f"/api/analyze/{job_id}")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["activity_label"] == expected_label
+
+
+async def test_activity_label_falls_back_for_unknown_stage(
+    client: httpx.AsyncClient, db_pool: Any
+) -> None:
+    """Unknown last_stage values degrade to a neutral readable fallback."""
+    job_id = await _insert_job(
+        db_pool,
+        status="analyzing",
+        last_stage="firecrawl_extract",
+        heartbeat_at=datetime.now(UTC),
+    )
+    resp = await client.get(f"/api/analyze/{job_id}")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["activity_label"] == "Running analysis"
+
+
+async def test_partial_payload_does_not_persist_to_job_row(
+    client: httpx.AsyncClient, db_pool: Any
+) -> None:
+    """Poll is read-only: partial payload must not write sidebar_payload."""
+    url = "https://example.com/readonly"
+    sections = {
+        "safety__moderation": {
+            "state": "done",
+            "attempt_id": str(uuid4()),
+            "data": {"harmful_content_matches": []},
+            "finished_at": datetime.now(UTC).isoformat(),
+        },
+    }
+    job_id = await _insert_job(db_pool, status="analyzing", sections=sections, url=url)
+    async with db_pool.acquire() as conn:
+        before = await conn.fetchrow(
+            "SELECT sidebar_payload, updated_at FROM vibecheck_jobs WHERE job_id = $1",
+            job_id,
+        )
+
+    resp = await client.get(f"/api/analyze/{job_id}")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["sidebar_payload"] is not None
+    assert body["sidebar_payload_complete"] is False
+
+    async with db_pool.acquire() as conn:
+        after = await conn.fetchrow(
+            "SELECT sidebar_payload, updated_at FROM vibecheck_jobs WHERE job_id = $1",
+            job_id,
+        )
+    assert dict(before) == dict(after)
+    assert after["sidebar_payload"] is None
+
+
+async def test_stale_persisted_sidebar_payload_ignored_for_non_terminal(
+    client: httpx.AsyncClient, db_pool: Any
+) -> None:
+    """Analyzing job with stale sidebar_payload from prior terminal state
+    must not expose stale canonical content (TASK-1473.65.08)."""
+    url = "https://example.com/stale"
+    stale_payload = _minimal_sidebar_payload(url)
+    stale_payload["facts_claims"]["claims_report"]["deduped_claims"] = [
+        {
+            "claim": "stale canonical claim",
+            "utterance_ids": ["stale-u"],
+            "supporting_text": ["stale text"],
+        }
+    ]
+    sections = {
+        "safety__moderation": {
+            "state": "done",
+            "attempt_id": str(uuid4()),
+            "data": {"harmful_content_matches": []},
+            "finished_at": datetime.now(UTC).isoformat(),
+        },
+        "tone_dynamics__flashpoint": {
+            "state": "running",
+            "attempt_id": str(uuid4()),
+            "started_at": datetime.now(UTC).isoformat(),
+        },
+    }
+    job_id = await _insert_job(
+        db_pool,
+        status="analyzing",
+        sections=sections,
+        sidebar_payload=stale_payload,
+        url=url,
+    )
+    resp = await client.get(f"/api/analyze/{job_id}")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["status"] == "analyzing"
+    # The stale payload must NOT be returned
+    assert body["sidebar_payload_complete"] is False
+    # Done slot data from current sections should be present
+    assert body["sidebar_payload"]["safety"]["harmful_content_matches"] == []
+    assert body["sidebar_payload"]["facts_claims"]["claims_report"]["deduped_claims"] == []
+    assert body["sidebar_payload"]["source_url"] == url
+
+
+async def test_done_job_with_payload_still_returns_complete_true(
+    client: httpx.AsyncClient, db_pool: Any
+) -> None:
+    """Terminal done job with sidebar_payload must still return it."""
+    url = "https://example.com/terminal-payload"
+    payload = _minimal_sidebar_payload(url)
+    job_id = await _insert_job(
+        db_pool,
+        status="done",
+        sidebar_payload=payload,
+        finished_at=datetime.now(UTC),
+        url=url,
+    )
+    resp = await client.get(f"/api/analyze/{job_id}")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["status"] == "done"
+    assert body["sidebar_payload_complete"] is True
+    assert body["sidebar_payload"]["source_url"] == url

@@ -322,6 +322,13 @@ async def test_post_then_internal_run_then_poll_to_done(
     assert sidebar["opinions_sentiments"]["opinions_report"]["sentiment_stats"]["per_utterance"][1]["label"] == "negative"
     assert sidebar["opinions_sentiments"]["opinions_report"]["subjective_claims"][0]["utterance_id"] == "u-1"
 
+    # 6b. The finalized job row itself carries the assembled payload so the
+    #     poll endpoint can derive sidebar_payload_complete=True without a
+    #     separate cache lookup (TASK-1473.65).
+    assert final["sidebar_payload"] is not None, (
+        "vibecheck_jobs.sidebar_payload was not written by finalize"
+    )
+
     # 7. GET /api/analyze/{id} returns the populated state.
     poll_resp = await http_client.get(f"/api/analyze/{job_id}")
     assert poll_resp.status_code == 200, poll_resp.text
@@ -333,6 +340,9 @@ async def test_post_then_internal_run_then_poll_to_done(
     for slug in SectionSlug:
         assert slug.value in poll_body["sections"]
         assert poll_body["sections"][slug.value]["state"] == "done"
+    # TASK-1473.65: after a full async run the polled job reports the
+    # canonical payload as complete — no further polling is needed.
+    assert poll_body.get("sidebar_payload_complete") is True
 
     # 8. Firecrawl was hit exactly once for this URL.
     assert fake_firecrawl.calls == [target_url]

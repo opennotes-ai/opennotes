@@ -28,6 +28,7 @@ job is now:
 The advisory lock is released automatically when the transaction commits
 or rolls back, so nothing leaks on error.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -58,6 +59,7 @@ from src.analyses.schemas import (
     SafetySection,
     SectionSlot,
     SectionSlug,
+    SectionState,
     SidebarPayload,
     ToneDynamicsSection,
     WebRiskSection,
@@ -72,6 +74,7 @@ from src.jobs.preview_description import (
 )
 from src.jobs.recent_cache import _AsyncTTLCache, cache_key, is_cache_disabled
 from src.jobs.recent_query import ScreenshotSigner, list_recent
+from src.jobs.sidebar_payload import assemble_sidebar_payload
 from src.jobs.slots import retry_claim_slot
 from src.monitoring import get_logger
 from src.monitoring_metrics import CACHE_HITS, SINGLE_FLIGHT_LOCK_WAITS
@@ -184,9 +187,7 @@ def _get_db_pool(request: Request) -> Any:
         # Missing pool is a deploy-time misconfiguration — surface as 503
         # with the same `{error_code, message}` body shape clients see for
         # all other errors (TASK-1473.38).
-        raise _AnalyzeRouteError(
-            503, "internal", "database pool not initialized"
-        )
+        raise _AnalyzeRouteError(503, "internal", "database pool not initialized")
     return pool
 
 
@@ -201,15 +202,11 @@ async def _try_advisory_lock(conn: Any, normalized_url: str) -> bool:
     is held for the remainder of the transaction.
     """
     return bool(
-        await conn.fetchval(
-            "SELECT pg_try_advisory_xact_lock(hashtext($1))", normalized_url
-        )
+        await conn.fetchval("SELECT pg_try_advisory_xact_lock(hashtext($1))", normalized_url)
     )
 
 
-async def _find_inflight_job(
-    conn: Any, normalized_url: str
-) -> tuple[UUID, JobStatus] | None:
+async def _find_inflight_job(conn: Any, normalized_url: str) -> tuple[UUID, JobStatus] | None:
     """Return `(job_id, status)` of a non-terminal job for this URL, if any.
 
     Surfacing the real status (not a hardcoded `pending`) lets the dedup
@@ -518,9 +515,7 @@ async def _handle_locked_submit(
         existing_unsafe = await _find_unsafe_url_job(conn, normalized_url)
         if existing_unsafe is not None:
             return (
-                AnalyzeResponse(
-                    job_id=existing_unsafe, status=JobStatus.FAILED, cached=False
-                ),
+                AnalyzeResponse(job_id=existing_unsafe, status=JobStatus.FAILED, cached=False),
                 None,
             )
         job_id = await _insert_unsafe_url_job(
@@ -570,9 +565,7 @@ async def _handle_locked_submit(
         test_fail_slug=test_fail_slug,
     )
     return (
-        AnalyzeResponse(
-            job_id=job_id, status=JobStatus.PENDING, cached=False
-        ),
+        AnalyzeResponse(job_id=job_id, status=JobStatus.PENDING, cached=False),
         attempt_id,
     )
 
@@ -628,9 +621,7 @@ async def analyze(request: Request, body: AnalyzeRequest) -> Any:  # noqa: PLR09
         normalized_url = canonical_cache_key(body.url)
     except InvalidURL as exc:
         logger.info("POST /api/analyze rejected url: reason=%s", exc.reason)
-        return _error_response(
-            400, "invalid_url", f"url rejected: {exc.reason}"
-        )
+        return _error_response(400, "invalid_url", f"url rejected: {exc.reason}")
 
     host = _host_of(normalized_url)
     try:
@@ -745,13 +736,9 @@ async def analyze(request: Request, body: AnalyzeRequest) -> Any:  # noqa: PLR09
     # 3. Post-commit enqueue (fresh submits only).
     if attempt_to_enqueue is not None:
         try:
-            await enqueue_job(
-                response.job_id, attempt_to_enqueue, settings
-            )
+            await enqueue_job(response.job_id, attempt_to_enqueue, settings)
         except Exception as exc:
-            logger.warning(
-                "enqueue_job failed for job %s: %s", response.job_id, exc
-            )
+            logger.warning("enqueue_job failed for job %s: %s", response.job_id, exc)
             await _mark_job_failed_enqueue(pool, response.job_id)
             return _error_response(500, "internal", "enqueue failed")
 
@@ -922,6 +909,10 @@ SELECT
     j.cached,
     j.created_at,
     j.updated_at,
+    j.safety_recommendation,
+    j.headline_summary,
+    j.last_stage,
+    j.heartbeat_at,
     meta.page_title,
     meta.page_kind,
     (
@@ -969,19 +960,49 @@ def _parse_sections(raw: Any) -> dict[SectionSlug, SectionSlot]:
     return out
 
 
+_NON_TERMINAL_STATUSES_POLL = frozenset({"pending", "extracting", "analyzing"})
+
+
 def _row_to_job_state(row: Any) -> JobState:
     status = JobStatus(row["status"])
-    sidebar_raw = _parse_jsonb(row["sidebar_payload"])
-    sidebar_payload = (
-        SidebarPayload.model_validate(sidebar_raw)
-        if sidebar_raw is not None
-        else None
-    )
+    is_non_terminal = status.value in _NON_TERMINAL_STATUSES_POLL
+    sections = _parse_sections(row["sections"])
+    sidebar_raw = None if is_non_terminal else _parse_jsonb(row["sidebar_payload"])
+    if status in {JobStatus.DONE, JobStatus.PARTIAL} and sidebar_raw is not None:
+        sidebar_payload = SidebarPayload.model_validate(sidebar_raw)
+        sidebar_payload_complete = True
+    elif not is_non_terminal and sidebar_raw is not None:
+        sidebar_payload = SidebarPayload.model_validate(sidebar_raw)
+        sidebar_payload_complete = False
+    elif is_non_terminal and any(
+        slot.state == SectionState.DONE and slot.data is not None for slot in sections.values()
+    ):
+        sidebar_payload = assemble_sidebar_payload(
+            row["url"],
+            sections,
+            safety_recommendation=row.get("safety_recommendation", None),
+            headline_summary=row.get("headline_summary", None),
+            utterances=[],
+        )
+        sidebar_payload_complete = False
+    else:
+        sidebar_payload = None
+        sidebar_payload_complete = False
+
     page_kind_raw = row.get("page_kind", None)
     page_kind = PageKind(page_kind_raw) if isinstance(page_kind_raw, str) else None
-    utterance_count_raw = (
-        row.get("utterance_count", 0)
-    )
+    utterance_count_raw = row.get("utterance_count", 0)
+
+    if is_non_terminal:
+        activity_at = row.get("heartbeat_at", None)
+        stage = row.get("last_stage", None)
+        if stage is None and status is JobStatus.EXTRACTING:
+            stage = "extracting"
+        activity_label = _activity_label_for_stage(stage)
+    else:
+        activity_at = None
+        activity_label = None
+
     return JobState(
         job_id=row["job_id"],
         url=row["url"],
@@ -992,8 +1013,11 @@ def _row_to_job_state(row: Any) -> JobState:
         error_host=row["error_host"],
         created_at=row["created_at"],
         updated_at=row["updated_at"],
-        sections=_parse_sections(row["sections"]),
+        sections=sections,
         sidebar_payload=sidebar_payload,
+        sidebar_payload_complete=sidebar_payload_complete,
+        activity_at=activity_at,
+        activity_label=activity_label,
         cached=bool(row["cached"]),
         next_poll_ms=_POLL_DELAY_BY_STATUS[status],
         page_title=row.get("page_title", None),
@@ -1002,14 +1026,34 @@ def _row_to_job_state(row: Any) -> JobState:
     )
 
 
+_STAGE_LABEL_MAP: dict[str, str] = {
+    "extracting": "Extracting page content",
+    "persist_utterances": "Saving page content",
+    "set_analyzing": "Preparing analysis",
+    "run_sections": "Running section analyses",
+    "safety_recommendation": "Computing safety guidance",
+    "headline_summary": "Writing summary",
+    "finalize": "Finalizing results",
+}
+
+
+def _activity_label_for_stage(stage: str | None) -> str | None:
+    """Map internal last_stage keys to user-facing activity copy.
+
+    Unknown stage values degrade to a neutral fallback so clients never
+    surface raw internal keys in the UI (TASK-1473.65.10).
+    """
+    if stage is None:
+        return None
+    return _STAGE_LABEL_MAP.get(stage, "Running analysis")
+
+
 @router.get(
     "/analyze/{job_id}",
     response_model=JobState,
     summary="Poll an async vibecheck job",
 )
-async def poll(
-    job_id: UUID, request: Request, response: Response
-) -> JobState | JSONResponse:
+async def poll(job_id: UUID, request: Request, response: Response) -> JobState | JSONResponse:
     """Read-only polling endpoint.
 
     Returns the current `JobState` including the `sections` dict (per-slot
@@ -1193,13 +1237,9 @@ async def retry_section(  # noqa: PLR0911
         prior_slot_attempt_id = UUID(str(slot_data["attempt_id"]))
     except (KeyError, ValueError, TypeError):
         # Defensive: a slot row without a parseable attempt_id cannot CAS.
-        return _error_response(
-            409, "slot_not_in_retryable_state", "slot missing attempt_id"
-        )
+        return _error_response(409, "slot_not_in_retryable_state", "slot missing attempt_id")
 
-    new_slot_attempt = await retry_claim_slot(
-        pool, job_id, slug, prior_slot_attempt_id
-    )
+    new_slot_attempt = await retry_claim_slot(pool, job_id, slug, prior_slot_attempt_id)
     if new_slot_attempt is None:
         return _error_response(
             409,
@@ -1225,9 +1265,7 @@ async def retry_section(  # noqa: PLR0911
         )
         return _error_response(500, "internal", "enqueue failed")
 
-    return RetryResponse(
-        job_id=job_id, slug=slug, slot_attempt_id=new_slot_attempt
-    )
+    return RetryResponse(job_id=job_id, slug=slug, slot_attempt_id=new_slot_attempt)
 
 
 _recent_cache_singleton: _AsyncTTLCache[list[RecentAnalysis]] | None = None
@@ -1289,9 +1327,9 @@ async def list_recent_analyses(request: Request) -> list[RecentAnalysis]:
         return []
 
     pool = _get_db_pool(request)
-    signer: ScreenshotSigner = getattr(
-        request.app.state, "recent_signer", None
-    ) or _build_recent_signer()
+    signer: ScreenshotSigner = (
+        getattr(request.app.state, "recent_signer", None) or _build_recent_signer()
+    )
 
     async def _load() -> list[RecentAnalysis]:
         return await list_recent(pool, limit=limit, signer=signer)
