@@ -234,6 +234,9 @@ class JobState(BaseModel):
     updated_at: datetime
     sections: dict[SectionSlug, SectionSlot] = Field(default_factory=dict)
     sidebar_payload: SidebarPayload | None = None
+    sidebar_payload_complete: bool = False
+    activity_at: datetime | None = None
+    activity_label: str | None = None
     cached: bool = False
     next_poll_ms: int = Field(
         default=1500,
