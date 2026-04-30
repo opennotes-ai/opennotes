@@ -1121,6 +1121,34 @@
               }
             ]
           },
+          "sidebar_payload_complete": {
+            "type": "boolean",
+            "title": "Sidebar Payload Complete",
+            "default": false
+          },
+          "activity_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Activity At"
+          },
+          "activity_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Activity Label"
+          },
           "cached": {
             "type": "boolean",
             "title": "Cached",

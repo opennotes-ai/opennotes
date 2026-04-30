@@ -649,6 +649,15 @@ export interface components {
             };
             sidebar_payload?: components["schemas"]["SidebarPayload"] | null;
             /**
+             * Sidebar Payload Complete
+             * @default false
+             */
+            sidebar_payload_complete: boolean;
+            /** Activity At */
+            activity_at?: string | null;
+            /** Activity Label */
+            activity_label?: string | null;
+            /**
              * Cached
              * @default false
              */
