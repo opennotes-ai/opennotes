@@ -273,6 +273,11 @@ class TestScrapeCacheFunctions:
             in schema_sql
         )
 
+    def test_atomic_scrape_upsert_reload_notifies_postgrest_schema_cache(
+        self, schema_sql: str
+    ) -> None:
+        assert "NOTIFY pgrst, 'reload schema'" in schema_sql
+
 
 class TestPgCronSchedules:
     def test_orphan_sweep_scheduled_every_minute(self, schema_sql: str) -> None:

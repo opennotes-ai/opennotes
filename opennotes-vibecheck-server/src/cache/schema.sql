@@ -407,6 +407,11 @@ GRANT EXECUTE ON FUNCTION public.vibecheck_upsert_scrape_if_not_evicted(
     TIMESTAMPTZ, TIMESTAMPTZ, INT
 ) TO service_role;
 
+-- PostgREST caches RPC signatures. When startup applies this schema through
+-- `public.exec_sql`, the new atomic scrape-upsert RPC must be visible before
+-- request traffic calls it.
+NOTIFY pgrst, 'reload schema';
+
 -- =========================================================================
 -- vibecheck_job_utterances (per-job utterance cache)
 -- =========================================================================
