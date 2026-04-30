@@ -129,6 +129,9 @@ interface JobStateOverrides {
   cached?: boolean;
   errorCode?: string | null;
   errorMessage?: string | null;
+  activityLabel?: string | null;
+  sidebarPayload?: Record<string, unknown> | null;
+  sidebarPayloadComplete?: boolean;
 }
 
 function jobState(overrides: JobStateOverrides): Record<string, unknown> {
@@ -143,7 +146,10 @@ function jobState(overrides: JobStateOverrides): Record<string, unknown> {
     created_at: "2026-04-23T22:08:00Z",
     updated_at: "2026-04-23T22:09:00Z",
     sections: overrides.sections ?? {},
-    sidebar_payload: null,
+    sidebar_payload: overrides.sidebarPayload ?? null,
+    sidebar_payload_complete: overrides.sidebarPayloadComplete ?? false,
+    activity_label: overrides.activityLabel ?? null,
+    activity_at: overrides.activityLabel ? "2026-04-23T22:09:00Z" : null,
     cached: overrides.cached ?? false,
     next_poll_ms: 500,
     page_title: null,
@@ -169,13 +175,14 @@ function allDoneSections(): Record<string, unknown> {
 function jobStateForCount(jobId: string, count: number): Record<string, unknown> {
   // Drive a deterministic state machine from the polling cadence so the
   // assertions below can rely on observable, ordered transitions.
-  //   poll 1            → extracting (sections: {})
+  //   poll 1            → extracting (sections: {}, activity_label set)
   //   poll 2            → still extracting (gives the test time to read
   //                       the indicator without races)
-  //   poll 3            → analyzing (every slot seeded as `running`)
+  //   poll 3            → analyzing (every slot seeded as `running`,
+  //                       activity_label changes)
   //   poll 4 and after  → done (every slot done)
   if (count <= 2) {
-    return jobState({ jobId, status: "extracting" });
+    return jobState({ jobId, status: "extracting", activityLabel: "Extracting page content" });
   }
   if (count === 3) {
     const runningSections = Object.fromEntries(
@@ -184,9 +191,19 @@ function jobStateForCount(jobId: string, count: number): Record<string, unknown>
         { state: "running", attempt_id: ATTEMPT_ID },
       ]),
     );
-    return jobState({ jobId, status: "analyzing", sections: runningSections });
+    return jobState({
+      jobId,
+      status: "analyzing",
+      sections: runningSections,
+      activityLabel: "Running section analyses",
+    });
   }
-  return jobState({ jobId, status: "done", sections: allDoneSections() });
+  return jobState({
+    jobId,
+    status: "done",
+    sections: allDoneSections(),
+    sidebarPayloadComplete: true,
+  });
 }
 
 function nextJobState(jobId: string): Record<string, unknown> {
@@ -237,6 +254,7 @@ test.beforeAll(async () => {
             status: "done",
             sections: allDoneSections(),
             cached: true,
+            sidebarPayloadComplete: true,
           }),
         ),
       );
@@ -333,13 +351,16 @@ test("AC5: extracting indicator is visible during extracting and disappears on d
   const pulseCount = await indicator.locator(".skeleton-pulse").count();
   expect(pulseCount).toBeGreaterThan(0);
 
-  // AC3 smooth handoff: once status flips to `analyzing` the indicator is
-  // gone but per-slot skeletons remain mounted (still in `running`). We
-  // assert by waiting for the data-job-status attribute to flip.
+  // AC3 smooth handoff: once status flips to `analyzing` the indicator
+  // stays visible (now showing the backend activity label) while per-slot
+  // skeletons remain mounted in `running`.
   await expect(sidebar).toHaveAttribute("data-job-status", "analyzing", {
     timeout: 10_000,
   });
-  await expect(indicator).toHaveCount(0);
+  await expect(indicator).toBeVisible({ timeout: 10_000 });
+  await expect(indicator).toContainText("Running section analyses", {
+    timeout: 10_000,
+  });
   await expectAppToStayMounted(page);
 
   // The per-slot skeletons should still be mounted during analyzing —
@@ -351,7 +372,7 @@ test("AC5: extracting indicator is visible during extracting and disappears on d
     );
   }
 
-  // Eventually status reaches `done`; indicator stays absent and slots
+  // Eventually status reaches `done`; indicator disappears and slots
   // flip to `done`.
   await expect(sidebar).toHaveAttribute("data-job-status", "done", {
     timeout: 15_000,
@@ -421,4 +442,36 @@ test("AC4 negative: cached-hit (status=done on first poll) never shows the extra
   await expect(
     page.locator('[data-testid="extracting-indicator"]'),
   ).toHaveCount(0);
+});
+
+test("AC6: extracting indicator shows backend activity label during extracting and analyzing", async ({
+  page,
+}) => {
+  await page.goto(`${webBaseUrl}/analyze?job=${JOB_ID}`);
+
+  const indicator = page.locator('[data-testid="extracting-indicator"]');
+  const sidebar = page.locator('[data-testid="analysis-sidebar"]');
+
+  // During extracting phase, the activity label from the backend should appear.
+  await expect(indicator).toBeVisible({ timeout: 10_000 });
+  await expect(indicator).toContainText("Extracting page content", {
+    timeout: 10_000,
+  });
+  await expect(sidebar).toHaveAttribute("data-job-status", "extracting", {
+    timeout: 10_000,
+  });
+
+  // Once status flips to analyzing, the activity label should update.
+  await expect(sidebar).toHaveAttribute("data-job-status", "analyzing", {
+    timeout: 10_000,
+  });
+  await expect(indicator).toContainText("Running section analyses", {
+    timeout: 10_000,
+  });
+
+  // Once done, the indicator disappears.
+  await expect(sidebar).toHaveAttribute("data-job-status", "done", {
+    timeout: 15_000,
+  });
+  await expect(indicator).toHaveCount(0);
 });
