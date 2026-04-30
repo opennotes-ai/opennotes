@@ -914,7 +914,7 @@ describe("Sidebar", () => {
 
   it("synthesizes a fully-done sections map from payload when sections is absent", () => {
     const payload = makeTonePayload();
-    render(() => <Sidebar payload={payload} />);
+    render(() => <Sidebar payload={payload} payloadComplete={true} />);
 
     const byLabel = (label: string) =>
       within(screen.getByTestId(`section-group-${label}`)).getByTestId(
@@ -1370,7 +1370,9 @@ describe("Sidebar (done slots, per-slug reports)", () => {
         },
       },
     };
-    const { container } = render(() => <Sidebar payload={payload} />);
+    const { container } = render(() => (
+      <Sidebar payload={payload} payloadComplete={true} />
+    ));
     expect(
       screen.getByTestId("report-safety__moderation"),
     ).toBeDefined();
@@ -1438,6 +1440,12 @@ describe("app.css motion rules", () => {
     expect(appCss).toMatch(/\.section-reveal\b/);
     expect(appCss).toMatch(/@keyframes\s+skeleton-pulse-kf\b/);
     expect(appCss).toMatch(/@keyframes\s+section-reveal-kf\b/);
+    expect(appCss).toMatch(/\.skeleton-pulse-delay-1\b/);
+    expect(appCss).toMatch(/\.skeleton-pulse-delay-2\b/);
+    expect(appCss).toMatch(/\.skeleton-pulse-delay-3\b/);
+    expect(appCss).toMatch(
+      /@media\s*\(prefers-reduced-motion:\s*reduce\)[\s\S]*?\.skeleton-pulse-delay-\d[\s\S]*?animation:\s*none/,
+    );
   });
 });
 
@@ -1525,7 +1533,8 @@ describe("Sidebar (extracting-phase indicator)", () => {
       />
     ));
 
-    expect(screen.queryByTestId("extracting-indicator")).toBeNull();
+    // Indicator now renders during analyzing to show backend activity labels.
+    expect(screen.getByTestId("extracting-indicator")).toBeDefined();
     expect(
       screen
         .getByTestId("slot-tone_dynamics__flashpoint")
@@ -1540,5 +1549,115 @@ describe("Sidebar (extracting-phase indicator)", () => {
     expect(
       screen.getByTestId("slot-safety__moderation").getAttribute("data-slot-state"),
     ).toBe("pending");
+  });
+});
+
+describe("Sidebar (partial payload)", () => {
+  it("does not synthesize all-done slots from payload when payloadComplete is false", () => {
+    const payload = makeTonePayload();
+    render(() => <Sidebar payload={payload} payloadComplete={false} />);
+
+    expect(
+      screen.getByTestId("slot-safety__moderation").getAttribute("data-slot-state"),
+    ).toBe("pending");
+    expect(
+      screen.getByTestId("slot-tone_dynamics__flashpoint").getAttribute("data-slot-state"),
+    ).toBe("pending");
+  });
+
+  it("synthesizes all-done slots from payload when payloadComplete is true", () => {
+    const payload = makeTonePayload();
+    render(() => <Sidebar payload={payload} payloadComplete={true} />);
+
+    expect(
+      screen.getByTestId("slot-safety__moderation").getAttribute("data-slot-state"),
+    ).toBe("done");
+    expect(screen.queryByTestId("skeleton-safety__moderation")).toBeNull();
+  });
+
+  it("renders done reports from sections while keeping skeletons for unfinished slots when payloadComplete is false", () => {
+    const payload = makeTonePayload();
+    render(() => (
+      <Sidebar
+        payload={payload}
+        payloadComplete={false}
+        sections={{
+          tone_dynamics__flashpoint: {
+            state: "done",
+            attempt_id: "a1",
+            data: { flashpoint_matches: [{ risk_level: "Heated", derailment_score: 55, reasoning: "heated", utterance_id: "u1", context_messages: 2, scan_type: "conversation_flashpoint" }] },
+          },
+          tone_dynamics__scd: { state: "running", attempt_id: "a2" },
+        }}
+      />
+    ));
+
+    expect(
+      screen.getByTestId("slot-tone_dynamics__flashpoint").getAttribute("data-slot-state"),
+    ).toBe("done");
+    expect(screen.getByTestId("report-tone_dynamics__flashpoint")).toBeDefined();
+
+    expect(
+      screen.getByTestId("slot-tone_dynamics__scd").getAttribute("data-slot-state"),
+    ).toBe("running");
+    expect(screen.getByTestId("skeleton-tone_dynamics__scd")).toBeDefined();
+
+    expect(
+      screen.getByTestId("slot-safety__moderation").getAttribute("data-slot-state"),
+    ).toBe("pending");
+  });
+
+  it("does not show headline summary or cache badge props surface only when payloadComplete is true", () => {
+    const payload = makeTonePayload();
+    render(() => (
+      <Sidebar
+        payload={payload}
+        payloadComplete={false}
+        jobStatus="analyzing"
+      />
+    ));
+
+    // No headline summary or cached badge rendering in Sidebar itself — those
+    // are routed through the Sidebar props but the partial payload should not
+    // trigger final-only UI. The sidebar should show pending slots, not done.
+    expect(
+      screen.getByTestId("slot-safety__moderation").getAttribute("data-slot-state"),
+    ).toBe("pending");
+  });
+});
+
+describe("Sidebar (activity indicator)", () => {
+  it("renders backend activity label in extracting indicator when present", () => {
+    render(() => (
+      <Sidebar
+        sections={{}}
+        jobStatus="extracting"
+        activityLabel="Running section analyses"
+      />
+    ));
+
+    const indicator = screen.getByTestId("extracting-indicator");
+    expect(indicator.textContent).toContain("Running section analyses");
+  });
+
+  it("falls back to default copy when activityLabel is absent", () => {
+    render(() => <Sidebar sections={{}} jobStatus="extracting" />);
+
+    const indicator = screen.getByTestId("extracting-indicator");
+    expect(indicator.textContent).toMatch(/extracting page content/i);
+  });
+
+  it("passes activityAt to the indicator as a data attribute", () => {
+    render(() => (
+      <Sidebar
+        sections={{}}
+        jobStatus="extracting"
+        activityLabel="Running section analyses"
+        activityAt="2026-04-22T00:00:00Z"
+      />
+    ));
+
+    const indicator = screen.getByTestId("extracting-indicator");
+    expect(indicator.getAttribute("data-activity-at")).toBe("2026-04-22T00:00:00Z");
   });
 });

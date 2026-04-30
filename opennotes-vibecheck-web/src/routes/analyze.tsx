@@ -385,6 +385,8 @@ export default function AnalyzePage() {
   };
 
   const sidebarPayload = () => jobState()?.sidebar_payload ?? null;
+  const sidebarPayloadComplete = () =>
+    jobState()?.sidebar_payload_complete === true;
   const isCached = () => jobState()?.cached === true;
   const cachedAt = () => sidebarPayload()?.cached_at ?? null;
   const hasCurrentUtteranceAnchors = () =>
@@ -543,7 +545,7 @@ export default function AnalyzePage() {
             </span>
             <span>back</span>
           </A>
-          <Show when={isCached()}>
+          <Show when={isCached() && sidebarPayloadComplete()}>
             <CachedBadge cachedAt={cachedAt()} />
           </Show>
         </nav>
@@ -573,7 +575,7 @@ export default function AnalyzePage() {
                   data-testid="analyze-left-column"
                   class="order-2 flex min-w-0 flex-col gap-4 lg:order-1"
                 >
-                  <Show when={jobStatus() === "done" || sidebarPayload()}>
+                  <Show when={sidebarPayloadComplete()}>
                     <HeadlineSummaryReport
                       headline={resolveHeadline(
                         sidebarPayload()?.headline ?? null,
@@ -737,6 +739,7 @@ export default function AnalyzePage() {
                 <Sidebar
                   sections={jobState()?.sections}
                   payload={sidebarPayload()}
+                  payloadComplete={sidebarPayloadComplete()}
                   jobId={jobId() || undefined}
                   jobStatus={jobStatus()}
                   onRetry={handleRetry}
@@ -746,6 +749,8 @@ export default function AnalyzePage() {
                     Boolean(frameCompat().archivedPreviewUrl) &&
                     hasCurrentUtteranceAnchors()
                   }
+                  activityLabel={jobState()?.activity_label}
+                  activityAt={jobState()?.activity_at}
                   class="order-1 lg:order-2"
                 />
               </div>

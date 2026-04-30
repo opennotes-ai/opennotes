@@ -286,6 +286,7 @@ function makeJobState(overrides: Partial<JobState> = {}): JobState {
     created_at: "2026-04-22T00:00:00Z",
     updated_at: "2026-04-22T00:00:00Z",
     cached: false,
+    sidebar_payload_complete: false,
     next_poll_ms: 1500,
     utterance_count: 0,
     ...overrides,
@@ -451,6 +452,7 @@ describe("AnalyzePage route", () => {
       makeJobState({
         status: "done",
         cached: true,
+        sidebar_payload_complete: true,
         sidebar_payload: {
           source_url: "https://news.example.com/a",
           page_title: null,
@@ -509,6 +511,7 @@ describe("AnalyzePage route", () => {
         status: "done",
         cached: true,
         sidebar_payload: null,
+        sidebar_payload_complete: true,
       } as unknown as Partial<JobState>),
     );
 
@@ -1338,6 +1341,7 @@ describe("AnalyzePage headline summary mount (TASK-1483.13.10)", () => {
         status: "analyzing",
         page_title: LONG_FALLBACK_HEADLINE_TITLE,
         sidebar_payload: makeSidebarPayload({ headline: null }),
+        sidebar_payload_complete: true,
       }),
     );
 
@@ -1365,6 +1369,7 @@ describe("AnalyzePage headline summary mount (TASK-1483.13.10)", () => {
             unavailable_inputs: [],
           },
         }),
+        sidebar_payload_complete: true,
       }),
     );
 
@@ -1392,6 +1397,7 @@ describe("AnalyzePage headline summary mount (TASK-1483.13.10)", () => {
             unavailable_inputs: [],
           },
         }),
+        sidebar_payload_complete: true,
       }),
     );
 
@@ -1409,6 +1415,105 @@ describe("AnalyzePage headline summary mount (TASK-1483.13.10)", () => {
       headline.compareDocumentPosition(previewMode) &
         Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
+  });
+
+  it("does not render headline summary when sidebar_payload_complete is false even if payload is present", async () => {
+    renderAt("/analyze?job=job-partial-payload&url=https://news.example.com/a");
+
+    await waitFor(() => {
+      expect(pollingHandles.length).toBeGreaterThan(0);
+    });
+
+    setPolledJobState(
+      makeJobState({
+        status: "analyzing",
+        sidebar_payload: makeSidebarPayload({
+          headline: {
+            text: "Should not appear yet",
+            kind: "synthesized",
+            unavailable_inputs: [],
+          },
+        }),
+        sidebar_payload_complete: false,
+      } as unknown as Partial<JobState>),
+    );
+
+    await waitFor(() => {
+      expect(screen.queryByTestId("preview-mode-selector")).not.toBeNull();
+    });
+    expect(screen.queryByTestId("headline-summary")).toBeNull();
+  });
+
+  it("renders headline summary when sidebar_payload_complete is true", async () => {
+    renderAt("/analyze?job=job-complete-payload&url=https://news.example.com/a");
+
+    await waitFor(() => {
+      expect(pollingHandles.length).toBeGreaterThan(0);
+    });
+
+    setPolledJobState(
+      makeJobState({
+        status: "done",
+        sidebar_payload: makeSidebarPayload({
+          headline: {
+            text: "Complete headline text.",
+            kind: "synthesized",
+            unavailable_inputs: [],
+          },
+        }),
+        sidebar_payload_complete: true,
+      } as unknown as Partial<JobState>),
+    );
+
+    const headline = await screen.findByTestId("headline-summary");
+    expect(screen.getByTestId("headline-summary-text").textContent).toBe(
+      "Complete headline text.",
+    );
+    expect(headline.getAttribute("data-headline-source")).toBe("server");
+  });
+
+  it("does not render cached badge when cached=true but sidebar_payload_complete is false", async () => {
+    renderAt("/analyze?job=job-partial-cache&url=https://news.example.com/a");
+
+    await waitFor(() => {
+      expect(pollingHandles.length).toBeGreaterThan(0);
+    });
+
+    setPolledJobState(
+      makeJobState({
+        status: "analyzing",
+        cached: true,
+        sidebar_payload: makeSidebarPayload(),
+        sidebar_payload_complete: false,
+      } as unknown as Partial<JobState>),
+    );
+
+    await waitFor(() => {
+      expect(screen.queryByTestId("preview-mode-selector")).not.toBeNull();
+    });
+    expect(screen.queryByTestId("cached-badge")).toBeNull();
+  });
+
+  it("renders cached badge when cached=true and sidebar_payload_complete is true", async () => {
+    renderAt("/analyze?job=job-complete-cache&url=https://news.example.com/a");
+
+    await waitFor(() => {
+      expect(pollingHandles.length).toBeGreaterThan(0);
+    });
+
+    setPolledJobState(
+      makeJobState({
+        status: "done",
+        cached: true,
+        sidebar_payload: makeSidebarPayload({
+          cached_at: new Date(Date.now() - 5 * 60 * 1000).toISOString(),
+        }),
+        sidebar_payload_complete: true,
+      } as unknown as Partial<JobState>),
+    );
+
+    const badge = await screen.findByTestId("cached-badge");
+    expect(badge.textContent?.toLowerCase()).toContain("cached");
   });
 });
 

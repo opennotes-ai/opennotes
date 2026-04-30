@@ -68,7 +68,9 @@ function getSlotState(slug: string): string | null {
 
 describe("<Sidebar /> payload synthesis fallback", () => {
   it("renders all slots as done when sections is undefined and payload is provided (cache-hit shape)", () => {
-    render(() => <Sidebar sections={undefined} payload={makePayload()} />);
+    render(() => (
+      <Sidebar sections={undefined} payload={makePayload()} payloadComplete={true} />
+    ));
 
     for (const slug of SECTION_SLUGS) {
       expect(getSlotState(slug)).toBe("done");
@@ -78,7 +80,9 @@ describe("<Sidebar /> payload synthesis fallback", () => {
   it("renders all slots as done when sections is an empty object and payload is provided (real cache-hit backend shape)", () => {
     const emptySections = {} as unknown as JobState["sections"];
 
-    render(() => <Sidebar sections={emptySections} payload={makePayload()} />);
+    render(() => (
+      <Sidebar sections={emptySections} payload={makePayload()} payloadComplete={true} />
+    ));
 
     for (const slug of SECTION_SLUGS) {
       expect(getSlotState(slug)).toBe("done");
@@ -112,6 +116,7 @@ describe("<Sidebar /> payload synthesis fallback", () => {
     render(() => (
       <Sidebar
         sections={undefined}
+        payloadComplete={true}
         payload={makePayload({
           web_risk: {
             findings: [
