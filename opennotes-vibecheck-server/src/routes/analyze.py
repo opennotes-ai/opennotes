@@ -984,7 +984,7 @@ def _row_to_job_state(row: Any) -> JobState:
     sidebar_raw = _parse_jsonb(row["sidebar_payload"])
     if sidebar_raw is not None:
         sidebar_payload = SidebarPayload.model_validate(sidebar_raw)
-        sidebar_payload_complete = True
+        sidebar_payload_complete = status.value not in _NON_TERMINAL_STATUSES_POLL
     elif status.value in _NON_TERMINAL_STATUSES_POLL and any(
         slot.state == SectionState.DONE and slot.data is not None
         for slot in sections.values()

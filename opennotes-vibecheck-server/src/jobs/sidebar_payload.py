@@ -57,7 +57,7 @@ def assemble_sidebar_payload(
     """
     def data_for(slug: SectionSlug) -> dict[str, Any]:
         slot = sections.get(slug)
-        if slot is None or slot.state != SectionState.DONE or slot.data is None:
+        if slot is None or slot.state != SectionState.DONE or not isinstance(slot.data, dict):
             return empty_section_data(slug)
         return slot.data
 
