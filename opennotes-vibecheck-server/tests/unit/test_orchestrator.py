@@ -1406,6 +1406,33 @@ async def test_scrape_step_la_times_partial_coral_routes_to_interact_without_scr
     assert span.attrs.get("escalation_reason") == "coral_graphql_unsupported"
 
 
+async def test_scrape_step_la_times_non_coral_story_id_stays_tier1() -> None:
+    """A generic LA Times `data-story-id` attribute is not Coral evidence."""
+
+    url = "https://www.latimes.com/california/story/2026-04-26/example"
+    cache = _FakeScrapeCache()
+    scrape_client = _FakeFirecrawlClient(
+        scrape_result=_ok_scrape_result(
+            body="Substantive article body. " * 20,
+            html=(
+                "<html><body>"
+                '<article data-story-id="not-coral">'
+                "<h1>Real Article</h1><p>Substantive article body.</p>"
+                "</article>"
+                "</body></html>"
+            ),
+        )
+    )
+    interact_client = _FakeFirecrawlClient()
+
+    result = await _call_scrape_step(url, scrape_client, interact_client, cache)
+
+    assert "Substantive article body." in _require_markdown(result)
+    assert (url, "scrape") in cache.puts
+    assert (url, "interact") not in cache.puts
+    assert len(interact_client.interact_calls) == 0
+
+
 async def test_scrape_step_tier1_coral_truncated_marker_stays_cached(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

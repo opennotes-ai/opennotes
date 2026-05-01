@@ -162,8 +162,6 @@ delivery. Subtract 1 to keep the terminal flip strictly before exhaustion.
 
 _CORAL_PARTIAL_MARKERS: tuple[str, ...] = (
     "coral_talk_stream",
-    "data-env-url",
-    "data-story-id",
     'data-gtm-class="open-community"',
     'data-gtm-class=\'open-community\'',
     'comments-show-comments-button',
@@ -648,7 +646,13 @@ def _has_partial_coral_marker(html: str) -> bool:
     detection fails.
     """
     lowered = html.lower()
-    return any(marker in lowered for marker in _CORAL_PARTIAL_MARKERS)
+    if any(marker in lowered for marker in _CORAL_PARTIAL_MARKERS):
+        return True
+    return (
+        "coral" in lowered
+        and "data-env-url" in lowered
+        and "data-story-id" in lowered
+    )
 
 
 def _is_la_times_url(url: str) -> bool:
