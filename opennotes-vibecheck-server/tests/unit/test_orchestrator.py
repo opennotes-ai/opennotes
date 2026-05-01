@@ -910,7 +910,8 @@ def _eval_execute_javascript(
     *,
     match_selectors: list[str] | tuple[str, ...],
     html_fixture: str | None = None,
-) -> tuple[str, str | None]:
+    shadow_html: str | None = None,
+) -> tuple[str, str | None, str | None]:
     """Run a generated executeJavascript payload against a stubbed document."""
 
     node = shutil.which("node")
@@ -921,7 +922,9 @@ def _eval_execute_javascript(
 const payload = JSON.parse(process.argv[1]);
 const matchingSelectors = new Set(payload.matchingSelectors);
 const htmlFixture = payload.htmlFixture || "";
+const shadowHtml = payload.shadowHtml || "";
 let clickedSelector = null;
+let markerHtml = null;
 
 function psCommentsBlock() {
     const match = htmlFixture.match(/<ps-comments\b([^>]*)>([\s\S]*?)<\/ps-comments>/i);
@@ -948,8 +951,62 @@ function selectorMatchesFixture(selector) {
     return false;
 }
 
+function makeElement(tagName) {
+    const element = {
+        tagName,
+        attributes: {},
+        children: [],
+        textContent: "",
+        innerHTML: "",
+        setAttribute(name, value) {
+            this.attributes[name] = value;
+        },
+        appendChild(child) {
+            this.children.push(child);
+            if (child.textContent) {
+                this.textContent += child.textContent;
+            }
+            if (child.innerHTML) {
+                this.innerHTML += child.innerHTML;
+            }
+            if (this.attributes["data-coral-comments"] === "true") {
+                markerHtml = this.innerHTML || this.textContent;
+            }
+            return child;
+        },
+        remove() {
+            markerHtml = null;
+        },
+    };
+    return element;
+}
+
+const article = makeElement("article");
+const body = makeElement("body");
+body.appendChild = (child) => {
+    if (child.attributes?.["data-coral-comments"] === "true") {
+        markerHtml = child.innerHTML || child.textContent;
+    }
+    return child;
+};
+article.appendChild = body.appendChild;
+
 global.document = {
     querySelector(selector) {
+        if (selector === "#coral-shadow-container" && shadowHtml) {
+            return {
+                shadowRoot: {
+                    innerHTML: shadowHtml,
+                    textContent: shadowHtml.replace(/<[^>]*>/g, " "),
+                },
+            };
+        }
+        if (selector === "article") {
+            return article;
+        }
+        if (selector === "[data-coral-comments]") {
+            return markerHtml === null ? null : { remove() { markerHtml = null; } };
+        }
         if (!matchingSelectors.has(selector) && !selectorMatchesFixture(selector)) {
             return null;
         }
@@ -960,14 +1017,24 @@ global.document = {
             },
         };
     },
+    createElement: makeElement,
+    body,
 };
 
-const result = eval(payload.script);
+global.setTimeout = (callback) => {
+    callback();
+    return 0;
+};
+
+(async () => {
+const result = await eval(payload.script);
 const output = {
     result: typeof result === "string" ? result : String(result),
     clickedSelector,
+    markerHtml,
 };
 console.log(JSON.stringify(output));
+})();
 """
 
     completed = subprocess.run(
@@ -980,6 +1047,7 @@ console.log(JSON.stringify(output));
                     "script": script,
                     "matchingSelectors": list(match_selectors),
                     "htmlFixture": html_fixture,
+                    "shadowHtml": shadow_html,
                 }
             ),
         ],
@@ -989,7 +1057,7 @@ console.log(JSON.stringify(output));
     )
 
     output = json.loads(completed.stdout.strip())
-    return output["result"], output["clickedSelector"]
+    return output["result"], output["clickedSelector"], output["markerHtml"]
 
 
 def _sample_coral_signal() -> CoralSignal:
@@ -1031,16 +1099,18 @@ def test_tier2_actions_for_coral_signal_expands_comment_stream() -> None:
     _assert_generated_js_contains_selector(js, "[data-embed-coral] button")
     _assert_generated_js_contains_selector(js, "ps-comments#coral_talk_stream button")
     _assert_generated_js_contains_selector(js, "ps-comments#coral_talk_stream")
-    returned, clicked = _eval_execute_javascript(
+    returned, clicked, marker = _eval_execute_javascript(
         js,
         match_selectors=["button[data-gtm-class=\"open-community\"]"],
     )
     assert clicked == 'button[data-gtm-class="open-community"]'
     assert returned == 'clicked button[data-gtm-class="open-community"]'
+    assert marker is None
 
-    returned, clicked = _eval_execute_javascript(js, match_selectors=[])
+    returned, clicked, marker = _eval_execute_javascript(js, match_selectors=[])
     assert clicked is None
     assert returned == "no-op"
+    assert marker is None
     assert actions[3] == {"type": "wait", "milliseconds": 3000}
     assert actions[4] == {"type": "scroll", "direction": "down"}
     assert len(actions) == 5
@@ -1052,21 +1122,47 @@ def test_tier2_actions_for_coral_signal_expands_la_times_ps_comments() -> None:
     actions = _tier2_actions_for(_sample_coral_signal())
     js = actions[2]["script"]
 
-    returned, clicked = _eval_execute_javascript(
+    returned, clicked, marker = _eval_execute_javascript(
         js,
         match_selectors=[],
         html_fixture=_LA_TIMES_PS_COMMENTS_FIXTURE,
     )
     assert clicked == "ps-comments#coral_talk_stream"
     assert returned == "clicked ps-comments#coral_talk_stream"
+    assert marker is None
 
-    returned, clicked = _eval_execute_javascript(
+    returned, clicked, marker = _eval_execute_javascript(
         js,
         match_selectors=[],
         html_fixture="<div></div>",
     )
     assert clicked is None
     assert returned == "no-op"
+    assert marker is None
+
+
+def test_tier2_actions_for_coral_signal_copies_shadow_comments_to_light_dom() -> None:
+    """Coral Tier 2 exposes LA Times shadow-root comments to captured HTML."""
+
+    actions = _tier2_actions_for(_sample_coral_signal())
+    js = actions[2]["script"]
+
+    returned, clicked, marker = _eval_execute_javascript(
+        js,
+        match_selectors=[],
+        html_fixture=_LA_TIMES_PS_COMMENTS_FIXTURE,
+        shadow_html=(
+            "<div><span>Like_it_really_matters</span>"
+            "<p>This initiative deserves debate.</p>"
+            "<span>johntomas</span></div>"
+        ),
+    )
+
+    assert clicked is None
+    assert returned == "copied coral shadow comments"
+    assert marker is not None
+    assert "Like_it_really_matters" in marker
+    assert "johntomas" in marker
 
 
 async def test_run_tier2_default_actions_recorded_without_coral_signal() -> None:
@@ -1230,17 +1326,84 @@ async def test_scrape_step_la_times_ps_comments_caches_expanded_result_as_intera
     _assert_generated_js_contains_selector(
         execute_js["script"], "ps-comments#coral_talk_stream"
     )
-    _, clicked = _eval_execute_javascript(
+    _, clicked, marker = _eval_execute_javascript(
         execute_js["script"],
         match_selectors=[],
         html_fixture=_LA_TIMES_PS_COMMENTS_FIXTURE,
     )
     assert clicked == "ps-comments#coral_talk_stream"
+    assert marker is None
 
     assert (url, "interact") in cache.store
     assert (url, "interact") in cache.puts
     assert (url, "scrape") not in cache.store
     assert (url, "scrape") not in cache.puts
+
+
+async def test_scrape_step_la_times_partial_coral_routes_to_interact_without_scrape_cache(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """LA Times partial Coral evidence escalates when direct HTML detection fails."""
+
+    from src.jobs import orchestrator
+
+    span = _install_recording_span(monkeypatch)
+    url = "https://www.latimes.com/california/story/2026-04-26/example"
+    cache = _FakeScrapeCache()
+    article_markdown = "Real Article\n\nSubstantive article body. " * 5
+    scrape_client = _FakeFirecrawlClient(
+        scrape_result=_ok_scrape_result(
+            body=article_markdown,
+            html=(
+                "<html><body>"
+                f"{_PARTIAL_CORAL_HTML_FIXTURE}"
+                "<article><h1>Real Article</h1><p>Substantive article body.</p></article>"
+                "</body></html>"
+            ),
+        )
+    )
+    interact_client = _FakeFirecrawlClient(
+        interact_result=_ok_scrape_result(
+            body=(
+                f"{article_markdown}\n\n"
+                "## Comments\n- Like_it_really_matters: This initiative deserves debate."
+            )
+        )
+    )
+
+    async def fetch_detection_blocked(_url: str) -> None:
+        return None
+
+    monkeypatch.setattr(
+        orchestrator,
+        "_fetch_coral_detection_html",
+        fetch_detection_blocked,
+    )
+
+    result = await _call_scrape_step(url, scrape_client, interact_client, cache)
+
+    markdown = _require_markdown(result)
+    assert "Real Article" in markdown
+    assert "Like_it_really_matters" in markdown
+    assert len(scrape_client.scrape_calls) == 1
+    assert len(interact_client.interact_calls) == 1
+    actions = interact_client.interact_calls[0][1]["actions"]
+    execute_js = next(
+        action for action in actions if action["type"] == "executeJavascript"
+    )
+    _assert_generated_js_contains_selector(
+        execute_js["script"], "ps-comments#coral_talk_stream"
+    )
+
+    assert (url, "interact") in cache.store
+    assert (url, "interact") in cache.puts
+    assert (url, "scrape") not in cache.store
+    assert (url, "scrape") not in cache.puts
+    assert span.attrs.get("tier_attempted") == ["scrape", "interact"]
+    assert span.attrs.get("tier_success") == "interact"
+    assert span.attrs.get("coral_detected") is True
+    assert span.attrs.get("coral_outcome") == "render_only"
+    assert span.attrs.get("escalation_reason") == "coral_graphql_unsupported"
 
 
 async def test_scrape_step_tier1_coral_truncated_marker_stays_cached(

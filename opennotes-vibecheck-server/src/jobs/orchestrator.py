@@ -162,12 +162,16 @@ delivery. Subtract 1 to keep the terminal flip strictly before exhaustion.
 
 _CORAL_PARTIAL_MARKERS: tuple[str, ...] = (
     "coral_talk_stream",
+    "data-env-url",
+    "data-story-id",
     'data-gtm-class="open-community"',
     'data-gtm-class=\'open-community\'',
     'comments-show-comments-button',
     "coral-talk-stream",
     "data-embed-coral",
 )
+_LA_TIMES_HOSTS: Final[tuple[str, ...]] = ("latimes.com", "www.latimes.com")
+_LA_TIMES_CORAL_ORIGIN: Final[str] = "https://latimes.coral.coralproject.net"
 _CORAL_TIER2_ACTION_SELECTORS: Final[tuple[str, ...]] = (
     'button[data-testid="comments-show-comments-button"]',
     'button[data-gtm-class="open-community"]',
@@ -647,6 +651,22 @@ def _has_partial_coral_marker(html: str) -> bool:
     return any(marker in lowered for marker in _CORAL_PARTIAL_MARKERS)
 
 
+def _is_la_times_url(url: str) -> bool:
+    host = (urlparse(url).hostname or "").lower()
+    return host in _LA_TIMES_HOSTS or host.endswith(".latimes.com")
+
+
+def _la_times_render_only_signal(url: str) -> CoralSignal:
+    return CoralSignal(
+        iframe_src=f"{_LA_TIMES_CORAL_ORIGIN}/embed/stream",
+        graphql_origin=_LA_TIMES_CORAL_ORIGIN,
+        story_url=url,
+        supports_graphql=False,
+        embed_origin=_LA_TIMES_CORAL_ORIGIN,
+        env_origin=_LA_TIMES_CORAL_ORIGIN,
+    )
+
+
 async def _fetch_coral_detection_html(url: str) -> str | None:
     """Fetch article HTML directly for a bounded Coral signature check.
 
@@ -688,9 +708,14 @@ async def _detect_coral_signal(url: str, scrape: ScrapeResult) -> CoralSignal | 
 
     full_html = await _fetch_coral_detection_html(url)
     if full_html is None:
+        if has_partial_marker and _is_la_times_url(url):
+            return _la_times_render_only_signal(url)
         return None
 
-    return detect_coral(full_html)
+    signal = detect_coral(full_html)
+    if signal is None and has_partial_marker and _is_la_times_url(url):
+        return _la_times_render_only_signal(url)
+    return signal
 
 
 # Tier 2 /interact action list. Default to a single 3s wait so JS-rendered
@@ -715,18 +740,70 @@ def _tier2_actions_for(coral_signal: CoralSignal | None) -> list[dict[str, Any]]
         {
             "type": "executeJavascript",
             "script": """
-                (() => {
+                (async () => {
                     const selectors = __CORAL_TIER2_ACTION_SELECTORS__;
+                    const sleep = (milliseconds) => new Promise((resolve) => {
+                        setTimeout(resolve, milliseconds);
+                    });
+                    const shadowHostSelector = "#coral-shadow-container";
+                    const markerSelector = "[data-coral-comments]";
+                    const hasLoadedComments = (root) => {
+                        const text = (root?.textContent || "").replace(/\\s+/g, " ").trim();
+                        if (text.length < 20) {
+                            return false;
+                        }
+                        return !/^(loading|show comments|comments)$/i.test(text);
+                    };
+                    const copyShadowComments = () => {
+                        const host = document.querySelector(shadowHostSelector);
+                        const shadowRoot = host?.shadowRoot;
+                        if (!hasLoadedComments(shadowRoot)) {
+                            return false;
+                        }
+
+                        document.querySelector(markerSelector)?.remove();
+                        const marker = document.createElement("section");
+                        marker.setAttribute("data-coral-comments", "true");
+                        marker.setAttribute("aria-label", "Comments");
+
+                        const heading = document.createElement("h2");
+                        heading.textContent = "Comments";
+                        marker.appendChild(heading);
+
+                        const content = document.createElement("div");
+                        content.setAttribute("data-coral-comments-content", "true");
+                        content.innerHTML = shadowRoot.innerHTML || shadowRoot.textContent || "";
+                        marker.appendChild(content);
+
+                        (document.querySelector("article") || document.body).appendChild(marker);
+                        return true;
+                    };
+
+                    if (copyShadowComments()) {
+                        return "copied coral shadow comments";
+                    }
+
+                    let clickedSelector = null;
 
                     for (const selector of selectors) {
                         const button = document.querySelector(selector);
                         if (button) {
                             button.click();
-                            return `clicked ${selector}`;
+                            clickedSelector = selector;
+                            break;
                         }
                     }
 
-                    return "no-op";
+                    for (let attempt = 0; attempt < 20; attempt += 1) {
+                        if (copyShadowComments()) {
+                            return clickedSelector
+                                ? `clicked ${clickedSelector}; copied coral shadow comments`
+                                : "copied coral shadow comments";
+                        }
+                        await sleep(500);
+                    }
+
+                    return clickedSelector ? `clicked ${clickedSelector}` : "no-op";
                 })();
             """.replace(
                 "__CORAL_TIER2_ACTION_SELECTORS__",
