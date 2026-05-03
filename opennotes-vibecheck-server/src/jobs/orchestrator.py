@@ -751,6 +751,7 @@ def _tier2_actions_for(coral_signal: CoralSignal | None) -> list[dict[str, Any]]
                     });
                     const shadowHostSelector = "#coral-shadow-container";
                     const markerSelector = "[data-coral-comments]";
+                    const statusPrefix = "coral_status:";
                     const hasLoadedComments = (root) => {
                         const text = (root?.textContent || "").replace(/\\s+/g, " ").trim();
                         if (text.length < 20) {
@@ -758,33 +759,80 @@ def _tier2_actions_for(coral_signal: CoralSignal | None) -> list[dict[str, Any]]
                         }
                         return !/^(loading|show comments|comments)$/i.test(text);
                     };
-                    const copyShadowComments = () => {
-                        const host = document.querySelector(shadowHostSelector);
-                        const shadowRoot = host?.shadowRoot;
-                        if (!hasLoadedComments(shadowRoot)) {
-                            return false;
-                        }
-
+                    const appendStatusMarker = (status, comments = []) => {
                         document.querySelector(markerSelector)?.remove();
                         const marker = document.createElement("section");
                         marker.setAttribute("data-coral-comments", "true");
+                        marker.setAttribute("data-coral-status", status);
                         marker.setAttribute("aria-label", "Comments");
 
                         const heading = document.createElement("h2");
                         heading.textContent = "Comments";
                         marker.appendChild(heading);
 
-                        const content = document.createElement("div");
-                        content.setAttribute("data-coral-comments-content", "true");
-                        content.innerHTML = shadowRoot.innerHTML || shadowRoot.textContent || "";
-                        marker.appendChild(content);
+                        for (const comment of comments) {
+                            const item = document.createElement("article");
+                            item.className = "comment";
+                            const header = document.createElement("header");
+                            header.textContent = comment.author || "Commenter";
+                            const paragraph = document.createElement("p");
+                            paragraph.textContent = comment.text;
+                            item.appendChild(header);
+                            item.appendChild(paragraph);
+                            marker.appendChild(item);
+                        }
 
                         (document.querySelector("article") || document.body).appendChild(marker);
-                        return true;
+                        return `${statusPrefix}${status};comments=${comments.length}`;
+                    };
+                    const normalizeText = (value) => (value || "").replace(/\\s+/g, " ").trim();
+                    const commentFromNode = (node) => {
+                        const text = normalizeText(node?.textContent);
+                        if (!text || /^(loading|show comments|comments)$/i.test(text)) {
+                            return null;
+                        }
+                        const authorNode = node.querySelector?.(
+                            "[data-testid*='author'],[class*='author'],[class*='username'],header"
+                        );
+                        const author = normalizeText(authorNode?.textContent) || "Commenter";
+                        return {author, text};
+                    };
+                    const collectComments = (root) => {
+                        const nodes = Array.from(root.querySelectorAll?.(
+                            "article,[role='article'],li,[class*='comment'],[data-testid*='comment']"
+                        ) || []);
+                        const comments = nodes.map(commentFromNode).filter(Boolean);
+                        if (comments.length > 0) {
+                            return comments;
+                        }
+                        const text = normalizeText(root.textContent);
+                        return text ? [{author: "Commenter", text}] : [];
+                    };
+                    const copyShadowComments = () => {
+                        const host = document.querySelector(shadowHostSelector);
+                        if (!host) {
+                            return appendStatusMarker("host_missing");
+                        }
+                        const shadowRoot = host?.shadowRoot;
+                        if (!shadowRoot) {
+                            return appendStatusMarker("shadow_closed");
+                        }
+                        if (!hasLoadedComments(shadowRoot)) {
+                            return appendStatusMarker("shadow_empty");
+                        }
+
+                        const comments = collectComments(shadowRoot);
+                        if (comments.length === 0) {
+                            return appendStatusMarker("shadow_empty");
+                        }
+                        return appendStatusMarker("copied", comments);
                     };
 
-                    if (copyShadowComments()) {
-                        return "copied coral shadow comments";
+                    const statusName = (status) => status.split(":", 2)[1]?.split(";", 1)[0] || "";
+                    const initialStatus = copyShadowComments();
+                    const initialStatusName = statusName(initialStatus);
+                    if (initialStatusName === "copied") {
+                        return initialStatus;
                     }
 
                     let clickedSelector = null;
@@ -798,16 +846,31 @@ def _tier2_actions_for(coral_signal: CoralSignal | None) -> list[dict[str, Any]]
                         }
                     }
 
-                    for (let attempt = 0; attempt < 20; attempt += 1) {
-                        if (copyShadowComments()) {
-                            return clickedSelector
-                                ? `clicked ${clickedSelector}; copied coral shadow comments`
-                                : "copied coral shadow comments";
+                    if (clickedSelector === null) {
+                        const buttons = Array.from(document.querySelectorAll?.("button,[role='button']") || []);
+                        const button = buttons.find((candidate) => /show comments/i.test(candidate.textContent || ""));
+                        if (button) {
+                            button.click();
+                            clickedSelector = "text:/show comments/i";
                         }
-                        await sleep(500);
                     }
 
-                    return clickedSelector ? `clicked ${clickedSelector}` : "no-op";
+                    if (clickedSelector === null) {
+                        if (initialStatusName === "host_missing" || initialStatusName === "shadow_closed") {
+                            return initialStatus;
+                        }
+                        return appendStatusMarker("clicked_no_match");
+                    }
+
+                    for (let attempt = 0; attempt < 30; attempt += 1) {
+                        const status = copyShadowComments();
+                        if (statusName(status) === "copied") {
+                            return clickedSelector ? `${status};clicked=${clickedSelector}` : status;
+                        }
+                        await sleep(1000);
+                    }
+
+                    return appendStatusMarker("timeout");
                 })();
             """.replace(
                 "__CORAL_TIER2_ACTION_SELECTORS__",
@@ -1127,6 +1190,27 @@ class _Tier2Outcome:
     cached: CachedScrape | None
     tier2_reason: str
     final_classification: str
+    coral_action_status: str | None = None
+
+
+def _coral_action_status_from(scrape: ScrapeResult) -> str | None:
+    actions = scrape.actions
+    if not actions:
+        return None
+    javascript_returns = actions.get("javascriptReturns")
+    if isinstance(javascript_returns, list):
+        for item in reversed(javascript_returns):
+            if not isinstance(item, dict):
+                continue
+            value = item.get("value")
+            if isinstance(value, str) and value.startswith("coral_status:"):
+                return value.split(":", 1)[1].split(";", 1)[0].strip() or None
+    script_outputs = actions.get("scriptOutputs")
+    if isinstance(script_outputs, list):
+        for output in reversed(script_outputs):
+            if isinstance(output, str) and output.startswith("coral_status:"):
+                return output.split(":", 1)[1].split(";", 1)[0].strip() or None
+    return None
 
 
 async def _run_tier2(
@@ -1158,7 +1242,7 @@ async def _run_tier2(
                 url,
                 actions=_tier2_actions_for(coral_signal),
                 formats=["markdown", "html", "screenshot@fullPage"],
-                only_main_content=True,
+                only_main_content=coral_signal is None,
             )
         except FirecrawlBlocked as exc:
             outcome = _Tier2Outcome(
@@ -1188,6 +1272,7 @@ async def _run_tier2(
                     cached=cached_after_t2,
                     tier2_reason="ok",
                     final_classification="ok",
+                    coral_action_status=_coral_action_status_from(fresh),
                 )
             else:
                 outcome = _Tier2Outcome(
@@ -1259,6 +1344,7 @@ async def _scrape_step(
     final_classification: str = "ok"
     coral_detected = False
     coral_outcome: str | None = None
+    coral_action_status: str | None = None
 
     span = logfire.span("vibecheck.scrape_step", url=url)
     with span:
@@ -1274,6 +1360,7 @@ async def _scrape_step(
                 tier_attempted.append("interact")
                 t2 = await _run_tier2(url, interact_client, scrape_cache)
                 final_classification = t2.final_classification
+                coral_action_status = t2.coral_action_status
                 if t2.cached is not None:
                     tier_success = "interact"
                     return t2.cached
@@ -1311,6 +1398,7 @@ async def _scrape_step(
                     scrape_cache,
                 )
                 final_classification = t2_cached.final_classification
+                coral_action_status = t2_cached.coral_action_status
                 if t2_cached.cached is not None:
                     tier_success = "interact"
                     return t2_cached.cached
@@ -1340,6 +1428,7 @@ async def _scrape_step(
             tier_attempted.append("interact")
             t2 = await _run_tier2(url, interact_client, scrape_cache, coral_signal=t1.coral_signal)
             final_classification = t2.final_classification
+            coral_action_status = t2.coral_action_status
             if t2.cached is not None:
                 tier_success = "interact"
                 return t2.cached
@@ -1360,6 +1449,7 @@ async def _scrape_step(
             span.set_attribute("final_classification", final_classification)
             span.set_attribute("coral_detected", coral_detected)
             span.set_attribute("coral_outcome", coral_outcome)
+            span.set_attribute("coral_action_status", coral_action_status)
 
 
 async def _revalidate_final_url(

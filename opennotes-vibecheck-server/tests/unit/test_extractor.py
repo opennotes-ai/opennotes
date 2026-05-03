@@ -39,6 +39,7 @@ from src.utterances.errors import (
     UtteranceExtractionError,
 )
 from src.utterances.extractor import (
+    CORAL_COMMENTS_PROMPT_ADDENDUM,
     EXTRACTOR_SYSTEM_PROMPT,
     ExtractorDeps,
     ZeroUtterancesError,
@@ -325,6 +326,48 @@ async def test_extract_utterances_registers_both_tools_on_agent(
     names = [name for name, _f in fake_agent.tool_registrations]
     assert "get_html" in names
     assert "get_screenshot" in names
+
+
+@pytest.mark.asyncio
+async def test_extract_utterances_adds_coral_marker_guidance(
+    monkeypatch: pytest.MonkeyPatch, settings: Settings
+) -> None:
+    """Coral markers tell Gemini to emit one comment utterance per block."""
+
+    cached = _cached_scrape(
+        markdown="# Article\n\nBody\n\nComments\n\nJane: first\nPat: second",
+        html=(
+            "<article><p>Body</p></article>"
+            '<section data-coral-comments="true" data-coral-status="copied">'
+            '<article class="comment"><header>Jane</header><p>first</p></article>'
+            '<article class="comment"><header>Pat</header><p>second</p></article>'
+            "</section>"
+        ),
+    )
+    client = _FakeFirecrawlClient()
+    cache = _FakeScrapeCache(cached=cached)
+    fake_agent = _stub_agent(
+        monkeypatch,
+        _payload(
+            page_kind=PageKind.BLOG_POST,
+            utterances=[
+                Utterance(utterance_id=None, kind="post", text="Body"),
+                Utterance(utterance_id=None, kind="comment", text="first"),
+                Utterance(utterance_id=None, kind="comment", text="second"),
+            ],
+        ),
+    )
+
+    payload = await _call(TARGET_URL, client, cache, settings)
+
+    assert [utterance.kind for utterance in payload.utterances] == [
+        "post",
+        "comment",
+        "comment",
+    ]
+    assert fake_agent.prompts
+    assert CORAL_COMMENTS_PROMPT_ADDENDUM.strip() in fake_agent.prompts[0]
+    assert "article.comment" in fake_agent.prompts[0]
 
 
 # ---------------------------------------------------------------------------

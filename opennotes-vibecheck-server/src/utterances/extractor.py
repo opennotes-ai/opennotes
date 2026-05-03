@@ -107,6 +107,17 @@ Tool usage (markdown-first):
 - Call each tool at most once per run. Do not loop.
 """
 
+CORAL_COMMENTS_PROMPT_ADDENDUM = """\
+
+Coral comment extraction:
+- The scrape contains a `[data-coral-comments]` marker copied from an embedded
+  Coral comment widget.
+- Treat each `article.comment` inside that marker as a separate top-level
+  `kind='comment'` utterance.
+- Use `get_html()` if markdown does not preserve the marker's `article.comment`
+  structure clearly.
+"""
+
 
 @dataclass
 class ExtractorDeps:
@@ -159,6 +170,7 @@ async def extract_utterances(
         markdown = scrape.markdown
         if not markdown or not markdown.strip():
             raise UtteranceExtractionError("firecrawl scrape returned no markdown")
+        user_prompt = _agent_user_prompt(markdown, scrape)
 
         agent = build_agent(
             settings,
@@ -175,7 +187,7 @@ async def extract_utterances(
         )
         try:
             async with vertex_slot(settings):
-                result = await agent.run(markdown, deps=deps)  # pyright: ignore[reportArgumentType]
+                result = await agent.run(user_prompt, deps=deps)  # pyright: ignore[reportArgumentType]
         except Exception as exc:
             transient = classify_pydantic_ai_error(exc, model_name=model_name)
             if transient is not None:
@@ -222,6 +234,18 @@ def _set_upstream_span_attrs(
 def _sanitize_html(html: str) -> str:
     cleaned = strip_noise(html)
     return cleaned or ""
+
+
+def _has_coral_comments_marker(scrape: CachedScrape) -> bool:
+    return "data-coral-comments" in (scrape.markdown or "") or "data-coral-comments" in (
+        scrape.html or ""
+    )
+
+
+def _agent_user_prompt(markdown: str, scrape: CachedScrape) -> str:
+    if not _has_coral_comments_marker(scrape):
+        return markdown
+    return f"{CORAL_COMMENTS_PROMPT_ADDENDUM}\n\n{markdown}"
 
 
 def _get_html_impl(deps: ExtractorDeps) -> str:

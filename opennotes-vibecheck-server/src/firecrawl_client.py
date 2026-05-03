@@ -190,6 +190,7 @@ class ScrapeResult(BaseModel):
     links: list[str] | None = Field(default=None)
     metadata: ScrapeMetadata | None = Field(default=None)
     warning: str | None = Field(default=None)
+    actions: dict[str, Any] | None = Field(default=None)
     model_config = ConfigDict(populate_by_name=True)
 
 
@@ -442,8 +443,7 @@ class FirecrawlClient:
             "actions": actions,
             "formats": [_format_to_object(fmt) for fmt in chosen_formats],
         }
-        if only_main_content:
-            body["onlyMainContent"] = True
+        body["onlyMainContent"] = only_main_content
         envelope = await self._post_json("/v2/scrape", body)
         self._raise_for_envelope_failure(envelope, "/v2/scrape")
         data = envelope.get("data")
