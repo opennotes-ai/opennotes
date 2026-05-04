@@ -145,6 +145,7 @@ CREATE TABLE IF NOT EXISTS public.vibecheck_jobs (
     safety_recommendation JSONB,
     sidebar_payload JSONB,
     cached BOOLEAN NOT NULL DEFAULT false,
+    source_type TEXT NOT NULL DEFAULT 'url',
     extract_transient_attempts INT NOT NULL DEFAULT 0,
     created_at TIMESTAMPTZ NOT NULL DEFAULT pg_catalog.now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT pg_catalog.now(),
@@ -161,6 +162,8 @@ CREATE TABLE IF NOT EXISTS public.vibecheck_jobs (
                 'rate_limited', 'internal'
             )
         ),
+    CONSTRAINT vibecheck_jobs_source_type_check
+        CHECK (source_type IN ('url', 'pdf', 'browser_html')),
     CONSTRAINT vibecheck_jobs_terminal_finished_at
         CHECK (
             (status NOT IN ('done', 'partial', 'failed') AND finished_at IS NULL)
@@ -241,6 +244,17 @@ ALTER TABLE public.vibecheck_jobs
 ALTER TABLE public.vibecheck_jobs
     ADD COLUMN IF NOT EXISTS preview_description TEXT;
 
+-- TASK-1521: browser-sourced HTML jobs are excluded from the public
+-- recent-gallery path and get a trusted scrape-cache tier.
+ALTER TABLE public.vibecheck_jobs
+    ADD COLUMN IF NOT EXISTS source_type TEXT NOT NULL DEFAULT 'url';
+
+ALTER TABLE public.vibecheck_jobs
+    DROP CONSTRAINT IF EXISTS vibecheck_jobs_source_type_check;
+ALTER TABLE public.vibecheck_jobs
+    ADD CONSTRAINT vibecheck_jobs_source_type_check
+    CHECK (source_type IN ('url', 'pdf', 'browser_html'));
+
 -- TASK-1474.23.03: in-row backstop counter for the extract-stage retry path.
 -- The orchestrator increments this column each time the utterance-extract
 -- arm raises a TransientExtractionError so Cloud Tasks can redeliver. Once
@@ -295,7 +309,7 @@ ALTER TABLE public.vibecheck_scrapes
     DROP CONSTRAINT IF EXISTS vibecheck_scrapes_tier_check;
 ALTER TABLE public.vibecheck_scrapes
     ADD CONSTRAINT vibecheck_scrapes_tier_check
-    CHECK (tier IN ('scrape', 'interact'));
+    CHECK (tier IN ('scrape', 'interact', 'browser_html'));
 
 -- Replace UNIQUE(normalized_url) with composite UNIQUE(normalized_url, tier).
 -- Postgres named the original UNIQUE either via the inline column constraint

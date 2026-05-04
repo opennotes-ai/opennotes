@@ -3066,6 +3066,64 @@ async def test_run_pipeline_threads_scrape_step_result_into_extractor(
     assert captured["kwargs"].get("scrape") is sentinel_scrape
 
 
+async def test_run_pipeline_uses_browser_html_cache_without_classifying(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """browser_html jobs trust the operator-submitted cache row and skip the
+    normal Tier 1 quality classifier path, which would reject auth-gated pages.
+    """
+    from src.jobs import orchestrator
+
+    _stub_extract_arm_only(monkeypatch)
+
+    url = "https://example.com/private"
+    cache = _FakeScrapeCache()
+    browser_scrape = CachedScrape(
+        markdown="private page",
+        html="<html><body>private browser html</body></html>",
+        raw_html=None,
+        screenshot=None,
+        links=None,
+        metadata=ScrapeMetadata(title="Private", source_url=url),
+        warning=None,
+        storage_key=None,
+    )
+    cache.store[(url, "browser_html")] = browser_scrape
+    monkeypatch.setattr(orchestrator, "_build_scrape_cache", lambda s: cache)
+    monkeypatch.setattr(orchestrator, "_build_firecrawl_client", lambda s: MagicMock())
+    monkeypatch.setattr(
+        orchestrator, "_build_firecrawl_tier1_client", lambda s: MagicMock()
+    )
+
+    async def no_scrape_step(*args: Any, **kwargs: Any) -> CachedScrape:
+        raise AssertionError("_scrape_step must not run for browser_html jobs")
+
+    async def noop_revalidate(*args: Any, **kwargs: Any) -> None:
+        return None
+
+    captured: dict[str, Any] = {}
+
+    async def capturing_extract(*args: Any, **kwargs: Any):
+        captured["kwargs"] = kwargs
+        raise UtteranceExtractionError("stop here")
+
+    class SourceTypeConn:
+        async def fetchval(self, *args: Any, **kwargs: Any) -> str:
+            return "browser_html"
+
+    monkeypatch.setattr(orchestrator, "_scrape_step", no_scrape_step)
+    monkeypatch.setattr(orchestrator, "_revalidate_final_url", noop_revalidate)
+    monkeypatch.setattr(orchestrator, "extract_utterances", capturing_extract)
+
+    with pytest.raises(orchestrator.TerminalError):
+        await orchestrator._run_pipeline(
+            FakePool(SourceTypeConn()), uuid4(), uuid4(), url, MagicMock()
+        )
+
+    assert cache.gets == [(url, "browser_html")]
+    assert captured["kwargs"].get("scrape") is browser_scrape
+
+
 # ---------------------------------------------------------------------------
 # TASK-1508.04.03 — _STAGE_HEADLINE_SUMMARY between safety_recommendation
 # and finalize. Mirrors the safety_recommendation step coverage above:

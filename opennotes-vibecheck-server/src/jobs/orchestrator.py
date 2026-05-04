@@ -299,6 +299,26 @@ WHERE job_id = $1
   AND attempt_id = $2
 """
 
+_LOAD_JOB_SOURCE_TYPE_SQL = """
+SELECT source_type
+FROM vibecheck_jobs
+WHERE job_id = $1
+  AND attempt_id = $2
+"""
+
+
+async def _load_job_source_type(pool: Any, job_id: UUID, task_attempt: UUID) -> str:
+    try:
+        async with pool.acquire() as conn:
+            source_type = await conn.fetchval(
+                _LOAD_JOB_SOURCE_TYPE_SQL,
+                job_id,
+                task_attempt,
+            )
+    except Exception:
+        return "url"
+    return source_type if isinstance(source_type, str) else "url"
+
 _WRITE_SAFETY_RECOMMENDATION_SQL = """
 UPDATE vibecheck_jobs
 SET safety_recommendation = $2::jsonb,
@@ -1855,6 +1875,7 @@ async def _run_pipeline(  # noqa: PLR0912
     # /v2/extract calls keep their existing retry budget.
     client = _build_firecrawl_client(settings)
     tier1_client = _build_firecrawl_tier1_client(settings)
+    source_type = await _load_job_source_type(pool, job_id, task_attempt)
 
     # Scrape (cache or fresh) via the tiered ladder, then extract.
     #
@@ -1875,14 +1896,23 @@ async def _run_pipeline(  # noqa: PLR0912
         the only difference is the `force_tier` argument threaded into
         `_scrape_step`.
         """
-        try:
-            scrape = await _scrape_step(
-                url, tier1_client, client, scrape_cache, force_tier=force_tier
-            )
-        except (TransientError, TerminalError):
-            raise
-        except Exception as exc:
-            raise TransientError(f"scrape step failed: {exc}") from exc
+        if source_type == "browser_html":
+            scrape = await scrape_cache.get(url, tier="browser_html")
+            if scrape is None:
+                raise TerminalError(
+                    ErrorCode.EXTRACTION_FAILED,
+                    "browser-submitted HTML cache row missing",
+                    detail={"error_host": urlparse(url).hostname},
+                )
+        else:
+            try:
+                scrape = await _scrape_step(
+                    url, tier1_client, client, scrape_cache, force_tier=force_tier
+                )
+            except (TransientError, TerminalError):
+                raise
+            except Exception as exc:
+                raise TransientError(f"scrape step failed: {exc}") from exc
 
         # Post-scrape revalidate: reject redirects into private space.
         await _revalidate_final_url(scrape, url=url, scrape_cache=scrape_cache)

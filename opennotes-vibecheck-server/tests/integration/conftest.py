@@ -93,6 +93,7 @@ CREATE TABLE IF NOT EXISTS vibecheck_jobs (
     sections JSONB NOT NULL DEFAULT '{}'::jsonb,
     sidebar_payload JSONB,
     cached BOOLEAN NOT NULL DEFAULT false,
+    source_type TEXT NOT NULL DEFAULT 'url',
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     heartbeat_at TIMESTAMPTZ,
@@ -114,6 +115,8 @@ CREATE TABLE IF NOT EXISTS vibecheck_jobs (
                 'rate_limited', 'internal'
             )
         ),
+    CONSTRAINT vibecheck_jobs_source_type_check
+        CHECK (source_type IN ('url', 'pdf', 'browser_html')),
     CONSTRAINT vibecheck_jobs_terminal_finished_at
         CHECK (
             (status NOT IN ('done', 'partial', 'failed') AND finished_at IS NULL)
@@ -138,7 +141,7 @@ CREATE TABLE IF NOT EXISTS vibecheck_scrapes (
     scrape_id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     normalized_url TEXT NOT NULL,
     tier TEXT NOT NULL DEFAULT 'scrape'
-        CHECK (tier IN ('scrape', 'interact')),
+        CHECK (tier IN ('scrape', 'interact', 'browser_html')),
     url TEXT NOT NULL,
     final_url TEXT,
     host TEXT NOT NULL,

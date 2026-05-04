@@ -6,7 +6,7 @@ from slowapi.middleware import SlowAPIMiddleware
 
 from src.auth.cloud_tasks_oidc import verify_cloud_tasks_oidc
 from src.monitoring import get_logger
-from src.routes import _schema_anchor, analyze, frame, internal_jobs
+from src.routes import _schema_anchor, analyze, frame, internal_jobs, scrape
 from src.startup import lifespan
 
 logger = get_logger(__name__)
@@ -17,6 +17,7 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)  # py
 app.add_middleware(SlowAPIMiddleware)
 app.include_router(frame.router)
 app.include_router(analyze.router)
+app.include_router(scrape.router)
 app.include_router(internal_jobs.router)
 app.include_router(_schema_anchor.router)
 

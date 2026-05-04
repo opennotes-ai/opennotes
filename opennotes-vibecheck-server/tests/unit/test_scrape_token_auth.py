@@ -1,5 +1,5 @@
-from fastapi import HTTPException
 import pytest
+from fastapi import HTTPException
 
 from src.auth.scrape_token import require_scrape_token
 from src.config import Settings

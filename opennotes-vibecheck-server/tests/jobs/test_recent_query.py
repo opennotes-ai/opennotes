@@ -39,7 +39,7 @@ CREATE TABLE vibecheck_scrapes (
     scrape_id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     normalized_url TEXT NOT NULL,
     tier TEXT NOT NULL DEFAULT 'scrape'
-        CHECK (tier IN ('scrape', 'interact')),
+        CHECK (tier IN ('scrape', 'interact', 'browser_html')),
     url TEXT NOT NULL,
     host TEXT NOT NULL,
     page_kind TEXT NOT NULL DEFAULT 'other',

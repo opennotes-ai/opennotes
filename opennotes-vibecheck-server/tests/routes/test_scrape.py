@@ -42,6 +42,9 @@ CREATE TABLE vibecheck_scrapes (
 );
 CREATE UNIQUE INDEX vibecheck_scrapes_normalized_url_tier_idx
     ON vibecheck_scrapes (normalized_url, tier);
+ALTER TABLE vibecheck_scrapes
+    ADD CONSTRAINT vibecheck_scrapes_tier_check
+    CHECK (tier IN ('scrape', 'interact', 'browser_html'));
 """
 )
 

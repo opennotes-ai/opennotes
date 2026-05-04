@@ -57,7 +57,7 @@ logger = get_logger(__name__)
 
 # TASK-1488.01: ladder tier discriminator. `scrape` = Tier 1 cheap
 # Firecrawl /scrape; `interact` = Tier 2 post-fallback Firecrawl /interact.
-ScrapeTier = Literal["scrape", "interact"]
+ScrapeTier = Literal["scrape", "interact", "browser_html"]
 
 
 def canonical_cache_key(raw_url: str) -> str:
