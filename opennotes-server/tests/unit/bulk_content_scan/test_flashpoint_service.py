@@ -1,6 +1,5 @@
 """Unit tests for FlashpointDetectionService."""
 
-import warnings
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -16,6 +15,8 @@ from src.bulk_content_scan.flashpoint_service import (
 from src.bulk_content_scan.flashpoint_utils import RubricDetector, parse_risk_level
 from src.bulk_content_scan.schemas import BulkScanMessage, ConversationFlashpointMatch
 from src.llm_config.model_id import ModelId
+from src.url_content_scan.tone_schemas import FlashpointMatch
+from src.url_content_scan.utterances.schema import Utterance
 
 
 def make_bulk_scan_message(
@@ -33,6 +34,21 @@ def make_bulk_scan_message(
         author_id=author_id,
         author_username=author_username,
         timestamp=pendulum.now("UTC"),
+    )
+
+
+def make_utterance(
+    utterance_id: str = "utt_1",
+    text: str = "test utterance",
+    author: str | None = "testuser",
+    kind: str = "comment",
+) -> Utterance:
+    """Create a URL-scan utterance for testing."""
+    return Utterance(
+        utterance_id=utterance_id,
+        kind=kind,
+        text=text,
+        author=author,
     )
 
 
@@ -225,6 +241,42 @@ class TestFlashpointDetectionService:
         assert result is not None
         assert result.context_messages == 3
         assert result.risk_level == "Hostile"
+
+    @pytest.mark.asyncio
+    async def test_detect_flashpoint_for_utterance_returns_url_scan_match(self):
+        """Utterance path returns the shared URL-scan FlashpointMatch with utterance_id."""
+        service = FlashpointDetectionService(model="vertex_ai/gemini-2.5-flash")
+
+        mock_prediction = MagicMock(spec=dspy.Prediction)
+        mock_prediction.derailment_score = 85
+        mock_prediction.risk_level = "Hostile"
+        mock_prediction.reasoning = "Escalation markers detected"
+
+        mock_detector = MagicMock()
+        mock_detector.return_value = mock_prediction
+
+        with patch.object(service, "_get_detector", return_value=mock_detector):
+            utterance = make_utterance(
+                utterance_id="utterance-42",
+                text="You keep twisting what I said.",
+                author="speaker-2",
+            )
+            context = [
+                make_utterance(
+                    utterance_id="utterance-41",
+                    text="That's not what I meant.",
+                    author="speaker-1",
+                ),
+            ]
+
+            result = await service.detect_flashpoint_for_utterance(utterance, context)
+
+        assert result is not None
+        assert isinstance(result, FlashpointMatch)
+        assert result.utterance_id == "utterance-42"
+        assert result.derailment_score == 85
+        assert result.risk_level == "Hostile"
+        assert result.context_messages == 1
 
     @pytest.mark.asyncio
     async def test_returns_none_on_transient_error(self):
@@ -521,6 +573,29 @@ class TestGetDetectorLazyInit:
         assert default_path.parent.parent.name == "data"
 
     @patch("dspy.LM")
+    def test_vertex_backend_passes_vertex_project_and_location(
+        self, mock_lm_cls: MagicMock, tmp_path: Path
+    ):
+        """vertex_ai model strings pass Vertex project/location kwargs into dspy.LM."""
+        service = FlashpointDetectionService(
+            model="vertex_ai/gemini-2.5-flash",
+            optimized_model_path=tmp_path / "nonexistent.json",
+        )
+
+        with patch.multiple(
+            "src.bulk_content_scan.flashpoint_service.settings",
+            VERTEXAI_PROJECT="vertex-project",
+            VERTEXAI_LOCATION="us-central1",
+        ):
+            service._get_detector()
+
+        mock_lm_cls.assert_called_once_with(
+            "vertex_ai/gemini-2.5-flash",
+            vertex_project="vertex-project",
+            vertex_location="us-central1",
+        )
+
+    @patch("dspy.LM")
     def test_detector_has_assess_attribute(self, mock_lm_cls: MagicMock, tmp_path: Path):
         """The real RubricDetector created by _get_detector has an assess module."""
         service = FlashpointDetectionService(
@@ -539,97 +614,86 @@ class TestGetFlashpointServiceSingleton:
     """Tests for the get_flashpoint_service singleton factory."""
 
     def test_returns_same_instance(self):
-        """Repeated calls return the same service instance."""
+        """Repeated calls with the same cache key return the same service instance."""
         import src.bulk_content_scan.flashpoint_service as mod
 
-        mod._flashpoint_service = None
+        mod._flashpoint_services = {}
         try:
             svc1 = get_flashpoint_service()
             svc2 = get_flashpoint_service()
             assert svc1 is svc2
         finally:
-            mod._flashpoint_service = None
+            mod._flashpoint_services = {}
 
     def test_accepts_model_on_first_call(self):
         """First call can configure the model."""
         import src.bulk_content_scan.flashpoint_service as mod
 
-        mod._flashpoint_service = None
+        mod._flashpoint_services = {}
         try:
             svc = get_flashpoint_service(model="anthropic/claude-3-haiku")
             assert svc.model == "anthropic/claude-3-haiku"
         finally:
-            mod._flashpoint_service = None
+            mod._flashpoint_services = {}
 
-    def test_warns_when_model_differs_from_singleton(self):
-        """Warning when singleton exists and different model requested."""
+    def test_returns_distinct_instances_for_different_models(self):
+        """Different model keys get distinct service instances."""
         import src.bulk_content_scan.flashpoint_service as mod
 
-        mod._flashpoint_service = None
+        mod._flashpoint_services = {}
         try:
-            get_flashpoint_service(model="openai/gpt-5-mini")
-
-            with warnings.catch_warnings(record=True) as w:
-                warnings.simplefilter("always")
-                svc = get_flashpoint_service(model="anthropic/claude-3-haiku")
-
-            assert len(w) == 1
-            assert "singleton already created" in str(w[0].message)
-            assert "openai/gpt-5-mini" in str(w[0].message)
-            assert "anthropic/claude-3-haiku" in str(w[0].message)
-            assert svc.model == "openai/gpt-5-mini"
+            svc1 = get_flashpoint_service(model="openai/gpt-5-mini")
+            svc2 = get_flashpoint_service(model="anthropic/claude-3-haiku")
+            assert svc1 is not svc2
+            assert svc1.model == "openai/gpt-5-mini"
+            assert svc2.model == "anthropic/claude-3-haiku"
         finally:
-            mod._flashpoint_service = None
+            mod._flashpoint_services = {}
 
-    def test_warns_when_path_differs_from_singleton(self):
-        """Warning when singleton exists and different path requested."""
+    def test_returns_distinct_instances_for_different_optimized_paths(self):
+        """Different optimized model paths get distinct service instances."""
         import src.bulk_content_scan.flashpoint_service as mod
 
-        mod._flashpoint_service = None
+        mod._flashpoint_services = {}
         try:
-            get_flashpoint_service(optimized_model_path=Path("/first/path.json"))
-
-            with warnings.catch_warnings(record=True) as w:
-                warnings.simplefilter("always")
-                svc = get_flashpoint_service(optimized_model_path=Path("/different/path.json"))
-
-            assert len(w) == 1
-            assert "singleton already created" in str(w[0].message)
-            assert svc._optimized_path == Path("/first/path.json")
+            svc1 = get_flashpoint_service(optimized_model_path=Path("/first/path.json"))
+            svc2 = get_flashpoint_service(optimized_model_path=Path("/different/path.json"))
+            assert svc1 is not svc2
+            assert svc1._optimized_path == Path("/first/path.json")
+            assert svc2._optimized_path == Path("/different/path.json")
         finally:
-            mod._flashpoint_service = None
+            mod._flashpoint_services = {}
 
-    def test_no_warning_when_same_model_requested(self):
-        """No warning when singleton exists and same model requested."""
+    def test_returns_same_instance_for_same_explicit_key(self):
+        """Same model/path key reuses the cached instance."""
         import src.bulk_content_scan.flashpoint_service as mod
 
-        mod._flashpoint_service = None
+        mod._flashpoint_services = {}
         try:
-            get_flashpoint_service(model="openai/gpt-5-mini")
-
-            with warnings.catch_warnings(record=True) as w:
-                warnings.simplefilter("always")
-                get_flashpoint_service(model="openai/gpt-5-mini")
-
-            assert len(w) == 0
+            key_path = Path("/shared/path.json")
+            svc1 = get_flashpoint_service(
+                model="openai/gpt-5-mini",
+                optimized_model_path=key_path,
+            )
+            svc2 = get_flashpoint_service(
+                model="openai/gpt-5-mini",
+                optimized_model_path=key_path,
+            )
+            assert svc1 is svc2
         finally:
-            mod._flashpoint_service = None
+            mod._flashpoint_services = {}
 
-    def test_no_warning_when_no_args_on_subsequent_call(self):
-        """No warning when singleton exists and no args are passed."""
+    def test_no_args_uses_same_default_key(self):
+        """Default key is stable across repeated no-arg calls."""
         import src.bulk_content_scan.flashpoint_service as mod
 
-        mod._flashpoint_service = None
+        mod._flashpoint_services = {}
         try:
-            get_flashpoint_service(model="openai/gpt-5-mini")
-
-            with warnings.catch_warnings(record=True) as w:
-                warnings.simplefilter("always")
-                get_flashpoint_service()
-
-            assert len(w) == 0
+            svc1 = get_flashpoint_service()
+            svc2 = get_flashpoint_service()
+            assert svc1 is svc2
         finally:
-            mod._flashpoint_service = None
+            mod._flashpoint_services = {}
 
 
 class TestFlashpointRealisticExamples:
