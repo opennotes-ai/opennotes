@@ -2,20 +2,20 @@ import type { APIEvent } from "@solidjs/start/server";
 import { getAuthorizationHeader, resolveBaseUrl } from "~/lib/api-client.server";
 
 export async function POST(event: APIEvent): Promise<Response> {
-  const backendBase = resolveBaseUrl();
-  const backendUrl = new URL("/api/scrape", backendBase);
-
-  const headers = new Headers();
-  headers.set("content-type", "application/json");
-
-  const incomingAuth = event.request.headers.get("Authorization");
-  if (incomingAuth) headers.set("Authorization", incomingAuth);
-
-  const idToken = await getAuthorizationHeader(backendBase);
-  if (idToken) headers.set("X-Serverless-Authorization", idToken);
-
   let response: Response;
   try {
+    const backendBase = resolveBaseUrl();
+    const backendUrl = new URL("/api/scrape", backendBase);
+
+    const headers = new Headers();
+    headers.set("content-type", "application/json");
+
+    const incomingAuth = event.request.headers.get("Authorization");
+    if (incomingAuth) headers.set("Authorization", incomingAuth);
+
+    const idToken = await getAuthorizationHeader(backendBase);
+    if (idToken) headers.set("X-Serverless-Authorization", idToken);
+
     response = await fetch(backendUrl, {
       method: "POST",
       headers,

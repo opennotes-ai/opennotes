@@ -146,4 +146,31 @@ describe("POST /api/scrape", () => {
     const callHeaders = fetchMock.mock.calls[0]?.[1]?.headers as Headers;
     expect(callHeaders.has("X-Serverless-Authorization")).toBe(false);
   });
+
+  it("returns 502 application/json with upstream_error when getAuthorizationHeader throws", async () => {
+    vi.mocked(getAuthorizationHeader).mockRejectedValue(new Error("identity token fetch timed out"));
+    vi.stubGlobal("fetch", vi.fn());
+
+    const response = await POST(buildEvent({ authorization: "Bearer valid-token" }));
+
+    expect(response.status).toBe(502);
+    expect(response.headers.get("content-type")).toMatch(/^application\/json/);
+    const body = await response.json();
+    expect(body.error_code).toBe("upstream_error");
+  });
+
+  it("does not forward Authorization to backend when caller sends no Authorization header", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ job_id: "x", analyze_url: "/j" }), {
+        status: 201,
+        headers: { "content-type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await POST(buildEvent());
+
+    const callHeaders = fetchMock.mock.calls[0]?.[1]?.headers as Headers;
+    expect(callHeaders.has("Authorization")).toBe(false);
+  });
 });
