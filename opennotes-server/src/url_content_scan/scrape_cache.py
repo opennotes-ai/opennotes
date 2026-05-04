@@ -71,7 +71,10 @@ class ScrapeCache:
         normalized_url = canonical_cache_key(url)
         async with self._session_factory() as session:
             row = await session.get(UrlScanScrape, (normalized_url, tier))
-        if row is None or row.expires_at <= datetime.now(UTC):
+        if row is None:
+            return None
+        if row.expires_at <= datetime.now(UTC):
+            await self.evict(url, tier=tier)
             return None
 
         body = await self._read_body(normalized_url, tier)
@@ -118,6 +121,7 @@ class ScrapeCache:
     ) -> CachedScrape:
         expires_at = datetime.now(UTC) + self._ttl
         storage_key = None
+        old_storage_key: str | None = None
         if screenshot_bytes is not None:
             storage_key = await self._screenshot_store.upload(
                 self._storage_key_for(normalized_url, tier),
@@ -127,6 +131,8 @@ class ScrapeCache:
         session: SessionLike | None = None
         try:
             async with self._session_factory() as session:
+                old_row = await session.get(UrlScanScrape, (normalized_url, tier))
+                old_storage_key = old_row.screenshot_storage_key if old_row is not None else None
                 row = UrlScanScrape(
                     normalized_url=normalized_url,
                     tier=tier,
@@ -152,16 +158,24 @@ class ScrapeCache:
             raise
 
         ttl_seconds = max(1, int((expires_at - datetime.now(UTC)).total_seconds()))
-        await self._redis.setex(
-            self._redis_key(normalized_url, tier),
-            ttl_seconds,
-            json.dumps(
-                {
-                    "markdown": scrape.markdown,
-                    "html": strip_noise(scrape.html),
-                }
-            ).encode("utf-8"),
-        )
+        try:
+            await self._redis.setex(
+                self._redis_key(normalized_url, tier),
+                ttl_seconds,
+                json.dumps(
+                    {
+                        "markdown": scrape.markdown,
+                        "html": strip_noise(scrape.html),
+                    }
+                ).encode("utf-8"),
+            )
+        except Exception:
+            await self._evict_tier(normalized_url, tier)
+            await self._cleanup_uploaded_blob(storage_key)
+            raise
+
+        if old_storage_key and old_storage_key != storage_key:
+            await self._cleanup_uploaded_blob(old_storage_key)
 
         return CachedScrape(
             markdown=scrape.markdown,

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -77,11 +77,14 @@ class _FakeRedis:
     def __init__(self) -> None:
         self.values: dict[str, bytes] = {}
         self.ttls: dict[str, int] = {}
+        self.fail_setex = False
 
     async def get(self, key: str) -> bytes | None:
         return self.values.get(key)
 
     async def setex(self, key: str, ttl: int, value: bytes) -> bool:
+        if self.fail_setex:
+            raise RuntimeError("redis write failed")
         self.values[key] = value
         self.ttls[key] = ttl
         return True
@@ -253,6 +256,22 @@ async def test_get_returns_none_when_redis_body_is_missing_even_if_db_row_exists
 
 
 @pytest.mark.asyncio
+async def test_get_evicts_expired_row_and_screenshot() -> None:
+    cache, redis, _, db_store, bucket = _make_cache()
+    cached = await cache.put("https://example.com/a", _make_scrape(), screenshot_bytes=b"png")
+    assert cached.storage_key is not None
+    row = next(iter(db_store.values()))
+    row.expires_at = datetime.now(UTC) - timedelta(seconds=1)
+
+    got = await cache.get("https://example.com/a")
+
+    assert got is None
+    assert not db_store
+    assert not redis.values
+    assert cached.storage_key in bucket.deletes
+
+
+@pytest.mark.asyncio
 async def test_signed_screenshot_url_uses_cached_storage_key_without_db_requery() -> None:
     cache, _, session, db_store, bucket = _make_cache()
     original = await cache.put("https://example.com/a", _make_scrape(), screenshot_bytes=b"old")
@@ -338,6 +357,36 @@ async def test_evict_without_tier_removes_scrape_and_interact_legs() -> None:
 
 
 @pytest.mark.asyncio
+async def test_put_replaces_existing_screenshot_blob() -> None:
+    cache, _, _, db_store, bucket = _make_cache()
+    first = await cache.put("https://example.com/a", _make_scrape(), screenshot_bytes=b"old")
+    second = await cache.put("https://example.com/a", _make_scrape(), screenshot_bytes=b"new")
+
+    assert first.storage_key is not None
+    assert second.storage_key is not None
+    assert first.storage_key != second.storage_key
+    assert first.storage_key in bucket.deletes
+    assert first.storage_key not in bucket.uploads
+    assert bucket.uploads[second.storage_key] == b"new"
+    row = next(iter(db_store.values()))
+    assert row.screenshot_storage_key == second.storage_key
+
+
+@pytest.mark.asyncio
+async def test_put_without_screenshot_deletes_previous_screenshot_blob() -> None:
+    cache, _, _, db_store, bucket = _make_cache()
+    first = await cache.put("https://example.com/a", _make_scrape(), screenshot_bytes=b"old")
+    second = await cache.put("https://example.com/a", _make_scrape(), screenshot_bytes=None)
+
+    assert first.storage_key is not None
+    assert second.storage_key is None
+    assert first.storage_key in bucket.deletes
+    assert first.storage_key not in bucket.uploads
+    row = next(iter(db_store.values()))
+    assert row.screenshot_storage_key is None
+
+
+@pytest.mark.asyncio
 async def test_put_cleans_up_uploaded_blob_when_db_write_fails() -> None:
     cache, _, session, _, bucket = _make_cache(fail_commit=True)
 
@@ -345,4 +394,17 @@ async def test_put_cleans_up_uploaded_blob_when_db_write_fails() -> None:
         await cache.put("https://example.com/a", _make_scrape(), screenshot_bytes=b"png")
 
     assert session.rollback_calls == 1
+    assert bucket.uploads == {}
+
+
+@pytest.mark.asyncio
+async def test_put_cleans_up_committed_row_and_blob_when_redis_write_fails() -> None:
+    cache, redis, _, db_store, bucket = _make_cache()
+    redis.fail_setex = True
+
+    with pytest.raises(RuntimeError, match="redis write failed"):
+        await cache.put("https://example.com/a", _make_scrape(), screenshot_bytes=b"png")
+
+    assert not db_store
+    assert not redis.values
     assert bucket.uploads == {}
