@@ -21,6 +21,7 @@ ALLOWED_API_KEY_SCOPES = frozenset(
         "community-servers:read",
         "moderation-actions:read",
         "api-keys:create",
+        "vibecheck:submit",
     }
 )
 
