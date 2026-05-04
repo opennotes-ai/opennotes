@@ -273,6 +273,7 @@ async def test_run_job_redelivery_returns_no_op_after_first_run(
         url: str,
         settings: Any,
         *,
+        source_type: str = "url",
         test_fail_slug: str | None = None,
     ) -> None:
         pipeline_runs.append(task_attempt)

@@ -203,7 +203,7 @@ def test_pdf_upload_store_mints_v4_put_url_for_application_pdf(
     assert upload_url == "https://storage.example/upload"
     assert captured["bucket_name"] == "test-pdf-bucket"
     assert captured["blob_key"] == "pdf-key"
-    assert captured["refresh_request"] is not None
+    assert "refresh_request" not in captured
     assert captured["signed_url_kwargs"] == {
         "version": "v4",
         "expiration": timedelta(seconds=123),

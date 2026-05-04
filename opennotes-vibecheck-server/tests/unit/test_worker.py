@@ -292,6 +292,7 @@ async def test_claim_succeeds_and_handler_runs_pipeline(
         url: str,
         settings: Any,
         *,
+        source_type: str = "url",
         test_fail_slug: str | None = None,
     ) -> None:
         invoked_with["job_id"] = job_id
@@ -349,6 +350,7 @@ async def test_heartbeat_bumps_during_long_pipeline(
         url: str,
         settings: Any,
         *,
+        source_type: str = "url",
         test_fail_slug: str | None = None,
     ) -> None:
         # Sleep long enough for multiple heartbeat intervals.
@@ -394,6 +396,7 @@ async def test_transient_error_resets_and_returns_503(
         url: str,
         settings: Any,
         *,
+        source_type: str = "url",
         test_fail_slug: str | None = None,
     ) -> None:
         raise orchestrator.TransientError("firecrawl 503")
@@ -439,6 +442,7 @@ async def test_terminal_error_marks_failed_and_returns_200(
         url: str,
         settings: Any,
         *,
+        source_type: str = "url",
         test_fail_slug: str | None = None,
     ) -> None:
         raise orchestrator.TerminalError(
@@ -483,6 +487,7 @@ async def test_unclassified_exception_treated_as_transient(
         url: str,
         settings: Any,
         *,
+        source_type: str = "url",
         test_fail_slug: str | None = None,
     ) -> None:
         raise RuntimeError("something unexpected")
