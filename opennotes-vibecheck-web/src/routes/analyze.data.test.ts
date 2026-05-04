@@ -6,14 +6,12 @@ const {
   retrySectionMock,
   clientGetMock,
   requestPdfUploadUrlMock,
-  uploadPdfToSignedUrlMock,
   requestPdfAnalysisMock,
 } = vi.hoisted(() => ({
   analyzeUrlMock: vi.fn(),
   retrySectionMock: vi.fn(),
   clientGetMock: vi.fn(),
   requestPdfUploadUrlMock: vi.fn(),
-  uploadPdfToSignedUrlMock: vi.fn(),
   requestPdfAnalysisMock: vi.fn(),
 }));
 
@@ -26,7 +24,6 @@ vi.mock("~/lib/api-client.server", async () => {
     analyzeUrl: analyzeUrlMock,
     retrySection: retrySectionMock,
     requestPdfUploadUrl: requestPdfUploadUrlMock,
-    uploadPdfToSignedUrl: uploadPdfToSignedUrlMock,
     requestPdfAnalysis: requestPdfAnalysisMock,
     getClient: () => ({ GET: clientGetMock, POST: vi.fn() }),
   };
@@ -71,7 +68,6 @@ describe("analyzeAction", () => {
     retrySectionMock.mockReset();
     clientGetMock.mockReset();
     requestPdfUploadUrlMock.mockReset();
-    uploadPdfToSignedUrlMock.mockReset();
     requestPdfAnalysisMock.mockReset();
     vi.resetModules();
   });
@@ -251,12 +247,11 @@ describe("analyzePdfAction", () => {
 
   beforeEach(() => {
     requestPdfUploadUrlMock.mockReset();
-    uploadPdfToSignedUrlMock.mockReset();
     requestPdfAnalysisMock.mockReset();
     vi.resetModules();
   });
 
-  it("uploads PDF, calls /api/analyze-pdf, and redirects to /analyze?job=<id>", async () => {
+  it("calls requestPdfUploadUrl then requestPdfAnalysis and redirects to /analyze?job=<id>", async () => {
     requestPdfUploadUrlMock.mockResolvedValue({
       gcs_key: "gcs-key",
       upload_url: "https://storage.example.com/upload",
@@ -273,12 +268,7 @@ describe("analyzePdfAction", () => {
 
     expect(location).toBe("/analyze?job=pdf-job-1");
     expect(requestPdfUploadUrlMock).toHaveBeenCalledTimes(1);
-    expect(uploadPdfToSignedUrlMock).toHaveBeenCalledTimes(1);
     expect(requestPdfAnalysisMock).toHaveBeenCalledWith("gcs-key", "policy.pdf");
-    expect(uploadPdfToSignedUrlMock).toHaveBeenCalledWith(
-      "https://storage.example.com/upload",
-      file,
-    );
   });
 
   it("redirects home without backend calls when no PDF file is present", async () => {
@@ -286,7 +276,6 @@ describe("analyzePdfAction", () => {
 
     expect(response.headers.get("Location")).toBe("/?error=invalid_url");
     expect(requestPdfUploadUrlMock).not.toHaveBeenCalled();
-    expect(uploadPdfToSignedUrlMock).not.toHaveBeenCalled();
     expect(requestPdfAnalysisMock).not.toHaveBeenCalled();
   });
 
@@ -297,7 +286,6 @@ describe("analyzePdfAction", () => {
 
     expect(response.headers.get("Location")).toBe("/?error=invalid_url");
     expect(requestPdfUploadUrlMock).not.toHaveBeenCalled();
-    expect(uploadPdfToSignedUrlMock).not.toHaveBeenCalled();
     expect(requestPdfAnalysisMock).not.toHaveBeenCalled();
   });
 
@@ -306,7 +294,6 @@ describe("analyzePdfAction", () => {
 
     expect(response.headers.get("Location")).toBe("/?error=pdf_too_large");
     expect(requestPdfUploadUrlMock).not.toHaveBeenCalled();
-    expect(uploadPdfToSignedUrlMock).not.toHaveBeenCalled();
     expect(requestPdfAnalysisMock).not.toHaveBeenCalled();
   });
 
@@ -316,7 +303,6 @@ describe("analyzePdfAction", () => {
       gcs_key: "gcs-key",
       upload_url: "https://storage.example.com/upload",
     });
-    uploadPdfToSignedUrlMock.mockResolvedValue(undefined);
     requestPdfAnalysisMock.mockRejectedValue(
       new VibecheckApiError("too_large", 413, {
         error_code: "pdf_too_large" as never,
@@ -334,7 +320,6 @@ describe("analyzePdfAction", () => {
       gcs_key: "gcs-key",
       upload_url: "https://storage.example.com/upload",
     });
-    uploadPdfToSignedUrlMock.mockResolvedValue(undefined);
     requestPdfAnalysisMock.mockRejectedValue(
       new VibecheckApiError("bad pdf", 400, {
         error_code: "pdf_extraction_failed",
@@ -346,6 +331,73 @@ describe("analyzePdfAction", () => {
     expect(location).toBe("/?error=pdf_extraction_failed");
     expect(location).not.toContain("pending_error=");
     expect(location).not.toContain("paper.pdf");
+  });
+
+  it("rate limits PDF uploads when over threshold", async () => {
+    let currentRequest: Request | null = null;
+    vi.doMock("solid-js/web", async () => {
+      const actual = await vi.importActual<typeof import("solid-js/web")>(
+        "solid-js/web",
+      );
+      return {
+        ...actual,
+        getRequestEvent: () =>
+          currentRequest
+            ? { request: currentRequest, response: new Response() }
+            : undefined,
+      };
+    });
+    process.env.NODE_ENV = "production";
+    process.env.VIBECHECK_RATE_LIMIT_DISABLED = "0";
+    process.env.VIBECHECK_RATE_LIMIT_PER_HOUR = "2";
+    const { _resetRateLimitForTesting } = await import(
+      "~/lib/rate-limit.server"
+    );
+    _resetRateLimitForTesting();
+    requestPdfUploadUrlMock.mockResolvedValue({
+      gcs_key: "gcs-key",
+      upload_url: "https://storage.example.com/upload",
+    });
+    requestPdfAnalysisMock.mockResolvedValue({
+      job_id: "pdf-rl-job",
+      status: "pending",
+      cached: false,
+    });
+
+    const file = new File([new Uint8Array(16)], "doc.pdf", {
+      type: "application/pdf",
+    });
+    const headers = new Headers({ "x-forwarded-for": "203.0.113.42, 10.0.0.1" });
+    const makeRequest = () =>
+      new Request("https://vibecheck.opennotes.ai/", {
+        method: "POST",
+        headers,
+      });
+
+    const { resolveAnalyzePdfRedirect } = await import("./analyze.data");
+
+    const call = async () => {
+      currentRequest = makeRequest();
+      const fd = new FormData();
+      fd.set("pdf", file);
+      try {
+        await resolveAnalyzePdfRedirect(fd);
+        throw new Error("did not redirect");
+      } catch (thrown) {
+        if (thrown instanceof Response) return thrown;
+        throw thrown;
+      }
+    };
+
+    const r1 = await call();
+    expect(r1.headers.get("Location")).toContain("/analyze?job=");
+    const r2 = await call();
+    expect(r2.headers.get("Location")).toContain("/analyze?job=");
+    const r3 = await call();
+    expect(r3.headers.get("Location")).toContain("pending_error=rate_limited");
+
+    delete process.env.VIBECHECK_RATE_LIMIT_PER_HOUR;
+    delete process.env.VIBECHECK_RATE_LIMIT_DISABLED;
   });
 });
 
@@ -683,6 +735,29 @@ describe("getArchiveProbe and getScreenshot split queries", () => {
     expect(await getArchiveProbe("https://news.example.com/a")).toEqual({
       ok: false,
       kind: "transient_error",
+    });
+  });
+
+  it("getArchiveProbe accepts responses without has_archive field (rolling deploy compat — TASK-1498.23)", async () => {
+    clientGetMock.mockResolvedValueOnce({
+      data: {
+        can_iframe: true,
+        blocking_header: null,
+        csp_frame_ancestors: null,
+      },
+      error: null,
+    });
+
+    const { getArchiveProbe } = await import("./analyze.data");
+
+    const result = await getArchiveProbe("https://news.example.com/a");
+    expect(result).toEqual({
+      ok: true,
+      has_archive: false,
+      archived_preview_url: null,
+      can_iframe: true,
+      blocking_header: null,
+      csp_frame_ancestors: null,
     });
   });
 

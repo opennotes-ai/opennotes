@@ -442,6 +442,30 @@ describe("AnalyzePage route", () => {
     );
   });
 
+  it("upload_not_found in ?pending_error renders a JobFailureCard (not generic error) — TASK-1498.35", async () => {
+    renderAt("/analyze?pending_error=upload_not_found&url=doc.pdf");
+
+    const failureCard = await screen.findByTestId("job-failure-card");
+    expect(failureCard.getAttribute("data-error-code")).toBe("upload_not_found");
+    expect(screen.queryByTestId("analyze-empty")).toBeNull();
+  });
+
+  it("upload_key_invalid in ?pending_error renders a JobFailureCard — TASK-1498.35", async () => {
+    renderAt("/analyze?pending_error=upload_key_invalid&url=doc.pdf");
+
+    const failureCard = await screen.findByTestId("job-failure-card");
+    expect(failureCard.getAttribute("data-error-code")).toBe("upload_key_invalid");
+    expect(screen.queryByTestId("analyze-empty")).toBeNull();
+  });
+
+  it("invalid_pdf_type in ?pending_error renders a JobFailureCard — TASK-1498.35", async () => {
+    renderAt("/analyze?pending_error=invalid_pdf_type&url=doc.pdf");
+
+    const failureCard = await screen.findByTestId("job-failure-card");
+    expect(failureCard.getAttribute("data-error-code")).toBe("invalid_pdf_type");
+    expect(screen.queryByTestId("analyze-empty")).toBeNull();
+  });
+
   it("renders CachedBadge with a timestamp when JobState.cached=true and sidebar_payload.cached_at is set (even if payload.cached is false)", async () => {
     renderAt("/analyze?job=job-cache&c=1&url=https://news.example.com/a");
 

@@ -3,7 +3,7 @@ import { useSearchParams, useSubmission } from "@solidjs/router";
 import { Title } from "@solidjs/meta";
 import PdfUpload from "~/components/PdfUpload";
 import UrlInput from "~/components/UrlInput";
-import { analyzeAction, analyzePdfAction } from "./analyze.data";
+import { analyzeAction, submitPdfAnalysisAction } from "./analyze.data";
 
 function errorLabelFor(
   code: string | undefined,
@@ -36,7 +36,7 @@ function errorLabelFor(
 export default function HomePage() {
   const [searchParams] = useSearchParams();
   const urlSubmission = useSubmission(analyzeAction);
-  const pdfSubmission = useSubmission(analyzePdfAction);
+  const pdfSubmission = useSubmission(submitPdfAnalysisAction);
 
   const errorMessage = () =>
     errorLabelFor(
@@ -64,7 +64,6 @@ export default function HomePage() {
             autofocus
           />
           <PdfUpload
-            action={analyzePdfAction}
             pending={pdfSubmission.pending}
           />
         </div>

@@ -1,4 +1,5 @@
 import { createSignal, Show, type JSX } from "solid-js";
+import { useAction } from "@solidjs/router";
 import { Input } from "@opennotes/ui/components/ui/input";
 import { Button } from "@opennotes/ui/components/ui/button";
 import {
@@ -6,45 +7,89 @@ import {
   isPdfFile,
   isPdfTooLarge,
 } from "~/lib/pdf-constraints";
+import {
+  requestUploadUrlAction,
+  submitPdfAnalysisAction,
+} from "~/routes/analyze.data";
 
 export interface PdfUploadProps {
-  action: unknown;
   pending?: boolean;
 }
 
+type UploadStep = "idle" | "getting-url" | "uploading" | "analyzing";
+
 const FIELD_SIZE = "h-11 text-base";
+
+const STEP_LABEL: Record<UploadStep, string> = {
+  idle: "Upload PDF",
+  "getting-url": "Preparing...",
+  uploading: "Uploading...",
+  analyzing: "Analyzing...",
+};
 
 export default function PdfUpload(props: PdfUploadProps): JSX.Element {
   const [selectedPdf, setSelectedPdf] = createSignal<File | null>(null);
   const [error, setError] = createSignal<string | null>(null);
+  const [step, setStep] = createSignal<UploadStep>("idle");
 
-  const handleSubmit: JSX.EventHandler<HTMLFormElement, SubmitEvent> = (
+  const requestUrl = useAction(requestUploadUrlAction);
+  const submitAnalysis = useAction(submitPdfAnalysisAction);
+
+  const isWorking = () => step() !== "idle" || props.pending;
+
+  const handleSubmit: JSX.EventHandler<HTMLFormElement, SubmitEvent> = async (
     event,
   ) => {
+    event.preventDefault();
+
     const file = selectedPdf();
     if (!file) {
-      event.preventDefault();
       setError("Choose a PDF file to analyze.");
       return;
     }
     if (!isPdfFile(file)) {
-      event.preventDefault();
       setError("Please choose a PDF file.");
       return;
     }
     if (isPdfTooLarge(file)) {
-      event.preventDefault();
       setError("PDF must be 50 MB or less.");
       return;
     }
     setError(null);
+
+    try {
+      setStep("getting-url");
+      const upload = await requestUrl();
+      if (!upload || typeof upload !== "object" || !("gcs_key" in upload)) {
+        throw new Error("Failed to get upload URL");
+      }
+      const { gcs_key, upload_url } = upload as {
+        gcs_key: string;
+        upload_url: string;
+      };
+
+      setStep("uploading");
+      const { uploadPdfToSignedUrl } = await import("~/lib/pdf-upload");
+      await uploadPdfToSignedUrl(upload_url, file);
+
+      setStep("analyzing");
+      const fd = new FormData();
+      fd.set("gcs_key", gcs_key);
+      fd.set("filename", file.name);
+      await submitAnalysis(fd);
+    } catch (err: unknown) {
+      setStep("idle");
+      if (err instanceof Error) {
+        setError(err.message);
+      } else {
+        setError("Something went wrong. Please try again.");
+      }
+    }
   };
 
   return (
     <form
-      action={props.action as string | undefined}
       method="post"
-      enctype="multipart/form-data"
       onSubmit={handleSubmit}
       class="mx-auto flex w-full max-w-xl flex-col gap-3"
       novalidate
@@ -67,14 +112,15 @@ export default function PdfUpload(props: PdfUploadProps): JSX.Element {
           aria-invalid={error() ? "true" : undefined}
           aria-describedby={error() ? "vibecheck-pdf-error" : undefined}
           class={`${FIELD_SIZE} cursor-pointer px-4 shadow-xs`}
-          disabled={props.pending}
+          disabled={isWorking()}
         />
         <Button
           type="submit"
-          disabled={props.pending}
+          disabled={isWorking()}
+          data-testid="vibecheck-pdf-submit"
           class={`${FIELD_SIZE} px-4`}
         >
-          {props.pending ? "Uploading..." : "Upload PDF"}
+          {STEP_LABEL[step()] ?? "Upload PDF"}
         </Button>
       </div>
       <p class="text-xs text-muted-foreground" data-testid="pdf-upload-copy">

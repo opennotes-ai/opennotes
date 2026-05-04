@@ -12,7 +12,7 @@ export type SectionState = components["schemas"]["SectionState"];
 export type JobStatus = components["schemas"]["JobStatus"];
 export type ErrorCode = components["schemas"]["ErrorCode"];
 export type RetryResponse = components["schemas"]["RetryResponse"];
-export type PublicErrorCode = ErrorCode | "pdf_too_large" | "pdf_extraction_failed";
+export type PublicErrorCode = ErrorCode | "pdf_too_large" | "pdf_extraction_failed" | "upload_key_invalid" | "upload_not_found" | "invalid_pdf_type";
 
 export interface UploadPdfResponse {
   gcs_key: string;
@@ -322,35 +322,6 @@ async function requestBackendJson<T>(
   return { data: parsed as T, response };
 }
 
-export async function uploadPdfToSignedUrl(
-  uploadUrl: string,
-  file: File,
-): Promise<void> {
-  let request = new Request(uploadUrl, {
-    method: "PUT",
-    headers: {
-      "content-type": "application/pdf",
-      // Browser-side fetch uses the File's type by default; explicitly setting this
-      // header for backend consistency and to match the expected contract.
-    },
-    body: file,
-  });
-
-  let response: Response;
-  try {
-    response = await fetchWithRetry(request);
-  } catch (error) {
-    normalizeTransportError(error, "PUT to PDF upload URL");
-  }
-  if (!response.ok) {
-    throw new VibecheckApiError(
-      "PDF upload to signed URL failed",
-      response.status,
-      parseErrorBody(await response.text().catch(() => "")),
-      response.headers,
-    );
-  }
-}
 
 export async function requestPdfUploadUrl(): Promise<UploadPdfResponse> {
   const { data, response } = await requestBackendJson<UploadPdfResponse>(
