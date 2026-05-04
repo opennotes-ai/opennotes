@@ -8,6 +8,22 @@ from src.url_content_scan.normalize import canonical_cache_key, normalize_url
 from src.utils.url_security import InvalidURL, revalidate_redirect_target, validate_public_http_url
 
 
+def _addrinfo_ipv4(ip: str) -> list[object]:
+    return [(socket.AF_INET, socket.SOCK_STREAM, 0, "", (ip, 0))]
+
+
+def _addrinfo_ipv6(ip: str) -> list[object]:
+    return [(socket.AF_INET6, socket.SOCK_STREAM, 0, "", (ip, 0, 0, 0))]
+
+
+@pytest.fixture(autouse=True)
+def stub_dns_resolution(monkeypatch: pytest.MonkeyPatch) -> None:
+    def _resolve_public(*_args: object, **_kwargs: object) -> list[object]:
+        return _addrinfo_ipv4("8.8.8.8")
+
+    monkeypatch.setattr(socket, "getaddrinfo", _resolve_public)
+
+
 class TestValidUrls:
     @pytest.mark.parametrize(
         "url",
@@ -127,10 +143,9 @@ class TestDnsResolutionRejection:
     def test_hostname_resolving_to_private_ipv4_raises_resolved_private_ip(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        def _resolve_to_private(*_args: object, **_kwargs: object) -> list[object]:
-            return [(socket.AF_INET, socket.SOCK_STREAM, 0, "", ("10.0.0.5", 0))]
-
-        monkeypatch.setattr(socket, "getaddrinfo", _resolve_to_private)
+        monkeypatch.setattr(
+            socket, "getaddrinfo", lambda *_args, **_kwargs: _addrinfo_ipv4("10.0.0.5")
+        )
         with pytest.raises(InvalidURL) as exc_info:
             validate_public_http_url("http://internal.example.com/")
         assert exc_info.value.reason == "resolved_private_ip"
@@ -138,12 +153,42 @@ class TestDnsResolutionRejection:
     def test_hostname_resolving_to_metadata_ip_raises_resolved_private_ip(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        def _resolve_to_metadata(*_args: object, **_kwargs: object) -> list[object]:
-            return [(socket.AF_INET, socket.SOCK_STREAM, 0, "", ("169.254.169.254", 0))]
-
-        monkeypatch.setattr(socket, "getaddrinfo", _resolve_to_metadata)
+        monkeypatch.setattr(
+            socket, "getaddrinfo", lambda *_args, **_kwargs: _addrinfo_ipv4("169.254.169.254")
+        )
         with pytest.raises(InvalidURL) as exc_info:
             revalidate_redirect_target("http://evil.example.com/")
+        assert exc_info.value.reason == "resolved_private_ip"
+
+    def test_hostname_resolving_to_ipv6_ula_raises_resolved_private_ip(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(
+            socket, "getaddrinfo", lambda *_args, **_kwargs: _addrinfo_ipv6("fd00::1")
+        )
+        with pytest.raises(InvalidURL) as exc_info:
+            validate_public_http_url("http://dual-stack.example.com/")
+        assert exc_info.value.reason == "resolved_private_ip"
+
+    @pytest.mark.parametrize(
+        "answers",
+        [
+            [_addrinfo_ipv4("8.8.8.8"), _addrinfo_ipv4("10.0.0.5")],
+            [_addrinfo_ipv6("2606:4700:4700::1111"), _addrinfo_ipv6("fd00::1")],
+            [_addrinfo_ipv4("8.8.8.8"), _addrinfo_ipv6("fd00::1")],
+        ],
+    )
+    def test_hostname_with_mixed_public_and_private_records_rejects(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        answers: list[list[object]],
+    ) -> None:
+        def _resolve_mixed(*_args: object, **_kwargs: object) -> list[object]:
+            return [record for group in answers for record in group]
+
+        monkeypatch.setattr(socket, "getaddrinfo", _resolve_mixed)
+        with pytest.raises(InvalidURL) as exc_info:
+            validate_public_http_url("http://mixed.example.com/")
         assert exc_info.value.reason == "resolved_private_ip"
 
     def test_unresolvable_hostname_raises_unresolvable_host(
