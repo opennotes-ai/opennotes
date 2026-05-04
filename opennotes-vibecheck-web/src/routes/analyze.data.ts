@@ -1,5 +1,6 @@
 import { action, query, redirect } from "@solidjs/router";
 import type { JobState, SectionSlug } from "~/lib/api-client.server";
+import { isPdfFile, isPdfTooLarge } from "~/lib/pdf-constraints";
 
 interface FrameCompatResponse {
   can_iframe: boolean;
@@ -300,6 +301,66 @@ export const analyzeAction = action(async (formData: FormData) => {
   "use server";
   await resolveAnalyzeRedirect(formData);
 }, "vibecheck-analyze");
+
+export async function resolveAnalyzePdfRedirect(formData: FormData): Promise<never> {
+  "use server";
+  const {
+    uploadPdfToSignedUrl,
+    requestPdfUploadUrl,
+    requestPdfAnalysis,
+    VibecheckApiError,
+    clampErrorCode,
+  } = await import("~/lib/api-client.server");
+  const rawFile = formData.get("pdf");
+  if (!(rawFile instanceof File)) {
+    throw redirect("/?error=invalid_url");
+  }
+  if (!isPdfFile(rawFile)) {
+    throw redirect("/?error=invalid_url");
+  }
+  if (isPdfTooLarge(rawFile)) {
+    throw redirect("/?error=pdf_too_large");
+  }
+
+  let upload;
+  try {
+    upload = await requestPdfUploadUrl();
+    await uploadPdfToSignedUrl(upload.upload_url, rawFile);
+    const response = await requestPdfAnalysis(upload.gcs_key, rawFile.name);
+    const qs = new URLSearchParams({ job: response.job_id });
+    if (response.cached) qs.set("c", "1");
+    throw redirect(`/analyze?${qs.toString()}`);
+  } catch (err: unknown) {
+    if (!(err instanceof VibecheckApiError)) {
+      throw err;
+    }
+    const code = clampErrorCode(err.errorBody?.error_code);
+    if (code === "pdf_too_large") {
+      throw redirect("/?error=pdf_too_large");
+    }
+    if (code === "invalid_url") {
+      throw redirect("/?error=invalid_url");
+    }
+    if (code === "pdf_extraction_failed") {
+      const qs = redirectParams({
+        pending_error: code,
+        url: rawFile.name,
+      });
+      throw redirect(`/analyze?${qs}`);
+    }
+
+    const qs = redirectParams({
+      pending_error: code ?? "upstream_error",
+      url: rawFile.name,
+    });
+    throw redirect(`/analyze?${qs}`);
+  }
+}
+
+export const analyzePdfAction = action(async (formData: FormData) => {
+  "use server";
+  await resolveAnalyzePdfRedirect(formData);
+}, "vibecheck-analyze-pdf");
 
 export async function pollJobState(jobId: string): Promise<JobState> {
   "use server";

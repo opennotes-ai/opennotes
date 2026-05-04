@@ -1,9 +1,20 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
+import { MAX_PDF_BYTES } from "~/lib/pdf-constraints";
 
-const { analyzeUrlMock, retrySectionMock, clientGetMock } = vi.hoisted(() => ({
+const {
+  analyzeUrlMock,
+  retrySectionMock,
+  clientGetMock,
+  requestPdfUploadUrlMock,
+  uploadPdfToSignedUrlMock,
+  requestPdfAnalysisMock,
+} = vi.hoisted(() => ({
   analyzeUrlMock: vi.fn(),
   retrySectionMock: vi.fn(),
   clientGetMock: vi.fn(),
+  requestPdfUploadUrlMock: vi.fn(),
+  uploadPdfToSignedUrlMock: vi.fn(),
+  requestPdfAnalysisMock: vi.fn(),
 }));
 
 vi.mock("~/lib/api-client.server", async () => {
@@ -14,6 +25,9 @@ vi.mock("~/lib/api-client.server", async () => {
     ...actual,
     analyzeUrl: analyzeUrlMock,
     retrySection: retrySectionMock,
+    requestPdfUploadUrl: requestPdfUploadUrlMock,
+    uploadPdfToSignedUrl: uploadPdfToSignedUrlMock,
+    requestPdfAnalysis: requestPdfAnalysisMock,
     getClient: () => ({ GET: clientGetMock, POST: vi.fn() }),
   };
 });
@@ -31,11 +45,34 @@ async function callAction(url: string): Promise<Response> {
   }
 }
 
+async function callPdfAction(file?: File): Promise<Response> {
+  const { resolveAnalyzePdfRedirect } = await import("./analyze.data");
+  const fd = new FormData();
+  if (file) {
+    fd.set("pdf", file);
+  }
+  try {
+    await resolveAnalyzePdfRedirect(fd);
+    throw new Error("resolveAnalyzePdfRedirect did not redirect");
+  } catch (thrown) {
+    if (thrown instanceof Response) return thrown;
+    throw thrown;
+  }
+}
+
+async function callPdfActionAsFile(name = "notes.pdf"): Promise<Response> {
+  const file = new File([new Uint8Array(16)], name, { type: "application/pdf" });
+  return callPdfAction(file);
+}
+
 describe("analyzeAction", () => {
   beforeEach(() => {
     analyzeUrlMock.mockReset();
     retrySectionMock.mockReset();
     clientGetMock.mockReset();
+    requestPdfUploadUrlMock.mockReset();
+    uploadPdfToSignedUrlMock.mockReset();
+    requestPdfAnalysisMock.mockReset();
     vi.resetModules();
   });
 
@@ -205,6 +242,110 @@ describe("analyzeAction", () => {
     const location = response.headers.get("Location") ?? "";
     expect(location).toContain("pending_error=rate_limited");
     expect(location).toContain(`url=${encodeURIComponent(url)}`);
+  });
+});
+
+describe("analyzePdfAction", () => {
+  const createPdf = (size: number, name = "policy.pdf") =>
+    new File([new Uint8Array(size)], name, { type: "application/pdf" });
+
+  beforeEach(() => {
+    requestPdfUploadUrlMock.mockReset();
+    uploadPdfToSignedUrlMock.mockReset();
+    requestPdfAnalysisMock.mockReset();
+    vi.resetModules();
+  });
+
+  it("uploads PDF, calls /api/analyze-pdf, and redirects to /analyze?job=<id>", async () => {
+    requestPdfUploadUrlMock.mockResolvedValue({
+      gcs_key: "gcs-key",
+      upload_url: "https://storage.example.com/upload",
+    });
+    requestPdfAnalysisMock.mockResolvedValue({
+      job_id: "pdf-job-1",
+      status: "pending",
+      cached: false,
+    });
+
+    const file = createPdf(12);
+    const response = await callPdfAction(file);
+    const location = response.headers.get("Location") ?? "";
+
+    expect(location).toBe("/analyze?job=pdf-job-1");
+    expect(requestPdfUploadUrlMock).toHaveBeenCalledTimes(1);
+    expect(uploadPdfToSignedUrlMock).toHaveBeenCalledTimes(1);
+    expect(requestPdfAnalysisMock).toHaveBeenCalledWith("gcs-key", "policy.pdf");
+    expect(uploadPdfToSignedUrlMock).toHaveBeenCalledWith(
+      "https://storage.example.com/upload",
+      file,
+    );
+  });
+
+  it("redirects home without backend calls when no PDF file is present", async () => {
+    const response = await callPdfAction();
+
+    expect(response.headers.get("Location")).toBe("/?error=invalid_url");
+    expect(requestPdfUploadUrlMock).not.toHaveBeenCalled();
+    expect(uploadPdfToSignedUrlMock).not.toHaveBeenCalled();
+    expect(requestPdfAnalysisMock).not.toHaveBeenCalled();
+  });
+
+  it("redirects home without backend calls for non-PDF files", async () => {
+    const response = await callPdfAction(
+      new File(["hello"], "notes.txt", { type: "text/plain" }),
+    );
+
+    expect(response.headers.get("Location")).toBe("/?error=invalid_url");
+    expect(requestPdfUploadUrlMock).not.toHaveBeenCalled();
+    expect(uploadPdfToSignedUrlMock).not.toHaveBeenCalled();
+    expect(requestPdfAnalysisMock).not.toHaveBeenCalled();
+  });
+
+  it("redirects home without backend calls for oversized PDFs", async () => {
+    const response = await callPdfAction(createPdf(MAX_PDF_BYTES + 1));
+
+    expect(response.headers.get("Location")).toBe("/?error=pdf_too_large");
+    expect(requestPdfUploadUrlMock).not.toHaveBeenCalled();
+    expect(uploadPdfToSignedUrlMock).not.toHaveBeenCalled();
+    expect(requestPdfAnalysisMock).not.toHaveBeenCalled();
+  });
+
+  it("maps pdf_too_large backend error to home error route", async () => {
+    const { VibecheckApiError } = await import("~/lib/api-client.server");
+    requestPdfUploadUrlMock.mockResolvedValue({
+      gcs_key: "gcs-key",
+      upload_url: "https://storage.example.com/upload",
+    });
+    uploadPdfToSignedUrlMock.mockResolvedValue(undefined);
+    requestPdfAnalysisMock.mockRejectedValue(
+      new VibecheckApiError("too_large", 413, {
+        error_code: "pdf_too_large" as never,
+      }),
+    );
+
+    const response = await callPdfAction(createPdf(16));
+    const location = response.headers.get("Location") ?? "";
+    expect(location).toBe("/?error=pdf_too_large");
+  });
+
+  it("maps pdf_extraction_failed backend error to pending analyze error", async () => {
+    const { VibecheckApiError } = await import("~/lib/api-client.server");
+    requestPdfUploadUrlMock.mockResolvedValue({
+      gcs_key: "gcs-key",
+      upload_url: "https://storage.example.com/upload",
+    });
+    uploadPdfToSignedUrlMock.mockResolvedValue(undefined);
+    requestPdfAnalysisMock.mockRejectedValue(
+      new VibecheckApiError("bad pdf", 400, {
+        error_code: "pdf_extraction_failed",
+      }),
+    );
+
+    const response = await callPdfAction(createPdf(16, "paper.pdf"));
+    const location = response.headers.get("Location") ?? "";
+    expect(location).toContain("pending_error=pdf_extraction_failed");
+    expect(location).toContain(`url=${encodeURIComponent("paper.pdf")}`);
+    expect(location).not.toContain("/?error=pdf_extraction_failed");
   });
 });
 

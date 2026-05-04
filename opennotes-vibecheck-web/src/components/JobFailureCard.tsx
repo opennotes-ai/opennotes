@@ -1,7 +1,6 @@
 import { For, Show, type JSX } from "solid-js";
-import { A } from "@solidjs/router";
 import { Button } from "@opennotes/ui/components/ui/button";
-import type { ErrorCode } from "~/lib/api-client.server";
+import type { PublicErrorCode } from "~/lib/api-client.server";
 import type { components } from "~/lib/generated-types";
 import { analyzeAction } from "~/routes/analyze.data";
 
@@ -9,14 +8,14 @@ type WebRiskFinding = components["schemas"]["WebRiskFinding"];
 
 export interface JobFailureCardProps {
   url: string;
-  errorCode: ErrorCode | null;
+  errorCode: PublicErrorCode | null;
   errorHost?: string | null;
   webRiskFindings?: WebRiskFinding[];
   onTryAgain?: () => void;
 }
 
 function copyFor(
-  code: ErrorCode | null,
+  code: PublicErrorCode | null,
   errorHost: string | null | undefined,
 ): string {
   switch (code) {
@@ -30,6 +29,10 @@ function copyFor(
       return "The analyzer couldn't reach that page.";
     case "extraction_failed":
       return "We couldn't read this page's content.";
+    case "pdf_too_large":
+      return "This PDF is too large to analyze.";
+    case "pdf_extraction_failed":
+      return "We couldn't extract text from this PDF.";
     case "timeout":
       return "The analysis took too long and was cancelled.";
     case "rate_limited":
@@ -46,9 +49,9 @@ function copyFor(
 // the BE's `error_message` prose, which leaked vendor implementation
 // details (e.g. raw Firecrawl 403 envelopes) into customer-facing UI.
 // Decision recorded in the task: friendly-replace at the FE for every
-// `ErrorCode`. Backend `error_message` stays populated for ops/log
+// `PublicErrorCode`. Backend `error_message` stays populated for ops/log
 // correlation but is no longer threaded into this component.
-function detailFor(code: ErrorCode | null): string {
+function detailFor(code: PublicErrorCode | null): string {
   switch (code) {
     case "invalid_url":
       return "Check the URL is correctly formed and try again.";
@@ -60,6 +63,10 @@ function detailFor(code: ErrorCode | null): string {
       return "The site may be blocking automated readers, or it could be a temporary outage — try again in a moment.";
     case "extraction_failed":
       return "This often happens when a site blocks automated readers (login walls, paywalls, captchas, or bot protection).";
+    case "pdf_too_large":
+      return "Please upload a PDF that is 50 MB or smaller.";
+    case "pdf_extraction_failed":
+      return "Your PDF may be encrypted or image-only. Try a different file.";
     case "section_failure":
       return "Some analysis sections couldn't complete.";
     case "timeout":
@@ -148,13 +155,13 @@ export default function JobFailureCard(props: JobFailureCardProps): JSX.Element 
             Try again
           </Button>
         </form>
-        <A
+        <a
           href="/"
           data-testid="job-failure-home"
           class="text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
         >
           Back to home
-        </A>
+        </a>
       </div>
     </section>
   );

@@ -19,7 +19,7 @@ import type {
 } from "~/components/PageFrame";
 import Sidebar from "~/components/sidebar/Sidebar";
 import { HeadlineSummaryReport } from "~/components/sidebar/reports";
-import type { ErrorCode, SectionSlug } from "~/lib/api-client.server";
+import type { PublicErrorCode, SectionSlug } from "~/lib/api-client.server";
 import { createPollingResource } from "~/lib/polling";
 import { resolveHeadline } from "~/lib/headline-fallback";
 import {
@@ -33,13 +33,15 @@ import {
   type FrameCompatResult,
 } from "./analyze.data";
 
-const ALL_ERROR_CODES: readonly ErrorCode[] = [
+const ALL_ERROR_CODES: readonly PublicErrorCode[] = [
   "invalid_url",
   "unsafe_url",
   "unsupported_site",
   "upstream_error",
   "extraction_failed",
   "section_failure",
+  "pdf_too_large",
+  "pdf_extraction_failed",
   "timeout",
   "rate_limited",
   "internal",
@@ -81,10 +83,10 @@ const ARCHIVE_PROBE_CAP_MS = 300_000;
 const ARCHIVE_PROBE_TERMINAL_GRACE_MS = 10_000;
 const TERMINAL_JOB_STATUSES = new Set(["done", "partial", "failed"]);
 
-function asErrorCode(raw: string | undefined): ErrorCode | null {
+function asErrorCode(raw: string | undefined): PublicErrorCode | null {
   if (!raw) return null;
   return (ALL_ERROR_CODES as readonly string[]).includes(raw)
-    ? (raw as ErrorCode)
+    ? (raw as PublicErrorCode)
     : null;
 }
 
@@ -97,7 +99,7 @@ export default function AnalyzePage() {
     typeof searchParams.pending_error === "string"
       ? searchParams.pending_error
       : "";
-  const pendingError = createMemo<ErrorCode | null>(() =>
+  const pendingError = createMemo<PublicErrorCode | null>(() =>
     asErrorCode(pendingErrorRaw() || undefined),
   );
   const pendingUrl = () =>
@@ -349,7 +351,7 @@ export default function AnalyzePage() {
       if (s && s.status === "failed") {
         return {
           url: s.url ?? pendingUrl(),
-          errorCode: (s.error_code ?? null) as ErrorCode | null,
+          errorCode: (s.error_code ?? null) as PublicErrorCode | null,
           errorHost: s.error_host ?? null,
           // Failed unsafe-url jobs intentionally carry a minimal web-risk payload
           // for the failure card; it is not a canonical complete sidebar.
@@ -359,7 +361,7 @@ export default function AnalyzePage() {
       if (transportError()) {
         return {
           url: jobUrl(),
-          errorCode: "internal" as ErrorCode,
+          errorCode: "internal" as PublicErrorCode,
           errorHost: null,
           webRiskFindings: [],
         };

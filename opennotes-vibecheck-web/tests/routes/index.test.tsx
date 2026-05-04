@@ -8,14 +8,18 @@ import {
 } from "@solidjs/router";
 
 vi.mock("../../src/routes/analyze.data", () => {
-  const mockFn = vi.fn();
-  const stub = Object.assign(mockFn, {
-    base: "/__mock_analyze_action",
-    url: "/__mock_analyze_action",
-    with: () => stub,
-  });
+  const createActionStub = (path: string) => {
+    const mockFn = vi.fn();
+    const stub = Object.assign(mockFn, {
+      base: path,
+      url: path,
+      with: () => stub,
+    });
+    return stub;
+  };
   return {
-    analyzeAction: stub,
+    analyzeAction: createActionStub("/__mock_analyze_action"),
+    analyzePdfAction: createActionStub("/__mock_analyze_pdf_action"),
   };
 });
 
@@ -44,7 +48,7 @@ describe("HomePage (landing route)", () => {
       await screen.findByRole("heading", { name: /vibecheck/i }),
     ).toBeDefined();
     expect(
-      await screen.findByText(/analyze any url for tone/i),
+      await screen.findByText(/analyze urls and pdfs for tone/i),
     ).toBeDefined();
   });
 
