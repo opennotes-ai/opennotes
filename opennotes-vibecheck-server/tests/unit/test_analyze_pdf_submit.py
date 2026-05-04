@@ -137,7 +137,7 @@ async def test_analyze_pdf_submits_valid_gcs_key(
     key = str(uuid4())
     monkeypatch.setattr(
         analyze_pdf,
-        "PdfUploadStore",
+        "get_pdf_upload_store",
         _fake_pdf_store_factory({key: {"size": 512, "content_type": "application/pdf"}}),
     )
 
@@ -177,7 +177,7 @@ async def test_analyze_pdf_duplicate_inflight_dedupes_without_second_enqueue(
     existing_job_id = await _insert_inflight_pdf_job(db_pool, key)
     monkeypatch.setattr(
         analyze_pdf,
-        "PdfUploadStore",
+        "get_pdf_upload_store",
         _fake_pdf_store_factory({key: {"size": 1024, "content_type": "application/pdf"}}),
     )
 
@@ -234,7 +234,7 @@ async def test_analyze_pdf_missing_metadata_rejects_with_upload_not_found(
     key = str(uuid4())
     monkeypatch.setattr(
         analyze_pdf,
-        "PdfUploadStore",
+        "get_pdf_upload_store",
         _fake_pdf_store_factory({key: None}),
     )
     before = await _count_jobs(db_pool)
@@ -261,7 +261,7 @@ async def test_analyze_pdf_oversize_pdf_rejects(
     key = str(uuid4())
     monkeypatch.setattr(
         analyze_pdf,
-        "PdfUploadStore",
+        "get_pdf_upload_store",
         _fake_pdf_store_factory(
             {key: {"size": 50 * 1024 * 1024 + 1, "content_type": "application/pdf"}}
         ),
@@ -288,7 +288,7 @@ async def test_analyze_pdf_bad_content_type_rejects(
     key = str(uuid4())
     monkeypatch.setattr(
         analyze_pdf,
-        "PdfUploadStore",
+        "get_pdf_upload_store",
         _fake_pdf_store_factory({key: {"size": 1024, "content_type": "text/plain"}}),
     )
     before = await _count_jobs(db_pool)
@@ -316,7 +316,7 @@ async def test_rate_limit_for_analyze_pdf_shares_analyze_bucket(
     monkeypatch.setenv("VIBECHECK_PDF_UPLOAD_BUCKET", "test-pdf-bucket")
     monkeypatch.setattr(
         analyze_pdf,
-        "PdfUploadStore",
+        "get_pdf_upload_store",
         _fake_pdf_store_factory({key: {"size": 1024, "content_type": "application/pdf"}}),
     )
 
@@ -345,7 +345,7 @@ async def test_analyze_and_analyze_pdf_share_submit_rate_limit_bucket(
     key = str(uuid4())
     monkeypatch.setattr(
         analyze_pdf,
-        "PdfUploadStore",
+        "get_pdf_upload_store",
         _fake_pdf_store_factory({key: {"size": 1024, "content_type": "application/pdf"}}),
     )
 

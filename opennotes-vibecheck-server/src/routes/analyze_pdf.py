@@ -16,7 +16,7 @@ from pydantic import BaseModel
 from src.config import Settings, get_settings
 from src.jobs import submit as submit_job
 from src.jobs.enqueue import enqueue_job
-from src.jobs.pdf_storage import PdfUploadStore
+from src.jobs.pdf_storage import get_pdf_upload_store
 from src.monitoring import get_logger
 from src.monitoring_metrics import SINGLE_FLIGHT_LOCK_WAITS
 from src.routes import analyze as analyze_route
@@ -85,7 +85,7 @@ async def upload_pdf(
 
     gcs_key = str(uuid4())
     try:
-        signer = PdfUploadStore(settings.VIBECHECK_PDF_UPLOAD_BUCKET)
+        signer = get_pdf_upload_store(settings.VIBECHECK_PDF_UPLOAD_BUCKET)
         upload_url = signer.signed_upload_url(gcs_key, ttl_seconds=900)
     except Exception:
         return _error_response("PDF upload URL signing failed")
@@ -188,7 +188,7 @@ async def analyze_pdf(  # noqa: PLR0911
         return exc.to_response()
 
     try:
-        metadata = PdfUploadStore(settings.VIBECHECK_PDF_UPLOAD_BUCKET).get_metadata(gcs_key)
+        metadata = get_pdf_upload_store(settings.VIBECHECK_PDF_UPLOAD_BUCKET).get_metadata(gcs_key)
     except Exception:
         return _validation_error_response(
             "upload_not_found",

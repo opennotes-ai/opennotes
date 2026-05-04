@@ -15,7 +15,7 @@ from src.cache.scrape_cache import CachedScrape, SupabaseScrapeCache
 from src.cache.screenshot_store import GCSScreenshotStore, InMemoryScreenshotStore, ScreenshotStore
 from src.config import get_settings
 from src.firecrawl_client import FirecrawlClient, ScrapeResult
-from src.jobs.pdf_storage import PdfUploadStore
+from src.jobs.pdf_storage import get_pdf_upload_store
 from src.jobs.scrape_quality import ScrapeQuality, classify_scrape
 from src.monitoring import get_logger
 from src.utils.html_sanitize import strip_noise
@@ -430,7 +430,7 @@ async def pdf_read(request: Request, job_id: str = Query(...)) -> RedirectRespon
     if not settings.VIBECHECK_PDF_UPLOAD_BUCKET:
         raise HTTPException(status_code=503, detail="PDF storage is not configured")
 
-    signed_url = PdfUploadStore(settings.VIBECHECK_PDF_UPLOAD_BUCKET).signed_read_url(
+    signed_url = get_pdf_upload_store(settings.VIBECHECK_PDF_UPLOAD_BUCKET).signed_read_url(
         gcs_key
     )
     if not signed_url:

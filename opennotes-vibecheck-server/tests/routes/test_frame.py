@@ -787,7 +787,7 @@ class TestArchivePreview:
             "src.routes.frame.get_settings",
             lambda: SimpleNamespace(VIBECHECK_PDF_UPLOAD_BUCKET="pdf-bucket"),
         )
-        monkeypatch.setattr("src.routes.frame.PdfUploadStore", Store)
+        monkeypatch.setattr("src.routes.frame.get_pdf_upload_store", Store)
         _client_state(client).db_pool = _FakePool(Conn())
         try:
             resp = client.get(

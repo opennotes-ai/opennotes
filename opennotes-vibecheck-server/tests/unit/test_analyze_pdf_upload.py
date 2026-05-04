@@ -84,7 +84,7 @@ async def test_upload_pdf_returns_uuid_and_upload_url(
 ) -> None:
     monkeypatch.setenv("VIBECHECK_PDF_UPLOAD_BUCKET", "test-pdf-bucket")
     get_settings.cache_clear()
-    monkeypatch.setattr(analyze_pdf, "PdfUploadStore", _fake_pdf_store_factory("https://upload.example/upload"))
+    monkeypatch.setattr(analyze_pdf, "get_pdf_upload_store", _fake_pdf_store_factory("https://upload.example/upload"))
 
     response = await client.post("/api/upload-pdf")
 
@@ -117,7 +117,7 @@ async def test_upload_pdf_returns_internal_error_when_signing_fails(
 ) -> None:
     monkeypatch.setenv("VIBECHECK_PDF_UPLOAD_BUCKET", "test-pdf-bucket")
     get_settings.cache_clear()
-    monkeypatch.setattr(analyze_pdf, "PdfUploadStore", _failing_pdf_store_factory())
+    monkeypatch.setattr(analyze_pdf, "get_pdf_upload_store", _failing_pdf_store_factory())
 
     response = await client.post("/api/upload-pdf")
 
@@ -134,7 +134,7 @@ async def test_upload_pdf_returns_internal_error_when_store_setup_fails(
 ) -> None:
     monkeypatch.setenv("VIBECHECK_PDF_UPLOAD_BUCKET", "test-pdf-bucket")
     get_settings.cache_clear()
-    monkeypatch.setattr(analyze_pdf, "PdfUploadStore", _exploding_pdf_store_factory())
+    monkeypatch.setattr(analyze_pdf, "get_pdf_upload_store", _exploding_pdf_store_factory())
 
     response = await client.post("/api/upload-pdf")
 
@@ -153,7 +153,7 @@ async def test_upload_pdf_route_respects_analyze_rate_limit(
     monkeypatch.setenv("VIBECHECK_PDF_UPLOAD_BUCKET", "test-pdf-bucket")
     get_settings.cache_clear()
     analyze_route.limiter.reset()
-    monkeypatch.setattr(analyze_pdf, "PdfUploadStore", _fake_pdf_store_factory("https://upload.example/upload"))
+    monkeypatch.setattr(analyze_pdf, "get_pdf_upload_store", _fake_pdf_store_factory("https://upload.example/upload"))
 
     first = await client.post("/api/upload-pdf")
     second = await client.post("/api/upload-pdf")
