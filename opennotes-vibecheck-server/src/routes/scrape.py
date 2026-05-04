@@ -15,13 +15,13 @@ from src.analyses.safety.web_risk import WebRiskTransientError, check_urls
 from src.auth.scrape_token import require_scrape_token
 from src.cache.scrape_cache import canonical_cache_key
 from src.config import Settings, get_settings
+from src.jobs import submit as submit_job
 from src.jobs.enqueue import enqueue_job
 from src.monitoring import get_logger
 from src.routes.analyze import (
     _error_response,
     _get_db_pool,
     _host_of,
-    _mark_job_failed_enqueue,
     limiter,
 )
 from src.utils.html_sanitize import strip_noise
@@ -240,7 +240,7 @@ async def submit_scrape(  # noqa: PLR0911
         await enqueue_job(job_id, attempt_id, settings)
     except Exception as exc:
         logger.warning("enqueue_job failed for browser scrape job %s: %s", job_id, exc)
-        await _mark_job_failed_enqueue(pool, job_id)
+        await submit_job._mark_job_failed_enqueue(pool, job_id)
         return _error_response(500, "internal", "enqueue failed")
 
     response = ScrapeSubmitResponse(

@@ -1,5 +1,6 @@
 import { action, query, redirect } from "@solidjs/router";
 import type { JobState, SectionSlug } from "~/lib/api-client.server";
+import { isPdfFile, isPdfTooLarge } from "~/lib/pdf-constraints";
 
 interface FrameCompatResponse {
   can_iframe: boolean;
@@ -57,7 +58,7 @@ function isFrameCompatResponse(value: unknown): value is FrameCompatResponse {
   const candidate = value as Partial<FrameCompatResponse>;
   return (
     typeof candidate.can_iframe === "boolean" &&
-    typeof candidate.has_archive === "boolean" &&
+    (candidate.has_archive === undefined || typeof candidate.has_archive === "boolean") &&
     isStringOrNullish(candidate.blocking_header) &&
     isStringOrNullish(candidate.csp_frame_ancestors)
   );
@@ -300,6 +301,204 @@ export const analyzeAction = action(async (formData: FormData) => {
   "use server";
   await resolveAnalyzeRedirect(formData);
 }, "vibecheck-analyze");
+
+export async function resolveAnalyzePdfRedirect(formData: FormData): Promise<never> {
+  "use server";
+  const {
+    requestPdfUploadUrl,
+    requestPdfAnalysis,
+    VibecheckApiError,
+    clampErrorCode,
+  } = await import("~/lib/api-client.server");
+  const rawFile = formData.get("pdf");
+  if (!(rawFile instanceof File)) {
+    throw redirect("/?error=invalid_url");
+  }
+  if (!isPdfFile(rawFile)) {
+    throw redirect("/?error=invalid_url");
+  }
+  if (isPdfTooLarge(rawFile)) {
+    throw redirect("/?error=pdf_too_large");
+  }
+
+  const { getRequestEvent } = await import("solid-js/web");
+  const evt = getRequestEvent();
+  const { checkAnalyzeRateLimit } = await import("~/lib/rate-limit.server");
+  if (!evt?.request?.headers) {
+    console.warn(
+      JSON.stringify({
+        event: "vibecheck.rate_limit.no_request_event",
+        route: "resolveAnalyzePdfRedirect",
+      }),
+    );
+  } else {
+    const decision = checkAnalyzeRateLimit(evt.request.headers);
+    if (!decision.allowed) {
+      console.warn(
+        JSON.stringify({
+          event: `vibecheck.rate_limit.${decision.outcome}`,
+          route: "resolveAnalyzePdfRedirect",
+          ip_hash_prefix: decision.ipHashPrefix,
+          retry_after_sec: decision.retryAfterSec,
+          xff_entry_count: (evt.request.headers.get("x-forwarded-for") ?? "")
+            .split(",")
+            .filter((p) => p.trim() !== "").length,
+        }),
+      );
+      const qs = redirectParams({
+        pending_error: "rate_limited",
+        url: rawFile.name,
+      });
+      throw redirect(`/analyze?${qs}`);
+    }
+  }
+
+  let upload;
+  try {
+    upload = await requestPdfUploadUrl();
+  } catch (err: unknown) {
+    if (err instanceof VibecheckApiError) {
+      const code = clampErrorCode(err.errorBody?.error_code);
+      const qs = redirectParams({
+        pending_error: code ?? "upstream_error",
+        url: rawFile.name,
+      });
+      throw redirect(`/analyze?${qs}`);
+    }
+    throw err;
+  }
+
+  try {
+    const response = await requestPdfAnalysis(upload.gcs_key, rawFile.name);
+    const qs = new URLSearchParams({ job: response.job_id });
+    if (response.cached) qs.set("c", "1");
+    throw redirect(`/analyze?${qs.toString()}`);
+  } catch (err: unknown) {
+    if (!(err instanceof VibecheckApiError)) {
+      throw err;
+    }
+    const code = clampErrorCode(err.errorBody?.error_code);
+    if (code === "pdf_too_large") {
+      throw redirect("/?error=pdf_too_large");
+    }
+    if (code === "invalid_url") {
+      throw redirect("/?error=invalid_url");
+    }
+    if (code === "pdf_extraction_failed") {
+      throw redirect("/?error=pdf_extraction_failed");
+    }
+    if (code === "upload_key_invalid" || code === "upload_not_found") {
+      throw redirect("/?error=upload_not_found");
+    }
+    if (code === "invalid_pdf_type") {
+      throw redirect("/?error=invalid_pdf_type");
+    }
+
+    const qs = redirectParams({
+      pending_error: code ?? "upstream_error",
+      url: rawFile.name,
+    });
+    throw redirect(`/analyze?${qs}`);
+  }
+}
+
+export const analyzePdfAction = action(async (formData: FormData) => {
+  "use server";
+  await resolveAnalyzePdfRedirect(formData);
+}, "vibecheck-analyze-pdf");
+
+export const requestUploadUrlAction = action(async () => {
+  "use server";
+  const { getRequestEvent } = await import("solid-js/web");
+  const evt = getRequestEvent();
+  const { checkAnalyzeRateLimit } = await import("~/lib/rate-limit.server");
+  if (evt?.request?.headers) {
+    const decision = checkAnalyzeRateLimit(evt.request.headers);
+    if (!decision.allowed) {
+      throw redirect("/?error=rate_limited");
+    }
+  }
+  const { requestPdfUploadUrl } = await import("~/lib/api-client.server");
+  return requestPdfUploadUrl();
+}, "vibecheck-request-pdf-upload-url");
+
+export const submitPdfAnalysisAction = action(async (formData: FormData) => {
+  "use server";
+  const { requestPdfAnalysis, VibecheckApiError, clampErrorCode } = await import(
+    "~/lib/api-client.server"
+  );
+  const gcsKey = String(formData.get("gcs_key") ?? "");
+  const filename = String(formData.get("filename") ?? "");
+
+  if (!gcsKey || !filename) {
+    throw redirect("/?error=invalid_url");
+  }
+
+  const { getRequestEvent } = await import("solid-js/web");
+  const evt = getRequestEvent();
+  const { checkAnalyzeRateLimit } = await import("~/lib/rate-limit.server");
+  if (!evt?.request?.headers) {
+    console.warn(
+      JSON.stringify({
+        event: "vibecheck.rate_limit.no_request_event",
+        route: "submitPdfAnalysisAction",
+      }),
+    );
+  } else {
+    const decision = checkAnalyzeRateLimit(evt.request.headers);
+    if (!decision.allowed) {
+      console.warn(
+        JSON.stringify({
+          event: `vibecheck.rate_limit.${decision.outcome}`,
+          route: "submitPdfAnalysisAction",
+          ip_hash_prefix: decision.ipHashPrefix,
+          retry_after_sec: decision.retryAfterSec,
+          xff_entry_count: (evt.request.headers.get("x-forwarded-for") ?? "")
+            .split(",")
+            .filter((p) => p.trim() !== "").length,
+        }),
+      );
+      const qs = redirectParams({
+        pending_error: "rate_limited",
+        url: filename,
+      });
+      throw redirect(`/analyze?${qs}`);
+    }
+  }
+
+  try {
+    const response = await requestPdfAnalysis(gcsKey, filename);
+    const qs = new URLSearchParams({ job: response.job_id });
+    if (response.cached) qs.set("c", "1");
+    throw redirect(`/analyze?${qs.toString()}`);
+  } catch (err: unknown) {
+    if (!(err instanceof VibecheckApiError)) {
+      throw err;
+    }
+    const code = clampErrorCode(err.errorBody?.error_code);
+    if (code === "pdf_too_large") {
+      throw redirect("/?error=pdf_too_large");
+    }
+    if (code === "invalid_url") {
+      throw redirect("/?error=invalid_url");
+    }
+    if (code === "pdf_extraction_failed") {
+      throw redirect("/?error=pdf_extraction_failed");
+    }
+    if (code === "upload_key_invalid" || code === "upload_not_found") {
+      throw redirect("/?error=upload_not_found");
+    }
+    if (code === "invalid_pdf_type") {
+      throw redirect("/?error=invalid_pdf_type");
+    }
+
+    const qs = redirectParams({
+      pending_error: code ?? "upstream_error",
+      url: filename,
+    });
+    throw redirect(`/analyze?${qs}`);
+  }
+}, "vibecheck-submit-pdf-analysis");
 
 export async function pollJobState(jobId: string): Promise<JobState> {
   "use server";

@@ -12,14 +12,20 @@ export type SectionState = components["schemas"]["SectionState"];
 export type JobStatus = components["schemas"]["JobStatus"];
 export type ErrorCode = components["schemas"]["ErrorCode"];
 export type RetryResponse = components["schemas"]["RetryResponse"];
+export type PublicErrorCode = ErrorCode | "pdf_too_large" | "pdf_extraction_failed" | "upload_key_invalid" | "upload_not_found" | "invalid_pdf_type";
+
+export interface UploadPdfResponse {
+  gcs_key: string;
+  upload_url: string;
+}
 
 export interface ApiErrorBody {
-  error_code?: ErrorCode;
+  error_code?: PublicErrorCode;
   message?: string;
   error_host?: string;
 }
 
-export const PUBLIC_ERROR_CODES: readonly ErrorCode[] = [
+export const PUBLIC_ERROR_CODES: readonly PublicErrorCode[] = [
   "invalid_url",
   "unsafe_url",
   "unsupported_site",
@@ -29,16 +35,22 @@ export const PUBLIC_ERROR_CODES: readonly ErrorCode[] = [
   "timeout",
   "rate_limited",
   "internal",
+  "pdf_too_large",
+  "pdf_extraction_failed",
+  "upload_key_invalid",
+  "upload_not_found",
+  "invalid_pdf_type",
 ];
 
-export function clampErrorCode(raw: unknown): ErrorCode | undefined {
+export function clampErrorCode(raw: unknown): PublicErrorCode | undefined {
   if (typeof raw !== "string") return undefined;
   return (PUBLIC_ERROR_CODES as readonly string[]).includes(raw)
-    ? (raw as ErrorCode)
+    ? (raw as PublicErrorCode)
     : undefined;
 }
 
 const ANALYZE_SUBMIT_TIMEOUT_MS = 300_000;
+const GCS_PUT_TIMEOUT_MS = 10 * 60_000;
 const POLL_FETCH_TIMEOUT_MS = 60_000;
 const DEFAULT_FETCH_TIMEOUT_MS = 60_000;
 const FETCH_MAX_ATTEMPTS = 2;
@@ -54,8 +66,14 @@ function timeoutForRequest(request: Request): number {
   } catch {
     return DEFAULT_FETCH_TIMEOUT_MS;
   }
-  if (request.method === "POST" && pathname === "/api/analyze") {
+  if (
+    request.method === "POST" &&
+    (pathname === "/api/analyze" || pathname === "/api/analyze-pdf")
+  ) {
     return ANALYZE_SUBMIT_TIMEOUT_MS;
+  }
+  if (request.method === "PUT") {
+    return GCS_PUT_TIMEOUT_MS;
   }
   return POLL_FETCH_TIMEOUT_MS;
 }
@@ -226,6 +244,129 @@ async function fetchWithRetry(
   throw lastError instanceof Error
     ? lastError
     : new Error(String(lastError));
+}
+
+async function requestBackendJson<T>(
+  path: string,
+  options: {
+    method: string;
+    body?: unknown;
+    headers?: HeadersInit;
+  },
+): Promise<{ data: T; response: Response }> {
+  const baseUrl = resolveBaseUrl();
+  const isProduction = process.env.NODE_ENV === "production";
+  const headers = new Headers(options.headers);
+  if (options.body !== undefined) {
+    headers.set("content-type", "application/json");
+  }
+
+  let request = new Request(new URL(path, baseUrl), {
+    method: options.method,
+    headers,
+    body:
+      options.body === undefined
+        ? undefined
+        : JSON.stringify(options.body),
+  });
+  if (isProduction) {
+    try {
+      const token = await getAuthorizationHeader(baseUrl);
+      if (token) {
+        const authHeaders = new Headers(request.headers);
+        authHeaders.set("Authorization", token);
+        request = new Request(request, { headers: authHeaders });
+      }
+    } catch (error) {
+      throw new VibecheckApiError(
+        `Failed to fetch identity token: ${error instanceof Error ? error.message : String(error)}`,
+        503,
+      );
+    }
+  }
+
+  let response: Response;
+  try {
+    response = await fetchWithRetry(request);
+  } catch (error) {
+    normalizeTransportError(error, `${options.method} ${path}`);
+  }
+  const body = await response.text();
+  let parsed: unknown = null;
+  if (body) {
+    try {
+      parsed = JSON.parse(body);
+    } catch {
+      parsed = null;
+    }
+  }
+
+  if (!response.ok) {
+    const errorBody = parseErrorBody(parsed);
+    const codeFragment = errorBody?.error_code ?? "unknown";
+    throw new VibecheckApiError(
+      `vibecheck ${options.method} ${path} failed (${codeFragment})`,
+      response.status,
+      errorBody,
+      response.headers,
+    );
+  }
+  if (parsed === null) {
+    throw new VibecheckApiError(
+      `vibecheck ${options.method} ${path} returned empty body`,
+      response.status,
+      { error_code: "upstream_error", message: "Empty response body" },
+      response.headers,
+    );
+  }
+  return { data: parsed as T, response };
+}
+
+
+export async function requestPdfUploadUrl(): Promise<UploadPdfResponse> {
+  const { data, response } = await requestBackendJson<UploadPdfResponse>(
+    "/api/upload-pdf",
+    { method: "POST" },
+  );
+  const responsePayload = data as Partial<UploadPdfResponse>;
+  if (
+    typeof responsePayload.gcs_key !== "string" ||
+    typeof responsePayload.upload_url !== "string"
+  ) {
+    throw new VibecheckApiError(
+      "vibecheck /api/upload-pdf returned malformed payload",
+      response.status,
+      { error_code: "upstream_error", message: "Malformed upload response" },
+      response.headers,
+    );
+  }
+  return responsePayload as UploadPdfResponse;
+}
+
+export async function requestPdfAnalysis(
+  gcsKey: string,
+  filename: string,
+): Promise<AnalyzeResponse> {
+  const { data, response } = await requestBackendJson<AnalyzeResponse>(
+    "/api/analyze-pdf",
+    {
+      method: "POST",
+      body: { gcs_key: gcsKey, filename },
+    },
+  );
+  const responsePayload = data as Partial<AnalyzeResponse>;
+  if (
+    typeof responsePayload.job_id !== "string" ||
+    typeof responsePayload.status !== "string"
+  ) {
+    throw new VibecheckApiError(
+      "vibecheck /api/analyze-pdf returned malformed payload",
+      response.status,
+      { error_code: "upstream_error", message: "Malformed analyze response" },
+      response.headers,
+    );
+  }
+  return responsePayload as AnalyzeResponse;
 }
 
 export function getClient() {

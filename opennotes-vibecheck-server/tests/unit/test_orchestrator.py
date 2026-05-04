@@ -39,12 +39,11 @@ from src.firecrawl_client import (
 from src.jobs.orchestrator import (
     TerminalError,
     TransientError,
-    _load_job_source_type,
     _run_section,
     _run_tier2,
     _tier2_actions_for,
 )
-from src.utterances.errors import UtteranceExtractionError
+from src.utterances.errors import TransientExtractionError, UtteranceExtractionError
 
 
 def _require_markdown(scrape: ScrapeResult) -> str:
@@ -117,44 +116,6 @@ async def test_run_section_write_slot_exception_still_raises_when_mark_slot_also
 
     with pytest.raises(TransientError, match="write_slot failed"):
         await _run_section(pool, job_id, task_attempt, slug, payload, settings)
-
-
-async def test_load_job_source_type_raises_terminal_on_invalid_value() -> None:
-    class SourceTypeConn:
-        async def fetchval(self, *args: Any, **kwargs: Any) -> str:
-            return "unsupported_source"
-
-    class ConnPool:
-        def __init__(self) -> None:
-            self.conn = SourceTypeConn()
-
-        def acquire(self) -> FakeAcquire:
-            return FakeAcquire(self.conn)
-
-    with pytest.raises(TerminalError) as exc_info:
-        await _load_job_source_type(ConnPool(), uuid4(), uuid4())
-
-    assert exc_info.value.error_code == ErrorCode.INTERNAL
-    assert "unsupported source_type" in exc_info.value.error_detail
-
-
-async def test_load_job_source_type_raises_terminal_on_db_error() -> None:
-    class SourceTypeConn:
-        async def fetchval(self, *args: Any, **kwargs: Any) -> None:
-            raise RuntimeError("db unavailable")
-
-    class ConnPool:
-        def __init__(self) -> None:
-            self.conn = SourceTypeConn()
-
-        def acquire(self) -> FakeAcquire:
-            return FakeAcquire(self.conn)
-
-    with pytest.raises(TerminalError) as exc_info:
-        await _load_job_source_type(ConnPool(), uuid4(), uuid4())
-
-    assert exc_info.value.error_code == ErrorCode.INTERNAL
-    assert "failed to load source_type" in exc_info.value.error_detail
 
 
 class FakeAcquire:
@@ -348,15 +309,11 @@ def _stub_pre_gemini(monkeypatch: pytest.MonkeyPatch) -> None:
     """Short-circuit the scrape/extract preamble so tests focus on post-Gemini."""
     from src.jobs import orchestrator
 
-    async def stub_source_type(*args: Any, **kwargs: Any) -> str:
-        return "url"
-
     monkeypatch.setattr(orchestrator, "_build_scrape_cache", lambda s: MagicMock())
     monkeypatch.setattr(orchestrator, "_build_firecrawl_client", lambda s: MagicMock())
     monkeypatch.setattr(
         orchestrator, "_build_firecrawl_tier1_client", lambda s: MagicMock()
     )
-    monkeypatch.setattr(orchestrator, "_load_job_source_type", stub_source_type)
 
     async def stub_scrape_step(*args, **kwargs):
         return MagicMock(metadata=None)
@@ -487,9 +444,6 @@ def _stub_extract_arm_only(monkeypatch: pytest.MonkeyPatch) -> None:
     """
     from src.jobs import orchestrator
 
-    async def stub_source_type(*args: Any, **kwargs: Any) -> str:
-        return "url"
-
     monkeypatch.setattr(orchestrator, "_build_scrape_cache", lambda s: MagicMock())
     monkeypatch.setattr(
         orchestrator, "_build_firecrawl_client", lambda s: MagicMock()
@@ -497,7 +451,6 @@ def _stub_extract_arm_only(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         orchestrator, "_build_firecrawl_tier1_client", lambda s: MagicMock()
     )
-    monkeypatch.setattr(orchestrator, "_load_job_source_type", stub_source_type)
 
     async def stub_scrape_step(*args, **kwargs):
         return MagicMock(metadata=None)
@@ -607,7 +560,6 @@ async def test_run_pipeline_falls_back_to_transient_when_column_missing(
     spurious terminal flips.
     """
     from src.jobs import orchestrator
-    from src.utterances.errors import TransientExtractionError
 
     _stub_extract_arm_only(monkeypatch)
 
@@ -659,7 +611,6 @@ async def test_run_pipeline_falls_back_to_transient_when_increment_db_fails(
     import asyncpg
 
     from src.jobs import orchestrator
-    from src.utterances.errors import TransientExtractionError
 
     _stub_extract_arm_only(monkeypatch)
 
@@ -692,6 +643,44 @@ async def test_run_pipeline_falls_back_to_transient_when_increment_db_fails(
     ), [r.message for r in caplog.records]
 
 
+async def test_run_pipeline_pdf_transient_extraction_error_uses_backstop(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.jobs import orchestrator
+
+    monkeypatch.setattr(orchestrator, "_build_scrape_cache", lambda s: MagicMock())
+    monkeypatch.setattr(
+        orchestrator, "_build_firecrawl_client", lambda s: MagicMock()
+    )
+    monkeypatch.setattr(
+        orchestrator, "_build_firecrawl_tier1_client", lambda s: MagicMock()
+    )
+
+    async def raise_transient(*args: object, **kwargs: object) -> None:
+        raise TransientExtractionError(
+            provider="firecrawl",
+            status_code=503,
+            status="HTTP_503",
+            fallback_message="Firecrawl 503",
+        )
+
+    monkeypatch.setattr(orchestrator, "pdf_extract_step", raise_transient)
+
+    class _Conn:
+        async def fetchval(self, sql: str, *args: Any) -> int:
+            return 1
+
+    with pytest.raises(orchestrator.TransientError):
+        await orchestrator._run_pipeline(
+            FakePool(_Conn()),
+            uuid4(),
+            uuid4(),
+            "22222222-2222-4222-8222-222222222222",
+            MagicMock(),
+            source_type="pdf",
+        )
+
+
 @pytest.mark.asyncio
 async def test_run_pipeline_unexpected_increment_error_terminates(
     monkeypatch: pytest.MonkeyPatch,
@@ -707,7 +696,6 @@ async def test_run_pipeline_unexpected_increment_error_terminates(
     """
     from src.analyses.schemas import ErrorCode
     from src.jobs import orchestrator
-    from src.utterances.errors import TransientExtractionError
 
     _stub_extract_arm_only(monkeypatch)
 
@@ -3347,9 +3335,6 @@ def _stub_post_gemini_for_escalation(monkeypatch: pytest.MonkeyPatch) -> None:
     """
     from src.jobs import orchestrator
 
-    async def stub_source_type(*args: Any, **kwargs: Any) -> str:
-        return "url"
-
     async def noop_set_last_stage(*args: Any, **kwargs: Any) -> None:
         return None
 
@@ -3371,7 +3356,6 @@ def _stub_post_gemini_for_escalation(monkeypatch: pytest.MonkeyPatch) -> None:
     async def noop_finalize(*args: Any, **kwargs: Any) -> bool:
         return True
 
-    monkeypatch.setattr(orchestrator, "_load_job_source_type", stub_source_type)
     monkeypatch.setattr(orchestrator, "_set_last_stage", noop_set_last_stage)
     monkeypatch.setattr(orchestrator, "persist_utterances", noop_persist)
     monkeypatch.setattr(orchestrator, "_set_analyzing", noop_set_analyzing)
@@ -3392,15 +3376,11 @@ def _stub_scrape_preamble(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, Any
     """
     from src.jobs import orchestrator
 
-    async def stub_source_type(*args: Any, **kwargs: Any) -> str:
-        return "url"
-
     monkeypatch.setattr(orchestrator, "_build_scrape_cache", lambda s: MagicMock())
     monkeypatch.setattr(orchestrator, "_build_firecrawl_client", lambda s: MagicMock())
     monkeypatch.setattr(
         orchestrator, "_build_firecrawl_tier1_client", lambda s: MagicMock()
     )
-    monkeypatch.setattr(orchestrator, "_load_job_source_type", stub_source_type)
 
     async def noop_revalidate(*args: Any, **kwargs: Any) -> None:
         return None
@@ -3697,17 +3677,18 @@ async def test_run_pipeline_uses_browser_html_cache_without_classifying(
                 "screenshot_storage_key": None,
             }
 
-    async def stub_source_type(*args: Any, **kwargs: Any) -> str:
-        return "browser_html"
-
-    monkeypatch.setattr(orchestrator, "_load_job_source_type", stub_source_type)
     monkeypatch.setattr(orchestrator, "_scrape_step", no_scrape_step)
     monkeypatch.setattr(orchestrator, "_revalidate_final_url", noop_revalidate)
     monkeypatch.setattr(orchestrator, "extract_utterances", capturing_extract)
 
     with pytest.raises(orchestrator.TerminalError):
         await orchestrator._run_pipeline(
-            FakePool(SourceTypeConn()), job_id, task_attempt, url, MagicMock()
+            FakePool(SourceTypeConn()),
+            job_id,
+            task_attempt,
+            url,
+            MagicMock(),
+            source_type="browser_html",
         )
 
     assert cache.gets == []

@@ -442,6 +442,30 @@ describe("AnalyzePage route", () => {
     );
   });
 
+  it("upload_not_found in ?pending_error renders a JobFailureCard (not generic error) — TASK-1498.35", async () => {
+    renderAt("/analyze?pending_error=upload_not_found&url=doc.pdf");
+
+    const failureCard = await screen.findByTestId("job-failure-card");
+    expect(failureCard.getAttribute("data-error-code")).toBe("upload_not_found");
+    expect(screen.queryByTestId("analyze-empty")).toBeNull();
+  });
+
+  it("upload_key_invalid in ?pending_error renders a JobFailureCard — TASK-1498.35", async () => {
+    renderAt("/analyze?pending_error=upload_key_invalid&url=doc.pdf");
+
+    const failureCard = await screen.findByTestId("job-failure-card");
+    expect(failureCard.getAttribute("data-error-code")).toBe("upload_key_invalid");
+    expect(screen.queryByTestId("analyze-empty")).toBeNull();
+  });
+
+  it("invalid_pdf_type in ?pending_error renders a JobFailureCard — TASK-1498.35", async () => {
+    renderAt("/analyze?pending_error=invalid_pdf_type&url=doc.pdf");
+
+    const failureCard = await screen.findByTestId("job-failure-card");
+    expect(failureCard.getAttribute("data-error-code")).toBe("invalid_pdf_type");
+    expect(screen.queryByTestId("analyze-empty")).toBeNull();
+  });
+
   it("renders CachedBadge with a timestamp when JobState.cached=true and sidebar_payload.cached_at is set (even if payload.cached is false)", async () => {
     renderAt("/analyze?job=job-cache&c=1&url=https://news.example.com/a");
 
@@ -842,6 +866,140 @@ describe("AnalyzePage route", () => {
     expect(screen.getByRole("button", { name: "Original" })).not.toBeNull();
     expect(screen.getByRole("button", { name: "Archived" })).not.toBeNull();
     expect(screen.getByRole("button", { name: "Screenshot" })).not.toBeNull();
+  });
+
+  it("uses PDF preview URLs directly and skips archive and screenshot probes", async () => {
+    const archiveUrl =
+      "/api/archive-preview?source_type=pdf&job_id=job-pdf-preview";
+
+    renderAt("/analyze?job=job-pdf-preview");
+
+    await waitFor(() => {
+      expect(pollingHandles.length).toBeGreaterThan(0);
+    });
+
+    setPolledJobState(
+      makeJobState({
+        job_id: "job-pdf-preview",
+        status: "done",
+        url: "pdfs/sample.pdf",
+        source_type: "pdf",
+        pdf_archive_url: archiveUrl,
+      }),
+    );
+
+    // pdf_archive_url arriving auto-switches preview to Archived
+    await waitFor(() => {
+      expect(
+        screen.getByTestId("page-frame-archived-iframe").getAttribute("src"),
+      ).toBe(archiveUrl);
+    });
+    await flushMicrotasks();
+
+    expect(screen.queryByTestId("page-frame-iframe")).toBeNull();
+    expect(screen.queryByTestId("page-frame-pdf-embed")).toBeNull();
+    expect(getArchiveProbeMock).not.toHaveBeenCalled();
+    expect(getScreenshotMock).not.toHaveBeenCalled();
+    expect(revalidateMock).not.toHaveBeenCalled();
+
+    const screenshotButton = screen.getByTestId(
+      "preview-mode-screenshot",
+    ) as HTMLButtonElement;
+    expect(screenshotButton.disabled).toBe(true);
+    expect(screenshotButton.getAttribute("aria-label")).toBe(
+      "Not available for PDFs",
+    );
+
+    // Archived button is active (auto-switched)
+    const archivedButton = screen.getByTestId(
+      "preview-mode-archived",
+    ) as HTMLButtonElement;
+    expect(archivedButton.disabled).toBe(false);
+    expect(archivedButton.getAttribute("aria-pressed")).toBe("true");
+
+    // Clicking Original returns to the PDF reader view
+    fireEvent.click(screen.getByTestId("preview-mode-original"));
+    await waitFor(() => {
+      expect(
+        screen.getByTestId("page-frame-pdf-object").getAttribute("data"),
+      ).toBe("/api/pdf-read?job_id=job-pdf-preview");
+    });
+    expect(
+      screen.getByTestId("page-frame-pdf-embed").getAttribute("src"),
+    ).toBe("/api/pdf-read?job_id=job-pdf-preview");
+  });
+
+  it("returns to Original when a polling update resolves to PDF after Screenshot was selected", async () => {
+    renderAt("/analyze?job=job-pdf-late");
+
+    await waitFor(() => {
+      expect(pollingHandles.length).toBeGreaterThan(0);
+    });
+
+    fireEvent.click(screen.getByTestId("preview-mode-screenshot"));
+
+    setPolledJobState(
+      makeJobState({
+        job_id: "job-pdf-late",
+        status: "done",
+        url: "pdfs/late.pdf",
+        source_type: "pdf",
+        pdf_archive_url: null,
+      }),
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId("page-frame-pdf-embed")).not.toBeNull();
+    });
+
+    const archivedButton = screen.getByTestId(
+      "preview-mode-archived",
+    ) as HTMLButtonElement;
+    const screenshotButton = screen.getByTestId(
+      "preview-mode-screenshot",
+    ) as HTMLButtonElement;
+    expect(archivedButton.disabled).toBe(true);
+    expect(screenshotButton.disabled).toBe(true);
+    expect(screenshotButton.getAttribute("aria-label")).toBe(
+      "Not available for PDFs",
+    );
+    expect(
+      screen.getByTestId("preview-mode-original").getAttribute("aria-pressed"),
+    ).toBe("true");
+    expect(screen.queryByTestId("page-frame-unavailable")).toBeNull();
+    expect(getArchiveProbeMock).not.toHaveBeenCalled();
+    expect(getScreenshotMock).not.toHaveBeenCalled();
+  });
+
+  it("keeps PDF Original visible and disables Archived when no pdf_archive_url is available", async () => {
+    renderAt("/analyze?job=job-pdf-no-archive");
+
+    await waitFor(() => {
+      expect(pollingHandles.length).toBeGreaterThan(0);
+    });
+
+    setPolledJobState(
+      makeJobState({
+        job_id: "job-pdf-no-archive",
+        status: "done",
+        url: "pdfs/no-archive.pdf",
+        source_type: "pdf",
+        pdf_archive_url: null,
+      }),
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId("page-frame-pdf-embed")).not.toBeNull();
+    });
+
+    expect(
+      (screen.getByTestId("preview-mode-archived") as HTMLButtonElement)
+        .disabled,
+    ).toBe(true);
+    expect(screen.queryByTestId("page-frame-archived-iframe")).toBeNull();
+    expect(screen.queryByTestId("page-frame-unavailable")).toBeNull();
+    expect(getArchiveProbeMock).not.toHaveBeenCalled();
+    expect(getScreenshotMock).not.toHaveBeenCalled();
   });
 
   it("keeps preview size controls distinct from preview mode controls", async () => {

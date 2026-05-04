@@ -19,7 +19,7 @@ import type {
 } from "~/components/PageFrame";
 import Sidebar from "~/components/sidebar/Sidebar";
 import { HeadlineSummaryReport } from "~/components/sidebar/reports";
-import type { ErrorCode, SectionSlug } from "~/lib/api-client.server";
+import type { PublicErrorCode, SectionSlug } from "~/lib/api-client.server";
 import { createPollingResource } from "~/lib/polling";
 import { resolveHeadline } from "~/lib/headline-fallback";
 import {
@@ -33,13 +33,18 @@ import {
   type FrameCompatResult,
 } from "./analyze.data";
 
-const ALL_ERROR_CODES: readonly ErrorCode[] = [
+const ALL_ERROR_CODES: readonly PublicErrorCode[] = [
   "invalid_url",
   "unsafe_url",
   "unsupported_site",
   "upstream_error",
   "extraction_failed",
   "section_failure",
+  "pdf_too_large",
+  "pdf_extraction_failed",
+  "upload_key_invalid",
+  "upload_not_found",
+  "invalid_pdf_type",
   "timeout",
   "rate_limited",
   "internal",
@@ -81,11 +86,20 @@ const ARCHIVE_PROBE_CAP_MS = 300_000;
 const ARCHIVE_PROBE_TERMINAL_GRACE_MS = 10_000;
 const TERMINAL_JOB_STATUSES = new Set(["done", "partial", "failed"]);
 
-function asErrorCode(raw: string | undefined): ErrorCode | null {
+function asErrorCode(raw: string | undefined): PublicErrorCode | null {
   if (!raw) return null;
   return (ALL_ERROR_CODES as readonly string[]).includes(raw)
-    ? (raw as ErrorCode)
+    ? (raw as PublicErrorCode)
     : null;
+}
+
+function isHttpUrl(candidate: string): boolean {
+  try {
+    const parsed = new URL(candidate);
+    return parsed.protocol === "http:" || parsed.protocol === "https:";
+  } catch {
+    return false;
+  }
 }
 
 export default function AnalyzePage() {
@@ -97,7 +111,7 @@ export default function AnalyzePage() {
     typeof searchParams.pending_error === "string"
       ? searchParams.pending_error
       : "";
-  const pendingError = createMemo<ErrorCode | null>(() =>
+  const pendingError = createMemo<PublicErrorCode | null>(() =>
     asErrorCode(pendingErrorRaw() || undefined),
   );
   const pendingUrl = () =>
@@ -150,7 +164,16 @@ export default function AnalyzePage() {
   const jobState = () => polling.state();
   const jobStatus = () => jobState()?.status;
   const jobUrl = createMemo(() => jobState()?.url ?? pendingUrl());
-  const shouldProbePreview = () => Boolean(jobUrl()) && !pendingError();
+  const isPdf = createMemo(() => jobState()?.source_type === "pdf");
+  const pdfArchiveUrl = createMemo(() => jobState()?.pdf_archive_url ?? null);
+  const pdfReadUrl = () => {
+    const currentJobId = jobId();
+    return isPdf() && currentJobId
+      ? `/api/pdf-read?job_id=${encodeURIComponent(currentJobId)}`
+      : null;
+  };
+  const shouldProbePreview = () =>
+    !isPdf() && Boolean(jobUrl()) && isHttpUrl(jobUrl()) && !pendingError();
   const [frameCompat, setFrameCompat] =
     createSignal<FrameCompatResult>(DEFAULT_FRAME_COMPAT);
   const [frameCompatPending, setFrameCompatPending] = createSignal(false);
@@ -208,16 +231,52 @@ export default function AnalyzePage() {
     }
   };
 
+  // Separate effect: once a PDF job reaches terminal state with no archive,
+  // mark the Archived tab unavailable. Kept separate so it tracks jobStatus()
+  // without causing the main probe-init effect to re-run on status changes.
+  createEffect(() => {
+    if (!isPdf() || pdfArchiveUrl()) return;
+    if (TERMINAL_JOB_STATUSES.has(jobStatus() ?? "")) {
+      setArchiveProbeState("unavailable");
+    }
+  });
+
   createEffect(() => {
     const url = jobUrl();
     const shouldProbe = shouldProbePreview();
+    const pdf = isPdf();
+    const pdfArchive = pdfArchiveUrl();
     const request = ++frameCompatRequest;
-    setFrameCompat(DEFAULT_FRAME_COMPAT);
+    setFrameCompat(
+      pdf
+        ? {
+            ...DEFAULT_FRAME_COMPAT,
+            archivedPreviewUrl: pdfArchive,
+          }
+        : DEFAULT_FRAME_COMPAT,
+    );
     setFrameCompatUrl("");
     setFrameCompatError(null);
-    setArchiveProbeState("pending");
-    setFrameCompatPending(shouldProbe);
+    setArchiveProbeState(
+      pdf ? (pdfArchive ? "available" : "pending") : "pending",
+    );
+    if (pdf && pdfArchive && untrack(previewMode) !== "archived") {
+      setPreviewMode("archived");
+      setSelectedPreviewMode("archived");
+    }
+    setFrameCompatPending(!pdf && shouldProbe);
     setResolvedPreviewMode(url ? "unavailable" : "original");
+    if (pdf) {
+      const currentMode = untrack(previewMode);
+      if (currentMode === "screenshot" || (currentMode === "archived" && !pdfArchive)) {
+        setPreviewMode("original");
+        setSelectedPreviewMode(null);
+      }
+      setFrameCompatPending(false);
+      setFrameCompatUrl(url);
+      setResolvedPreviewMode(url ? "original" : "unavailable");
+      return;
+    }
     if (!url || !shouldProbe) {
       setFrameCompatPending(false);
       return;
@@ -349,7 +408,7 @@ export default function AnalyzePage() {
       if (s && s.status === "failed") {
         return {
           url: s.url ?? pendingUrl(),
-          errorCode: (s.error_code ?? null) as ErrorCode | null,
+          errorCode: (s.error_code ?? null) as PublicErrorCode | null,
           errorHost: s.error_host ?? null,
           // Failed unsafe-url jobs intentionally carry a minimal web-risk payload
           // for the failure card; it is not a canonical complete sidebar.
@@ -359,7 +418,7 @@ export default function AnalyzePage() {
       if (transportError()) {
         return {
           url: jobUrl(),
-          errorCode: "internal" as ErrorCode,
+          errorCode: "internal" as PublicErrorCode,
           errorHost: null,
           webRiskFindings: [],
         };
@@ -606,6 +665,11 @@ export default function AnalyzePage() {
                             const isArchivedUnavailable = () =>
                               option.value === "archived" &&
                               archiveProbeState() === "unavailable";
+                            const isScreenshotUnavailable = () =>
+                              option.value === "screenshot" && isPdf();
+                            const isUnavailable = () =>
+                              isArchivedUnavailable() ||
+                              isScreenshotUnavailable();
                             return (
                               <button
                                 type="button"
@@ -625,11 +689,18 @@ export default function AnalyzePage() {
                                     ? ORIGINAL_BLOCKED_TIP_ID
                                     : undefined
                                 }
-                                disabled={isArchivedUnavailable()}
+                                aria-label={
+                                  isScreenshotUnavailable()
+                                    ? "Not available for PDFs"
+                                    : undefined
+                                }
+                                disabled={isUnavailable()}
                                 title={
                                   isArchivedUnavailable()
                                     ? "No archive available for this page"
-                                    : undefined
+                                    : isScreenshotUnavailable()
+                                      ? "Not available for PDFs"
+                                      : undefined
                                 }
                                 onMouseEnter={() => {
                                   if (isOriginalBlocked()) {
@@ -703,6 +774,8 @@ export default function AnalyzePage() {
                   </div>
                   <PageFrame
                     url={jobUrl()}
+                    sourcePdf={isPdf()}
+                    pdfReadUrl={pdfReadUrl()}
                     loading={isPreviewLoading()}
                     canIframe={frameCompat().canIframe}
                     blockingHeader={frameCompat().blockingHeader}

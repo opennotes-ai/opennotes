@@ -57,6 +57,37 @@ def _exec_sql_statement(sql: str) -> str:
     return match.group(0)
 
 
+def _vibecheck_jobs_create_table(sql: str) -> str:
+    pattern = (
+        r"CREATE\s+TABLE\s+IF\s+NOT\s+EXISTS\s+public\.vibecheck_jobs\s+\([\s\S]*?\n\)\s*;"
+    )
+    match = re.search(pattern, sql, re.IGNORECASE | re.DOTALL)
+    assert match is not None
+    return match.group(0)
+
+
+def _jobs_error_code_check_body(sql: str) -> str:
+    jobs_create = _vibecheck_jobs_create_table(sql)
+    pattern = (
+        r"CONSTRAINT\s+vibecheck_jobs_error_code_check\s+CHECK\s*\(\s*"
+        r"error_code\s+IS\s+NULL\s+OR\s+error_code\s+IN\s*\((.*?)\)\s*\)"
+    )
+    match = re.search(pattern, jobs_create, re.IGNORECASE | re.DOTALL)
+    assert match is not None
+    return match.group(1)
+
+
+def _jobs_error_code_alter_check_body(sql: str) -> str:
+    pattern = (
+        r"ALTER\s+TABLE\s+public\.vibecheck_jobs\s+"
+        r"ADD\s+CONSTRAINT\s+vibecheck_jobs_error_code_check\s+"
+        r"CHECK\s*\(\s*error_code\s+IS\s+NULL\s+OR\s+error_code\s+IN\s*\((.*?)\)\s*\)"
+    )
+    matches = re.findall(pattern, sql, re.IGNORECASE | re.DOTALL)
+    assert matches
+    return matches[-1]
+
+
 class TestNewTablesExist:
     @pytest.mark.parametrize(
         "table",
@@ -64,6 +95,7 @@ class TestNewTablesExist:
             "vibecheck_jobs",
             "vibecheck_scrapes",
             "vibecheck_job_utterances",
+            "vibecheck_pdf_archives",
         ],
     )
     def test_create_table_if_not_exists(self, schema_sql: str, table: str) -> None:
@@ -124,6 +156,7 @@ class TestRowLevelSecurityLockdown:
             "vibecheck_jobs",
             "vibecheck_scrapes",
             "vibecheck_job_utterances",
+            "vibecheck_pdf_archives",
         ],
     )
     def test_table_enables_and_forces_rls(self, schema_sql: str, table: str) -> None:
@@ -136,6 +169,7 @@ class TestRowLevelSecurityLockdown:
             "vibecheck_jobs",
             "vibecheck_scrapes",
             "vibecheck_job_utterances",
+            "vibecheck_pdf_archives",
         ],
     )
     def test_revokes_anon_and_authenticated(self, schema_sql: str, table: str) -> None:
@@ -165,8 +199,10 @@ class TestStatusCheckConstraint:
             "rate_limited",
             "section_failure",
             "internal",
+            "pdf_too_large",
+            "pdf_extraction_failed",
         ):
-            assert f"'{code}'" in schema_sql
+            assert f"'{code}'" in _jobs_error_code_check_body(schema_sql)
 
     def test_scrapes_page_kind_check_lists_six_kinds(self, schema_sql: str) -> None:
         for kind in (
@@ -311,6 +347,7 @@ class TestIdempotency:
             "vibecheck_jobs_finished_at_idx",
             "vibecheck_scrapes_expires_at_idx",
             "vibecheck_job_utterances_job_id_idx",
+            "vibecheck_pdf_archives_expires_at_idx",
         ):
             assert f"CREATE INDEX IF NOT EXISTS {idx}" in schema_sql
 
@@ -380,7 +417,7 @@ class TestUnsafeUrlErrorCode:
         assert "DROP CONSTRAINT IF EXISTS vibecheck_jobs_error_code_check" in schema_sql
         assert "ADD CONSTRAINT vibecheck_jobs_error_code_check" in schema_sql
 
-    def test_error_code_check_lists_all_eight_codes(self, schema_sql: str) -> None:
+    def test_error_code_alter_check_lists_all_codes(self, schema_sql: str) -> None:
         for code in (
             "invalid_url",
             "unsupported_site",
@@ -390,8 +427,10 @@ class TestUnsafeUrlErrorCode:
             "rate_limited",
             "internal",
             "unsafe_url",
+            "pdf_too_large",
+            "pdf_extraction_failed",
         ):
-            assert f"'{code}'" in schema_sql
+            assert f"'{code}'" in _jobs_error_code_alter_check_body(schema_sql)
 
 
 class TestPurgeFunctionExtended:

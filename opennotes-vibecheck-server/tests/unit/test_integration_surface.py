@@ -149,17 +149,24 @@ async def db_pool(
 
 
 async def _insert_pending(
-    pool: Any, attempt_id: UUID, *, url: str = "https://example.com/work"
+    pool: Any,
+    attempt_id: UUID,
+    *,
+    url: str = "https://example.com/work",
+    source_type: str = "url",
 ) -> UUID:
     async with pool.acquire() as conn:
         job_id = await conn.fetchval(
             """
-            INSERT INTO vibecheck_jobs (url, normalized_url, host, status, attempt_id)
-            VALUES ($1, $1, 'example.com', 'pending', $2)
+            INSERT INTO vibecheck_jobs (
+                url, normalized_url, host, source_type, status, attempt_id
+            )
+            VALUES ($1, $1, 'example.com', $3, 'pending', $2)
             RETURNING job_id
             """,
             url,
             attempt_id,
+            source_type,
         )
     assert isinstance(job_id, UUID)
     return job_id
@@ -191,9 +198,10 @@ async def test_claim_job_rotates_attempt_id_and_flips_status(
 
     result = await _claim_job(db_pool, job_id, initial)
     assert result is not None
-    new_attempt, url, test_fail_slug = result
+    new_attempt, url, source_type, test_fail_slug = result
     assert new_attempt != initial
     assert url == "https://example.com/work"
+    assert source_type == "url"
     assert test_fail_slug is None
     async with db_pool.acquire() as conn:
         row = await conn.fetchrow(
@@ -202,6 +210,21 @@ async def test_claim_job_rotates_attempt_id_and_flips_status(
         )
     assert row["status"] == "extracting"
     assert row["attempt_id"] == new_attempt
+
+
+async def test_claim_job_returns_pdf_source_type(db_pool: Any) -> None:
+    initial = uuid4()
+    gcs_key = "22222222-2222-4222-8222-222222222222"
+    job_id = await _insert_pending(
+        db_pool, initial, url=gcs_key, source_type="pdf"
+    )
+
+    result = await _claim_job(db_pool, job_id, initial)
+
+    assert result is not None
+    _new_attempt, url, source_type, _test_fail_slug = result
+    assert url == gcs_key
+    assert source_type == "pdf"
 
 
 async def test_claim_job_rejects_when_status_already_moved(
@@ -250,6 +273,7 @@ async def test_run_job_redelivery_returns_no_op_after_first_run(
         url: str,
         settings: Any,
         *,
+        source_type: str = "url",
         test_fail_slug: str | None = None,
     ) -> None:
         pipeline_runs.append(task_attempt)

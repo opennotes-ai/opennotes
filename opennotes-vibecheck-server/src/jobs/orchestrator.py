@@ -126,6 +126,7 @@ from src.firecrawl_client import (
     ScrapeResult,
 )
 from src.jobs.finalize import maybe_finalize_job
+from src.jobs.pdf_extract import PDFExtractionError, pdf_extract_step
 from src.jobs.scrape_quality import ScrapeQuality, classify_scrape
 from src.jobs.section_defaults import empty_section_data as _empty_section_data
 from src.jobs.slots import mark_slot_done, mark_slot_failed, write_slot
@@ -277,7 +278,7 @@ SET status = 'extracting',
 WHERE job_id = $1
   AND attempt_id = $3
   AND status = 'pending'
-RETURNING attempt_id, url, test_fail_slug
+RETURNING attempt_id, url, COALESCE(source_type, 'url') AS source_type, test_fail_slug
 """
 
 _RESET_SQL = """
@@ -324,13 +325,6 @@ WHERE job_id = $1
   AND attempt_id = $2
 """
 
-_LOAD_JOB_SOURCE_TYPE_SQL = """
-SELECT source_type
-FROM vibecheck_jobs
-WHERE job_id = $1
-  AND attempt_id = $2
-"""
-
 _LOAD_BROWSER_HTML_SCRAPE_SQL = """
 SELECT
     url,
@@ -345,28 +339,6 @@ WHERE tier = 'browser_html'
   AND expires_at > now()
   AND evicted_at IS NULL
 """
-
-
-async def _load_job_source_type(pool: Any, job_id: UUID, task_attempt: UUID) -> str:
-    try:
-        async with pool.acquire() as conn:
-            source_type = await conn.fetchval(
-                _LOAD_JOB_SOURCE_TYPE_SQL,
-                job_id,
-                task_attempt,
-            )
-    except Exception as exc:
-        raise TerminalError(
-            ErrorCode.INTERNAL,
-            f"failed to load source_type for job={job_id} attempt={task_attempt}: {exc}",
-        ) from exc
-
-    if source_type not in {"url", "pdf", "browser_html"}:
-        raise TerminalError(
-            ErrorCode.INTERNAL,
-            f"unsupported source_type for job={job_id} attempt={task_attempt}: {source_type}",
-        )
-    return source_type
 
 
 async def _load_browser_html_scrape(
@@ -477,11 +449,11 @@ async def _claim_job(
     pool: Any,
     job_id: UUID,
     expected_attempt_id: UUID,
-) -> tuple[UUID, str, str | None] | None:
+) -> tuple[UUID, str, str, str | None] | None:
     """Atomically rotate attempt_id and set status=extracting.
 
-    Returns (new_attempt_id, url, test_fail_slug) on success, None when
-    the CAS fails (stale expected_attempt_id or status already moved).
+    Returns (new_attempt_id, url, source_type, test_fail_slug) on success,
+    None when the CAS fails (stale expected_attempt_id or status already moved).
     `test_fail_slug` is the e2e Playwright hook (TASK-1473.35);
     always-None in production where the env flag defaults off. Cloud
     Tasks redeliveries of a superseded enqueue fall into the None
@@ -494,7 +466,10 @@ async def _claim_job(
         )
     if row is None:
         return None
-    return row["attempt_id"], row["url"], row["test_fail_slug"]
+    source_type = row["source_type"]
+    if source_type not in {"url", "pdf", "browser_html"}:
+        source_type = "url"
+    return row["attempt_id"], row["url"], source_type, row["test_fail_slug"]
 
 
 async def _reset_for_retry(
@@ -2170,6 +2145,7 @@ async def _run_pipeline(  # noqa: PLR0912
     url: str,
     settings: Settings,
     *,
+    source_type: str = "url",
     test_fail_slug: str | None = None,
 ) -> None:
     """The scrape->extract->analyze sequence, error-classified.
@@ -2185,7 +2161,6 @@ async def _run_pipeline(  # noqa: PLR0912
     # /v2/extract calls keep their existing retry budget.
     client = _build_firecrawl_client(settings)
     tier1_client = _build_firecrawl_tier1_client(settings)
-    source_type = await _load_job_source_type(pool, job_id, task_attempt)
 
     # Scrape (cache or fresh) via the tiered ladder, then extract.
     #
@@ -2206,6 +2181,20 @@ async def _run_pipeline(  # noqa: PLR0912
         the only difference is the `force_tier` argument threaded into
         `_scrape_step`.
         """
+        if source_type == "pdf":
+            if force_tier is not None:
+                raise PDFExtractionError(
+                    "PDF extraction does not support tier escalation"
+                )
+            return await pdf_extract_step(
+                pool,
+                job_id,
+                url,
+                settings=settings,
+                client=client,
+                scrape_cache=scrape_cache,
+            )
+
         if source_type == "browser_html":
             scrape = await _load_browser_html_scrape(pool, job_id)
             if scrape is None:
@@ -2291,6 +2280,10 @@ async def _run_pipeline(  # noqa: PLR0912
     #     forever on unknown bugs.
     try:
         payload = await _scrape_and_extract(force_tier=None)
+    except PDFExtractionError as exc:
+        raise TerminalError(
+            ErrorCode.PDF_EXTRACTION_FAILED, f"pdf extraction failed: {exc}"
+        ) from exc
     except TransientExtractionError as exc:
         await _classify_transient_or_raise(exc)
     except UtteranceExtractionError as exc:
@@ -2510,7 +2503,7 @@ async def run_job(
             clear_contextvars(job_tokens)
         return RunResult(status_code=200)
 
-    task_attempt, url, test_fail_slug = claim
+    task_attempt, url, source_type, test_fail_slug = claim
     job_tokens = bind_contextvars(job_id=job_id, attempt_id=task_attempt)
     heartbeat = asyncio.create_task(
         _heartbeat_loop(
@@ -2525,6 +2518,7 @@ async def run_job(
         try:
             await _run_pipeline(
                 pool, job_id, task_attempt, url, settings,
+                source_type=source_type,
                 test_fail_slug=test_fail_slug,
             )
         except TransientError as exc:

@@ -35,6 +35,15 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 """
     + VIBECHECK_JOBS_DDL
     + """
+ALTER TABLE vibecheck_jobs
+    ADD COLUMN IF NOT EXISTS source_type TEXT NOT NULL DEFAULT 'url';
+CREATE INDEX IF NOT EXISTS vibecheck_jobs_source_type_idx
+    ON vibecheck_jobs (source_type);
+ALTER TABLE vibecheck_jobs
+    DROP CONSTRAINT IF EXISTS vibecheck_jobs_source_type_check;
+ALTER TABLE vibecheck_jobs
+    ADD CONSTRAINT vibecheck_jobs_source_type_check
+    CHECK (source_type IN ('url', 'pdf', 'browser_html'));
 CREATE TABLE vibecheck_scrapes (
     scrape_id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     normalized_url TEXT NOT NULL,
@@ -459,6 +468,16 @@ class TestListRecentExclusionRules:
         await _seed_scrape(db_pool, url=url)
         result = await list_recent(db_pool, limit=5, signer=_StubSigner())
         assert len(result) == 1
+
+    async def test_excludes_pdf_source_type_rows(self, db_pool: Any) -> None:
+        await _seed_job(
+            db_pool,
+            url="https://example.com/from-pdf",
+            source_type="pdf",
+        )
+        await _seed_scrape(db_pool, url="https://example.com/from-pdf")
+        result = await list_recent(db_pool, limit=5, signer=_StubSigner())
+        assert result == []
 
     async def test_excludes_when_scrape_missing(self, db_pool: Any) -> None:
         url = "https://example.com/no-scrape"

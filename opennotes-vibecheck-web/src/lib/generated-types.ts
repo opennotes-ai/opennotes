@@ -38,6 +38,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/pdf-read": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Pdf Read */
+        get: operations["pdf_read_api_pdf_read_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/screenshot": {
         parameters: {
             query?: never;
@@ -173,6 +190,63 @@ export interface paths {
         get: operations["list_recent_analyses_api_analyses_recent_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/scrape": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Submit Scrape */
+        post: operations["submit_scrape_api_scrape_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/upload-pdf": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Upload Pdf
+         * @description Return `{ gcs_key, upload_url }` for a direct browser upload.
+         *
+         *     Returns a stable 500 payload when configuration is missing or signing
+         *     fails. We do not accept or buffer any PDF bytes in this path.
+         */
+        post: operations["upload_pdf_api_upload_pdf_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/analyze-pdf": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Analyze Pdf */
+        post: operations["analyze_pdf_api_analyze_pdf_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -341,6 +415,13 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** AnalyzePDFRequest */
+        AnalyzePDFRequest: {
+            /** Gcs Key */
+            gcs_key: string;
+            /** Filename */
+            filename?: string | null;
+        };
         /** AnalyzeRequest */
         AnalyzeRequest: {
             /**
@@ -402,7 +483,7 @@ export interface components {
          * @description Stable error codes the frontend branches on for inline copy + retry UX.
          * @enum {string}
          */
-        ErrorCode: "invalid_url" | "unsafe_url" | "unsupported_site" | "upstream_error" | "extraction_failed" | "section_failure" | "timeout" | "rate_limited" | "internal";
+        ErrorCode: "invalid_url" | "unsafe_url" | "unsupported_site" | "upstream_error" | "extraction_failed" | "section_failure" | "pdf_too_large" | "pdf_extraction_failed" | "upload_key_invalid" | "upload_not_found" | "invalid_pdf_type" | "timeout" | "rate_limited" | "internal";
         /**
          * FactCheckMatch
          * @description A single fact-check article surfaced by the Google Fact Check Tools API.
@@ -634,6 +715,14 @@ export interface components {
             error_code?: components["schemas"]["ErrorCode"] | null;
             /** Error Message */
             error_message?: string | null;
+            /**
+             * Source Type
+             * @default url
+             * @enum {string}
+             */
+            source_type: "url" | "pdf" | "browser_html";
+            /** Pdf Archive Url */
+            pdf_archive_url?: string | null;
             /**
              * Error Host
              * @description When ErrorCode.UNSUPPORTED_SITE is returned, the host that triggered the rejection.
@@ -884,6 +973,40 @@ export interface components {
             harmful_content_matches?: components["schemas"]["HarmfulContentMatch"][];
             recommendation?: components["schemas"]["SafetyRecommendation"] | null;
         };
+        /** ScrapeSubmitRequest */
+        ScrapeSubmitRequest: {
+            /**
+             * Url
+             * @description HTTP(S) source URL of the scraped page
+             */
+            url: string;
+            /**
+             * Html
+             * @description Raw HTML from the browser extension
+             */
+            html: string;
+            /** Markdown */
+            markdown?: string | null;
+            /** Title */
+            title?: string | null;
+            /** Description */
+            description?: string | null;
+        };
+        /** ScrapeSubmitResponse */
+        ScrapeSubmitResponse: {
+            /**
+             * Job Id
+             * Format: uuid
+             */
+            job_id: string;
+            /** Analyze Url */
+            analyze_url: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
         /**
          * SectionSlot
          * @description One sidebar slot's state inside a JobState.
@@ -1037,6 +1160,13 @@ export interface components {
             /** Flashpoint Matches */
             flashpoint_matches?: components["schemas"]["FlashpointMatch"][];
         };
+        /** UploadPDFResponse */
+        UploadPDFResponse: {
+            /** Gcs Key */
+            gcs_key: string;
+            /** Upload Url */
+            upload_url: string;
+        };
         /**
          * UtteranceAnchor
          * @description Minimal position-to-id map for client-side transcript jumps.
@@ -1150,10 +1280,42 @@ export interface operations {
     };
     archive_preview_api_archive_preview_get: {
         parameters: {
-            query: {
-                url: string;
+            query?: {
+                url?: string | null;
                 job_id?: string | null;
                 generate?: boolean;
+                source_type?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    pdf_read_api_pdf_read_get: {
+        parameters: {
+            query: {
+                job_id: string;
             };
             header?: never;
             path?: never;
@@ -1326,6 +1488,94 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RecentAnalysis"][];
+                };
+            };
+        };
+    };
+    submit_scrape_api_scrape_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ScrapeSubmitRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScrapeSubmitResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    upload_pdf_api_upload_pdf_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UploadPDFResponse"];
+                };
+            };
+        };
+    };
+    analyze_pdf_api_analyze_pdf_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AnalyzePDFRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AnalyzeResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

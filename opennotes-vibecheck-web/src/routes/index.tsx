@@ -1,8 +1,9 @@
 import { Show } from "solid-js";
 import { useSearchParams, useSubmission } from "@solidjs/router";
 import { Title } from "@solidjs/meta";
+import PdfUpload from "~/components/PdfUpload";
 import UrlInput from "~/components/UrlInput";
-import { analyzeAction } from "./analyze.data";
+import { analyzeAction, submitPdfAnalysisAction } from "./analyze.data";
 
 function errorLabelFor(
   code: string | undefined,
@@ -16,6 +17,15 @@ function errorLabelFor(
       return host
         ? `We can't analyze ${host} yet. Try a different URL.`
         : "We can't analyze that site yet. Try a different URL.";
+    case "pdf_too_large":
+      return "PDF upload is limited to 50 MB.";
+    case "pdf_extraction_failed":
+      return "We couldn't extract text from this PDF. Try a different file.";
+    case "upload_key_invalid":
+    case "upload_not_found":
+      return "Upload may not have completed. Please try uploading the PDF again.";
+    case "invalid_pdf_type":
+      return "Only PDF files are accepted.";
     case "upstream_error":
       return "The analyzer couldn't reach that page. Try again in a moment.";
     default:
@@ -25,7 +35,8 @@ function errorLabelFor(
 
 export default function HomePage() {
   const [searchParams] = useSearchParams();
-  const submission = useSubmission(analyzeAction);
+  const urlSubmission = useSubmission(analyzeAction);
+  const pdfSubmission = useSubmission(submitPdfAnalysisAction);
 
   const errorMessage = () =>
     errorLabelFor(
@@ -35,22 +46,27 @@ export default function HomePage() {
 
   return (
     <>
-      <Title>vibecheck — URL analysis</Title>
+      <Title>vibecheck — URL and PDF analysis</Title>
       <main class="mx-auto flex min-h-screen max-w-2xl flex-col items-center justify-center gap-10 px-4 py-16 text-center">
         <header class="space-y-4">
           <h1 class="text-5xl font-semibold tracking-tight sm:text-6xl">
             vibecheck
           </h1>
           <p class="mx-auto max-w-md text-lg text-muted-foreground">
-            Analyze any URL for tone, claims, safety, and opinions.
+            Analyze URLs and PDFs for tone, claims, safety, and opinions.
           </p>
         </header>
 
-        <UrlInput
-          action={analyzeAction}
-          pending={submission.pending}
-          autofocus
-        />
+        <div class="flex w-full flex-col gap-6">
+          <UrlInput
+            action={analyzeAction}
+            pending={urlSubmission.pending}
+            autofocus
+          />
+          <PdfUpload
+            pending={pdfSubmission.pending}
+          />
+        </div>
 
         <Show when={errorMessage()}>
           {(message) => (

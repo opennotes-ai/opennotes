@@ -96,6 +96,11 @@ class ErrorCode(StrEnum):
     UPSTREAM_ERROR = "upstream_error"
     EXTRACTION_FAILED = "extraction_failed"
     SECTION_FAILURE = "section_failure"
+    PDF_TOO_LARGE = "pdf_too_large"
+    PDF_EXTRACTION_FAILED = "pdf_extraction_failed"
+    UPLOAD_KEY_INVALID = "upload_key_invalid"
+    UPLOAD_NOT_FOUND = "upload_not_found"
+    INVALID_PDF_TYPE = "invalid_pdf_type"
     TIMEOUT = "timeout"
     RATE_LIMITED = "rate_limited"
     INTERNAL = "internal"
@@ -233,6 +238,8 @@ class JobState(BaseModel):
     attempt_id: UUID
     error_code: ErrorCode | None = None
     error_message: str | None = None
+    source_type: Literal["url", "pdf", "browser_html"] = "url"
+    pdf_archive_url: str | None = None
     error_host: str | None = Field(
         default=None,
         description="When ErrorCode.UNSUPPORTED_SITE is returned, the host that triggered the rejection.",

@@ -6,6 +6,8 @@ export type ResolvedPreviewMode = PreviewMode | "unavailable";
 
 export interface PageFrameProps {
   url: string;
+  pdfReadUrl?: string | null;
+  sourcePdf?: boolean;
   loading?: boolean;
   canIframe: boolean;
   blockingHeader?: string | null;
@@ -33,6 +35,7 @@ export default function PageFrame(props: PageFrameProps) {
   const hasBlockingHint = () =>
     !props.canIframe || !!props.blockingHeader || !!props.cspFrameAncestors;
   const hasUrl = () => props.url.trim().length > 0;
+  const isPdf = () => Boolean(props.sourcePdf || props.pdfReadUrl);
   const requestedMode = () => props.previewMode;
   const hasArchive = () => !!props.archivedPreviewUrl && !archivedFailed();
 
@@ -94,7 +97,8 @@ export default function PageFrame(props: PageFrameProps) {
     return "unavailable";
   };
 
-  const showIframe = () => !iframeFailed();
+  const showIframe = () => !isPdf() && !iframeFailed();
+  const showPdfOriginal = () => isPdf() && activePreview() === "original";
   const showOriginalVisible = () => activePreview() === "original";
   const showArchived = () => activePreview() === "archived";
   const showScreenshot = () => activePreview() === "screenshot";
@@ -106,6 +110,7 @@ export default function PageFrame(props: PageFrameProps) {
   let archivedIframeRef: HTMLIFrameElement | undefined;
   let currentUrl = props.url;
   let currentArchiveUrl = props.archivedPreviewUrl ?? null;
+  let currentPdfUrl = props.pdfReadUrl ?? null;
   let lastEmittedResolvedMode: ResolvedPreviewMode | null = null;
 
   const clearLoadTimeout = () => {
@@ -125,7 +130,7 @@ export default function PageFrame(props: PageFrameProps) {
   };
 
   onMount(() => {
-    if (hasUrl()) startLoadTimeout();
+    if (hasUrl() && !isPdf()) startLoadTimeout();
   });
 
   onCleanup(() => {
@@ -134,9 +139,11 @@ export default function PageFrame(props: PageFrameProps) {
 
   createEffect(() => {
     const archiveUrl = props.archivedPreviewUrl ?? null;
-    if (props.url !== currentUrl || archiveUrl !== currentArchiveUrl) {
+    const pdfUrl = props.pdfReadUrl ?? null;
+    if (props.url !== currentUrl || archiveUrl !== currentArchiveUrl || pdfUrl !== currentPdfUrl) {
       currentUrl = props.url;
       currentArchiveUrl = archiveUrl;
+      currentPdfUrl = pdfUrl;
       setIframeFailed(false);
       setIframeLoaded(false);
       setArchivedFailed(false);
@@ -145,7 +152,7 @@ export default function PageFrame(props: PageFrameProps) {
       setUserArmedDeciding(false);
       lastHandledPreviewModeRequestId = props.previewModeRequestId ?? 0;
       lastEmittedResolvedMode = null;
-      if (hasUrl()) startLoadTimeout();
+      if (hasUrl() && !isPdf()) startLoadTimeout();
     }
   });
 
@@ -298,6 +305,33 @@ export default function PageFrame(props: PageFrameProps) {
         />
       </Show>
 
+      <Show when={showPdfOriginal()}>
+        <object
+          data={props.pdfReadUrl ?? ""}
+          type="application/pdf"
+          data-testid="page-frame-pdf-object"
+          class="h-full min-h-[60vh] w-full flex-1 bg-background"
+        >
+          <embed
+            src={props.pdfReadUrl ?? ""}
+            type="application/pdf"
+            data-testid="page-frame-pdf-embed"
+            class="h-full min-h-[60vh] w-full"
+          />
+          <p class="p-6 text-sm text-muted-foreground">
+            PDF preview unavailable.{" "}
+            <a
+              href={props.pdfReadUrl ?? ""}
+              target="_blank"
+              rel="noreferrer noopener"
+              class="text-foreground underline underline-offset-4"
+            >
+              Open PDF
+            </a>
+          </p>
+        </object>
+      </Show>
+
       <Show when={showLoading()}>
         <div
           data-testid="page-frame-loading"
@@ -381,7 +415,7 @@ export default function PageFrame(props: PageFrameProps) {
         </span>
         <Show when={hasUrl()}>
           <a
-            href={props.url}
+            href={props.pdfReadUrl ?? props.url}
             target="_blank"
             rel="noreferrer noopener"
             class="inline-flex items-center gap-1 rounded-md px-2 py-1 text-foreground hover:bg-accent hover:text-accent-foreground"

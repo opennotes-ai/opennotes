@@ -89,6 +89,7 @@ CREATE TABLE vibecheck_jobs (
             OR error_code IN (
                 'invalid_url', 'unsafe_url', 'unsupported_site', 'upstream_error',
                 'extraction_failed', 'section_failure', 'timeout',
+                'pdf_too_large', 'pdf_extraction_failed',
                 'rate_limited', 'internal'
             )
         ),

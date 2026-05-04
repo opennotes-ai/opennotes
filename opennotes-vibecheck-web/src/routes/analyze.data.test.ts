@@ -1,9 +1,18 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
+import { MAX_PDF_BYTES } from "~/lib/pdf-constraints";
 
-const { analyzeUrlMock, retrySectionMock, clientGetMock } = vi.hoisted(() => ({
+const {
+  analyzeUrlMock,
+  retrySectionMock,
+  clientGetMock,
+  requestPdfUploadUrlMock,
+  requestPdfAnalysisMock,
+} = vi.hoisted(() => ({
   analyzeUrlMock: vi.fn(),
   retrySectionMock: vi.fn(),
   clientGetMock: vi.fn(),
+  requestPdfUploadUrlMock: vi.fn(),
+  requestPdfAnalysisMock: vi.fn(),
 }));
 
 vi.mock("~/lib/api-client.server", async () => {
@@ -14,6 +23,8 @@ vi.mock("~/lib/api-client.server", async () => {
     ...actual,
     analyzeUrl: analyzeUrlMock,
     retrySection: retrySectionMock,
+    requestPdfUploadUrl: requestPdfUploadUrlMock,
+    requestPdfAnalysis: requestPdfAnalysisMock,
     getClient: () => ({ GET: clientGetMock, POST: vi.fn() }),
   };
 });
@@ -31,11 +42,33 @@ async function callAction(url: string): Promise<Response> {
   }
 }
 
+async function callPdfAction(file?: File): Promise<Response> {
+  const { resolveAnalyzePdfRedirect } = await import("./analyze.data");
+  const fd = new FormData();
+  if (file) {
+    fd.set("pdf", file);
+  }
+  try {
+    await resolveAnalyzePdfRedirect(fd);
+    throw new Error("resolveAnalyzePdfRedirect did not redirect");
+  } catch (thrown) {
+    if (thrown instanceof Response) return thrown;
+    throw thrown;
+  }
+}
+
+async function callPdfActionAsFile(name = "notes.pdf"): Promise<Response> {
+  const file = new File([new Uint8Array(16)], name, { type: "application/pdf" });
+  return callPdfAction(file);
+}
+
 describe("analyzeAction", () => {
   beforeEach(() => {
     analyzeUrlMock.mockReset();
     retrySectionMock.mockReset();
     clientGetMock.mockReset();
+    requestPdfUploadUrlMock.mockReset();
+    requestPdfAnalysisMock.mockReset();
     vi.resetModules();
   });
 
@@ -205,6 +238,166 @@ describe("analyzeAction", () => {
     const location = response.headers.get("Location") ?? "";
     expect(location).toContain("pending_error=rate_limited");
     expect(location).toContain(`url=${encodeURIComponent(url)}`);
+  });
+});
+
+describe("analyzePdfAction", () => {
+  const createPdf = (size: number, name = "policy.pdf") =>
+    new File([new Uint8Array(size)], name, { type: "application/pdf" });
+
+  beforeEach(() => {
+    requestPdfUploadUrlMock.mockReset();
+    requestPdfAnalysisMock.mockReset();
+    vi.resetModules();
+  });
+
+  it("calls requestPdfUploadUrl then requestPdfAnalysis and redirects to /analyze?job=<id>", async () => {
+    requestPdfUploadUrlMock.mockResolvedValue({
+      gcs_key: "gcs-key",
+      upload_url: "https://storage.example.com/upload",
+    });
+    requestPdfAnalysisMock.mockResolvedValue({
+      job_id: "pdf-job-1",
+      status: "pending",
+      cached: false,
+    });
+
+    const file = createPdf(12);
+    const response = await callPdfAction(file);
+    const location = response.headers.get("Location") ?? "";
+
+    expect(location).toBe("/analyze?job=pdf-job-1");
+    expect(requestPdfUploadUrlMock).toHaveBeenCalledTimes(1);
+    expect(requestPdfAnalysisMock).toHaveBeenCalledWith("gcs-key", "policy.pdf");
+  });
+
+  it("redirects home without backend calls when no PDF file is present", async () => {
+    const response = await callPdfAction();
+
+    expect(response.headers.get("Location")).toBe("/?error=invalid_url");
+    expect(requestPdfUploadUrlMock).not.toHaveBeenCalled();
+    expect(requestPdfAnalysisMock).not.toHaveBeenCalled();
+  });
+
+  it("redirects home without backend calls for non-PDF files", async () => {
+    const response = await callPdfAction(
+      new File(["hello"], "notes.txt", { type: "text/plain" }),
+    );
+
+    expect(response.headers.get("Location")).toBe("/?error=invalid_url");
+    expect(requestPdfUploadUrlMock).not.toHaveBeenCalled();
+    expect(requestPdfAnalysisMock).not.toHaveBeenCalled();
+  });
+
+  it("redirects home without backend calls for oversized PDFs", async () => {
+    const response = await callPdfAction(createPdf(MAX_PDF_BYTES + 1));
+
+    expect(response.headers.get("Location")).toBe("/?error=pdf_too_large");
+    expect(requestPdfUploadUrlMock).not.toHaveBeenCalled();
+    expect(requestPdfAnalysisMock).not.toHaveBeenCalled();
+  });
+
+  it("maps pdf_too_large backend error to home error route", async () => {
+    const { VibecheckApiError } = await import("~/lib/api-client.server");
+    requestPdfUploadUrlMock.mockResolvedValue({
+      gcs_key: "gcs-key",
+      upload_url: "https://storage.example.com/upload",
+    });
+    requestPdfAnalysisMock.mockRejectedValue(
+      new VibecheckApiError("too_large", 413, {
+        error_code: "pdf_too_large" as never,
+      }),
+    );
+
+    const response = await callPdfAction(createPdf(16));
+    const location = response.headers.get("Location") ?? "";
+    expect(location).toBe("/?error=pdf_too_large");
+  });
+
+  it("maps pdf_extraction_failed backend error to home error page", async () => {
+    const { VibecheckApiError } = await import("~/lib/api-client.server");
+    requestPdfUploadUrlMock.mockResolvedValue({
+      gcs_key: "gcs-key",
+      upload_url: "https://storage.example.com/upload",
+    });
+    requestPdfAnalysisMock.mockRejectedValue(
+      new VibecheckApiError("bad pdf", 400, {
+        error_code: "pdf_extraction_failed",
+      }),
+    );
+
+    const response = await callPdfAction(createPdf(16, "paper.pdf"));
+    const location = response.headers.get("Location") ?? "";
+    expect(location).toBe("/?error=pdf_extraction_failed");
+    expect(location).not.toContain("pending_error=");
+    expect(location).not.toContain("paper.pdf");
+  });
+
+  it("rate limits PDF uploads when over threshold", async () => {
+    let currentRequest: Request | null = null;
+    vi.doMock("solid-js/web", async () => {
+      const actual = await vi.importActual<typeof import("solid-js/web")>(
+        "solid-js/web",
+      );
+      return {
+        ...actual,
+        getRequestEvent: () =>
+          currentRequest
+            ? { request: currentRequest, response: new Response() }
+            : undefined,
+      };
+    });
+    process.env.NODE_ENV = "production";
+    process.env.VIBECHECK_RATE_LIMIT_DISABLED = "0";
+    process.env.VIBECHECK_RATE_LIMIT_PER_HOUR = "2";
+    const { _resetRateLimitForTesting } = await import(
+      "~/lib/rate-limit.server"
+    );
+    _resetRateLimitForTesting();
+    requestPdfUploadUrlMock.mockResolvedValue({
+      gcs_key: "gcs-key",
+      upload_url: "https://storage.example.com/upload",
+    });
+    requestPdfAnalysisMock.mockResolvedValue({
+      job_id: "pdf-rl-job",
+      status: "pending",
+      cached: false,
+    });
+
+    const file = new File([new Uint8Array(16)], "doc.pdf", {
+      type: "application/pdf",
+    });
+    const headers = new Headers({ "x-forwarded-for": "203.0.113.42, 10.0.0.1" });
+    const makeRequest = () =>
+      new Request("https://vibecheck.opennotes.ai/", {
+        method: "POST",
+        headers,
+      });
+
+    const { resolveAnalyzePdfRedirect } = await import("./analyze.data");
+
+    const call = async () => {
+      currentRequest = makeRequest();
+      const fd = new FormData();
+      fd.set("pdf", file);
+      try {
+        await resolveAnalyzePdfRedirect(fd);
+        throw new Error("did not redirect");
+      } catch (thrown) {
+        if (thrown instanceof Response) return thrown;
+        throw thrown;
+      }
+    };
+
+    const r1 = await call();
+    expect(r1.headers.get("Location")).toContain("/analyze?job=");
+    const r2 = await call();
+    expect(r2.headers.get("Location")).toContain("/analyze?job=");
+    const r3 = await call();
+    expect(r3.headers.get("Location")).toContain("pending_error=rate_limited");
+
+    delete process.env.VIBECHECK_RATE_LIMIT_PER_HOUR;
+    delete process.env.VIBECHECK_RATE_LIMIT_DISABLED;
   });
 });
 
@@ -542,6 +735,29 @@ describe("getArchiveProbe and getScreenshot split queries", () => {
     expect(await getArchiveProbe("https://news.example.com/a")).toEqual({
       ok: false,
       kind: "transient_error",
+    });
+  });
+
+  it("getArchiveProbe accepts responses without has_archive field (rolling deploy compat — TASK-1498.23)", async () => {
+    clientGetMock.mockResolvedValueOnce({
+      data: {
+        can_iframe: true,
+        blocking_header: null,
+        csp_frame_ancestors: null,
+      },
+      error: null,
+    });
+
+    const { getArchiveProbe } = await import("./analyze.data");
+
+    const result = await getArchiveProbe("https://news.example.com/a");
+    expect(result).toEqual({
+      ok: true,
+      has_archive: false,
+      archived_preview_url: null,
+      can_iframe: true,
+      blocking_header: null,
+      csp_frame_ancestors: null,
     });
   });
 
