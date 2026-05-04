@@ -1,5 +1,3 @@
-import { VibecheckApiError } from "~/lib/api-client.server";
-
 const GCS_PUT_TIMEOUT_MS = 10 * 60_000;
 
 export async function uploadPdfToSignedUrl(
@@ -22,20 +20,11 @@ export async function uploadPdfToSignedUrl(
   } catch (error) {
     clearTimeout(timeoutId);
     const message = error instanceof Error ? error.message : String(error);
-    throw new VibecheckApiError(
-      `PDF upload to signed URL transport failure: ${message}`,
-      503,
-      { error_code: "upstream_error", message },
-    );
+    throw new Error(`PDF upload to signed URL transport failure: ${message}`);
   }
   clearTimeout(timeoutId);
 
   if (!response.ok) {
-    throw new VibecheckApiError(
-      "PDF upload to signed URL failed",
-      response.status,
-      null,
-      response.headers,
-    );
+    throw new Error(`PDF upload to signed URL failed (${response.status})`);
   }
 }
