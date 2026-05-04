@@ -14,7 +14,7 @@ from src.analyses.safety._schemas import (
     WebRiskFinding,
 )
 from src.config import Settings
-from src.services.gemini_agent import build_agent
+from src.services.gemini_agent import build_agent, run_vertex_agent_with_retry
 from src.services.vertex_limiter import vertex_slot
 
 RECOMMENDATION_SYSTEM_PROMPT = """You synthesize the safety findings for one scraped page.
@@ -88,5 +88,5 @@ async def run_safety_recommendation(
         ),
     )
     async with vertex_slot(settings):
-        result = await agent.run(_serialize_inputs(inputs))
+        result = await run_vertex_agent_with_retry(agent, _serialize_inputs(inputs))
     return cast(SafetyRecommendation, result.output)

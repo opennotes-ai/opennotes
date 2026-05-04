@@ -18,7 +18,7 @@ from functools import lru_cache
 from pathlib import Path
 
 from src.config import Settings
-from src.services.gemini_agent import build_agent
+from src.services.gemini_agent import build_agent, run_vertex_agent_with_retry
 from src.services.vertex_limiter import vertex_slot
 from src.utterances import Utterance
 
@@ -116,5 +116,5 @@ async def analyze_scd(
     )
     formatted = _format_utterances(utterances)
     async with vertex_slot(settings):
-        result = await agent.run(formatted)
+        result = await run_vertex_agent_with_retry(agent, formatted)
     return result.output

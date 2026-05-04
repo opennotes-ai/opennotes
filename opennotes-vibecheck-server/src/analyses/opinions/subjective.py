@@ -13,7 +13,7 @@ from src.analyses.opinions._schemas import (
     _BulkSubjectiveClaimsLLM,
 )
 from src.config import Settings, get_settings
-from src.services.gemini_agent import build_agent
+from src.services.gemini_agent import build_agent, run_vertex_agent_with_retry
 from src.services.vertex_limiter import vertex_slot
 from src.utterances.schema import Utterance
 
@@ -91,7 +91,7 @@ async def extract_subjective_claims_bulk(
         name="vibecheck.subjective",
     )
     async with vertex_slot(settings):
-        result = await agent.run("Utterances:\n" + "\n".join(prompt_lines))
+        result = await run_vertex_agent_with_retry(agent, "Utterances:\n" + "\n".join(prompt_lines))
     parsed: _BulkSubjectiveClaimsLLM = result.output
 
     for entry in parsed.results:

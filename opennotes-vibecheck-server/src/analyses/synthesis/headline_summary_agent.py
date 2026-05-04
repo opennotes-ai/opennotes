@@ -30,7 +30,7 @@ from src.analyses.schemas import HeadlineSummary, PageKind
 from src.analyses.tone._flashpoint_schemas import FlashpointMatch
 from src.analyses.tone._scd_schemas import SCDReport
 from src.config import Settings
-from src.services.gemini_agent import build_agent
+from src.services.gemini_agent import build_agent, run_vertex_agent_with_retry
 from src.services.vertex_limiter import vertex_slot
 
 HEADLINE_SUMMARY_SYSTEM_PROMPT = """You synthesize a 1-2 sentence narrative lead for one analyzed page.
@@ -271,7 +271,7 @@ async def run_headline_summary(
         ),
     )
     async with vertex_slot(settings):
-        result = await agent.run(_serialize_inputs(inputs))
+        result = await run_vertex_agent_with_retry(agent, _serialize_inputs(inputs))
     model_output = cast(HeadlineSummary, result.output)
     return HeadlineSummary(
         text=model_output.text,
