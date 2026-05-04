@@ -1,0 +1,19 @@
+{
+  "source_url": "https://example.com/blog",
+  "scrape": {
+    "markdown": "# Blog index\n\n## First post\nA short summary.\n\n## Second post\nAnother summary.",
+    "html": "<html><body><main data-page-kind=\"blog_index\"><article data-entry-id=\"entry-1\"><h2>First post</h2><p>A short summary.</p></article><article data-entry-id=\"entry-2\"><h2>Second post</h2><p>Another summary.</p></article></main></body></html>",
+    "metadata": {
+      "title": "Blog index",
+      "sourceURL": "https://example.com/blog"
+    }
+  },
+  "expected": {
+    "page_kind": "blog_index",
+    "page_title": "Blog index",
+    "utterance_count": 2,
+    "kinds": ["post", "post"],
+    "parent_ids": [null, null],
+    "authors": [null, null]
+  }
+}

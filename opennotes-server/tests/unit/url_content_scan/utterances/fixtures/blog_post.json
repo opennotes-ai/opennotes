@@ -1,0 +1,21 @@
+{
+  "source_url": "https://example.com/blog/groups-are-now-classes",
+  "scrape": {
+    "markdown": "# Groups are now Classes\n\nWe've renamed Groups to Classes to better reflect how our community uses Quizlet.\n\n![Classroom image](/images/groups.png)\n\n## Comments\n\nalice_teacher: Love the rename!\n\nbob_dev: Is the API endpoint still /groups/?\n\nQuizlet Team: Existing Groups migrate automatically.",
+    "html": "<html><body><article data-page-kind=\"blog_post\" data-role=\"post\" data-utterance-id=\"post-0\"><h1>Groups are now Classes</h1><p data-author>Quizlet Team</p><div data-body><p>We've renamed Groups to Classes to better reflect how our community uses Quizlet.</p><img src=\"/images/groups.png\" /></div></article><section data-comments><article data-comment-id=\"comment-0\"><p data-author>alice_teacher</p><p>Love the rename! Will existing Groups auto-migrate to Classes?</p></article><article data-comment-id=\"comment-1\"><p data-author>bob_dev</p><p>Is the API endpoint still /groups/ or has it moved to /classes/?</p><video src=\"/videos/overview.mp4\"></video><article data-comment-id=\"reply-0\" data-parent-id=\"comment-1\"><p data-author>Quizlet Team</p><p>Existing Groups migrate automatically.</p></article></article></section></body></html>",
+    "metadata": {
+      "title": "Groups are now Classes",
+      "sourceURL": "https://example.com/blog/groups-are-now-classes"
+    }
+  },
+  "expected": {
+    "page_kind": "blog_post",
+    "page_title": "Groups are now Classes",
+    "utterance_count": 4,
+    "kinds": ["post", "comment", "comment", "reply"],
+    "parent_ids": [null, "post-0", "post-0", "comment-1"],
+    "authors": ["Quizlet Team", "alice_teacher", "bob_dev", "Quizlet Team"],
+    "images": [["https://example.com/images/groups.png"], [], [], []],
+    "videos": [[], [], ["https://example.com/videos/overview.mp4"], []]
+  }
+}
