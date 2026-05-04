@@ -13085,6 +13085,56 @@
         }
       }
     },
+    "/api/v1/url_scan/_schema_anchor": {
+      "get": {
+        "tags": [
+          "url_scan"
+        ],
+        "summary": "URL scan schema anchor",
+        "description": "Forces URL scan polling/sidebar schemas into OpenAPI until the real polling endpoint is implemented. Always returns 410 Gone.",
+        "operationId": "schema_anchor_api_v1_url_scan__schema_anchor_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobState"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "Always. Placeholder route for schema generation."
+          }
+        }
+      }
+    },
+    "/api/v1/url_scan/_sidebar_schema_anchor": {
+      "get": {
+        "tags": [
+          "url_scan"
+        ],
+        "summary": "URL scan sidebar schema anchor",
+        "description": "Forces SidebarPayload into OpenAPI until the real analyze/poll endpoints are implemented. Always returns 410 Gone.",
+        "operationId": "sidebar_schema_anchor_api_v1_url_scan__sidebar_schema_anchor_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SidebarPayload"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "Always. Placeholder route for schema generation."
+          }
+        }
+      }
+    },
     "/api/v1/admin/token-pools/": {
       "get": {
         "tags": [
@@ -16951,6 +17001,32 @@
         "title": "ClaimRelevanceCheckResultResource",
         "description": "JSON:API resource object for claim relevance check results."
       },
+      "ClaimsReport": {
+        "properties": {
+          "deduped_claims": {
+            "items": {
+              "$ref": "#/components/schemas/DedupedClaim"
+            },
+            "type": "array",
+            "title": "Deduped Claims"
+          },
+          "total_claims": {
+            "type": "integer",
+            "title": "Total Claims"
+          },
+          "total_unique": {
+            "type": "integer",
+            "title": "Total Unique"
+          }
+        },
+        "type": "object",
+        "required": [
+          "deduped_claims",
+          "total_claims",
+          "total_unique"
+        ],
+        "title": "ClaimsReport"
+      },
       "ClearPreviewResponse": {
         "properties": {
           "would_delete_count": {
@@ -17956,7 +18032,7 @@
             "description": "Derailment risk score (0-100)"
           },
           "risk_level": {
-            "$ref": "#/components/schemas/RiskLevel",
+            "$ref": "#/components/schemas/src__bulk_content_scan__schemas__RiskLevel",
             "description": "Categorical risk assessment level"
           },
           "reasoning": {
@@ -18029,6 +18105,47 @@
           "data"
         ],
         "title": "CopyRequestsPayload"
+      },
+      "DedupedClaim": {
+        "properties": {
+          "canonical_text": {
+            "type": "string",
+            "title": "Canonical Text"
+          },
+          "occurrence_count": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Occurrence Count"
+          },
+          "author_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Author Count"
+          },
+          "utterance_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Utterance Ids"
+          },
+          "representative_authors": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Representative Authors"
+          }
+        },
+        "type": "object",
+        "required": [
+          "canonical_text",
+          "occurrence_count",
+          "author_count",
+          "utterance_ids",
+          "representative_authors"
+        ],
+        "title": "DedupedClaim"
       },
       "DetailedAnalysisMeta": {
         "properties": {
@@ -18404,6 +18521,21 @@
         ],
         "title": "EnrollmentData"
       },
+      "ErrorCode": {
+        "type": "string",
+        "enum": [
+          "invalid_url",
+          "unsafe_url",
+          "unsupported_site",
+          "upstream_error",
+          "extraction_failed",
+          "section_failure",
+          "timeout",
+          "rate_limited",
+          "internal"
+        ],
+        "title": "ErrorCode"
+      },
       "ExplanationCreateAttributes": {
         "properties": {
           "original_message": {
@@ -18539,6 +18671,51 @@
         ],
         "title": "ExplanationResultResponse",
         "description": "JSON:API response for explanation generation."
+      },
+      "FactCheckMatch": {
+        "properties": {
+          "claim_text": {
+            "type": "string",
+            "title": "Claim Text"
+          },
+          "publisher": {
+            "type": "string",
+            "title": "Publisher"
+          },
+          "review_title": {
+            "type": "string",
+            "title": "Review Title"
+          },
+          "review_url": {
+            "type": "string",
+            "title": "Review Url"
+          },
+          "textual_rating": {
+            "type": "string",
+            "title": "Textual Rating"
+          },
+          "review_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Review Date"
+          }
+        },
+        "type": "object",
+        "required": [
+          "claim_text",
+          "publisher",
+          "review_title",
+          "review_url",
+          "textual_rating"
+        ],
+        "title": "FactCheckMatch"
       },
       "FactCheckMatchResource": {
         "properties": {
@@ -18689,6 +18866,25 @@
         "title": "FactCheckMatchResource",
         "description": "JSON:API-compatible fact-check match in search results."
       },
+      "FactsClaimsSection": {
+        "properties": {
+          "claims_report": {
+            "$ref": "#/components/schemas/ClaimsReport"
+          },
+          "known_misinformation": {
+            "items": {
+              "$ref": "#/components/schemas/FactCheckMatch"
+            },
+            "type": "array",
+            "title": "Known Misinformation"
+          }
+        },
+        "type": "object",
+        "required": [
+          "claims_report"
+        ],
+        "title": "FactsClaimsSection"
+      },
       "FlaggedMessageAttributes": {
         "properties": {
           "channel_id": {
@@ -18820,6 +19016,100 @@
         "title": "FlashpointDetectionUpdateResponse",
         "description": "Response model for flashpoint detection update."
       },
+      "FlashpointMatch": {
+        "properties": {
+          "scan_type": {
+            "type": "string",
+            "const": "conversation_flashpoint",
+            "title": "Scan Type",
+            "default": "conversation_flashpoint"
+          },
+          "utterance_id": {
+            "type": "string",
+            "title": "Utterance Id",
+            "description": "Platform-agnostic identifier of the scored utterance"
+          },
+          "derailment_score": {
+            "type": "integer",
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "Derailment Score",
+            "description": "Derailment risk score (0-100)"
+          },
+          "risk_level": {
+            "$ref": "#/components/schemas/src__url_content_scan__tone_schemas__RiskLevel",
+            "description": "Categorical risk assessment level"
+          },
+          "reasoning": {
+            "type": "string",
+            "title": "Reasoning",
+            "description": "Explanation of detected escalation signals"
+          },
+          "context_messages": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Context Messages",
+            "description": "Number of context messages analyzed"
+          }
+        },
+        "type": "object",
+        "required": [
+          "utterance_id",
+          "derailment_score",
+          "risk_level",
+          "reasoning",
+          "context_messages"
+        ],
+        "title": "FlashpointMatch"
+      },
+      "FrameFinding": {
+        "properties": {
+          "frame_offset_ms": {
+            "type": "integer",
+            "title": "Frame Offset Ms"
+          },
+          "adult": {
+            "type": "number",
+            "title": "Adult"
+          },
+          "violence": {
+            "type": "number",
+            "title": "Violence"
+          },
+          "racy": {
+            "type": "number",
+            "title": "Racy"
+          },
+          "medical": {
+            "type": "number",
+            "title": "Medical"
+          },
+          "spoof": {
+            "type": "number",
+            "title": "Spoof"
+          },
+          "flagged": {
+            "type": "boolean",
+            "title": "Flagged"
+          },
+          "max_likelihood": {
+            "type": "number",
+            "title": "Max Likelihood"
+          }
+        },
+        "type": "object",
+        "required": [
+          "frame_offset_ms",
+          "adult",
+          "violence",
+          "racy",
+          "medical",
+          "spoof",
+          "flagged",
+          "max_likelihood"
+        ],
+        "title": "FrameFinding"
+      },
       "FusionWeightResponse": {
         "properties": {
           "alpha": {
@@ -18895,6 +19185,90 @@
         },
         "type": "object",
         "title": "HTTPValidationError"
+      },
+      "HarmfulContentMatch": {
+        "properties": {
+          "utterance_id": {
+            "type": "string",
+            "title": "Utterance Id"
+          },
+          "utterance_text": {
+            "type": "string",
+            "title": "Utterance Text",
+            "default": ""
+          },
+          "max_score": {
+            "type": "number",
+            "title": "Max Score"
+          },
+          "categories": {
+            "additionalProperties": {
+              "type": "boolean"
+            },
+            "type": "object",
+            "title": "Categories"
+          },
+          "scores": {
+            "additionalProperties": {
+              "type": "number"
+            },
+            "type": "object",
+            "title": "Scores"
+          },
+          "flagged_categories": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Flagged Categories"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "openai",
+              "gcp"
+            ],
+            "title": "Source",
+            "default": "openai"
+          }
+        },
+        "type": "object",
+        "required": [
+          "utterance_id",
+          "max_score",
+          "categories",
+          "scores"
+        ],
+        "title": "HarmfulContentMatch"
+      },
+      "HeadlineSummary": {
+        "properties": {
+          "text": {
+            "type": "string",
+            "title": "Text"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "stock",
+              "synthesized"
+            ],
+            "title": "Kind"
+          },
+          "unavailable_inputs": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Unavailable Inputs"
+          }
+        },
+        "type": "object",
+        "required": [
+          "text",
+          "kind"
+        ],
+        "title": "HeadlineSummary"
       },
       "HealthCheckResponse": {
         "properties": {
@@ -19444,6 +19818,72 @@
         "title": "IdentitySingleResponse",
         "description": "JSON:API response for a single identity resource."
       },
+      "ImageModerationMatch": {
+        "properties": {
+          "utterance_id": {
+            "type": "string",
+            "title": "Utterance Id"
+          },
+          "image_url": {
+            "type": "string",
+            "title": "Image Url"
+          },
+          "adult": {
+            "type": "number",
+            "title": "Adult"
+          },
+          "violence": {
+            "type": "number",
+            "title": "Violence"
+          },
+          "racy": {
+            "type": "number",
+            "title": "Racy"
+          },
+          "medical": {
+            "type": "number",
+            "title": "Medical"
+          },
+          "spoof": {
+            "type": "number",
+            "title": "Spoof"
+          },
+          "flagged": {
+            "type": "boolean",
+            "title": "Flagged"
+          },
+          "max_likelihood": {
+            "type": "number",
+            "title": "Max Likelihood"
+          }
+        },
+        "type": "object",
+        "required": [
+          "utterance_id",
+          "image_url",
+          "adult",
+          "violence",
+          "racy",
+          "medical",
+          "spoof",
+          "flagged",
+          "max_likelihood"
+        ],
+        "title": "ImageModerationMatch"
+      },
+      "ImageModerationSection": {
+        "properties": {
+          "matches": {
+            "items": {
+              "$ref": "#/components/schemas/ImageModerationMatch"
+            },
+            "type": "array",
+            "title": "Matches"
+          }
+        },
+        "type": "object",
+        "title": "ImageModerationSection"
+      },
       "ImportFactCheckBureauRequest": {
         "properties": {
           "batch_size": {
@@ -19607,6 +20047,176 @@
         "type": "object",
         "title": "JSONAPIMeta",
         "description": "JSON:API meta object for pagination and collection metadata."
+      },
+      "JobState": {
+        "properties": {
+          "job_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Job Id"
+          },
+          "url": {
+            "type": "string",
+            "title": "Url"
+          },
+          "status": {
+            "$ref": "#/components/schemas/JobStatus"
+          },
+          "attempt_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Attempt Id"
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorCode"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "error_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Message"
+          },
+          "error_host": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Host",
+            "description": "When ErrorCode.UNSUPPORTED_SITE is returned, the host that triggered the rejection."
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          },
+          "sections": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/SectionSlot"
+            },
+            "propertyNames": {
+              "$ref": "#/components/schemas/SectionSlug"
+            },
+            "type": "object",
+            "title": "Sections"
+          },
+          "sidebar_payload": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SidebarPayload"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "sidebar_payload_complete": {
+            "type": "boolean",
+            "title": "Sidebar Payload Complete",
+            "default": false
+          },
+          "activity_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Activity At"
+          },
+          "activity_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Activity Label"
+          },
+          "cached": {
+            "type": "boolean",
+            "title": "Cached",
+            "default": false
+          },
+          "next_poll_ms": {
+            "type": "integer",
+            "title": "Next Poll Ms",
+            "default": 1500
+          },
+          "page_title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Page Title"
+          },
+          "page_kind": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PageKind"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "utterance_count": {
+            "type": "integer",
+            "title": "Utterance Count",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "required": [
+          "job_id",
+          "url",
+          "status",
+          "attempt_id",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "JobState"
+      },
+      "JobStatus": {
+        "type": "string",
+        "enum": [
+          "pending",
+          "extracting",
+          "analyzing",
+          "done",
+          "partial",
+          "failed"
+        ],
+        "title": "JobStatus"
       },
       "LLMConfigCreate": {
         "properties": {
@@ -22554,6 +23164,38 @@
         "title": "OpenAIModerationMatch",
         "description": "Match result from OpenAI moderation scan."
       },
+      "OpinionsReport": {
+        "properties": {
+          "sentiment_stats": {
+            "$ref": "#/components/schemas/SentimentStatsReport"
+          },
+          "subjective_claims": {
+            "items": {
+              "$ref": "#/components/schemas/SubjectiveClaim"
+            },
+            "type": "array",
+            "title": "Subjective Claims"
+          }
+        },
+        "type": "object",
+        "required": [
+          "sentiment_stats",
+          "subjective_claims"
+        ],
+        "title": "OpinionsReport"
+      },
+      "OpinionsSection": {
+        "properties": {
+          "opinions_report": {
+            "$ref": "#/components/schemas/OpinionsReport"
+          }
+        },
+        "type": "object",
+        "required": [
+          "opinions_report"
+        ],
+        "title": "OpinionsSection"
+      },
       "OrchestratorAttributes": {
         "properties": {
           "name": {
@@ -23065,6 +23707,18 @@
           "data"
         ],
         "title": "OrchestratorUpdateRequest"
+      },
+      "PageKind": {
+        "type": "string",
+        "enum": [
+          "blog_post",
+          "forum_thread",
+          "hierarchical_thread",
+          "blog_index",
+          "article",
+          "other"
+        ],
+        "title": "PageKind"
       },
       "ParticipantStatsAttributes": {
         "properties": {
@@ -25579,17 +26233,113 @@
         ],
         "title": "ReviewGroup"
       },
-      "RiskLevel": {
+      "SCDReport": {
+        "properties": {
+          "narrative": {
+            "type": "string",
+            "title": "Narrative",
+            "description": "Conversational-register narrative (~80-150 words) describing how the conversation unfolds.",
+            "default": ""
+          },
+          "speaker_arcs": {
+            "items": {
+              "$ref": "#/components/schemas/SpeakerArc"
+            },
+            "type": "array",
+            "title": "Speaker Arcs"
+          },
+          "summary": {
+            "type": "string",
+            "title": "Summary"
+          },
+          "tone_labels": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Tone Labels"
+          },
+          "per_speaker_notes": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Per Speaker Notes"
+          },
+          "insufficient_conversation": {
+            "type": "boolean",
+            "title": "Insufficient Conversation",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "summary"
+        ],
+        "title": "SCDReport"
+      },
+      "SafetyLevel": {
         "type": "string",
         "enum": [
-          "Low Risk",
-          "Guarded",
-          "Heated",
-          "Hostile",
-          "Dangerous"
+          "safe",
+          "caution",
+          "unsafe"
         ],
-        "title": "RiskLevel",
-        "description": "Categorical risk level for conversation flashpoint detection."
+        "title": "SafetyLevel"
+      },
+      "SafetyRecommendation": {
+        "properties": {
+          "level": {
+            "$ref": "#/components/schemas/SafetyLevel"
+          },
+          "rationale": {
+            "type": "string",
+            "title": "Rationale"
+          },
+          "top_signals": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Top Signals"
+          },
+          "unavailable_inputs": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Unavailable Inputs"
+          }
+        },
+        "type": "object",
+        "required": [
+          "level",
+          "rationale"
+        ],
+        "title": "SafetyRecommendation"
+      },
+      "SafetySection": {
+        "properties": {
+          "harmful_content_matches": {
+            "items": {
+              "$ref": "#/components/schemas/HarmfulContentMatch"
+            },
+            "type": "array",
+            "title": "Harmful Content Matches"
+          },
+          "recommendation": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SafetyRecommendation"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "title": "SafetySection"
       },
       "ScanErrorInfoSchema": {
         "properties": {
@@ -26341,6 +27091,171 @@
         "title": "ScrapeProcessingRequest",
         "description": "Request parameters for scraping operations with rate limiting support."
       },
+      "SectionSlot": {
+        "properties": {
+          "state": {
+            "$ref": "#/components/schemas/SectionState"
+          },
+          "attempt_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Attempt Id"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Data"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "state",
+          "attempt_id"
+        ],
+        "title": "SectionSlot"
+      },
+      "SectionSlug": {
+        "type": "string",
+        "enum": [
+          "safety__moderation",
+          "safety__web_risk",
+          "safety__image_moderation",
+          "safety__video_moderation",
+          "tone_dynamics__flashpoint",
+          "tone_dynamics__scd",
+          "facts_claims__dedup",
+          "facts_claims__known_misinfo",
+          "opinions_sentiments__sentiment",
+          "opinions_sentiments__subjective"
+        ],
+        "title": "SectionSlug"
+      },
+      "SectionState": {
+        "type": "string",
+        "enum": [
+          "pending",
+          "running",
+          "done",
+          "failed"
+        ],
+        "title": "SectionState"
+      },
+      "SentimentScore": {
+        "properties": {
+          "utterance_id": {
+            "type": "string",
+            "title": "Utterance Id"
+          },
+          "label": {
+            "type": "string",
+            "enum": [
+              "positive",
+              "negative",
+              "neutral"
+            ],
+            "title": "Label"
+          },
+          "valence": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": -1.0,
+            "title": "Valence"
+          }
+        },
+        "type": "object",
+        "required": [
+          "utterance_id",
+          "label",
+          "valence"
+        ],
+        "title": "SentimentScore"
+      },
+      "SentimentStatsReport": {
+        "properties": {
+          "per_utterance": {
+            "items": {
+              "$ref": "#/components/schemas/SentimentScore"
+            },
+            "type": "array",
+            "title": "Per Utterance"
+          },
+          "positive_pct": {
+            "type": "number",
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "Positive Pct"
+          },
+          "negative_pct": {
+            "type": "number",
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "Negative Pct"
+          },
+          "neutral_pct": {
+            "type": "number",
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "Neutral Pct"
+          },
+          "mean_valence": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": -1.0,
+            "title": "Mean Valence"
+          }
+        },
+        "type": "object",
+        "required": [
+          "per_utterance",
+          "positive_pct",
+          "negative_pct",
+          "neutral_pct",
+          "mean_valence"
+        ],
+        "title": "SentimentStatsReport"
+      },
       "ServiceStatus": {
         "properties": {
           "status": {
@@ -26498,6 +27413,99 @@
         ],
         "title": "SetRatingRequest",
         "description": "JSON:API request body for setting rating on a candidate."
+      },
+      "SidebarPayload": {
+        "properties": {
+          "source_url": {
+            "type": "string",
+            "title": "Source Url"
+          },
+          "page_title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Page Title"
+          },
+          "page_kind": {
+            "$ref": "#/components/schemas/PageKind",
+            "default": "other"
+          },
+          "scraped_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Scraped At"
+          },
+          "cached": {
+            "type": "boolean",
+            "title": "Cached",
+            "default": false
+          },
+          "cached_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cached At"
+          },
+          "safety": {
+            "$ref": "#/components/schemas/SafetySection"
+          },
+          "tone_dynamics": {
+            "$ref": "#/components/schemas/ToneDynamicsSection"
+          },
+          "facts_claims": {
+            "$ref": "#/components/schemas/FactsClaimsSection"
+          },
+          "opinions_sentiments": {
+            "$ref": "#/components/schemas/OpinionsSection"
+          },
+          "web_risk": {
+            "$ref": "#/components/schemas/WebRiskSection"
+          },
+          "image_moderation": {
+            "$ref": "#/components/schemas/ImageModerationSection"
+          },
+          "video_moderation": {
+            "$ref": "#/components/schemas/VideoModerationSection"
+          },
+          "headline": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/HeadlineSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "utterances": {
+            "items": {
+              "$ref": "#/components/schemas/UtteranceAnchor"
+            },
+            "type": "array",
+            "title": "Utterances"
+          }
+        },
+        "type": "object",
+        "required": [
+          "source_url",
+          "scraped_at",
+          "safety",
+          "tone_dynamics",
+          "facts_claims",
+          "opinions_sentiments"
+        ],
+        "title": "SidebarPayload"
       },
       "SimAgentAttributes": {
         "properties": {
@@ -27663,6 +28671,72 @@
         ],
         "title": "SimulationUpdateRequest"
       },
+      "SpeakerArc": {
+        "properties": {
+          "speaker": {
+            "type": "string",
+            "title": "Speaker",
+            "description": "Speaker label as it appears in the formatted transcript (e.g. 'alice', 'Speaker1')."
+          },
+          "note": {
+            "type": "string",
+            "title": "Note",
+            "description": "1-2 sentence observation about this speaker's arc: how their tone, intent, or stance evolves across the conversation."
+          },
+          "utterance_id_range": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "integer",
+                  "minimum": 1.0
+                },
+                "type": "array",
+                "maxItems": 2,
+                "minItems": 2
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Utterance Id Range",
+            "description": "Inclusive [start, end] 1-indexed utterance index range that this arc covers, for timeline-viz alignment. Exactly two integers with start <= end and start >= 1."
+          }
+        },
+        "type": "object",
+        "required": [
+          "speaker",
+          "note"
+        ],
+        "title": "SpeakerArc"
+      },
+      "SubjectiveClaim": {
+        "properties": {
+          "claim_text": {
+            "type": "string",
+            "title": "Claim Text"
+          },
+          "utterance_id": {
+            "type": "string",
+            "title": "Utterance Id"
+          },
+          "stance": {
+            "type": "string",
+            "enum": [
+              "supports",
+              "opposes",
+              "evaluates"
+            ],
+            "title": "Stance"
+          }
+        },
+        "type": "object",
+        "required": [
+          "claim_text",
+          "utterance_id",
+          "stance"
+        ],
+        "title": "SubjectiveClaim"
+      },
       "TierInfo": {
         "properties": {
           "level": {
@@ -27917,6 +28991,25 @@
           "utilization_pct"
         ],
         "title": "TokenPoolStatus"
+      },
+      "ToneDynamicsSection": {
+        "properties": {
+          "scd": {
+            "$ref": "#/components/schemas/SCDReport"
+          },
+          "flashpoint_matches": {
+            "items": {
+              "$ref": "#/components/schemas/FlashpointMatch"
+            },
+            "type": "array",
+            "title": "Flashpoint Matches"
+          }
+        },
+        "type": "object",
+        "required": [
+          "scd"
+        ],
+        "title": "ToneDynamicsSection"
       },
       "UserCreate": {
         "properties": {
@@ -28413,6 +29506,26 @@
         "type": "object",
         "title": "UserUpdate"
       },
+      "UtteranceAnchor": {
+        "properties": {
+          "position": {
+            "type": "integer",
+            "title": "Position",
+            "description": "1-indexed utterance position in the extracted thread."
+          },
+          "utterance_id": {
+            "type": "string",
+            "title": "Utterance Id",
+            "description": "Stable utterance id stored for transcript jumps."
+          }
+        },
+        "type": "object",
+        "required": [
+          "position",
+          "utterance_id"
+        ],
+        "title": "UtteranceAnchor"
+      },
       "ValidationError": {
         "properties": {
           "loc": {
@@ -28487,6 +29600,95 @@
         },
         "type": "object",
         "title": "VersionResponse"
+      },
+      "VideoModerationMatch": {
+        "properties": {
+          "utterance_id": {
+            "type": "string",
+            "title": "Utterance Id"
+          },
+          "video_url": {
+            "type": "string",
+            "title": "Video Url"
+          },
+          "frame_findings": {
+            "items": {
+              "$ref": "#/components/schemas/FrameFinding"
+            },
+            "type": "array",
+            "title": "Frame Findings"
+          },
+          "flagged": {
+            "type": "boolean",
+            "title": "Flagged"
+          },
+          "max_likelihood": {
+            "type": "number",
+            "title": "Max Likelihood"
+          }
+        },
+        "type": "object",
+        "required": [
+          "utterance_id",
+          "video_url",
+          "frame_findings",
+          "flagged",
+          "max_likelihood"
+        ],
+        "title": "VideoModerationMatch"
+      },
+      "VideoModerationSection": {
+        "properties": {
+          "matches": {
+            "items": {
+              "$ref": "#/components/schemas/VideoModerationMatch"
+            },
+            "type": "array",
+            "title": "Matches"
+          }
+        },
+        "type": "object",
+        "title": "VideoModerationSection"
+      },
+      "WebRiskFinding": {
+        "properties": {
+          "url": {
+            "type": "string",
+            "title": "Url"
+          },
+          "threat_types": {
+            "items": {
+              "type": "string",
+              "enum": [
+                "MALWARE",
+                "SOCIAL_ENGINEERING",
+                "UNWANTED_SOFTWARE",
+                "POTENTIALLY_HARMFUL_APPLICATION"
+              ]
+            },
+            "type": "array",
+            "title": "Threat Types"
+          }
+        },
+        "type": "object",
+        "required": [
+          "url",
+          "threat_types"
+        ],
+        "title": "WebRiskFinding"
+      },
+      "WebRiskSection": {
+        "properties": {
+          "findings": {
+            "items": {
+              "$ref": "#/components/schemas/WebRiskFinding"
+            },
+            "type": "array",
+            "title": "Findings"
+          }
+        },
+        "type": "object",
+        "title": "WebRiskSection"
       },
       "WebhookConfigResponse": {
         "properties": {
@@ -28766,6 +29968,29 @@
         ],
         "title": "WelcomeMessageUpdateResponse",
         "description": "Response model for welcome message update."
+      },
+      "src__bulk_content_scan__schemas__RiskLevel": {
+        "type": "string",
+        "enum": [
+          "Low Risk",
+          "Guarded",
+          "Heated",
+          "Hostile",
+          "Dangerous"
+        ],
+        "title": "RiskLevel",
+        "description": "Categorical risk level for conversation flashpoint detection."
+      },
+      "src__url_content_scan__tone_schemas__RiskLevel": {
+        "type": "string",
+        "enum": [
+          "Low Risk",
+          "Guarded",
+          "Heated",
+          "Hostile",
+          "Dangerous"
+        ],
+        "title": "RiskLevel"
       }
     },
     "securitySchemes": {
