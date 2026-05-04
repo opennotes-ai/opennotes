@@ -110,10 +110,10 @@ def test_url_scan_migration_declares_rls_and_skips_pg_cron():
 
     assert "ENABLE ROW LEVEL SECURITY" in migration_text
     assert "FORCE ROW LEVEL SECURITY" in migration_text
-    assert (
-        "CREATE POLICY %I ON public.%I FOR ALL TO %I USING (true) WITH CHECK (true)"
-        in migration_text
-    )
+    assert "DATABASE_URL" in migration_text
+    assert "current_user" in migration_text
+    assert "rolbypassrls" in migration_text
+    assert "WITH CHECK (true)" in migration_text
 
     for table_name in (
         "url_scan_state",
