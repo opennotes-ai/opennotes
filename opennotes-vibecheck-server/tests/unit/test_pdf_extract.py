@@ -48,9 +48,13 @@ class FakePool:
 class FakePdfStore:
     def __init__(self, bucket_name: str) -> None:
         assert bucket_name == "pdf-bucket"
+        self.signed_read_calls: list[tuple[str, int]] = []
 
     def signed_read_url(self, key: str, *, ttl_seconds: int = 900) -> str:
-        assert ttl_seconds == 900
+        # TASK-1498.27: TTL is bumped to 3600s so the URL outlives Firecrawl
+        # queueing/processing time (worst case ~30 minutes).
+        assert ttl_seconds == 3600
+        self.signed_read_calls.append((key, ttl_seconds))
         return f"https://storage.example/{key}?signed=1"
 
 
@@ -306,3 +310,140 @@ async def test_pdf_extract_zero_utterances_is_terminal_pdf_error(
 
     assert "zero utterances" in str(info.value)
     assert info.value.__cause__.__class__ is ZeroUtterancesError
+
+
+async def test_pdf_extract_step_signed_url_minted_just_before_scrape(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """TASK-1498.27: The signed URL must be minted immediately before
+    `client.scrape` (not at the start of the step) and must use a 1-hour TTL
+    so the URL survives Firecrawl queue/processing time."""
+    job_id = uuid4()
+    gcs_key = uuid4().hex
+    pool = FakePool()
+
+    events: list[str] = []
+
+    class TrackingFakePdfStore(FakePdfStore):
+        def signed_read_url(
+            self, key: str, *, ttl_seconds: int = 900
+        ) -> str:
+            events.append("signed_read_url")
+            return super().signed_read_url(key, ttl_seconds=ttl_seconds)
+
+    captured_stores: list[TrackingFakePdfStore] = []
+
+    def tracking_factory(_bucket: str) -> TrackingFakePdfStore:
+        store = TrackingFakePdfStore("pdf-bucket")
+        captured_stores.append(store)
+        return store
+
+    class TrackingClient:
+        def __init__(self, result: ScrapeResult) -> None:
+            self.result = result
+            self.calls: list[dict[str, object]] = []
+
+        async def scrape(self, url: str, **kwargs: object) -> ScrapeResult:
+            events.append("client.scrape")
+            self.calls.append({"url": url, **kwargs})
+            return self.result
+
+    client = TrackingClient(
+        ScrapeResult(
+            html="<main><p>Alice opens calmly.</p></main>",
+            markdown="Alice opens calmly.",
+        )
+    )
+
+    payload = UtterancesPayload(
+        source_url=gcs_key,
+        scraped_at=datetime.now(UTC),
+        utterances=[Utterance(kind="post", text="Alice opens calmly.")],
+    )
+
+    async def fake_extract_utterances(
+        url: str,
+        extract_client: object,
+        scrape_cache: object,
+        *,
+        settings: object,
+        scrape: object,
+    ) -> UtterancesPayload:
+        return payload
+
+    monkeypatch.setattr(pdf_extract, "get_pdf_upload_store", tracking_factory)
+    monkeypatch.setattr(pdf_extract, "extract_utterances", fake_extract_utterances)
+
+    result = await pdf_extract.pdf_extract_step(
+        pool,
+        job_id,
+        gcs_key,
+        settings=_settings(),
+        client=cast(Any, client),
+        scrape_cache=cast(Any, FakeScrapeCache()),
+    )
+
+    assert result is payload
+    # Sign happens immediately before scrape (no other awaits in between).
+    assert events.index("signed_read_url") + 1 == events.index("client.scrape")
+    # And exactly one signing call with ttl_seconds=3600 (TASK-1498.27).
+    assert len(captured_stores) == 1
+    assert captured_stores[0].signed_read_calls == [(gcs_key, 3600)]
+
+
+async def test_pdf_extract_step_cache_put_failure_raises_transient(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """TASK-1498.31: A scrape_cache.put failure must surface as
+    TransientExtractionError so the job is retried with a fresh Firecrawl
+    call, instead of silently breaking the TASK-1498.16 'cache before
+    archive' invariant."""
+    pool = FakePool()
+    client = FakeClient(
+        ScrapeResult(
+            html="<main><p>Alice opens calmly.</p></main>",
+            markdown="Alice opens calmly.",
+        )
+    )
+
+    class FailingScrapeCache:
+        def __init__(self) -> None:
+            self.puts: list[tuple[str, object]] = []
+
+        async def put(
+            self, url: str, scrape: object, **kwargs: object
+        ) -> object:
+            self.puts.append((url, scrape))
+            raise RuntimeError("supabase write failed")
+
+    extract_calls: list[object] = []
+
+    async def fake_extract_utterances(*args: object, **kwargs: object) -> None:
+        extract_calls.append(args)
+        raise AssertionError(
+            "extract_utterances must not run when cache put failed"
+        )
+
+    monkeypatch.setattr(pdf_extract, "get_pdf_upload_store", _fake_store_factory)
+    monkeypatch.setattr(pdf_extract, "extract_utterances", fake_extract_utterances)
+
+    scrape_cache = FailingScrapeCache()
+    with pytest.raises(TransientExtractionError) as info:
+        await pdf_extract.pdf_extract_step(
+            pool,
+            uuid4(),
+            uuid4().hex,
+            settings=_settings(),
+            client=cast(Any, client),
+            scrape_cache=cast(Any, scrape_cache),
+        )
+
+    assert info.value.provider == "supabase"
+    assert "cache put failed" in info.value.fallback_message.lower()
+    # Cache put was attempted exactly once.
+    assert len(scrape_cache.puts) == 1
+    # Archive write was NOT attempted: we raise before that step so the retry
+    # re-scrapes Firecrawl with integrity intact.
+    assert pool.conn.executed == []
+    # And extract_utterances was NOT invoked.
+    assert extract_calls == []

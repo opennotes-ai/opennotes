@@ -79,9 +79,13 @@ async def pdf_extract_step(
     if not settings.VIBECHECK_PDF_UPLOAD_BUCKET:
         raise PDFExtractionError("PDF upload bucket is not configured")
 
+    # TASK-1498.27: Mint the signed read URL immediately before the Firecrawl
+    # call (not at the start of the step) and use a 1-hour TTL. Firecrawl
+    # scrapes can be queued for tens of minutes; the previous 15-minute URL
+    # was racing scrape latency and expiring before fetch.
     signed_url = get_pdf_upload_store(
         settings.VIBECHECK_PDF_UPLOAD_BUCKET
-    ).signed_read_url(gcs_key)
+    ).signed_read_url(gcs_key, ttl_seconds=3600)
     if not signed_url:
         raise PDFExtractionError("could not sign PDF read URL")
 
@@ -117,6 +121,13 @@ async def pdf_extract_step(
     # raise as TransientExtractionError below to trigger Cloud Tasks redelivery)
     # does not re-charge Firecrawl on retry — `extract_utterances` will hit the
     # cache for `gcs_key` instead of re-scraping.
+    # TASK-1498.31: If the cache put fails we MUST NOT proceed to the archive
+    # write. Swallowing the error breaks the TASK-1498.16 invariant that the
+    # cache is populated before the archive: a subsequent transient archive
+    # failure would then re-charge Firecrawl on retry. Surfacing as
+    # TransientExtractionError causes Cloud Tasks to redeliver, and the retry
+    # will re-scrape Firecrawl fresh (worst case: one extra Firecrawl call,
+    # but integrity is preserved).
     try:
         await scrape_cache.put(gcs_key, archive_probe)
     except Exception as exc:
@@ -126,6 +137,14 @@ async def pdf_extract_step(
             job_id,
             exc,
         )
+        raise TransientExtractionError(
+            provider="supabase",
+            status_code=None,
+            status="ERROR",
+            fallback_message=(
+                f"PDF scrape cache put failed; retry will re-scrape: {exc}"
+            ),
+        ) from exc
 
     try:
         await _store_pdf_archive(pool, job_id, html)
