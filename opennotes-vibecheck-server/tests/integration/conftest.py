@@ -190,6 +190,21 @@ CREATE TABLE IF NOT EXISTS vibecheck_job_utterances (
         CHECK (kind IN ('post', 'comment', 'reply'))
 );
 
+-- vibecheck_pdf_archives mirrors src/cache/schema.sql (PDF raw HTML TTL
+-- cache). RLS / REVOKE are out of scope for the integration test DB as
+-- noted in the file-level comment; the table contract under test is the
+-- PK on job_id, the FK cascade from vibecheck_jobs, and the 7-day default
+-- expires_at that pdf_extract_step + frame.py rely on.
+CREATE TABLE IF NOT EXISTS vibecheck_pdf_archives (
+    job_id UUID PRIMARY KEY REFERENCES vibecheck_jobs(job_id) ON DELETE CASCADE,
+    html TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    expires_at TIMESTAMPTZ NOT NULL DEFAULT (now() + INTERVAL '7 days')
+);
+
+CREATE INDEX IF NOT EXISTS vibecheck_pdf_archives_expires_at_idx
+    ON vibecheck_pdf_archives(expires_at);
+
 -- Sweeper function — verbatim copy of src/cache/schema.sql so the
 -- sweeper test exercises the real function body. SECURITY DEFINER is
 -- elided since the testcontainer Postgres has no RLS configured.
@@ -253,6 +268,7 @@ async def db_pool(
     assert pool is not None
     async with pool.acquire() as conn:
         await conn.execute(
+            "DROP TABLE IF EXISTS vibecheck_pdf_archives CASCADE; "
             "DROP TABLE IF EXISTS vibecheck_job_utterances CASCADE; "
             "DROP TABLE IF EXISTS vibecheck_scrapes CASCADE; "
             "DROP TABLE IF EXISTS vibecheck_analyses CASCADE; "
