@@ -27,6 +27,7 @@ T = TypeVar("T", bound=BaseModel)
 GeminiTier = Literal["fast", "synthesis"]
 
 MAX_VERTEX_429_ATTEMPTS: Final[int] = 3
+OUTPUT_VALIDATION_RETRIES: Final[int] = 3
 
 
 @lru_cache(maxsize=4)
@@ -102,7 +103,7 @@ def build_agent(
     observability tooling instead of an anonymous "agent run" span.
     """
     model = _model_from_settings(settings, tier)
-    kwargs: dict[str, Any] = {}
+    kwargs: dict[str, Any] = {"retries": OUTPUT_VALIDATION_RETRIES}
     if system_prompt is not None:
         kwargs["system_prompt"] = system_prompt
     if output_type is not None:
