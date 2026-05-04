@@ -4959,7 +4959,15 @@ export interface components {
          * @description Status states for a batch job.
          * @enum {string}
          */
-        BatchJobStatus: "pending" | "in_progress" | "completed" | "failed" | "cancelled";
+        BatchJobStatus:
+            | "pending"
+            | "in_progress"
+            | "extracting"
+            | "analyzing"
+            | "completed"
+            | "partial"
+            | "failed"
+            | "cancelled";
         /**
          * BatchProcessingRequest
          * @description Request parameters for batch processing operations without rate limiting (e.g., promote).

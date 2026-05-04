@@ -15880,7 +15880,10 @@
         "enum": [
           "pending",
           "in_progress",
+          "extracting",
+          "analyzing",
           "completed",
+          "partial",
           "failed",
           "cancelled"
         ],
