@@ -527,6 +527,11 @@ class Settings(BaseSettings):
         "When empty, GCS upload is disabled (graceful no-op for local dev). "
         "Format: gs://bucket-name/{community_server_id}/{timestamp}.json",
     )
+    URL_SCAN_SCREENSHOT_BUCKET: str = Field(
+        default="",
+        description="GCS bucket name for URL-scan screenshots. When empty, screenshot upload helpers "
+        "must be configured explicitly by the caller.",
+    )
 
     ENABLE_METRICS: bool = Field(default=True, description="Enable metrics middleware")
     ENABLE_TRACING: bool = Field(default=True, description="Enable OpenTelemetry tracing")
