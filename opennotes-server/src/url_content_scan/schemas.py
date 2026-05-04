@@ -117,6 +117,11 @@ class HeadlineSummary(BaseModel):
     unavailable_inputs: list[str] = Field(default_factory=list)
 
 
+class UtteranceAnchor(BaseModel):
+    position: int = Field(description="1-indexed utterance position in the extracted thread.")
+    utterance_id: str = Field(description="Stable utterance id stored for transcript jumps.")
+
+
 class SidebarPayload(BaseModel):
     source_url: str
     page_title: str | None = None
@@ -132,6 +137,7 @@ class SidebarPayload(BaseModel):
     image_moderation: ImageModerationSection = Field(default_factory=ImageModerationSection)
     video_moderation: VideoModerationSection = Field(default_factory=VideoModerationSection)
     headline: HeadlineSummary | None = None
+    utterances: list[UtteranceAnchor] = Field(default_factory=list)
 
 
 class JobState(BaseModel):
@@ -175,6 +181,7 @@ __all__ = [
     "SectionState",
     "SidebarPayload",
     "ToneDynamicsSection",
+    "UtteranceAnchor",
     "VideoModerationSection",
     "WebRiskSection",
 ]

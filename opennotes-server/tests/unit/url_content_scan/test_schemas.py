@@ -3,7 +3,6 @@ from importlib import import_module
 from uuid import uuid4
 
 import pytest
-from fastapi import FastAPI
 
 
 def _load_schemas_module():
@@ -52,6 +51,7 @@ def _empty_sidebar_payload(schemas_module, scraped_at: datetime):
                     "subjective_claims": [],
                 }
             },
+            "utterances": [{"position": 1, "utterance_id": "u-1"}],
         }
     )
 
@@ -121,6 +121,7 @@ def test_job_state_and_sidebar_payload_accept_vibecheck_shape():
     assert job.status is schemas.JobStatus.DONE
     assert job.sections[schemas.SectionSlug.SAFETY_MODERATION].state is schemas.SectionState.DONE
     assert job.sidebar_payload is not None
+    assert job.sidebar_payload.utterances[0].utterance_id == "u-1"
     assert job.sidebar_payload_complete is True
 
 
@@ -130,36 +131,28 @@ def test_router_scaffold_uses_expected_prefix_and_tag():
 
     assert router_module.router.prefix == "/api/v1/url_scan"
     assert router_module.router.tags == ["url_scan"]
-    assert router_module.router.routes == []
+    assert [route.path for route in router_module.router.routes] == [
+        "/api/v1/url_scan/_schema_anchor",
+        "/api/v1/url_scan/_sidebar_schema_anchor",
+    ]
 
 
 @pytest.mark.unit
-def test_openapi_anchor_emits_url_scan_components():
-    schemas = _load_schemas_module()
+def test_router_openapi_anchor_emits_url_scan_components():
     router_module = _load_router_module()
+
+    from fastapi import FastAPI
 
     test_app = FastAPI()
     test_app.include_router(router_module.router)
 
-    @test_app.get("/_schema_anchor", response_model=schemas.JobState)
-    def _schema_anchor():
-        return {
-            "job_id": str(uuid4()),
-            "url": "https://example.com",
-            "status": "pending",
-            "attempt_id": str(uuid4()),
-            "created_at": datetime.now(UTC).isoformat(),
-            "updated_at": datetime.now(UTC).isoformat(),
-        }
-
-    @test_app.get("/_schema_anchor_sidebar", response_model=schemas.SidebarPayload)
-    def _schema_anchor_sidebar():
-        return _empty_sidebar_payload(schemas, datetime.now(UTC))
-
     schema = test_app.openapi()
     components = schema["components"]["schemas"]
 
+    assert "/api/v1/url_scan/_schema_anchor" in schema["paths"]
+    assert "/api/v1/url_scan/_sidebar_schema_anchor" in schema["paths"]
     assert "JobState" in components
     assert "SidebarPayload" in components
     assert "SectionSlot" in components
     assert "ErrorCode" in components
+    assert "UtteranceAnchor" in components
