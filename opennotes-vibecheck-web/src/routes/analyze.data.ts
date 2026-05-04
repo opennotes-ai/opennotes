@@ -409,6 +409,15 @@ export const analyzePdfAction = action(async (formData: FormData) => {
 
 export const requestUploadUrlAction = action(async () => {
   "use server";
+  const { getRequestEvent } = await import("solid-js/web");
+  const evt = getRequestEvent();
+  const { checkAnalyzeRateLimit } = await import("~/lib/rate-limit.server");
+  if (evt?.request?.headers) {
+    const decision = checkAnalyzeRateLimit(evt.request.headers);
+    if (!decision.allowed) {
+      throw redirect("/?error=rate_limited");
+    }
+  }
   const { requestPdfUploadUrl } = await import("~/lib/api-client.server");
   return requestPdfUploadUrl();
 }, "vibecheck-request-pdf-upload-url");

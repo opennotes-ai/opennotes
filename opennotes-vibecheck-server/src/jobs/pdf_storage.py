@@ -41,7 +41,7 @@ class PdfUploadStore:
             self._credentials, _project = google.auth.default()
 
         creds = self._credentials
-        if not getattr(creds, "valid", True):
+        if not getattr(creds, "valid", False):
             creds.refresh(google.auth.transport.requests.Request())
         return creds
 

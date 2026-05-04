@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 from inspect import isawaitable
 from typing import Any
+from urllib.parse import urlparse
 from uuid import UUID
 
 import httpx
@@ -42,10 +43,12 @@ _ALLOWED_GCS_HOSTS = frozenset({
 
 def _is_gcs_url(url: str) -> bool:
     try:
-        from urllib.parse import urlparse  # noqa: PLC0415
-
         parsed = urlparse(url)
-        return parsed.scheme in ("http", "https") and parsed.hostname in _ALLOWED_GCS_HOSTS
+        return (
+            parsed.scheme in ("http", "https")
+            and parsed.hostname in _ALLOWED_GCS_HOSTS
+            and parsed.port is None
+        )
     except Exception:
         return False
 _ARCHIVE_CSP = (
