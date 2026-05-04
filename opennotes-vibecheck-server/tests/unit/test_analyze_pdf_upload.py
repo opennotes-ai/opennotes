@@ -187,6 +187,7 @@ def test_pdf_upload_store_mints_v4_put_url_for_application_pdf(
     class _FakeCredentials:
         service_account_email = "signer@example.iam.gserviceaccount.com"
         token = "access-token"
+        valid = True
 
         def refresh(self, request: object) -> None:
             captured["refresh_request"] = request
@@ -212,3 +213,41 @@ def test_pdf_upload_store_mints_v4_put_url_for_application_pdf(
         "service_account_email": "signer@example.iam.gserviceaccount.com",
         "access_token": "access-token",
     }
+
+
+def test_pdf_upload_store_refreshes_when_credentials_invalid(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    class _FakeBlob:
+        def generate_signed_url(self, **kwargs: object) -> str:
+            return "https://storage.example/upload"
+
+    class _FakeBucket:
+        def blob(self, key: str) -> _FakeBlob:
+            return _FakeBlob()
+
+    class _FakeStorageClient:
+        def bucket(self, bucket_name: str) -> _FakeBucket:
+            return _FakeBucket()
+
+    class _FakeCredentials:
+        service_account_email = "signer@example.iam.gserviceaccount.com"
+        token = "access-token"
+        valid = False
+
+        def refresh(self, request: object) -> None:
+            captured["refresh_request"] = request
+
+    monkeypatch.setattr("google.cloud.storage.Client", _FakeStorageClient)
+    monkeypatch.setattr(
+        "google.auth.default",
+        lambda: (_FakeCredentials(), "test-project"),
+    )
+
+    store = PdfUploadStore("test-pdf-bucket")
+    upload_url = store.signed_upload_url("pdf-key", ttl_seconds=123)
+
+    assert upload_url == "https://storage.example/upload"
+    assert "refresh_request" in captured

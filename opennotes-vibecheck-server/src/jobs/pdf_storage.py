@@ -6,7 +6,7 @@ and dependency injection.
 """
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
+from datetime import timedelta
 from typing import Any
 
 from src.monitoring import get_logger
@@ -41,15 +41,7 @@ class PdfUploadStore:
             self._credentials, _project = google.auth.default()
 
         creds = self._credentials
-        token = getattr(creds, "token", None)
-        expiry = getattr(creds, "expiry", None)
-        needs_refresh = not token
-        if not needs_refresh and expiry is not None:
-            now = datetime.now(UTC)
-            expiry_aware = expiry.replace(tzinfo=UTC) if expiry.tzinfo is None else expiry
-            if expiry_aware <= now + timedelta(seconds=60):
-                needs_refresh = True
-        if needs_refresh:
+        if not getattr(creds, "valid", True):
             creds.refresh(google.auth.transport.requests.Request())
         return creds
 
@@ -91,7 +83,14 @@ class PdfUploadStore:
 
         The upload path stores the object directly in GCS; this method is
         a lightweight existence + header check before analysis starts.
+
+        Returns ``None`` only when GCS confirms the object is missing
+        (NotFound). Transient errors (network, auth, 5xx) propagate so
+        callers can map them to 503 instead of incorrectly telling the
+        user their upload failed (TASK-1498.24).
         """
+        from google.api_core.exceptions import NotFound  # noqa: PLC0415
+
         try:
             blob = self._bucket.blob(key)
             blob.reload()
@@ -99,6 +98,8 @@ class PdfUploadStore:
                 "size": blob.size,
                 "content_type": blob.content_type,
             }
+        except NotFound:
+            return None
         except Exception as exc:
             logger.warning(
                 "gcs pdf metadata lookup failed bucket=%s key=%s: %s",
@@ -106,7 +107,7 @@ class PdfUploadStore:
                 key,
                 exc,
             )
-            return None
+            raise
 
 
 class _StoreCache:

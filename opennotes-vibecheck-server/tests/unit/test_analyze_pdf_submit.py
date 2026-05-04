@@ -158,7 +158,7 @@ async def test_analyze_pdf_submits_valid_gcs_key(
     assert row is not None
     assert row["url"] == key
     assert row["normalized_url"] == key
-    assert row["host"] == ""
+    assert row["host"] == "gcs-pdf"
     assert row["source_type"] == "pdf"
     assert row["status"] == "pending"
     assert row["cached"] is False
@@ -206,19 +206,55 @@ async def test_analyze_pdf_rejects_malformed_gcs_key(
     assert enqueue_mock.await_count == 0
 
 
-async def test_analyze_pdf_rejects_non_v4_uuid_gcs_key(
+async def test_analyze_pdf_accepts_non_v4_uuid_when_present_in_gcs(
     client: httpx.AsyncClient,
     db_pool,
     enqueue_mock,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    before = await _count_jobs(db_pool)
-    resp = await client.post(
-        "/api/analyze-pdf",
-        json={"gcs_key": "11111111-1111-1111-1111-111111111111"},
+    """TASK-1498.30: parser-only validation — GCS existence is the security gate."""
+    monkeypatch.setenv("VIBECHECK_PDF_UPLOAD_BUCKET", "test-pdf-bucket")
+    get_settings.cache_clear()
+    key = "11111111-1111-1111-1111-111111111111"
+    monkeypatch.setattr(
+        analyze_pdf,
+        "get_pdf_upload_store",
+        _fake_pdf_store_factory({key: {"size": 1024, "content_type": "application/pdf"}}),
     )
 
-    assert resp.status_code == 400
-    assert resp.json()["error_code"] == "upload_key_invalid"
+    resp = await client.post("/api/analyze-pdf", json={"gcs_key": key})
+
+    assert resp.status_code == 202
+    assert enqueue_mock.await_count == 1
+    assert await _count_jobs(db_pool, normalized_url=key) == 1
+
+
+async def test_analyze_pdf_transient_storage_error_returns_503(
+    client: httpx.AsyncClient,
+    db_pool,
+    enqueue_mock,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """TASK-1498.24: transient GCS errors map to 503 upstream_error, not 400 not-found."""
+    monkeypatch.setenv("VIBECHECK_PDF_UPLOAD_BUCKET", "test-pdf-bucket")
+    get_settings.cache_clear()
+    key = str(uuid4())
+
+    class _FlakyPdfUploadStore:
+        def __init__(self, bucket_name: str) -> None:
+            assert bucket_name == "test-pdf-bucket"
+
+        def get_metadata(self, key: str) -> dict[str, object] | None:
+            raise RuntimeError("gcs transient outage")
+
+    monkeypatch.setattr(analyze_pdf, "get_pdf_upload_store", lambda _: _FlakyPdfUploadStore("test-pdf-bucket"))
+    before = await _count_jobs(db_pool)
+
+    resp = await client.post("/api/analyze-pdf", json={"gcs_key": key})
+
+    assert resp.status_code == 503
+    body = resp.json()
+    assert body["error_code"] == "upstream_error"
     assert await _count_jobs(db_pool) == before
     assert enqueue_mock.await_count == 0
 

@@ -64,13 +64,14 @@ def _normalize_gcs_key(raw_key: str) -> str | None:
         gcs_key = UUID(raw_key)
     except (TypeError, ValueError):
         return None
-    if gcs_key.version != 4:
-        return None
     return str(gcs_key)
 
 
 @router.post("/upload-pdf", response_model=UploadPDFResponse)
-@analyze_route.limiter.limit(analyze_route._rate_limit_value)
+@analyze_route.limiter.shared_limit(
+    analyze_route._rate_limit_value,
+    scope=analyze_route.SUBMIT_RATE_LIMIT_SCOPE,
+)
 async def upload_pdf(
     request: Request,
     settings: Settings = Depends(get_settings),
@@ -126,7 +127,7 @@ async def _run_locked_submit(
                 conn,
                 url=normalized_url,
                 normalized_url=normalized_url,
-                host="",
+                host="gcs-pdf",
                 unsafe_finding=None,
                 source_type="pdf",
             )
@@ -165,7 +166,11 @@ async def _run_locked_submit(
     return response, None, True
 
 
-@router.post("/analyze-pdf", response_model=analyze_route.AnalyzeResponse)
+@router.post(
+    "/analyze-pdf",
+    response_model=analyze_route.AnalyzeResponse,
+    status_code=202,
+)
 @analyze_route.limiter.shared_limit(
     analyze_route._rate_limit_value,
     scope=analyze_route.SUBMIT_RATE_LIMIT_SCOPE,
@@ -183,16 +188,12 @@ async def analyze_pdf(  # noqa: PLR0911
         return _error_response("PDF upload bucket is not configured")
 
     try:
-        analyze_route._get_db_pool(request)
-    except analyze_route._AnalyzeRouteError as exc:  # pragma: no cover - delegated
-        return exc.to_response()
-
-    try:
         metadata = get_pdf_upload_store(settings.VIBECHECK_PDF_UPLOAD_BUCKET).get_metadata(gcs_key)
     except Exception:
-        return _validation_error_response(
-            "upload_not_found",
-            "PDF not found; upload may have failed",
+        return analyze_route._error_response(
+            503,
+            "upstream_error",
+            "PDF storage temporarily unavailable; please retry",
         )
     if metadata is None:
         return _validation_error_response(
@@ -215,7 +216,10 @@ async def analyze_pdf(  # noqa: PLR0911
             "invalid pdf content type",
         )
 
-    response, _, ok = await _run_locked_submit(request, normalized_url=gcs_key)
+    try:
+        response, _, ok = await _run_locked_submit(request, normalized_url=gcs_key)
+    except analyze_route._AnalyzeRouteError as exc:
+        return exc.to_response()
     if response is None:
         if ok:
             return analyze_route._error_response(
