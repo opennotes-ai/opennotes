@@ -90,7 +90,48 @@ def test_detects_coral_signal_from_latimes_ps_comments_shape() -> None:
     )
 
 
-def test_detects_coral_signal_from_washington_post_comments_shape() -> None:
+def test_detects_coral_signal_from_generic_render_only_coral_comments_shape() -> None:
+    html = """
+    <html>
+      <head>
+        <link
+          rel="canonical"
+          href="https://www.news.example/world/2026/05/04/does-it-work/"
+        />
+        <script
+          src="https://comments.example.org/assets/js/embed.js?token=1725896287"
+          id="comments-stream"
+        ></script>
+      </head>
+      <body>
+        <div data-testid="coral-comments">
+          <div id="comments-wrapper" data-qa="comments-embed">
+            <div class="wpds-light" data-qa="coral-comments" id="comments"></div>
+          </div>
+        </div>
+      </body>
+    </html>
+    """
+
+    signal = detect_coral(html)
+
+    assert signal == CoralSignal(
+        graphql_origin="https://comments.example.org",
+        story_url=(
+            "https://www.news.example/world/2026/05/04/"
+            "does-it-work/"
+        ),
+        iframe_src=(
+            "https://comments.example.org/embed/stream?storyURL="
+            "https%3A%2F%2Fwww.news.example%2Fworld%2F2026%2F05%2F04%2Fdoes-it-work%2F"
+        ),
+        supports_graphql=False,
+        embed_origin="https://comments.example.org",
+        env_origin="https://comments.example.org",
+    )
+
+
+def test_detects_washington_post_shape_via_generic_render_only_coral_detection() -> None:
     html = """
     <html>
       <head>
@@ -130,6 +171,75 @@ def test_detects_coral_signal_from_washington_post_comments_shape() -> None:
         embed_origin="https://talk.washingtonpost.com",
         env_origin="https://talk.washingtonpost.com",
     )
+
+
+def test_detects_coral_signal_from_generic_render_only_static_embed_shape() -> None:
+    html = """
+    <html>
+      <head>
+        <link rel="canonical" href="https://www.example.com/science/2026/05/04/story"/>
+        <script src="https://static-coral.example.com/static/embed.js"></script>
+      </head>
+      <body>
+        <div class="coral-comments-shell" data-coral-comments></div>
+      </body>
+    </html>
+    """
+
+    signal = detect_coral(html)
+    assert signal == CoralSignal(
+        graphql_origin="https://static-coral.example.com",
+        story_url="https://www.example.com/science/2026/05/04/story",
+        iframe_src="https://static-coral.example.com/embed/stream?storyURL=https%3A%2F%2Fwww.example.com%2Fscience%2F2026%2F05%2F04%2Fstory",
+        supports_graphql=False,
+        embed_origin="https://static-coral.example.com",
+        env_origin="https://static-coral.example.com",
+    )
+
+
+@pytest.mark.parametrize(
+    "html",
+    [
+        """
+        <html>
+          <head>
+            <link rel="canonical" href="https://www.example.com/story"/>
+            <script src="https://static-coral.example.org/assets/js/embed.js"></script>
+          </head>
+        </html>
+        """,
+        """
+        <html>
+          <head>
+            <link rel="canonical" href="/relative/story"/>
+            <script src="https://static-coral.example.org/assets/js/embed.js"></script>
+            <div data-testid="coral-comments"></div>
+          </head>
+        </html>
+        """,
+        """
+        <html>
+          <head>
+            <script src="https://static-coral.example.org/assets/js/embed.js"></script>
+            <div data-coral-comments></div>
+          </head>
+        </html>
+        """,
+        """
+        <html>
+          <head>
+            <link rel="canonical" href="https://www.example.com/story"/>
+            <script src="https://static-coral.example.org/assets/js/embed.js"></script>
+          </head>
+          <body>
+            <div data-qa="comments-embed"></div>
+          </body>
+        </html>
+        """,
+    ],
+)
+def test_rejects_render_only_shape_without_coral_guardrails(html: str) -> None:
+    assert detect_coral(html) is None
 
 
 def test_detects_coral_signal_from_valid_iframe_with_ps_comments_optional_marker() -> None:

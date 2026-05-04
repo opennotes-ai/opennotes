@@ -8,10 +8,16 @@ Coral markers:
    iframe using ``storyURL``.
 2. Older Coral Talk static embeds expose a script at ``/static/embed.js``
    alongside a community hostname and canonical article URL from page metadata.
-3. Iframe `src` contains ``/embed/stream`` and has a `storyURL` query
+3. Generic render-only Coral embed path triggers on ``/assets/js/embed.js`` or
+   ``/static/embed.js`` script origins plus corroborating markers and a valid
+   canonical article URL; it builds ``embed/stream`` with a ``storyURL`` query.
+4. Iframe `src` contains ``/embed/stream`` and has a `storyURL` query
    parameter with a usable URL.
-4. Optional corroborating markers such as ``coral-talk-stream`` (class name)
-   or ``data-embed-coral`` attributes are accepted but do not by themselves
+5. Optional corroborating markers such as ``coral-talk-stream`` (class name)
+   ``data-testid=coral-comments``, ``data-qa=coral-comments``,
+   ``coral_talk_stream``, ``coral_thread``, ``data-coral-comments`` and
+   ``data-embed-coral``.
+   They are accepted but do not by themselves
    cause detection.
 
 `detect_coral` returns `None` if signatures are partial, malformed, or
@@ -77,11 +83,11 @@ class _CoralMarkerParser(HTMLParser):
         self._iframe_data: list[dict[str, Any]] = []
         self._has_script_signal = False
         self._has_optional_signal = False
+        self._has_render_only_marker = False
         self._has_static_script_signal = False
         self._latimes_signal_stack: list[_LatimesSignalCandidate] = []
         self._latimes_signals: list[_LatimesSignalCandidate] = []
-        self._wapo_script_origins: list[str] = []
-        self._has_wapo_comments_marker = False
+        self._generic_render_script_origins: list[str] = []
         self._static_script_origins: list[str] = []
         self._canonical_urls: list[str] = []
         self._community_hostnames: list[str] = []
@@ -96,7 +102,10 @@ class _CoralMarkerParser(HTMLParser):
             self._has_script_signal
             or self._has_optional_signal
             or bool(self._latimes_signals)
-            or bool(self._wapo_script_origins and self._has_wapo_comments_marker)
+            or (
+                bool(self._generic_render_script_origins)
+                and self._has_render_only_marker
+            )
         )
 
     @property
@@ -110,6 +119,7 @@ class _CoralMarkerParser(HTMLParser):
         }
         if self._contains_optional_markers(attrs_map):
             self._has_optional_signal = True
+            self._has_render_only_marker = True
 
         for value in attrs_map.values():
             if value is not None:
@@ -118,9 +128,6 @@ class _CoralMarkerParser(HTMLParser):
         if normalized_tag == "script":
             self._handle_script_start(attrs_map)
             return
-
-        if self._contains_wapo_comments_marker(attrs_map):
-            self._has_wapo_comments_marker = True
 
         if normalized_tag == "ps-comments":
             signal = self._capture_latimes_signal(attrs_map)
@@ -221,21 +228,21 @@ class _CoralMarkerParser(HTMLParser):
 
         return None
 
-    def wapo_signal(self) -> CoralSignal | None:
-        if not self._has_wapo_comments_marker or not self._wapo_script_origins:
+    def render_only_signal(self) -> CoralSignal | None:
+        if not self._generic_render_script_origins or not self._has_render_only_marker:
             return None
 
-        canonical_url = self._first_valid_url(
+        story_url = self._first_valid_url(
             self._canonical_urls + self._canonical_urls_from_state
         )
-        if not canonical_url:
+        if not story_url:
             return None
 
-        origin = self._wapo_script_origins[0]
+        origin = self._generic_render_script_origins[0]
         return CoralSignal(
-            iframe_src=f"{origin}/embed/stream?{urlencode({'storyURL': canonical_url})}",
+            iframe_src=f"{origin}/embed/stream?{urlencode({'storyURL': story_url})}",
             graphql_origin=origin,
-            story_url=canonical_url,
+            story_url=story_url,
             supports_graphql=False,
             embed_origin=origin,
             env_origin=origin,
@@ -330,9 +337,9 @@ class _CoralMarkerParser(HTMLParser):
         if static_script_origin is not None:
             self._has_static_script_signal = True
             self._static_script_origins.append(static_script_origin)
-        wapo_script_origin = self._wapo_script_src_origin(src)
-        if wapo_script_origin is not None:
-            self._wapo_script_origins.append(wapo_script_origin)
+        render_script_origin = self._generic_render_script_src_origin(src)
+        if render_script_origin is not None:
+            self._generic_render_script_origins.append(render_script_origin)
 
     def _script_src_matches(self, src: str | None) -> bool:
         if not src:
@@ -351,15 +358,13 @@ class _CoralMarkerParser(HTMLParser):
             return f"{parsed.scheme}://{parsed.netloc}"
         return None
 
-    def _wapo_script_src_origin(self, src: str | None) -> str | None:
+    def _generic_render_script_src_origin(self, src: str | None) -> str | None:
         if not src:
             return None
 
         parsed = urlparse(src)
-        if (
-            parsed.path != "/assets/js/embed.js"
-            or parsed.hostname != "talk.washingtonpost.com"
-        ):
+        path = parsed.path.lower()
+        if path not in {"/assets/js/embed.js", "/static/embed.js"}:
             return None
 
         return self._parse_http_origin(src)
@@ -371,20 +376,18 @@ class _CoralMarkerParser(HTMLParser):
         return None
 
     def _contains_optional_markers(self, attrs: dict[str, str | None]) -> bool:
+        if "data-coral-comments" in attrs:
+            return True
         if "data-embed-coral" in attrs:
             return True
         class_value = attrs.get("class")
-        return bool(class_value and "coral-talk-stream" in class_value.lower())
-
-    def _contains_wapo_comments_marker(self, attrs: dict[str, str | None]) -> bool:
+        if class_value and "coral-talk-stream" in class_value.lower():
+            return True
+        if (attrs.get("id") or "").lower() in {"coral_talk_stream", "coral_thread"}:
+            return True
         data_testid = (attrs.get("data-testid") or "").lower()
         data_qa = (attrs.get("data-qa") or "").lower()
-        node_id = (attrs.get("id") or "").lower()
-        return (
-            data_testid == "coral-comments"
-            or data_qa == "comments-embed"
-            or (node_id == "comments" and data_qa == "coral-comments")
-        )
+        return data_testid == "coral-comments" or data_qa == "coral-comments"
 
     def _iframe_candidate(self, src: str) -> dict[str, str] | None:
         parsed = urlparse(src)
@@ -487,8 +490,8 @@ def detect_coral(html: str) -> CoralSignal | None:  # noqa: PLR0911
         except Exception:
             return None
 
-    wapo_signal = parser.wapo_signal()
-    if wapo_signal is not None:
-        return wapo_signal
+    render_only_signal = parser.render_only_signal()
+    if render_only_signal is not None:
+        return render_only_signal
 
     return parser.latimes_signal()
