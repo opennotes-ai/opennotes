@@ -34,9 +34,8 @@ async def test_retries_on_429_then_succeeds() -> None:
 async def test_exhausts_all_attempts_and_reraises_429() -> None:
     agent = _mock_agent(_exc(429), _exc(429), _exc(429))
 
-    with patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
-        with pytest.raises(ModelHTTPError) as exc_info:
-            await run_vertex_agent_with_retry(agent)
+    with patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep, pytest.raises(ModelHTTPError) as exc_info:
+        await run_vertex_agent_with_retry(agent)
 
     assert exc_info.value.status_code == 429
     assert agent.run.call_count == MAX_VERTEX_429_ATTEMPTS
@@ -46,9 +45,8 @@ async def test_exhausts_all_attempts_and_reraises_429() -> None:
 async def test_non_429_not_retried() -> None:
     agent = _mock_agent(_exc(400))
 
-    with patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
-        with pytest.raises(ModelHTTPError) as exc_info:
-            await run_vertex_agent_with_retry(agent)
+    with patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep, pytest.raises(ModelHTTPError) as exc_info:
+        await run_vertex_agent_with_retry(agent)
 
     assert exc_info.value.status_code == 400
     assert agent.run.call_count == 1

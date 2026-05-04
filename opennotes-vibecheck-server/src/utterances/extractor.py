@@ -47,7 +47,11 @@ from src.analyses.schemas import PageKind
 from src.cache.scrape_cache import CachedScrape, SupabaseScrapeCache
 from src.config import Settings, get_settings
 from src.firecrawl_client import FirecrawlClient
-from src.services.gemini_agent import build_agent, google_vertex_model_name, run_vertex_agent_with_retry
+from src.services.gemini_agent import (
+    build_agent,
+    google_vertex_model_name,
+    run_vertex_agent_with_retry,
+)
 from src.services.vertex_limiter import vertex_slot
 from src.utils.html_sanitize import strip_noise
 from src.utterances.errors import (
