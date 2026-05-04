@@ -1,0 +1,21 @@
+{
+  "source_url": "https://example.com/articles/launch",
+  "scrape": {
+    "markdown": "# Shipping the launch plan\n\nBy Release Team\n\nWe shipped the launch plan in phases.\n\n![Diagram](/images/plan.png)",
+    "html": "<html><body><article data-page-kind=\"article\"><h1>Shipping the launch plan</h1><p data-author>Release Team</p><p>We shipped the launch plan in phases.</p><img src=\"/images/plan.png\" /><iframe src=\"https://www.youtube.com/embed/demo123\"></iframe></article></body></html>",
+    "metadata": {
+      "title": "Shipping the launch plan",
+      "sourceURL": "https://example.com/articles/launch"
+    }
+  },
+  "expected": {
+    "page_kind": "article",
+    "page_title": "Shipping the launch plan",
+    "utterance_count": 1,
+    "kinds": ["post"],
+    "parent_ids": [null],
+    "authors": ["Release Team"],
+    "images": [["https://example.com/images/plan.png"]],
+    "videos": [["https://www.youtube.com/embed/demo123"]]
+  }
+}
