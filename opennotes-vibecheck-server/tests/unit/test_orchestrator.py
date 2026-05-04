@@ -798,6 +798,7 @@ def _ok_scrape_result(
     *,
     body: str = "Substantive article body. " * 20,
     html: str | None = None,
+    actions: dict[str, Any] | None = None,
 ) -> ScrapeResult:
     if html is None:
         html = f"<html><body><article><h1>Real Article</h1><p>{body}</p></article></body></html>"
@@ -805,6 +806,7 @@ def _ok_scrape_result(
         markdown=f"# Real Article\n\n{body}",
         html=html,
         metadata=ScrapeMetadata(status_code=200, source_url="https://example.com/post"),
+        actions=actions,
     )
 
 
@@ -911,6 +913,7 @@ def _eval_execute_javascript(
     match_selectors: list[str] | tuple[str, ...],
     html_fixture: str | None = None,
     shadow_html: str | None = None,
+    shadow_closed: bool = False,
 ) -> tuple[str, str | None, str | None]:
     """Run a generated executeJavascript payload against a stubbed document."""
 
@@ -922,7 +925,9 @@ def _eval_execute_javascript(
 const payload = JSON.parse(process.argv[1]);
 const matchingSelectors = new Set(payload.matchingSelectors);
 const htmlFixture = payload.htmlFixture || "";
-const shadowHtml = payload.shadowHtml || "";
+const hasShadowHtml = payload.shadowHtml !== null && payload.shadowHtml !== undefined;
+const shadowHtml = hasShadowHtml ? payload.shadowHtml : "";
+const shadowClosed = Boolean(payload.shadowClosed);
 let clickedSelector = null;
 let markerHtml = null;
 
@@ -993,9 +998,9 @@ article.appendChild = body.appendChild;
 
 global.document = {
     querySelector(selector) {
-        if (selector === "#coral-shadow-container" && shadowHtml) {
+        if (selector === "#coral-shadow-container" && (hasShadowHtml || shadowClosed)) {
             return {
-                shadowRoot: {
+                shadowRoot: shadowClosed ? null : {
                     innerHTML: shadowHtml,
                     textContent: shadowHtml.replace(/<[^>]*>/g, " "),
                 },
@@ -1048,6 +1053,7 @@ console.log(JSON.stringify(output));
                     "matchingSelectors": list(match_selectors),
                     "htmlFixture": html_fixture,
                     "shadowHtml": shadow_html,
+                    "shadowClosed": shadow_closed,
                 }
             ),
         ],
@@ -1104,13 +1110,13 @@ def test_tier2_actions_for_coral_signal_expands_comment_stream() -> None:
         match_selectors=["button[data-gtm-class=\"open-community\"]"],
     )
     assert clicked == 'button[data-gtm-class="open-community"]'
-    assert returned == 'clicked button[data-gtm-class="open-community"]'
-    assert marker is None
+    assert returned == 'coral_status:timeout;comments=0'
+    assert marker == "Comments"
 
     returned, clicked, marker = _eval_execute_javascript(js, match_selectors=[])
     assert clicked is None
-    assert returned == "no-op"
-    assert marker is None
+    assert returned == "coral_status:host_missing;comments=0"
+    assert marker == "Comments"
     assert actions[3] == {"type": "wait", "milliseconds": 3000}
     assert actions[4] == {"type": "scroll", "direction": "down"}
     assert len(actions) == 5
@@ -1128,8 +1134,8 @@ def test_tier2_actions_for_coral_signal_expands_la_times_ps_comments() -> None:
         html_fixture=_LA_TIMES_PS_COMMENTS_FIXTURE,
     )
     assert clicked == "ps-comments#coral_talk_stream"
-    assert returned == "clicked ps-comments#coral_talk_stream"
-    assert marker is None
+    assert returned == "coral_status:timeout;comments=0"
+    assert marker == "Comments"
 
     returned, clicked, marker = _eval_execute_javascript(
         js,
@@ -1137,8 +1143,33 @@ def test_tier2_actions_for_coral_signal_expands_la_times_ps_comments() -> None:
         html_fixture="<div></div>",
     )
     assert clicked is None
-    assert returned == "no-op"
-    assert marker is None
+    assert returned == "coral_status:host_missing;comments=0"
+    assert marker == "Comments"
+
+
+def test_tier2_actions_for_coral_signal_reports_shadow_failure_statuses() -> None:
+    """Host and shadow-root failures remain visible as final action statuses."""
+
+    actions = _tier2_actions_for(_sample_coral_signal())
+    js = actions[2]["script"]
+
+    returned, clicked, marker = _eval_execute_javascript(
+        js,
+        match_selectors=[],
+        shadow_closed=True,
+    )
+    assert clicked is None
+    assert returned == "coral_status:shadow_closed;comments=0"
+    assert marker == "Comments"
+
+    returned, clicked, marker = _eval_execute_javascript(
+        js,
+        match_selectors=[],
+        shadow_html="Loading",
+    )
+    assert clicked is None
+    assert returned == "coral_status:clicked_no_match;comments=0"
+    assert marker == "Comments"
 
 
 def test_tier2_actions_for_coral_signal_copies_shadow_comments_to_light_dom() -> None:
@@ -1159,7 +1190,7 @@ def test_tier2_actions_for_coral_signal_copies_shadow_comments_to_light_dom() ->
     )
 
     assert clicked is None
-    assert returned == "copied coral shadow comments"
+    assert returned == "coral_status:copied;comments=1"
     assert marker is not None
     assert "Like_it_really_matters" in marker
     assert "johntomas" in marker
@@ -1182,6 +1213,7 @@ async def test_run_tier2_default_actions_recorded_without_coral_signal() -> None
     assert len(interact_client.interact_calls) == 1
     _, interact_kwargs = interact_client.interact_calls[0]
     assert interact_kwargs["actions"] == [{"type": "wait", "milliseconds": 3000}]
+    assert interact_kwargs["only_main_content"] is True
 
 
 async def test_run_tier2_records_coral_specific_actions() -> None:
@@ -1208,6 +1240,7 @@ async def test_run_tier2_records_coral_specific_actions() -> None:
         if action["type"] == "executeJavascript"
     ]
     assert len(js_actions) == 1
+    assert interact_kwargs["only_main_content"] is False
     js = js_actions[0]["script"]
     _assert_generated_js_contains_selector(
         js, 'button[data-testid="comments-show-comments-button"]'
@@ -1218,6 +1251,32 @@ async def test_run_tier2_records_coral_specific_actions() -> None:
     _assert_generated_js_contains_selector(js, "[data-embed-coral] button")
     assert sum(1 for action in actions if action["type"] == "wait") >= 2
     assert sum(1 for action in actions if action["type"] == "scroll") >= 2
+
+
+async def test_run_tier2_records_coral_action_status_from_script_outputs() -> None:
+    """Coral action script output is preserved on the Tier 2 outcome."""
+
+    url = "https://example.com/article"
+    cache = _FakeScrapeCache()
+    interact_client = _FakeFirecrawlClient(
+        interact_result=_ok_scrape_result(
+            actions={
+                "javascriptReturns": [
+                    {"type": "string", "value": "coral_status:copied;comments=2"}
+                ]
+            }
+        )
+    )
+
+    result = await _run_tier2(
+        url,
+        cast(FirecrawlClient, cast(object, interact_client)),
+        cast(SupabaseScrapeCache, cast(object, cache)),
+        coral_signal=_sample_coral_signal(),
+    )
+
+    assert result.cached is not None
+    assert result.coral_action_status == "copied"
 
 
 async def test_scrape_step_tier1_coral_detection_merges_graphql_comments(
@@ -1283,6 +1342,7 @@ async def test_scrape_step_la_times_ps_comments_caches_expanded_result_as_intera
 
     from src.jobs import orchestrator
 
+    span = _install_recording_span(monkeypatch)
     url = "https://www.latimes.com/example/article"
     cache = _FakeScrapeCache()
     article_markdown = "Real Article\n\nSubstantive article body. " * 5
@@ -1300,7 +1360,12 @@ async def test_scrape_step_la_times_ps_comments_caches_expanded_result_as_intera
     )
     interact_client = _FakeFirecrawlClient(
         interact_result=_ok_scrape_result(
-            body=f"{article_markdown}\n\n{comment_markdown}"
+            body=f"{article_markdown}\n\n{comment_markdown}",
+            actions={
+                "javascriptReturns": [
+                    {"type": "string", "value": "coral_status:copied;comments=2"}
+                ]
+            },
         )
     )
 
@@ -1332,12 +1397,13 @@ async def test_scrape_step_la_times_ps_comments_caches_expanded_result_as_intera
         html_fixture=_LA_TIMES_PS_COMMENTS_FIXTURE,
     )
     assert clicked == "ps-comments#coral_talk_stream"
-    assert marker is None
+    assert marker == "Comments"
 
     assert (url, "interact") in cache.store
     assert (url, "interact") in cache.puts
     assert (url, "scrape") not in cache.store
     assert (url, "scrape") not in cache.puts
+    assert span.attrs.get("coral_action_status") == "copied"
 
 
 async def test_scrape_step_la_times_partial_coral_routes_to_interact_without_scrape_cache(

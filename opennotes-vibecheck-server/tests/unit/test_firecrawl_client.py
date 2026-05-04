@@ -41,6 +41,11 @@ async def test_scrape_result_parses_realistic_firecrawl_response(
             "html": "<h1>Hello World</h1><p>Body text.</p>",
             "screenshot": "https://cdn.firecrawl.dev/shots/abc.png",
             "links": ["https://example.com/a", "https://example.com/b"],
+            "actions": {
+                "javascriptReturns": [
+                    {"type": "object", "value": "coral_status:copied;comments=2"}
+                ]
+            },
             "metadata": {
                 "title": "Hello World",
                 "description": "An example page.",
@@ -59,6 +64,11 @@ async def test_scrape_result_parses_realistic_firecrawl_response(
     assert result.html == "<h1>Hello World</h1><p>Body text.</p>"
     assert result.screenshot == "https://cdn.firecrawl.dev/shots/abc.png"
     assert result.links == ["https://example.com/a", "https://example.com/b"]
+    assert result.actions == {
+        "javascriptReturns": [
+            {"type": "object", "value": "coral_status:copied;comments=2"}
+        ]
+    }
     assert result.warning is None
 
     assert isinstance(result.metadata, ScrapeMetadata)
@@ -323,6 +333,26 @@ async def test_interact_routes_to_scrape_endpoint_with_actions_field(
         {"type": "html"},
         {"type": "screenshot", "fullPage": True},
     ]
+
+
+async def test_interact_sends_only_main_content_false(
+    client: FirecrawlClient,
+    httpx_mock: HTTPXMock,
+) -> None:
+    """Firecrawl defaults onlyMainContent to true, so false must be explicit."""
+
+    httpx_mock.add_response(url=SCRAPE_URL, method="POST", json={"success": True, "data": {}})
+
+    await client.interact(
+        TARGET_URL,
+        actions=[{"type": "wait", "milliseconds": 100}],
+        only_main_content=False,
+    )
+
+    request = httpx_mock.get_request(url=SCRAPE_URL, method="POST")
+    assert request is not None
+    body = json.loads(request.content)
+    assert body["onlyMainContent"] is False
 
 
 async def test_interact_refusal_envelope_raises_firecrawl_blocked(
