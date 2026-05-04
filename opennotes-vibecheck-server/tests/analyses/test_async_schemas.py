@@ -97,6 +97,8 @@ class TestErrorCode:
             "unsupported_site",
             "upstream_error",
             "extraction_failed",
+            "pdf_too_large",
+            "pdf_extraction_failed",
             "timeout",
             "rate_limited",
             "section_failure",
@@ -183,6 +185,37 @@ class TestJobState:
         assert job.status is JobStatus.PENDING
         assert job.cached is False
         assert job.next_poll_ms == 500
+
+    def test_defaults_add_source_type_and_no_pdf_archive_url(self) -> None:
+        now = self._now()
+        payload = {
+            "job_id": str(uuid4()),
+            "url": "https://example.com",
+            "status": "pending",
+            "attempt_id": str(uuid4()),
+            "created_at": now.isoformat(),
+            "updated_at": now.isoformat(),
+            "sections": {},
+        }
+        job = JobState.model_validate(payload)
+        assert job.source_type == "url"
+        assert job.pdf_archive_url is None
+
+    def test_accepts_pdf_source_type(self) -> None:
+        now = self._now()
+        payload = {
+            "job_id": str(uuid4()),
+            "url": "https://example.com/file.pdf",
+            "status": "pending",
+            "attempt_id": str(uuid4()),
+            "created_at": now.isoformat(),
+            "updated_at": now.isoformat(),
+            "sections": {},
+            "source_type": "pdf",
+        }
+        job = JobState.model_validate(payload)
+        assert job.source_type == "pdf"
+        assert job.pdf_archive_url is None
 
     def test_failed_job_with_unsupported_site_carries_host(self) -> None:
         job = JobState(

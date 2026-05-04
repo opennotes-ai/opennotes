@@ -13,12 +13,13 @@ query planner, not mocked SQL.
 """
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from typing import Any
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import asyncpg
 
-from src.routes.analyze import _SELECT_JOB_SQL
+from src.routes.analyze import _SELECT_JOB_SQL, _host_of, _row_to_job_state
 
 from .conftest import insert_pending_job
 
@@ -50,6 +51,60 @@ async def _fetch_poll_row(pool: Any, job_id: UUID) -> asyncpg.Record:
         row = await conn.fetchrow(_SELECT_JOB_SQL, job_id)
     assert row is not None
     return row
+
+
+def _mock_poll_row(
+    *,
+    status: str,
+    source_type: str | None = "url",
+) -> dict[str, object]:
+    now = datetime.now(UTC)
+    job_id = uuid4()
+    row = {
+        "job_id": job_id,
+        "url": "https://example.com/poll-row",
+        "status": status,
+        "attempt_id": uuid4(),
+        "error_code": None,
+        "error_message": None,
+        "error_host": None,
+        "sections": {},
+        "sidebar_payload": None,
+        "cached": False,
+        "created_at": now,
+        "updated_at": now,
+        "safety_recommendation": None,
+        "headline_summary": None,
+        "last_stage": None,
+        "heartbeat_at": None,
+        "source_type": source_type,
+        "page_title": None,
+        "page_kind": None,
+        "utterance_count": 0,
+    }
+    if source_type is None:
+        row.pop("source_type")
+    return row
+
+
+def test_host_of_ignores_pdf_source_type() -> None:
+    assert _host_of("not-a-url", source_type="pdf") == ""
+
+
+def test_row_to_job_state_maps_pdf_source_and_archive_url() -> None:
+    row = _mock_poll_row(status="pending", source_type="pdf")
+    job = _row_to_job_state(row)
+    assert job.source_type == "pdf"
+    assert job.pdf_archive_url == (
+        f"/api/archive-preview?job_id={row['job_id']}&source_type=pdf"
+    )
+
+
+def test_row_to_job_state_defaults_url_for_missing_source_type() -> None:
+    row = _mock_poll_row(status="pending", source_type=None)
+    job = _row_to_job_state(row)
+    assert job.source_type == "url"
+    assert job.pdf_archive_url is None
 
 
 async def test_empty_utterances_gives_null_metadata(db_pool: Any) -> None:

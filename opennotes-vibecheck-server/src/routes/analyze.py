@@ -148,12 +148,14 @@ class _AnalyzeRouteError(Exception):
         )
 
 
-def _host_of(normalized_url: str) -> str:
+def _host_of(normalized_url: str, source_type: str = "url") -> str:
     """Extract host from the already-validated normalized URL.
 
     `validate_public_http_url` guarantees the netloc is present and
     IDNA-encoded, so a plain split is safe.
     """
+    if source_type != "url":
+        return ""
     # scheme://host[:port]/path — netloc is between '://' and the next '/'.
     without_scheme = normalized_url.split("://", 1)[1]
     netloc = without_scheme.split("/", 1)[0]
@@ -527,6 +529,7 @@ _SELECT_JOB_SQL = """
 SELECT
     j.job_id,
     j.url,
+    COALESCE(j.source_type, 'url') AS source_type,
     j.status,
     j.attempt_id,
     j.error_code,
@@ -593,6 +596,13 @@ _NON_TERMINAL_STATUSES_POLL = frozenset({"pending", "extracting", "analyzing"})
 
 def _row_to_job_state(row: Any) -> JobState:
     status = JobStatus(row["status"])
+    source_type = row.get("source_type", "url")
+    if source_type not in {"url", "pdf"}:
+        source_type = "url"
+    if source_type == "pdf":
+        pdf_archive_url = f"/api/archive-preview?job_id={row['job_id']}&source_type=pdf"
+    else:
+        pdf_archive_url = None
     is_non_terminal = status.value in _NON_TERMINAL_STATUSES_POLL
     sections = _parse_sections(row["sections"])
     sidebar_raw = None if is_non_terminal else _parse_jsonb(row["sidebar_payload"])
@@ -639,6 +649,8 @@ def _row_to_job_state(row: Any) -> JobState:
         error_code=row["error_code"],
         error_message=row["error_message"],
         error_host=row["error_host"],
+        source_type=source_type,
+        pdf_archive_url=pdf_archive_url,
         created_at=row["created_at"],
         updated_at=row["updated_at"],
         sections=sections,
