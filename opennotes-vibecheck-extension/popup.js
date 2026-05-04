@@ -85,6 +85,7 @@ async function submitCurrentPage() {
         "Content-Type": "application/json",
       },
       body: JSON.stringify(compactPayload({
+        url: activeTab.url,
         source_url: activeTab.url,
         html: page.html,
         title: page.title,

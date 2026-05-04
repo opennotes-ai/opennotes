@@ -29,6 +29,7 @@ The extension captures `document.documentElement.outerHTML`, `document.title`, a
 
 ```json
 {
+  "url": "https://example.com/article",
   "source_url": "https://example.com/article",
   "html": "<html>...</html>",
   "title": "Article title",
