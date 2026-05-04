@@ -26,7 +26,7 @@ from src.analyses.tone._flashpoint_schemas import (
 )
 from src.config import Settings
 from src.monitoring import get_logger
-from src.services.gemini_agent import build_agent
+from src.services.gemini_agent import build_agent, run_vertex_agent_with_retry
 from src.services.vertex_limiter import vertex_slot
 from src.utterances.schema import Utterance
 
@@ -92,7 +92,7 @@ async def detect_flashpoints_bulk(
     )
     try:
         async with vertex_slot(settings):
-            result = await agent.run("Conversation:\n" + "\n".join(numbered))
+            result = await run_vertex_agent_with_retry(agent, "Conversation:\n" + "\n".join(numbered))
     except Exception as exc:
         logger.warning("bulk flashpoint detection failed: %s", exc)
         return out

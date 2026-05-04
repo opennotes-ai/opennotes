@@ -17,7 +17,7 @@ from src.analyses.claims._claims_schemas import (
     ClaimExtractionResponse,
 )
 from src.config import Settings
-from src.services.gemini_agent import build_agent
+from src.services.gemini_agent import build_agent, run_vertex_agent_with_retry
 from src.services.vertex_limiter import vertex_slot
 from src.utterances.schema import Utterance
 
@@ -84,7 +84,7 @@ async def extract_claims_bulk(utterances: list[Utterance], settings: Settings) -
     )
     prompt = "Utterances:\n" + "\n".join(prompt_lines)
     async with vertex_slot(settings):
-        result = await agent.run(prompt)
+        result = await run_vertex_agent_with_retry(agent, prompt)
     response = result.output
     if not isinstance(response, BulkClaimExtractionResponse):
         raise TypeError(

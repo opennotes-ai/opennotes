@@ -47,7 +47,11 @@ from src.analyses.schemas import PageKind
 from src.cache.scrape_cache import CachedScrape, SupabaseScrapeCache
 from src.config import Settings, get_settings
 from src.firecrawl_client import FirecrawlClient
-from src.services.gemini_agent import build_agent, google_vertex_model_name
+from src.services.gemini_agent import (
+    build_agent,
+    google_vertex_model_name,
+    run_vertex_agent_with_retry,
+)
 from src.services.vertex_limiter import vertex_slot
 from src.utils.html_sanitize import strip_noise
 from src.utterances.errors import (
@@ -214,7 +218,7 @@ async def extract_utterances(
         )
         try:
             async with vertex_slot(settings):
-                result = await agent.run(user_prompt, deps=deps)  # pyright: ignore[reportArgumentType]
+                result = await run_vertex_agent_with_retry(agent, user_prompt, deps=deps)  # pyright: ignore[reportArgumentType]
         except Exception as exc:
             transient = classify_pydantic_ai_error(exc, model_name=model_name)
             if transient is not None:

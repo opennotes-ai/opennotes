@@ -15,7 +15,7 @@ from src.analyses.opinions._schemas import (
     _SentimentBatchLLM,
 )
 from src.config import Settings, get_settings
-from src.services.gemini_agent import build_agent
+from src.services.gemini_agent import build_agent, run_vertex_agent_with_retry
 from src.services.vertex_limiter import vertex_slot
 from src.utterances.schema import Utterance
 
@@ -92,7 +92,7 @@ async def compute_sentiment_stats(
     async def _run_batch(batch: list[tuple[str, Utterance]]) -> list[SentimentScore]:
         prompt = _format_batch(batch)
         async with vertex_slot(settings):
-            result = await agent.run(prompt)
+            result = await run_vertex_agent_with_retry(agent, prompt)
         parsed: _SentimentBatchLLM = result.output
         ids_in_order = [uid for uid, _ in batch]
         by_id = {s.utterance_id: s for s in parsed.scores}
