@@ -228,6 +228,16 @@ export default function AnalyzePage() {
     }
   };
 
+  // Separate effect: once a PDF job reaches terminal state with no archive,
+  // mark the Archived tab unavailable. Kept separate so it tracks jobStatus()
+  // without causing the main probe-init effect to re-run on status changes.
+  createEffect(() => {
+    if (!isPdf() || pdfArchiveUrl()) return;
+    if (TERMINAL_JOB_STATUSES.has(jobStatus() ?? "")) {
+      setArchiveProbeState("unavailable");
+    }
+  });
+
   createEffect(() => {
     const url = jobUrl();
     const shouldProbe = shouldProbePreview();

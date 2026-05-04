@@ -864,18 +864,16 @@ describe("AnalyzePage route", () => {
       }),
     );
 
+    // pdf_archive_url arriving auto-switches preview to Archived
     await waitFor(() => {
-      expect(screen.getByTestId("page-frame-pdf-embed")).not.toBeNull();
+      expect(
+        screen.getByTestId("page-frame-archived-iframe").getAttribute("src"),
+      ).toBe(archiveUrl);
     });
     await flushMicrotasks();
 
     expect(screen.queryByTestId("page-frame-iframe")).toBeNull();
-    expect(
-      screen.getByTestId("page-frame-pdf-object").getAttribute("data"),
-    ).toBe("/api/pdf-read?job_id=job-pdf-preview");
-    expect(
-      screen.getByTestId("page-frame-pdf-embed").getAttribute("src"),
-    ).toBe("/api/pdf-read?job_id=job-pdf-preview");
+    expect(screen.queryByTestId("page-frame-pdf-embed")).toBeNull();
     expect(getArchiveProbeMock).not.toHaveBeenCalled();
     expect(getScreenshotMock).not.toHaveBeenCalled();
     expect(revalidateMock).not.toHaveBeenCalled();
@@ -888,17 +886,23 @@ describe("AnalyzePage route", () => {
       "Not available for PDFs",
     );
 
+    // Archived button is active (auto-switched)
     const archivedButton = screen.getByTestId(
       "preview-mode-archived",
     ) as HTMLButtonElement;
     expect(archivedButton.disabled).toBe(false);
-    fireEvent.click(archivedButton);
+    expect(archivedButton.getAttribute("aria-pressed")).toBe("true");
 
+    // Clicking Original returns to the PDF reader view
+    fireEvent.click(screen.getByTestId("preview-mode-original"));
     await waitFor(() => {
       expect(
-        screen.getByTestId("page-frame-archived-iframe").getAttribute("src"),
-      ).toBe(archiveUrl);
+        screen.getByTestId("page-frame-pdf-object").getAttribute("data"),
+      ).toBe("/api/pdf-read?job_id=job-pdf-preview");
     });
+    expect(
+      screen.getByTestId("page-frame-pdf-embed").getAttribute("src"),
+    ).toBe("/api/pdf-read?job_id=job-pdf-preview");
   });
 
   it("returns to Original when a polling update resolves to PDF after Screenshot was selected", async () => {
