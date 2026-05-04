@@ -17,6 +17,7 @@ def test_all_scopes_present():
         "moderation-actions:read",
         "api-keys:create",
         "platform:adapter",
+        "vibecheck:submit",
     }
     assert expected == ALLOWED_API_KEY_SCOPES
 
