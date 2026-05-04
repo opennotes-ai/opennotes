@@ -137,7 +137,6 @@ CREATE TABLE IF NOT EXISTS public.vibecheck_jobs (
     normalized_url TEXT NOT NULL,
     host TEXT NOT NULL,
     status TEXT NOT NULL DEFAULT 'pending',
-    source_type TEXT NOT NULL DEFAULT 'url',
     attempt_id UUID NOT NULL DEFAULT extensions.uuid_generate_v4(),
     error_code TEXT,
     error_message TEXT,
@@ -154,8 +153,6 @@ CREATE TABLE IF NOT EXISTS public.vibecheck_jobs (
     finished_at TIMESTAMPTZ,
     CONSTRAINT vibecheck_jobs_status_check
         CHECK (status IN ('pending', 'extracting', 'analyzing', 'done', 'partial', 'failed')),
-    CONSTRAINT vibecheck_jobs_source_type_check
-        CHECK (source_type IN ('url', 'pdf')),
     CONSTRAINT vibecheck_jobs_error_code_check
         CHECK (
             error_code IS NULL
@@ -270,16 +267,6 @@ ALTER TABLE public.vibecheck_jobs
 -- TASK-1474.23.03.04 + .05.
 ALTER TABLE public.vibecheck_jobs
     ADD COLUMN IF NOT EXISTS extract_transient_attempts INT NOT NULL DEFAULT 0;
-
--- TASK-1498.01: source input type for lifecycle branching (`url` vs `pdf`).
-ALTER TABLE public.vibecheck_jobs
-    ADD COLUMN IF NOT EXISTS source_type TEXT NOT NULL DEFAULT 'url';
-
-ALTER TABLE public.vibecheck_jobs
-    DROP CONSTRAINT IF EXISTS vibecheck_jobs_source_type_check;
-ALTER TABLE public.vibecheck_jobs
-    ADD CONSTRAINT vibecheck_jobs_source_type_check
-    CHECK (source_type IN ('url', 'pdf'));
 
 -- =========================================================================
 -- vibecheck_pdf_archives (PDF raw HTML TTL cache)
