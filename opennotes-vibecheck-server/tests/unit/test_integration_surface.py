@@ -372,17 +372,17 @@ async def test_extract_transient_backstop_first_delivery_increments_counter_and_
     assert row["extract_transient_attempts"] == 1
 
 
-async def test_extract_transient_backstop_second_delivery_escalates_to_terminal(
+async def test_extract_transient_backstop_third_delivery_escalates_to_terminal(
     worker_client: httpx.AsyncClient,
     db_pool: Any,
     oidc_headers: dict[str, str],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Two consecutive Cloud Tasks deliveries that each raise
-    TransientExtractionError: the SECOND one (counter goes 1 -> 2 ==
+    """Three consecutive Cloud Tasks deliveries that each raise
+    TransientExtractionError: the THIRD one (counter goes 2 -> 3 ==
     EXTRACT_TRANSIENT_MAX_ATTEMPTS) must escalate to
-    TerminalError(UPSTREAM_ERROR) so the row flips to failed BEFORE
-    Cloud Tasks silently exhausts at max_attempts=3.
+    TerminalError(UPSTREAM_ERROR) so the row flips to failed aligned
+    with Cloud Tasks max_attempts=3.
     """
     from src.jobs import orchestrator
     from src.utterances.errors import TransientExtractionError
@@ -435,27 +435,43 @@ async def test_extract_transient_backstop_second_delivery_escalates_to_terminal(
     assert row1["status"] == "pending"
     assert row1["extract_transient_attempts"] == 1
 
-    # Delivery 2: bumps counter 1 -> 2 == EXTRACT_TRANSIENT_MAX_ATTEMPTS,
-    # escalates to TerminalError(UPSTREAM_ERROR) -> 200 + status='failed'.
-    # Cloud Tasks redelivers with the SAME body payload (same expected
-    # attempt_id) — the reset put the original attempt back on the row.
+    # Delivery 2: bumps counter 1 -> 2 (still below EXTRACT_TRANSIENT_MAX_ATTEMPTS=3),
+    # returns 503. Cloud Tasks redelivers with the SAME body payload (same
+    # expected attempt_id) — the reset put the original attempt back on the row.
     second = await worker_client.post(
         f"/_internal/jobs/{job_id}/run",
         json={"job_id": str(job_id), "expected_attempt_id": str(initial)},
         headers=oidc_headers,
     )
-    assert second.status_code == 200, second.text
+    assert second.status_code == 503, second.text
     async with db_pool.acquire() as conn:
         row2 = await conn.fetchrow(
+            "SELECT status, attempt_id, extract_transient_attempts "
+            "FROM vibecheck_jobs WHERE job_id = $1",
+            job_id,
+        )
+    assert row2["status"] == "pending"
+    assert row2["extract_transient_attempts"] == 2
+
+    # Delivery 3: bumps counter 2 -> 3 == EXTRACT_TRANSIENT_MAX_ATTEMPTS,
+    # escalates to TerminalError(UPSTREAM_ERROR) -> 200 + status='failed'.
+    third = await worker_client.post(
+        f"/_internal/jobs/{job_id}/run",
+        json={"job_id": str(job_id), "expected_attempt_id": str(initial)},
+        headers=oidc_headers,
+    )
+    assert third.status_code == 200, third.text
+    async with db_pool.acquire() as conn:
+        row3 = await conn.fetchrow(
             "SELECT status, error_code, error_message, "
             "extract_transient_attempts "
             "FROM vibecheck_jobs WHERE job_id = $1",
             job_id,
         )
-    assert row2["status"] == "failed"
-    assert row2["error_code"] == "upstream_error"
-    assert "504" in (row2["error_message"] or "")
-    assert row2["extract_transient_attempts"] == 2
+    assert row3["status"] == "failed"
+    assert row3["error_code"] == "upstream_error"
+    assert "504" in (row3["error_message"] or "")
+    assert row3["extract_transient_attempts"] == 3
 
 
 # ===========================================================================
