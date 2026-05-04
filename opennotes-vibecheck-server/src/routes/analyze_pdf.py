@@ -36,6 +36,7 @@ class UploadPDFResponse(BaseModel):
 
 class AnalyzePDFRequest(BaseModel):
     gcs_key: str
+    filename: str | None = None
 
 
 def _error_response(message: str) -> JSONResponse:

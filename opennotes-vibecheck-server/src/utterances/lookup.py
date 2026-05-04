@@ -9,6 +9,8 @@ from src.utterances.schema import Utterance
 _SELECT_JOB_UTTERANCES_SQL = """
 SELECT
     j.url AS job_url,
+    j.normalized_url AS normalized_url,
+    COALESCE(j.source_type, 'url') AS source_type,
     u.utterance_id,
     u.kind,
     u.text,
@@ -35,10 +37,6 @@ async def get_utterances_for_archive(
     job_id: UUID,
     requested_url: str,
 ) -> list[Utterance]:
-    requested_normalized = _normalize_for_match(requested_url)
-    if requested_normalized is None:
-        return []
-
     async with pool.acquire() as conn:
         rows = await conn.fetch(_SELECT_JOB_UTTERANCES_SQL, job_id)
 
@@ -46,10 +44,19 @@ async def get_utterances_for_archive(
         return []
 
     job_url = rows[0]["job_url"]
-    if not isinstance(job_url, str):
-        return []
-    if _normalize_for_match(job_url) != requested_normalized:
-        return []
+    source_type = rows[0]["source_type"]
+    if source_type == "pdf":
+        normalized_url = rows[0]["normalized_url"]
+        if not isinstance(normalized_url, str) or normalized_url != requested_url:
+            return []
+    else:
+        requested_normalized = _normalize_for_match(requested_url)
+        if requested_normalized is None:
+            return []
+        if not isinstance(job_url, str):
+            return []
+        if _normalize_for_match(job_url) != requested_normalized:
+            return []
 
     utterances: list[Utterance] = []
     for row in rows:

@@ -125,6 +125,35 @@ describe("GET /api/archive-preview", () => {
     expect(backendUrl.searchParams.has("job_id")).toBe(false);
   });
 
+  it("forwards PDF archive requests without requiring a URL", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(new Response("<html>pdf</html>", { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const event = buildEvent(
+      "http://localhost:3000/api/archive-preview?source_type=pdf&job_id=11111111-1111-1111-1111-111111111111",
+    );
+    await GET(event);
+
+    const backendUrl = fetchMock.mock.calls[0]?.[0] as URL;
+    expect(backendUrl.searchParams.get("source_type")).toBe("pdf");
+    expect(backendUrl.searchParams.get("job_id")).toBe(
+      "11111111-1111-1111-1111-111111111111",
+    );
+    expect(backendUrl.searchParams.has("url")).toBe(false);
+  });
+
+  it("rejects PDF archive requests without a job_id", async () => {
+    const event = buildEvent(
+      "http://localhost:3000/api/archive-preview?source_type=pdf",
+    );
+    const response = await GET(event);
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ detail: "job_id is required" });
+  });
+
   it("returns 400 application/json for non-http target URL", async () => {
     const event = buildEvent(
       "http://localhost:3000/api/archive-preview?url=javascript:alert(1)",

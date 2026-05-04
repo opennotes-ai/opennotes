@@ -7,6 +7,7 @@ from uuid import UUID
 
 import httpx
 from fastapi import APIRouter, HTTPException, Query, Request, Response
+from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 from supabase import create_client
 
@@ -14,6 +15,7 @@ from src.cache.scrape_cache import CachedScrape, SupabaseScrapeCache
 from src.cache.screenshot_store import GCSScreenshotStore, InMemoryScreenshotStore, ScreenshotStore
 from src.config import get_settings
 from src.firecrawl_client import FirecrawlClient, ScrapeResult
+from src.jobs.pdf_storage import PdfUploadStore
 from src.jobs.scrape_quality import ScrapeQuality, classify_scrape
 from src.monitoring import get_logger
 from src.utils.html_sanitize import strip_noise
@@ -37,6 +39,22 @@ _ARCHIVE_CSP = (
     "font-src https: data:; frame-src 'none'; form-action 'none'; base-uri 'none'; "
     "frame-ancestors 'self'"
 )
+
+_SELECT_PDF_ARCHIVE_SQL = """
+SELECT a.html, j.normalized_url AS gcs_key
+FROM vibecheck_jobs j
+JOIN vibecheck_pdf_archives a ON a.job_id = j.job_id
+WHERE j.job_id = $1
+  AND j.source_type = 'pdf'
+  AND a.expires_at > now()
+"""
+
+_SELECT_PDF_JOB_SQL = """
+SELECT normalized_url AS gcs_key
+FROM vibecheck_jobs
+WHERE job_id = $1
+  AND source_type = 'pdf'
+"""
 
 # Map machine-readable `InvalidURL.reason` slugs back to the human-readable
 # 400-detail strings the frame routes returned before the SSRF refactor
@@ -266,6 +284,31 @@ def _parse_archive_job_id(job_id: str | None) -> UUID | None:
         raise HTTPException(status_code=400, detail="Invalid job_id") from exc
 
 
+def _get_db_pool(request: Request) -> Any:
+    pool = getattr(request.app.state, "db_pool", None)
+    if pool is None:
+        raise HTTPException(status_code=503, detail="Database unavailable")
+    return pool
+
+
+async def _get_pdf_archive(pool: Any, job_id: UUID) -> tuple[str, str] | None:
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(_SELECT_PDF_ARCHIVE_SQL, job_id)
+    if row is None:
+        return None
+    html = row["html"]
+    gcs_key = row["gcs_key"]
+    if not isinstance(html, str) or not isinstance(gcs_key, str):
+        return None
+    return html, gcs_key
+
+
+async def _get_pdf_gcs_key(pool: Any, job_id: UUID) -> str | None:
+    async with pool.acquire() as conn:
+        gcs_key = await conn.fetchval(_SELECT_PDF_JOB_SQL, job_id)
+    return gcs_key if isinstance(gcs_key, str) else None
+
+
 async def _annotate_archive_html(
     html: str,
     *,
@@ -292,12 +335,30 @@ async def _annotate_archive_html(
 @router.get("/archive-preview")
 async def archive_preview(
     request: Request,
-    url: str = Query(...),
+    url: str | None = Query(None),
     job_id: str | None = Query(None),
     generate: bool = Query(False),
+    source_type: str = Query("url"),
 ) -> Response:
-    _validate_http_url(url)
     parsed_job_id = _parse_archive_job_id(job_id)
+    if source_type == "pdf":
+        if parsed_job_id is None:
+            raise HTTPException(status_code=400, detail="job_id is required")
+        pdf_archive = await _get_pdf_archive(_get_db_pool(request), parsed_job_id)
+        if pdf_archive is None:
+            raise HTTPException(status_code=404, detail="Archive unavailable")
+        html, gcs_key = pdf_archive
+        html = await _annotate_archive_html(
+            html,
+            request=request,
+            job_id=parsed_job_id,
+            requested_url=gcs_key,
+        )
+        return _archive_response(html)
+
+    if url is None:
+        raise HTTPException(status_code=400, detail="URL must be an http(s) URL")
+    _validate_http_url(url)
     scrape_cache = get_scrape_cache()
     cached, cached_tier = await _get_cached_archive(
         url, scrape_cache, require_usable=True
@@ -351,6 +412,34 @@ async def archive_preview(
         requested_url=url,
     )
     return _archive_response(html)
+
+
+@router.get("/pdf-read")
+async def pdf_read(request: Request, job_id: str = Query(...)) -> RedirectResponse:
+    parsed_job_id = _parse_archive_job_id(job_id)
+    if parsed_job_id is None:
+        raise HTTPException(status_code=400, detail="Invalid job_id")
+
+    gcs_key = await _get_pdf_gcs_key(_get_db_pool(request), parsed_job_id)
+    if gcs_key is None:
+        raise HTTPException(status_code=404, detail="PDF unavailable")
+
+    settings = get_settings()
+    if not settings.VIBECHECK_PDF_UPLOAD_BUCKET:
+        raise HTTPException(status_code=503, detail="PDF storage is not configured")
+
+    signed_url = PdfUploadStore(settings.VIBECHECK_PDF_UPLOAD_BUCKET).signed_read_url(
+        gcs_key
+    )
+    if not signed_url:
+        raise HTTPException(status_code=502, detail="PDF unavailable")
+    return RedirectResponse(
+        signed_url,
+        headers={
+            "cache-control": "no-store, private",
+            "referrer-policy": "no-referrer",
+        },
+    )
 
 
 def _extract_screenshot_url(result: ScrapeResult | Any) -> str | None:

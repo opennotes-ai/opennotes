@@ -25,6 +25,13 @@ class PdfUploadStore:
 
     def signed_upload_url(self, key: str, *, ttl_seconds: int = 900) -> str | None:
         """Mint a versioned signed PUT URL for a PDF object key."""
+        return self._signed_url(key, method="PUT", ttl_seconds=ttl_seconds)
+
+    def signed_read_url(self, key: str, *, ttl_seconds: int = 900) -> str | None:
+        """Mint a versioned signed GET URL for a previously uploaded PDF."""
+        return self._signed_url(key, method="GET", ttl_seconds=ttl_seconds)
+
+    def _signed_url(self, key: str, *, method: str, ttl_seconds: int) -> str | None:
         try:
             import google.auth  # noqa: PLC0415
             import google.auth.transport.requests  # noqa: PLC0415
@@ -41,17 +48,20 @@ class PdfUploadStore:
                 return None
 
             blob = self._bucket.blob(key)
-            return blob.generate_signed_url(
-                version="v4",
-                expiration=timedelta(seconds=ttl_seconds),
-                method="PUT",
-                content_type="application/pdf",
-                service_account_email=signer_email,
-                access_token=credentials.token,
-            )
+            kwargs = {
+                "version": "v4",
+                "expiration": timedelta(seconds=ttl_seconds),
+                "method": method,
+                "service_account_email": signer_email,
+                "access_token": credentials.token,
+            }
+            if method == "PUT":
+                kwargs["content_type"] = "application/pdf"
+            return blob.generate_signed_url(**kwargs)
         except Exception as exc:
             logger.warning(
-                "gcs pdf upload signing failed bucket=%s key=%s: %s",
+                "gcs pdf %s signing failed bucket=%s key=%s: %s",
+                method.lower(),
                 self._bucket_name,
                 key,
                 exc,

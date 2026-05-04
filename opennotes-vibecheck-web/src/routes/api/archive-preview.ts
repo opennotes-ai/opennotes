@@ -40,15 +40,23 @@ function isHttpUrl(candidate: string): boolean {
 
 export async function GET(event: APIEvent): Promise<Response> {
   const requestUrl = new URL(event.request.url);
+  const sourceType = requestUrl.searchParams.get("source_type");
   const targetUrl = requestUrl.searchParams.get("url") ?? "";
-  if (!isHttpUrl(targetUrl)) {
+  const jobId = requestUrl.searchParams.get("job_id");
+  if (sourceType !== "pdf" && !isHttpUrl(targetUrl)) {
     return Response.json({ detail: "URL must be an http(s) URL" }, { status: 400 });
+  }
+  if (sourceType === "pdf" && !jobId) {
+    return Response.json({ detail: "job_id is required" }, { status: 400 });
   }
 
   const backendBase = resolveBaseUrl();
   const backendUrl = new URL("/api/archive-preview", backendBase);
-  backendUrl.searchParams.set("url", targetUrl);
-  const jobId = requestUrl.searchParams.get("job_id");
+  if (sourceType === "pdf") {
+    backendUrl.searchParams.set("source_type", "pdf");
+  } else {
+    backendUrl.searchParams.set("url", targetUrl);
+  }
   if (jobId) backendUrl.searchParams.set("job_id", jobId);
 
   const headers = new Headers();
