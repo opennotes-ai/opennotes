@@ -103,7 +103,7 @@ def build_agent(
     observability tooling instead of an anonymous "agent run" span.
     """
     model = _model_from_settings(settings, tier)
-    kwargs: dict[str, Any] = {"retries": OUTPUT_VALIDATION_RETRIES}
+    kwargs: dict[str, Any] = {"output_retries": OUTPUT_VALIDATION_RETRIES}
     if system_prompt is not None:
         kwargs["system_prompt"] = system_prompt
     if output_type is not None:

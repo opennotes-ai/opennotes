@@ -88,9 +88,10 @@ def test_output_validation_retries_constant_is_three() -> None:
     assert OUTPUT_VALIDATION_RETRIES == 3
 
 
-def test_build_agent_passes_retries_to_agent_constructor(settings: Settings) -> None:
+def test_build_agent_passes_output_retries_to_agent_constructor(settings: Settings) -> None:
     with patch("src.services.gemini_agent.Agent") as mock_agent_cls:
         mock_agent_cls.return_value = MagicMock()
         build_agent(settings, output_type=_Out, system_prompt="test")
         _, kwargs = mock_agent_cls.call_args
-        assert kwargs.get("retries") == 3
+        assert kwargs.get("output_retries") == 3
+        assert "retries" not in kwargs
