@@ -185,6 +185,20 @@ async def test_scrape_refusal_envelope_raises_firecrawl_blocked(
         await client.scrape(TARGET_URL, formats=["markdown"])
 
 
+async def test_scrape_exact_site_refusal_marker_raises_firecrawl_blocked(
+    client: FirecrawlClient,
+    firecrawl_http_stub: dict[str, Any],
+) -> None:
+    firecrawl_http_stub["add_response"](
+        url=SCRAPE_URL,
+        method="POST",
+        json_data={"success": False, "error": "We do not support this site right now."},
+    )
+
+    with pytest.raises(FirecrawlBlocked, match="refused"):
+        await client.scrape(TARGET_URL, formats=["markdown"])
+
+
 async def test_scrape_generic_failure_still_raises_firecrawl_error_not_blocked(
     client: FirecrawlClient,
     firecrawl_http_stub: dict[str, Any],
@@ -243,6 +257,20 @@ async def test_interact_returns_scrape_result_on_success(
     assert result.markdown == "# After interaction\n\nRevealed content."
     assert result.metadata is not None
     assert result.metadata.source_url == TARGET_URL
+
+
+async def test_interact_refusal_envelope_raises_firecrawl_blocked(
+    client: FirecrawlClient,
+    firecrawl_http_stub: dict[str, Any],
+) -> None:
+    firecrawl_http_stub["add_response"](
+        url=SCRAPE_URL,
+        method="POST",
+        json_data={"success": False, "error": "We do not support this site."},
+    )
+
+    with pytest.raises(FirecrawlBlocked, match="refused"):
+        await client.interact(TARGET_URL, actions=[{"type": "click", "selector": "#paywall"}])
 
 
 async def test_interact_routes_to_scrape_endpoint_with_actions_field(
@@ -326,13 +354,26 @@ async def test_default_max_attempts_three_retries_on_503(
     assert len(requests) == 3
 
 
-def test_scrape_metadata_accepts_language_as_list() -> None:
-    meta = ScrapeMetadata.model_validate(
-        {
-            "title": "Page",
-            "language": ["en-us", "en"],
-            "sourceURL": "https://blog.cloudflare.com/page-rules-deprecation/",
-            "statusCode": 200,
-        }
-    )
-    assert meta.language == "en-us"
+async def test_scrape_result_coerces_language_list_from_realistic_envelope(
+    client: FirecrawlClient,
+    firecrawl_http_stub: dict[str, Any],
+) -> None:
+    envelope = {
+        "success": True,
+        "data": {
+            "markdown": "# Page\n\nBody text.",
+            "metadata": {
+                "title": "Page",
+                "description": "A realistic scrape payload.",
+                "language": ["en-us", "en"],
+                "sourceURL": "https://blog.cloudflare.com/page-rules-deprecation/",
+                "statusCode": 200,
+            },
+        },
+    }
+    firecrawl_http_stub["add_response"](url=SCRAPE_URL, method="POST", json_data=envelope)
+
+    result = await client.scrape(TARGET_URL, formats=["markdown"])
+
+    assert result.metadata is not None
+    assert result.metadata.language == "en-us"

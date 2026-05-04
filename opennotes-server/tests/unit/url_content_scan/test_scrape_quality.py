@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 import pytest
 
 from src.services.firecrawl_client import ScrapeMetadata, ScrapeResult
@@ -12,6 +15,13 @@ from src.url_content_scan.scrape_quality import (
     ScrapeQuality,
     classify_scrape,
 )
+
+FIXTURES = Path(__file__).parents[2] / "fixtures" / "scrape_quality"
+
+
+def _load_fixture(name: str) -> ScrapeResult:
+    payload = json.loads((FIXTURES / name).read_text())
+    return ScrapeResult.model_validate(payload)
 
 
 def test_normal_blog_post_classifies_ok() -> None:
@@ -36,6 +46,33 @@ def test_login_form_password_input_classifies_auth_wall() -> None:
             "<input name='password' type='password'>"
             "<button>Sign in</button></form></body></html>"
         ),
+        metadata=ScrapeMetadata(status_code=200),
+    )
+
+    assert classify_scrape(result) is ScrapeQuality.AUTH_WALL
+
+
+def test_public_header_login_anchor_is_not_auth_wall() -> None:
+    result = ScrapeResult(
+        markdown=(
+            "A public article with a login link in the header should still be "
+            "classified as OK when there is real body content and no login form." * 2
+        ),
+        html=(
+            "<html><body><header><a href='/login'>Sign in</a>"
+            "<a href='https://example.com/signin'>Sign in</a></header>"
+            "<article><h1>Open Notes</h1><p>Readable content below.</p></article></body></html>"
+        ),
+        metadata=ScrapeMetadata(status_code=200, source_url="https://example.com/post"),
+    )
+
+    assert classify_scrape(result) is ScrapeQuality.OK
+
+
+def test_explicit_login_marker_without_parseable_form_still_classifies_auth_wall() -> None:
+    result = ScrapeResult(
+        markdown="Sign in to continue",
+        html="<html><body><div data-fragment='action=\"/login\"'>prompt</div></body></html>",
         metadata=ScrapeMetadata(status_code=200),
     )
 
@@ -89,6 +126,22 @@ def test_empty_markdown_and_empty_html_classifies_legitimately_empty() -> None:
     )
 
     assert classify_scrape(result) is ScrapeQuality.LEGITIMATELY_EMPTY
+
+
+def test_cached_login_fixture_still_classifies_auth_wall() -> None:
+    result = _load_fixture("login_gated_sparse.json")
+
+    assert result.metadata is not None
+    assert result.metadata.model_extra is not None
+    assert result.metadata.model_extra["cacheState"] == "hit"
+    assert classify_scrape(result) is ScrapeQuality.AUTH_WALL
+
+
+def test_long_login_fixture_classifies_auth_wall_despite_long_body() -> None:
+    result = _load_fixture("login_gated_long.json")
+
+    assert len((result.markdown or "").strip()) > MIN_BODY_CHARS
+    assert classify_scrape(result) is ScrapeQuality.AUTH_WALL
 
 
 def test_constants_are_exported_for_parameterization() -> None:
