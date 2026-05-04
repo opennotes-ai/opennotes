@@ -33,7 +33,7 @@ _SCREENSHOT_TIMEOUT_SECONDS = 60.0
 _SCREENSHOT_REQUEST_BUDGET_SECONDS = 90.0
 _ARCHIVE_REQUEST_BUDGET_SECONDS = 8.0
 _BLOCKING_XFO_VALUES = {"deny", "sameorigin"}
-_ARCHIVE_CACHE_TIERS = ("scrape", "interact")
+_ARCHIVE_CACHE_TIERS = ("browser_html", "interact", "scrape")
 _PERMISSIVE_FRAME_ANCESTOR_TOKENS = {"*", "https:", "http:", "data:"}
 _ALLOWED_GCS_HOSTS = frozenset({
     "storage.googleapis.com",
@@ -246,8 +246,7 @@ async def _get_cached_archive(
     url: str, scrape_cache: SupabaseScrapeCache, *, require_usable: bool = False
 ) -> tuple[CachedScrape | None, str | None]:
     try:
-        tiers = ("interact", "scrape") if require_usable else _ARCHIVE_CACHE_TIERS
-        for tier in tiers:
+        for tier in _ARCHIVE_CACHE_TIERS:
             cached = await scrape_cache.get(url, tier=tier)
             if cached and cached.html:
                 if require_usable and classify_scrape(cached) is not ScrapeQuality.OK:
