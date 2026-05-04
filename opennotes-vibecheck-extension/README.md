@@ -13,7 +13,7 @@ Minimal internal Chrome extension for submitting the current page HTML to a Vibe
 
 Open the extension popup and set:
 
-- Endpoint URL: the Vibecheck base URL, such as `http://localhost:3000` or `https://vibecheck.opennotes.ai`. A full URL ending in `/api/scrape` is also accepted.
+- Endpoint URL: the Vibecheck base URL, such as `http://localhost:3000` for local development or `https://vibecheck.opennotes.ai` for production. A full URL ending in `/api/scrape` is also accepted. Non-local endpoints must use HTTPS.
 - API key: the bearer token configured on the server with `VIBECHECK_SCRAPE_API_TOKEN`.
 
 Settings are stored in `chrome.storage.sync`.

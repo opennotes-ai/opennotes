@@ -80,7 +80,17 @@ async function submitCurrentPage() {
     return;
   }
 
-  const hasEndpointAccess = await ensureEndpointPermission(scrapeUrl);
+  let hasEndpointAccess;
+  try {
+    hasEndpointAccess = await ensureEndpointPermission(scrapeUrl);
+  } catch (error) {
+    showError(
+      "Endpoint access unavailable",
+      error instanceof Error ? error.message : String(error)
+    );
+    return;
+  }
+
   if (!hasEndpointAccess) {
     showError("Endpoint access denied", "Grant access to the configured endpoint origin and try again.");
     return;
@@ -151,6 +161,12 @@ function buildScrapeUrl(input) {
     throw new Error("Endpoint URL must start with http:// or https://.");
   }
 
+  if (url.protocol === "http:" && !isLocalDevelopmentHost(url.hostname)) {
+    throw new Error(
+      "HTTP endpoints are only allowed for localhost or loopback development. Use https:// for remote endpoints."
+    );
+  }
+
   const normalizedPath = url.pathname.replace(/\/+$/, "");
 
   if (normalizedPath.endsWith("/api/scrape")) {
@@ -162,8 +178,21 @@ function buildScrapeUrl(input) {
 }
 
 async function ensureEndpointPermission(scrapeUrl) {
-  const originPattern = `${new URL(scrapeUrl).origin}/*`;
+  const originPattern = buildHostPermissionPattern(new URL(scrapeUrl));
   return chrome.permissions.request({ origins: [originPattern] });
+}
+
+function buildHostPermissionPattern(url) {
+  return `${url.protocol}//${url.hostname}/*`;
+}
+
+function isLocalDevelopmentHost(hostname) {
+  return (
+    hostname === "localhost" ||
+    hostname === "::1" ||
+    hostname === "[::1]" ||
+    /^127(?:\.\d{1,3}){3}$/.test(hostname)
+  );
 }
 
 function compactPayload(payload) {
