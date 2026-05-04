@@ -720,7 +720,7 @@ export interface components {
              * @default url
              * @enum {string}
              */
-            source_type: "url" | "pdf";
+            source_type: "url" | "pdf" | "browser_html";
             /** Pdf Archive Url */
             pdf_archive_url?: string | null;
             /**

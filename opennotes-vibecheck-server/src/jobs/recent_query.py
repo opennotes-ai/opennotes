@@ -106,7 +106,6 @@ WHERE j.status IN ('done', 'partial')
   AND (j.source_type IS NULL OR j.source_type = 'url')
   AND j.finished_at IS NOT NULL
   AND j.preview_description IS NOT NULL
-  AND (j.source_type = 'url' OR j.source_type IS NULL)
   AND s.screenshot_storage_key IS NOT NULL
   AND s.expires_at > now()
   AND (

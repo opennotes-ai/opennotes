@@ -235,7 +235,7 @@ class JobState(BaseModel):
     attempt_id: UUID
     error_code: ErrorCode | None = None
     error_message: str | None = None
-    source_type: Literal["url", "pdf"] = "url"
+    source_type: Literal["url", "pdf", "browser_html"] = "url"
     pdf_archive_url: str | None = None
     error_host: str | None = Field(
         default=None,

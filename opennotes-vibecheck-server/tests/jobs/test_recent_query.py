@@ -43,7 +43,7 @@ ALTER TABLE vibecheck_jobs
     DROP CONSTRAINT IF EXISTS vibecheck_jobs_source_type_check;
 ALTER TABLE vibecheck_jobs
     ADD CONSTRAINT vibecheck_jobs_source_type_check
-    CHECK (source_type IN ('url', 'pdf'));
+    CHECK (source_type IN ('url', 'pdf', 'browser_html'));
 CREATE TABLE vibecheck_scrapes (
     scrape_id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     normalized_url TEXT NOT NULL,

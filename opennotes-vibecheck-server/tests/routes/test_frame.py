@@ -766,7 +766,9 @@ class TestArchivePreview:
 
         class Conn:
             async def fetchval(self, query: str, received_job_id: object) -> str:
-                assert "source_type = 'pdf'" in query
+                assert "j.source_type = 'pdf'" in query
+                assert "vibecheck_pdf_archives" in query
+                assert "a.expires_at > now()" in query
                 assert str(received_job_id) == job_id
                 return gcs_key
 
@@ -794,7 +796,7 @@ class TestArchivePreview:
         finally:
             del _client_state(client).db_pool
 
-        assert resp.status_code == 307
+        assert resp.status_code == 302
         assert resp.headers["location"] == "https://storage.example/read-signed"
         assert resp.headers["cache-control"] == "no-store, private"
         assert resp.headers["referrer-policy"] == "no-referrer"

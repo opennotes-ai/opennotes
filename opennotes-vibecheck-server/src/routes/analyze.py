@@ -598,13 +598,11 @@ _NON_TERMINAL_STATUSES_POLL = frozenset({"pending", "extracting", "analyzing"})
 def _row_to_job_state(row: Any) -> JobState:
     status = JobStatus(row["status"])
     source_type = row.get("source_type", "url")
-    if source_type not in {"url", "pdf"}:
-        source_type = "url"
-    if source_type == "pdf":
+    is_non_terminal = status.value in _NON_TERMINAL_STATUSES_POLL
+    if source_type == "pdf" and not is_non_terminal:
         pdf_archive_url = f"/api/archive-preview?job_id={row['job_id']}&source_type=pdf"
     else:
         pdf_archive_url = None
-    is_non_terminal = status.value in _NON_TERMINAL_STATUSES_POLL
     sections = _parse_sections(row["sections"])
     sidebar_raw = None if is_non_terminal else _parse_jsonb(row["sidebar_payload"])
     if status in {JobStatus.DONE, JobStatus.PARTIAL} and sidebar_raw is not None:

@@ -201,7 +201,7 @@ async def test_analyze_pdf_rejects_malformed_gcs_key(
     resp = await client.post("/api/analyze-pdf", json={"gcs_key": "not-a-uuid"})
 
     assert resp.status_code == 400
-    assert resp.json()["error_code"] == "invalid_url"
+    assert resp.json()["error_code"] == "upload_key_invalid"
     assert await _count_jobs(db_pool) == before
     assert enqueue_mock.await_count == 0
 
@@ -218,12 +218,12 @@ async def test_analyze_pdf_rejects_non_v4_uuid_gcs_key(
     )
 
     assert resp.status_code == 400
-    assert resp.json()["error_code"] == "invalid_url"
+    assert resp.json()["error_code"] == "upload_key_invalid"
     assert await _count_jobs(db_pool) == before
     assert enqueue_mock.await_count == 0
 
 
-async def test_analyze_pdf_missing_metadata_rejects_with_invalid_url(
+async def test_analyze_pdf_missing_metadata_rejects_with_upload_not_found(
     client: httpx.AsyncClient,
     db_pool,
     enqueue_mock,
@@ -243,7 +243,7 @@ async def test_analyze_pdf_missing_metadata_rejects_with_invalid_url(
 
     assert resp.status_code == 400
     body = resp.json()
-    assert body["error_code"] == "invalid_url"
+    assert body["error_code"] == "upload_not_found"
     assert "PDF not found; upload may have failed" in body["message"]
     assert await _count_jobs(db_pool) == before
     assert await _count_jobs(db_pool, normalized_url=key) == 0
@@ -296,7 +296,7 @@ async def test_analyze_pdf_bad_content_type_rejects(
     resp = await client.post("/api/analyze-pdf", json={"gcs_key": key})
 
     assert resp.status_code == 400
-    assert resp.json()["error_code"] == "pdf_extraction_failed"
+    assert resp.json()["error_code"] == "invalid_pdf_type"
     assert await _count_jobs(db_pool) == before
     assert await _count_jobs(db_pool, normalized_url=key) == 0
     assert enqueue_mock.await_count == 0

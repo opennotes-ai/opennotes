@@ -50,10 +50,12 @@ WHERE j.job_id = $1
 """
 
 _SELECT_PDF_JOB_SQL = """
-SELECT normalized_url AS gcs_key
-FROM vibecheck_jobs
-WHERE job_id = $1
-  AND source_type = 'pdf'
+SELECT j.normalized_url AS gcs_key
+FROM vibecheck_jobs j
+JOIN vibecheck_pdf_archives a ON a.job_id = j.job_id
+WHERE j.job_id = $1
+  AND j.source_type = 'pdf'
+  AND a.expires_at > now()
 """
 
 # Map machine-readable `InvalidURL.reason` slugs back to the human-readable
@@ -435,6 +437,7 @@ async def pdf_read(request: Request, job_id: str = Query(...)) -> RedirectRespon
         raise HTTPException(status_code=502, detail="PDF unavailable")
     return RedirectResponse(
         signed_url,
+        status_code=302,
         headers={
             "cache-control": "no-store, private",
             "referrer-policy": "no-referrer",

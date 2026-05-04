@@ -1288,7 +1288,8 @@
             "type": "string",
             "enum": [
               "url",
-              "pdf"
+              "pdf",
+              "browser_html"
             ],
             "title": "Source Type",
             "default": "url"

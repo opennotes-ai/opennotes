@@ -92,11 +92,18 @@ def test_host_of_ignores_pdf_source_type() -> None:
 
 
 def test_row_to_job_state_maps_pdf_source_and_archive_url() -> None:
-    row = _mock_poll_row(status="pending", source_type="pdf")
-    job = _row_to_job_state(row)
-    assert job.source_type == "pdf"
-    assert job.pdf_archive_url == (
-        f"/api/archive-preview?job_id={row['job_id']}&source_type=pdf"
+    # Non-terminal PDF jobs must NOT expose pdf_archive_url; the URL is only
+    # safe to publish once the archive is persisted (terminal status).
+    pending_row = _mock_poll_row(status="pending", source_type="pdf")
+    pending_job = _row_to_job_state(pending_row)
+    assert pending_job.source_type == "pdf"
+    assert pending_job.pdf_archive_url is None
+
+    done_row = _mock_poll_row(status="done", source_type="pdf")
+    done_job = _row_to_job_state(done_row)
+    assert done_job.source_type == "pdf"
+    assert done_job.pdf_archive_url == (
+        f"/api/archive-preview?job_id={done_row['job_id']}&source_type=pdf"
     )
 
 

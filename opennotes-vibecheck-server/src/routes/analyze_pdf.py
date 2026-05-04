@@ -176,7 +176,7 @@ async def analyze_pdf(  # noqa: PLR0911
 ) -> analyze_route.AnalyzeResponse | JSONResponse:
     gcs_key = _normalize_gcs_key(body.gcs_key)
     if gcs_key is None:
-        return _validation_error_response("invalid_url", "invalid gcs_key")
+        return _validation_error_response("upload_key_invalid", "invalid gcs_key")
 
     settings = get_settings()
     if not settings.VIBECHECK_PDF_UPLOAD_BUCKET:
@@ -191,12 +191,12 @@ async def analyze_pdf(  # noqa: PLR0911
         metadata = PdfUploadStore(settings.VIBECHECK_PDF_UPLOAD_BUCKET).get_metadata(gcs_key)
     except Exception:
         return _validation_error_response(
-            "invalid_url",
+            "upload_not_found",
             "PDF not found; upload may have failed",
         )
     if metadata is None:
         return _validation_error_response(
-            "invalid_url",
+            "upload_not_found",
             "PDF not found; upload may have failed",
         )
 
@@ -204,14 +204,14 @@ async def analyze_pdf(  # noqa: PLR0911
     content_type = metadata.get("content_type")
     if not isinstance(size, int) or size < 0:
         return _validation_error_response(
-            "invalid_url",
+            "upload_not_found",
             "PDF not found; upload may have failed",
         )
     if size > _MAX_PDF_BYTES:
         return _validation_error_response("pdf_too_large", "PDF too large")
     if not isinstance(content_type, str) or content_type not in _ALLOWED_PDF_TYPES:
         return _validation_error_response(
-            "pdf_extraction_failed",
+            "invalid_pdf_type",
             "invalid pdf content type",
         )
 
