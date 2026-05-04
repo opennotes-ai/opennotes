@@ -209,7 +209,7 @@ async def legacy_conn(
 async def test_partial_status_blocked_before_schema_apply(
     legacy_conn: asyncpg.Connection,
 ) -> None:
-    """Baseline: the pre-1474.29 constraint rejects status='partial'."""
+    """Baseline: the pre-1474.29 status_check rejects status='partial'."""
     with pytest.raises(asyncpg.CheckViolationError):
         await legacy_conn.execute(
             """
@@ -218,6 +218,27 @@ async def test_partial_status_blocked_before_schema_apply(
             VALUES ($1, $1, 'example.com', 'partial', now())
             """,
             "https://example.com/pre-fix",
+        )
+
+
+async def test_partial_without_finished_at_blocked_before_schema_apply(
+    legacy_conn: asyncpg.Connection,
+) -> None:
+    """Baseline: the pre-1474.29 status_check rejects partial+NULL finished_at.
+
+    The status_check fires before terminal_finished_at, so this INSERT fails
+    on status_check regardless of the finished_at value. The separate
+    test_terminal_finished_at_rejects_partial_without_finished_at verifies
+    the terminal_finished_at constraint after the fix.
+    """
+    with pytest.raises(asyncpg.CheckViolationError):
+        await legacy_conn.execute(
+            """
+            INSERT INTO public.vibecheck_jobs
+                (url, normalized_url, host, status, finished_at)
+            VALUES ($1, $1, 'example.com', 'partial', NULL)
+            """,
+            "https://example.com/pre-fix-no-finished-at",
         )
 
 
@@ -266,7 +287,7 @@ async def test_invalid_status_still_rejected_after_schema_apply(
 async def test_schema_apply_idempotent_after_constraint_sync(
     legacy_conn: asyncpg.Connection,
 ) -> None:
-    """Re-applying schema.sql a second time must not raise 'already exists' errors."""
+    """Re-applying schema.sql twice must not raise errors and must keep updated constraints."""
     await legacy_conn.execute(_schema_sql_for_test())
     await legacy_conn.execute(_schema_sql_for_test())
 
@@ -274,14 +295,26 @@ async def test_schema_apply_idempotent_after_constraint_sync(
         """
         SELECT COUNT(*) AS cnt
         FROM pg_constraint
-        WHERE conname IN (
-            'vibecheck_jobs_status_check',
-            'vibecheck_jobs_terminal_finished_at'
-        )
+        WHERE conrelid = 'public.vibecheck_jobs'::regclass
+          AND conname IN (
+              'vibecheck_jobs_status_check',
+              'vibecheck_jobs_terminal_finished_at'
+          )
         """
     )
     assert row is not None
     assert row["cnt"] == 2
+
+    now = datetime.now(UTC)
+    await legacy_conn.execute(
+        """
+        INSERT INTO public.vibecheck_jobs
+            (url, normalized_url, host, status, finished_at)
+        VALUES ($1, $1, 'example.com', 'partial', $2)
+        """,
+        "https://example.com/idempotent-check",
+        now,
+    )
 
 
 async def test_terminal_finished_at_allows_partial_with_finished_at(
