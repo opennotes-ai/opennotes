@@ -87,6 +87,7 @@ def canonical_cache_key(raw_url: str) -> str:
 
 _TABLE_NAME = "vibecheck_scrapes"
 _UPSERT_IF_NOT_EVICTED_RPC = "vibecheck_upsert_scrape_if_not_evicted"
+_UPSERT_EVICT_TOMBSTONE_RPC = "vibecheck_upsert_scrape_evict_tombstone"
 _SIGNED_URL_TTL_SECONDS = 15 * 60
 
 # TASK-1488.18: small clock-skew tolerance when comparing the put's
@@ -492,8 +493,17 @@ class SupabaseScrapeCache:
                 "evicted_at": now.isoformat(),
             }
             try:
-                self._client.table(_TABLE_NAME).upsert(
-                    tombstone, on_conflict="normalized_url,tier"
+                self._client.postgrest.rpc(
+                    _UPSERT_EVICT_TOMBSTONE_RPC,
+                    {
+                        "p_normalized_url": tombstone["normalized_url"],
+                        "p_tier": tombstone["tier"],
+                        "p_url": tombstone["url"],
+                        "p_host": tombstone["host"],
+                        "p_scraped_at": tombstone["scraped_at"],
+                        "p_expires_at": tombstone["expires_at"],
+                        "p_evicted_at": tombstone["evicted_at"],
+                    },
                 ).execute()
             except Exception as exc:
                 logger.warning(

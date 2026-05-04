@@ -165,9 +165,14 @@ class _FakeRpcQuery:
         self._params = params
 
     def execute(self) -> _FakeResponse:
-        if self._name != "vibecheck_upsert_scrape_if_not_evicted":
-            raise AssertionError(f"unexpected rpc {self._name}")
-        return _FakeResponse(self._client._execute_atomic_scrape_upsert(self._params))
+        if self._name == "vibecheck_upsert_scrape_if_not_evicted":
+            return _FakeResponse(
+                self._client._execute_atomic_scrape_upsert(self._params)
+            )
+        if self._name == "vibecheck_upsert_scrape_evict_tombstone":
+            self._client._execute_tombstone_upsert(self._params)
+            return _FakeResponse(None)
+        raise AssertionError(f"unexpected rpc {self._name}")
 
 
 class _FakePostgrest:
@@ -249,6 +254,27 @@ class _FakeSupabaseClient:
 
         self._rows[key] = row
         return True
+
+    def _execute_tombstone_upsert(self, params: dict[str, Any]) -> None:
+        norm = params["p_normalized_url"]
+        tier = params["p_tier"]
+        assert isinstance(norm, str)
+        assert isinstance(tier, str)
+        self._rows[(norm, tier)] = {
+            "normalized_url": norm,
+            "tier": tier,
+            "url": params["p_url"],
+            "final_url": None,
+            "host": params["p_host"],
+            "page_kind": "other",
+            "page_title": None,
+            "markdown": None,
+            "html": None,
+            "screenshot_storage_key": None,
+            "scraped_at": params["p_scraped_at"],
+            "expires_at": params["p_expires_at"],
+            "evicted_at": params["p_evicted_at"],
+        }
 
 
 class _StoreView:

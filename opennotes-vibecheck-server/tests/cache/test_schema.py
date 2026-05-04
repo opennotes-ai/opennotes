@@ -226,7 +226,7 @@ class TestSweeperFunctions:
     def test_security_definer_functions_pin_search_path(self, schema_sql: str) -> None:
         # SECURITY DEFINER without search_path is a hijack vector via
         # untrusted schemas; pin to pg_catalog + pg_temp.
-        assert schema_sql.count("SET search_path = pg_catalog, pg_temp") == 4
+        assert schema_sql.count("SET search_path = pg_catalog, pg_temp") == 5
         assert "SET search_path = public, pg_temp" not in schema_sql
 
     def test_sweepers_revoke_execute_from_public(self, schema_sql: str) -> None:
@@ -253,7 +253,9 @@ class TestScrapeCacheFunctions:
             "CREATE OR REPLACE FUNCTION public.vibecheck_upsert_scrape_if_not_evicted("
             in schema_sql
         )
-        assert "ON CONFLICT (normalized_url, tier) DO UPDATE" in schema_sql
+        assert "ON CONFLICT (normalized_url, tier)" in schema_sql
+        assert "WHERE tier IN ('scrape', 'interact')" in schema_sql
+        assert "DO UPDATE" in schema_sql
         assert "public.vibecheck_scrapes.evicted_at IS NULL" in schema_sql
         assert "RETURN COALESCE(wrote_row, FALSE)" in schema_sql
 

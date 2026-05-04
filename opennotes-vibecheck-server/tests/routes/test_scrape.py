@@ -27,6 +27,8 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 CREATE TABLE vibecheck_scrapes (
     scrape_id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     normalized_url TEXT NOT NULL,
+    job_id UUID,
+    attempt_id UUID,
     tier TEXT NOT NULL DEFAULT 'scrape',
     url TEXT NOT NULL,
     final_url TEXT,
@@ -41,7 +43,11 @@ CREATE TABLE vibecheck_scrapes (
     evicted_at TIMESTAMPTZ
 );
 CREATE UNIQUE INDEX vibecheck_scrapes_normalized_url_tier_idx
-    ON vibecheck_scrapes (normalized_url, tier);
+    ON vibecheck_scrapes (normalized_url, tier)
+    WHERE tier IN ('scrape', 'interact');
+CREATE UNIQUE INDEX vibecheck_scrapes_browser_html_job_attempt_idx
+    ON vibecheck_scrapes (job_id, attempt_id)
+    WHERE tier = 'browser_html';
 ALTER TABLE vibecheck_scrapes
     ADD CONSTRAINT vibecheck_scrapes_tier_check
     CHECK (tier IN ('scrape', 'interact', 'browser_html'));
@@ -113,11 +119,19 @@ async def _fetch_job(pool: Any, job_id: UUID) -> Any:
         return await conn.fetchrow("SELECT * FROM vibecheck_jobs WHERE job_id = $1", job_id)
 
 
-async def _fetch_scrape(pool: Any, normalized_url: str) -> Any:
+async def _fetch_scrape_for_job(pool: Any, job_id: UUID) -> Any:
     async with pool.acquire() as conn:
         return await conn.fetchrow(
-            "SELECT * FROM vibecheck_scrapes WHERE normalized_url = $1 AND tier = 'browser_html'",
-            normalized_url,
+            "SELECT * FROM vibecheck_scrapes WHERE job_id = $1 AND tier = 'browser_html'",
+            job_id,
+        )
+
+
+async def _fetch_scrapes(pool: Any, url: str) -> list[Any]:
+    async with pool.acquire() as conn:
+        return await conn.fetch(
+            "SELECT * FROM vibecheck_scrapes WHERE url = $1 AND tier = 'browser_html'",
+            url,
         )
 
 
@@ -169,9 +183,10 @@ async def test_valid_payload_inserts_browser_scrape_job_and_enqueues(
     assert job["status"] == "pending"
     assert job["source_type"] == "browser_html"
 
-    scrape = await _fetch_scrape(db_pool, url)
+    scrape = await _fetch_scrape_for_job(db_pool, job_id)
     assert scrape is not None
     assert scrape["url"] == url
+    assert scrape["normalized_url"] == url
     assert scrape["final_url"] == url
     assert scrape["page_title"] == "Title"
     assert "<h1>Title</h1>" in scrape["html"]
@@ -186,6 +201,71 @@ async def test_oversized_html_returns_413(client: httpx.AsyncClient) -> None:
     )
 
     assert resp.status_code == 413
+
+
+async def test_generated_markdown_exceeds_2mb_limit_returns_413(
+    client: httpx.AsyncClient,
+) -> None:
+    huge_markdown_source = f"<p>{'x' * (2 * 1024 * 1024 + 10)}</p>"
+    url = "https://example.com/generated"
+
+    with patch.object(
+        scrape_route,
+        "check_urls",
+        new=AsyncMock(return_value={url: WebRiskFinding(url=url, threat_types=[])}),
+    ):
+        resp = await client.post(
+            "/api/scrape",
+            headers=_headers(),
+            json={"url": url, "html": huge_markdown_source},
+        )
+
+    assert resp.status_code == 413
+    assert resp.json()["error_code"] == "payload_too_large"
+
+
+async def test_browser_html_jobs_create_distinct_scrape_rows_for_same_url(
+    client: httpx.AsyncClient,
+    db_pool: Any,
+) -> None:
+    url = "https://example.com/collision"
+
+    with patch.object(
+        scrape_route,
+        "check_urls",
+        new=AsyncMock(return_value={url: WebRiskFinding(url=url, threat_types=[])}),
+    ):
+        first = await client.post(
+            "/api/scrape",
+            headers=_headers(),
+            json={
+                "url": url,
+                "html": "<html><body><p>first submission</p></body></html>",
+                "title": "T1",
+            },
+        )
+        second = await client.post(
+            "/api/scrape",
+            headers=_headers(),
+            json={
+                "url": url,
+                "html": "<html><body><p>second submission</p></body></html>",
+                "title": "T2",
+            },
+        )
+
+    assert first.status_code == 201
+    assert second.status_code == 201
+    first_job = UUID(first.json()["job_id"])
+    second_job = UUID(second.json()["job_id"])
+    assert first_job != second_job
+
+    scrapes = await _fetch_scrapes(db_pool, url)
+    assert len(scrapes) == 2
+    job_ids = {row["job_id"] for row in scrapes}
+    attempt_ids = {row["attempt_id"] for row in scrapes}
+    assert len(job_ids) == 2
+    assert len(attempt_ids) == 2
 
 
 async def test_unsafe_url_inserts_failed_job_without_enqueue(

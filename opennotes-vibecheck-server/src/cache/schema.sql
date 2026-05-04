@@ -273,7 +273,9 @@ ALTER TABLE public.vibecheck_jobs
 
 CREATE TABLE IF NOT EXISTS public.vibecheck_scrapes (
     scrape_id UUID PRIMARY KEY DEFAULT extensions.uuid_generate_v4(),
-    normalized_url TEXT NOT NULL UNIQUE,
+    normalized_url TEXT NOT NULL,
+    job_id UUID,
+    attempt_id UUID,
     url TEXT NOT NULL,
     host TEXT NOT NULL,
     page_kind TEXT NOT NULL DEFAULT 'other',
@@ -315,18 +317,30 @@ ALTER TABLE public.vibecheck_scrapes
 -- Postgres named the original UNIQUE either via the inline column constraint
 -- (`vibecheck_scrapes_normalized_url_key`) or via an explicit CONSTRAINT
 -- name in older revisions; drop both shapes guarded by IF EXISTS so re-runs
--- of this file leave a clean slate. The composite UNIQUE is added via a
--- partial-unique index so re-runs are idempotent and concurrent puts get
--- the same on_conflict target the application code expects.
+-- of this file leave a clean slate. Only shared cache tiers keep the
+-- `(normalized_url, tier)` uniqueness contract; browser_html rows are
+-- job-scoped so repeated same-URL submissions cannot overwrite each other.
 ALTER TABLE public.vibecheck_scrapes
     DROP CONSTRAINT IF EXISTS vibecheck_scrapes_normalized_url_key;
 ALTER TABLE public.vibecheck_scrapes
     DROP CONSTRAINT IF EXISTS vibecheck_scrapes_normalized_url_unique;
 DROP INDEX IF EXISTS public.vibecheck_scrapes_normalized_url_key;
+DROP INDEX IF EXISTS public.vibecheck_scrapes_normalized_url_tier_idx;
+
+ALTER TABLE public.vibecheck_scrapes
+    ADD COLUMN IF NOT EXISTS job_id UUID;
+ALTER TABLE public.vibecheck_scrapes
+    ADD COLUMN IF NOT EXISTS attempt_id UUID;
 
 CREATE UNIQUE INDEX IF NOT EXISTS
     vibecheck_scrapes_normalized_url_tier_idx
-    ON public.vibecheck_scrapes (normalized_url, tier);
+    ON public.vibecheck_scrapes (normalized_url, tier)
+    WHERE tier IN ('scrape', 'interact');
+
+CREATE UNIQUE INDEX IF NOT EXISTS
+    vibecheck_scrapes_browser_html_job_attempt_idx
+    ON public.vibecheck_scrapes (job_id, attempt_id)
+    WHERE tier = 'browser_html';
 
 -- TASK-1488.18: persist Firecrawl's resolved post-redirect URL
 -- (`metadata.source_url`) so cache reads rehydrate `metadata.source_url`
@@ -386,7 +400,9 @@ BEGIN
         p_page_title, p_markdown, p_html, p_screenshot_storage_key,
         p_scraped_at, p_expires_at, NULL
     )
-    ON CONFLICT (normalized_url, tier) DO UPDATE
+    ON CONFLICT (normalized_url, tier)
+    WHERE tier IN ('scrape', 'interact')
+    DO UPDATE
     SET url = EXCLUDED.url,
         final_url = EXCLUDED.final_url,
         host = EXCLUDED.host,
@@ -419,6 +435,56 @@ REVOKE ALL ON FUNCTION public.vibecheck_upsert_scrape_if_not_evicted(
 GRANT EXECUTE ON FUNCTION public.vibecheck_upsert_scrape_if_not_evicted(
     TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TIMESTAMPTZ,
     TIMESTAMPTZ, TIMESTAMPTZ, INT
+) TO service_role;
+
+CREATE OR REPLACE FUNCTION public.vibecheck_upsert_scrape_evict_tombstone(
+    p_normalized_url TEXT,
+    p_tier TEXT,
+    p_url TEXT,
+    p_host TEXT,
+    p_scraped_at TIMESTAMPTZ,
+    p_expires_at TIMESTAMPTZ,
+    p_evicted_at TIMESTAMPTZ
+)
+RETURNS VOID
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, pg_temp
+AS $$
+BEGIN
+    INSERT INTO public.vibecheck_scrapes (
+        normalized_url, tier, url, final_url, host, page_kind, page_title,
+        markdown, html, screenshot_storage_key, scraped_at, expires_at,
+        evicted_at
+    )
+    VALUES (
+        p_normalized_url, p_tier, p_url, NULL, p_host, 'other', NULL,
+        NULL, NULL, NULL, p_scraped_at, p_expires_at, p_evicted_at
+    )
+    ON CONFLICT (normalized_url, tier)
+    WHERE tier IN ('scrape', 'interact')
+    DO UPDATE
+    SET url = EXCLUDED.url,
+        final_url = EXCLUDED.final_url,
+        host = EXCLUDED.host,
+        page_kind = EXCLUDED.page_kind,
+        page_title = EXCLUDED.page_title,
+        markdown = EXCLUDED.markdown,
+        html = EXCLUDED.html,
+        screenshot_storage_key = EXCLUDED.screenshot_storage_key,
+        scraped_at = EXCLUDED.scraped_at,
+        expires_at = EXCLUDED.expires_at,
+        evicted_at = EXCLUDED.evicted_at;
+END;
+$$;
+ALTER FUNCTION public.vibecheck_upsert_scrape_evict_tombstone(
+    TEXT, TEXT, TEXT, TEXT, TIMESTAMPTZ, TIMESTAMPTZ, TIMESTAMPTZ
+) OWNER TO postgres;
+REVOKE ALL ON FUNCTION public.vibecheck_upsert_scrape_evict_tombstone(
+    TEXT, TEXT, TEXT, TEXT, TIMESTAMPTZ, TIMESTAMPTZ, TIMESTAMPTZ
+) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.vibecheck_upsert_scrape_evict_tombstone(
+    TEXT, TEXT, TEXT, TEXT, TIMESTAMPTZ, TIMESTAMPTZ, TIMESTAMPTZ
 ) TO service_role;
 
 -- PostgREST caches RPC signatures. When startup applies this schema through

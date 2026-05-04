@@ -114,6 +114,9 @@ async def _insert_browser_scrape_and_job(
     markdown: str,
     title: str | None,
 ) -> tuple[UUID, UUID, datetime]:
+    job_id = uuid4()
+    attempt_id = uuid4()
+
     # This intentionally does not use SupabaseScrapeCache.put()'s evict fence:
     # browser_html writes have no screenshot upload window, so the TASK-1488.18
     # race that _upsert_if_not_evicted protects is not present.
@@ -121,22 +124,14 @@ async def _insert_browser_scrape_and_job(
         """
         INSERT INTO vibecheck_scrapes (
             normalized_url, tier, url, final_url, host, page_kind,
-            page_title, markdown, html, scraped_at, expires_at, evicted_at
+            page_title, markdown, html, job_id, attempt_id,
+            scraped_at, expires_at, evicted_at
         )
         VALUES (
             $1, 'browser_html', $2, $2, $3, 'other',
-            $4, $5, $6, now(), now() + INTERVAL '72 hours', NULL
+            $4, $5, $6, $7, $8,
+            now(), now() + INTERVAL '72 hours', NULL
         )
-        ON CONFLICT (normalized_url, tier) DO UPDATE
-        SET url = EXCLUDED.url,
-            final_url = EXCLUDED.final_url,
-            host = EXCLUDED.host,
-            page_title = EXCLUDED.page_title,
-            markdown = EXCLUDED.markdown,
-            html = EXCLUDED.html,
-            scraped_at = EXCLUDED.scraped_at,
-            expires_at = EXCLUDED.expires_at,
-            evicted_at = NULL
         """,
         normalized_url,
         url,
@@ -144,17 +139,18 @@ async def _insert_browser_scrape_and_job(
         title,
         markdown,
         html,
+        job_id,
+        attempt_id,
     )
-
-    attempt_id = uuid4()
     row = await conn.fetchrow(
         """
         INSERT INTO vibecheck_jobs (
-            url, normalized_url, host, status, attempt_id, source_type
+            job_id, url, normalized_url, host, status, attempt_id, source_type
         )
-        VALUES ($1, $2, $3, 'pending', $4, 'browser_html')
+        VALUES ($1, $2, $3, $4, 'pending', $5, 'browser_html')
         RETURNING job_id, created_at
         """,
+        job_id,
         url,
         normalized_url,
         host,
@@ -226,6 +222,8 @@ async def submit_scrape(  # noqa: PLR0911
     markdown = body.markdown.strip() if body.markdown and body.markdown.strip() else None
     if markdown is None:
         markdown = _markdown_from_html(sanitized_html)
+    if _byte_len(markdown) > _MAX_MARKDOWN_BYTES:
+        return _error_response(413, "payload_too_large", "markdown exceeds 2MB limit")
 
     async with pool.acquire() as conn, conn.transaction():
         job_id, attempt_id, created_at = await _insert_browser_scrape_and_job(

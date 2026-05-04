@@ -51,6 +51,7 @@ _LOAD_SQL = """
 SELECT
     j.url,
     j.normalized_url,
+    j.source_type,
     j.sections,
     j.attempt_id,
     j.status,
@@ -227,12 +228,13 @@ async def maybe_finalize_job(  # noqa: PLR0911
         payload_json = json.dumps(payload.model_dump(mode="json"))
         cache_payload_json = _payload_for_url_cache(payload)
         expires_at = datetime.now(UTC) + _CACHE_TTL
-        await conn.execute(
-            _UPSERT_CACHE_SQL,
-            row["normalized_url"],
-            cache_payload_json,
-            expires_at,
-        )
+        if row["source_type"] != "browser_html":
+            await conn.execute(
+                _UPSERT_CACHE_SQL,
+                row["normalized_url"],
+                cache_payload_json,
+                expires_at,
+            )
         await conn.execute(
             _MARK_JOB_TERMINAL_SQL,
             job_id,
