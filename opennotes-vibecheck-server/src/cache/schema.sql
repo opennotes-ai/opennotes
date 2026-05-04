@@ -137,6 +137,7 @@ CREATE TABLE IF NOT EXISTS public.vibecheck_jobs (
     normalized_url TEXT NOT NULL,
     host TEXT NOT NULL,
     status TEXT NOT NULL DEFAULT 'pending',
+    source_type TEXT NOT NULL DEFAULT 'url',
     attempt_id UUID NOT NULL DEFAULT extensions.uuid_generate_v4(),
     error_code TEXT,
     error_message TEXT,
@@ -153,12 +154,15 @@ CREATE TABLE IF NOT EXISTS public.vibecheck_jobs (
     finished_at TIMESTAMPTZ,
     CONSTRAINT vibecheck_jobs_status_check
         CHECK (status IN ('pending', 'extracting', 'analyzing', 'done', 'partial', 'failed')),
+    CONSTRAINT vibecheck_jobs_source_type_check
+        CHECK (source_type IN ('url', 'pdf')),
     CONSTRAINT vibecheck_jobs_error_code_check
         CHECK (
             error_code IS NULL
             OR error_code IN (
                 'invalid_url', 'unsafe_url', 'unsupported_site', 'upstream_error',
-                'extraction_failed', 'section_failure', 'timeout',
+                'extraction_failed', 'section_failure', 'timeout', 'pdf_too_large',
+                'pdf_extraction_failed',
                 'rate_limited', 'internal'
             )
         ),
@@ -266,6 +270,34 @@ ALTER TABLE public.vibecheck_jobs
 -- TASK-1474.23.03.04 + .05.
 ALTER TABLE public.vibecheck_jobs
     ADD COLUMN IF NOT EXISTS extract_transient_attempts INT NOT NULL DEFAULT 0;
+
+-- TASK-1498.01: source input type for lifecycle branching (`url` vs `pdf`).
+ALTER TABLE public.vibecheck_jobs
+    ADD COLUMN IF NOT EXISTS source_type TEXT NOT NULL DEFAULT 'url';
+
+ALTER TABLE public.vibecheck_jobs
+    DROP CONSTRAINT IF EXISTS vibecheck_jobs_source_type_check;
+ALTER TABLE public.vibecheck_jobs
+    ADD CONSTRAINT vibecheck_jobs_source_type_check
+    CHECK (source_type IN ('url', 'pdf'));
+
+-- =========================================================================
+-- vibecheck_pdf_archives (PDF raw HTML TTL cache)
+-- =========================================================================
+
+CREATE TABLE IF NOT EXISTS public.vibecheck_pdf_archives (
+    job_id UUID PRIMARY KEY REFERENCES public.vibecheck_jobs(job_id) ON DELETE CASCADE,
+    html TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT pg_catalog.now(),
+    expires_at TIMESTAMPTZ NOT NULL DEFAULT (pg_catalog.now() + INTERVAL '7 days')
+);
+
+ALTER TABLE public.vibecheck_pdf_archives ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.vibecheck_pdf_archives FORCE ROW LEVEL SECURITY;
+REVOKE ALL ON public.vibecheck_pdf_archives FROM anon, authenticated;
+
+CREATE INDEX IF NOT EXISTS vibecheck_pdf_archives_expires_at_idx
+    ON public.vibecheck_pdf_archives (expires_at);
 
 -- =========================================================================
 -- vibecheck_scrapes (persisted scrape bundles for retry resumption)
@@ -630,6 +662,9 @@ BEGIN
     DELETE FROM public.vibecheck_scrapes
     WHERE expires_at < pg_catalog.now();
 
+    DELETE FROM public.vibecheck_pdf_archives
+    WHERE expires_at < pg_catalog.now();
+
     DELETE FROM public.vibecheck_analyses
     WHERE expires_at < pg_catalog.now();
 
@@ -658,8 +693,8 @@ ALTER TABLE public.vibecheck_web_risk_lookups FORCE ROW LEVEL SECURITY;
 REVOKE ALL ON public.vibecheck_web_risk_lookups FROM anon, authenticated;
 
 -- =========================================================================
--- Extend vibecheck_jobs_error_code_check to include 'unsafe_url'
--- (TASK-1474.03)
+-- Extend vibecheck_jobs_error_code_check for current PDF pipeline errors
+-- (TASK-1474.03, TASK-1498.01)
 -- =========================================================================
 -- Use ALTER ... DROP CONSTRAINT IF EXISTS + ADD inline instead of a DO-block
 -- information_schema probe: the probe has a TOCTOU window where a concurrent
@@ -673,10 +708,11 @@ ALTER TABLE public.vibecheck_jobs
   ADD CONSTRAINT vibecheck_jobs_error_code_check
   CHECK (
     error_code IS NULL
-    OR error_code IN (
+        OR error_code IN (
       'invalid_url', 'unsupported_site', 'upstream_error',
       'extraction_failed', 'timeout', 'rate_limited', 'internal',
-      'unsafe_url', 'section_failure'
+      'unsafe_url', 'section_failure', 'pdf_too_large',
+      'pdf_extraction_failed'
     )
   );
 

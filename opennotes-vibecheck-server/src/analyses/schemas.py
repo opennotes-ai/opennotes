@@ -96,6 +96,8 @@ class ErrorCode(StrEnum):
     UPSTREAM_ERROR = "upstream_error"
     EXTRACTION_FAILED = "extraction_failed"
     SECTION_FAILURE = "section_failure"
+    PDF_TOO_LARGE = "pdf_too_large"
+    PDF_EXTRACTION_FAILED = "pdf_extraction_failed"
     TIMEOUT = "timeout"
     RATE_LIMITED = "rate_limited"
     INTERNAL = "internal"
