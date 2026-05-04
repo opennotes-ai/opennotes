@@ -18,6 +18,8 @@ Open the extension popup and set:
 
 Settings are stored in `chrome.storage.sync`.
 
+On first submit to an endpoint origin, Chrome may ask you to grant the extension access to that origin so the popup can POST to `/api/scrape`.
+
 ## Submit A Page
 
 1. Navigate to the page to submit.

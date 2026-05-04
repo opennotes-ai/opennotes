@@ -54,8 +54,6 @@ async function loadActiveTab() {
 
 async function submitCurrentPage() {
   hideResult();
-  await saveSettings();
-
   const endpointUrl = endpointInput.value.trim();
   const apiKey = apiKeyInput.value.trim();
 
@@ -74,11 +72,26 @@ async function submitCurrentPage() {
     return;
   }
 
+  let scrapeUrl;
+  try {
+    scrapeUrl = buildScrapeUrl(endpointUrl);
+  } catch (error) {
+    showError("Invalid endpoint URL", error instanceof Error ? error.message : String(error));
+    return;
+  }
+
+  const hasEndpointAccess = await ensureEndpointPermission(scrapeUrl);
+  if (!hasEndpointAccess) {
+    showError("Endpoint access denied", "Grant access to the configured endpoint origin and try again.");
+    return;
+  }
+
+  await saveSettings();
   setSubmitting(true);
 
   try {
     const page = await capturePage(activeTab.id);
-    const response = await fetch(buildScrapeUrl(endpointUrl), {
+    const response = await fetch(scrapeUrl, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${apiKey}`,
@@ -134,6 +147,10 @@ async function capturePage(tabId) {
 
 function buildScrapeUrl(input) {
   const url = new URL(input);
+  if (url.protocol !== "http:" && url.protocol !== "https:") {
+    throw new Error("Endpoint URL must start with http:// or https://.");
+  }
+
   const normalizedPath = url.pathname.replace(/\/+$/, "");
 
   if (normalizedPath.endsWith("/api/scrape")) {
@@ -142,6 +159,11 @@ function buildScrapeUrl(input) {
 
   url.pathname = `${normalizedPath}/api/scrape`.replace(/^\/?/, "/");
   return url.toString();
+}
+
+async function ensureEndpointPermission(scrapeUrl) {
+  const originPattern = `${new URL(scrapeUrl).origin}/*`;
+  return chrome.permissions.request({ origins: [originPattern] });
 }
 
 function compactPayload(payload) {
