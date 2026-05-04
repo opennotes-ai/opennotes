@@ -3,16 +3,15 @@ from __future__ import annotations
 import re
 from collections.abc import Iterable
 from datetime import UTC, datetime
-from urllib.parse import urljoin
+from hashlib import sha1
 
 from lxml import html as lxml_html
 from lxml.html import HtmlElement
 
 from src.services.firecrawl_client import ScrapeResult
-from src.url_content_scan.normalize import normalize_url
 from src.url_content_scan.schemas import PageKind
 
-from .media_extraction import extract_image_urls, extract_video_urls
+from .media_extraction import extract_image_urls, extract_video_urls, normalize_public_url
 from .schema import Utterance, UtterancesPayload
 
 _UTTERANCE_CONTAINER_XPATH = ".//*[@data-comment-id or @data-reply-id or @data-node-id or @data-entry-id or @data-role='post']"
@@ -90,7 +89,7 @@ def _classify_page_kind(scrape: ScrapeResult, root: HtmlElement | None) -> PageK
         inferred = PageKind.BLOG_INDEX
     elif root.xpath("//*[@data-reply-id]"):
         inferred = PageKind.FORUM_THREAD
-    elif root.xpath("//article") or (scrape.markdown and scrape.markdown.strip().startswith("#")):
+    elif root.xpath("//article"):
         inferred = PageKind.ARTICLE
     return inferred
 
@@ -153,7 +152,7 @@ def _extract_blog_post(
         return utterances
 
     post_id = utterances[0].utterance_id if utterances else None
-    for comment in comments_root.xpath("./article[@data-comment-id]"):
+    for comment in comments_root.xpath("./article"):
         utterances.extend(_flatten_blog_comment_tree(comment, post_id, source_url))
     return utterances
 
@@ -163,19 +162,21 @@ def _flatten_blog_comment_tree(
     post_id: str | None,
     source_url: str,
 ) -> list[Utterance]:
-    utterance_id = _element_id(comment)
-    parent_id = comment.get("data-parent-id") or post_id
     kind = "reply" if comment.get("data-parent-id") else "comment"
+    utterance_id = _stable_utterance_id(comment, kind)
+    parent_id = comment.get("data-parent-id") or post_id
     utterances = [
         _build_utterance(
             comment,
             kind=kind,
             parent_id=parent_id,
             source_url=source_url,
-            text_hint=_comment_text(comment),
+            text_hint=_comment_text(comment, nested_container_xpaths=("./article",)),
+            utterance_id=utterance_id,
+            nested_container_xpaths=("./article",),
         )
     ]
-    for nested in comment.xpath("./article[@data-comment-id]"):
+    for nested in comment.xpath("./article"):
         utterances.extend(_flatten_blog_comment_tree(nested, utterance_id, source_url))
     return utterances
 
@@ -201,7 +202,18 @@ def _extract_forum_thread(
     )
     utterances.append(post_utterance)
 
-    for reply in root.xpath("//*[@data-reply-id]"):
+    replies = root.xpath("//*[@data-reply-id]")
+    if not replies:
+        post_parent = post.getparent()
+        if post_parent is not None:
+            replies = [
+                candidate
+                for candidate in post_parent.xpath("./*")
+                if isinstance(candidate, HtmlElement)
+                and candidate is not post
+                and _clean_text(candidate.text_content())
+            ]
+    for reply in replies:
         utterances.append(
             _build_utterance(
                 reply,
@@ -224,24 +236,66 @@ def _extract_hierarchical_thread(
     if post is None:
         post = _first(root, "//article[1]")
     if post is not None:
-        utterances.append(
-            _build_utterance(
-                post,
-                kind="post",
-                parent_id=None,
+        post_utterance = _build_utterance(
+            post,
+            kind="post",
+            parent_id=None,
+            source_url=source_url,
+            text_hint=_body_text(post),
+        )
+        utterances.append(post_utterance)
+        post_id = post_utterance.utterance_id
+    else:
+        post_id = None
+
+    nodes = root.xpath("//*[@data-node-id]")
+    if nodes:
+        for node in nodes:
+            utterances.append(
+                _build_utterance(
+                    node,
+                    kind="reply",
+                    parent_id=node.get("data-parent-id"),
+                    source_url=source_url,
+                    text_hint=_comment_text(node),
+                )
+            )
+        return utterances
+
+    for node in root.xpath("//li[not(ancestor::li) and not(ancestor::*[@data-role='post'])]"):
+        utterances.extend(
+            _flatten_hierarchical_node_tree(
+                node,
+                parent_id=post_id,
                 source_url=source_url,
-                text_hint=_body_text(post),
             )
         )
+    return utterances
 
-    for node in root.xpath("//*[@data-node-id]"):
-        utterances.append(
-            _build_utterance(
-                node,
-                kind="reply",
-                parent_id=node.get("data-parent-id"),
+
+def _flatten_hierarchical_node_tree(
+    node: HtmlElement,
+    parent_id: str | None,
+    source_url: str,
+) -> list[Utterance]:
+    utterance_id = _stable_utterance_id(node, "reply")
+    utterances = [
+        _build_utterance(
+            node,
+            kind="reply",
+            parent_id=parent_id,
+            source_url=source_url,
+            text_hint=_comment_text(node, nested_container_xpaths=("./ul/li", "./ol/li")),
+            utterance_id=utterance_id,
+            nested_container_xpaths=("./ul/li", "./ol/li"),
+        )
+    ]
+    for child in node.xpath("./ul/li | ./ol/li"):
+        utterances.extend(
+            _flatten_hierarchical_node_tree(
+                child,
+                parent_id=utterance_id,
                 source_url=source_url,
-                text_hint=_comment_text(node),
             )
         )
     return utterances
@@ -330,10 +384,12 @@ def _build_utterance(
     parent_id: str | None,
     source_url: str,
     text_hint: str,
+    utterance_id: str | None = None,
+    nested_container_xpaths: Iterable[str] = (),
 ) -> Utterance:
-    fragment = lxml_html.tostring(element, encoding="unicode")
+    fragment = _element_fragment(element, nested_container_xpaths=nested_container_xpaths)
     return Utterance(
-        utterance_id=_element_id(element),
+        utterance_id=utterance_id or _stable_utterance_id(element, kind),
         kind=kind,  # pyright: ignore[reportArgumentType]
         text=text_hint,
         author=_author_text(element),
@@ -359,6 +415,15 @@ def _element_id(element: HtmlElement) -> str | None:
     return None
 
 
+def _stable_utterance_id(element: HtmlElement, kind: str) -> str:
+    explicit_id = _element_id(element)
+    if explicit_id:
+        return explicit_id
+    path = element.getroottree().getpath(element)
+    digest = sha1(path.encode("utf-8")).hexdigest()[:12]
+    return f"{kind}-{digest}"
+
+
 def _author_text(element: HtmlElement) -> str | None:
     author = element.xpath("string(.//*[@data-author][1])")
     cleaned = _clean_text(author)
@@ -372,17 +437,15 @@ def _body_text(element: HtmlElement) -> str:
     return _comment_text(element)
 
 
-def _comment_text(element: HtmlElement) -> str:
+def _comment_text(
+    element: HtmlElement,
+    *,
+    nested_container_xpaths: Iterable[str] = (),
+) -> str:
     texts = _collect_texts(element, ("./p[not(@data-author)]", "./div/p[not(@data-author)]"))
     if texts:
         return "\n".join(texts)
-    clone = lxml_html.fromstring(lxml_html.tostring(element, encoding="unicode"))
-    for nested in clone.xpath(_UTTERANCE_CONTAINER_XPATH):
-        if nested is clone:
-            continue
-        parent = nested.getparent()
-        if parent is not None:
-            parent.remove(nested)
+    clone = _pruned_clone(element, nested_container_xpaths=nested_container_xpaths)
     for author in clone.xpath(".//*[@data-author]"):
         parent = author.getparent()
         if parent is not None:
@@ -405,11 +468,38 @@ def _collect_texts(element: HtmlElement, xpaths: Iterable[str]) -> list[str]:
 def _extract_urls(content: str, source_url: str) -> list[str]:
     urls: list[str] = []
     for match in _URL_TAG_RE.finditer(content):
-        url = match.group("url").strip()
-        normalized = normalize_url(urljoin(source_url, url))
-        if normalized not in urls:
+        normalized = normalize_public_url(match.group("url"), source_url)
+        if normalized is not None and normalized not in urls:
             urls.append(normalized)
     return urls
+
+
+def _element_fragment(
+    element: HtmlElement,
+    *,
+    nested_container_xpaths: Iterable[str] = (),
+) -> str:
+    return lxml_html.tostring(
+        _pruned_clone(element, nested_container_xpaths=nested_container_xpaths),
+        encoding="unicode",
+    )
+
+
+def _pruned_clone(
+    element: HtmlElement,
+    *,
+    nested_container_xpaths: Iterable[str] = (),
+) -> HtmlElement:
+    clone = lxml_html.fromstring(lxml_html.tostring(element, encoding="unicode"))
+    selectors = (_UTTERANCE_CONTAINER_XPATH, *nested_container_xpaths)
+    for xpath in selectors:
+        for nested in clone.xpath(xpath):
+            if nested is clone:
+                continue
+            parent = nested.getparent()
+            if parent is not None:
+                parent.remove(nested)
+    return clone
 
 
 def _markdown_text(markdown: str | None) -> str:

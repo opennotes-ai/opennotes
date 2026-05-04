@@ -4,6 +4,7 @@ import re
 from urllib.parse import urljoin
 
 from src.url_content_scan.normalize import normalize_url
+from src.utils.url_security import InvalidURL, validate_public_http_url
 
 _IMG_TAG_RE = re.compile(r"<img\b[^>]*\bsrc=[\"'](?P<url>[^\"']+)[\"']", re.IGNORECASE)
 _MD_IMAGE_RE = re.compile(r"!\[[^\]]*]\((?P<url>[^)]+)\)")
@@ -15,11 +16,21 @@ _MD_LINK_RE = re.compile(r"\[[^\]]+]\((?P<url>[^)]+)\)")
 _VIDEO_EXTENSIONS = (".mp4", ".mov", ".m4v", ".webm", ".m3u8", ".avi")
 
 
-def _append_unique(values: list[str], candidate: str, source_url: str) -> None:
+def normalize_public_url(candidate: str, source_url: str) -> str | None:
     url = candidate.strip()
     if not url:
+        return None
+    try:
+        public_url = validate_public_http_url(urljoin(source_url, url))
+    except InvalidURL:
+        return None
+    return normalize_url(public_url)
+
+
+def _append_unique(values: list[str], candidate: str, source_url: str) -> None:
+    normalized = normalize_public_url(candidate, source_url)
+    if normalized is None:
         return
-    normalized = normalize_url(urljoin(source_url, url))
     if normalized not in values:
         values.append(normalized)
 
