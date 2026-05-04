@@ -65,14 +65,11 @@ async def run_facts_claims_known_misinfo(
     if not deduped_claims:
         return {"known_misinformation": []}
 
-    agent = cast(
-        Any,
-        build_agent(
-            settings,
-            output_type=cast(Any, list[FactCheckMatch]),
-            system_prompt=FACTS_AGENT_SYSTEM_PROMPT,
-            name="vibecheck.facts",
-        ),
+    agent = build_agent(
+        settings,
+        output_type=cast(Any, list[FactCheckMatch]),
+        system_prompt=FACTS_AGENT_SYSTEM_PROMPT,
+        name="vibecheck.facts",
     )
 
     @agent.tool
@@ -96,7 +93,7 @@ async def run_facts_claims_known_misinfo(
                 serializable_claims.append(claim)
         user_prompt = json.dumps(serializable_claims)
         async with vertex_slot(settings):
-            result = await run_vertex_agent_with_retry(agent, user_prompt, deps=FactsAgentDeps(httpx_client=hx))
+            result = await run_vertex_agent_with_retry(agent, user_prompt, deps=FactsAgentDeps(httpx_client=hx))  # pyright: ignore[reportArgumentType]
 
     matches = list(result.output or [])
     return {"known_misinformation": [m.model_dump() for m in matches]}

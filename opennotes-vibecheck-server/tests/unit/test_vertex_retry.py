@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, call, patch
 
 import pytest
 from pydantic_ai.exceptions import ModelHTTPError
@@ -24,29 +24,41 @@ async def test_retries_on_429_then_succeeds() -> None:
     agent = _mock_agent(_exc(429), fake_result)
 
     with patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
-        result = await run_vertex_agent_with_retry(agent)
+        result = await run_vertex_agent_with_retry(agent, "test prompt")
 
     assert result is fake_result
     assert agent.run.call_count == 2
     assert mock_sleep.call_count == 1
+    assert agent.run.call_args == call("test prompt")
 
 
 async def test_exhausts_all_attempts_and_reraises_429() -> None:
     agent = _mock_agent(_exc(429), _exc(429), _exc(429))
 
-    with patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep, pytest.raises(ModelHTTPError) as exc_info:
-        await run_vertex_agent_with_retry(agent)
+    with (
+        patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep,
+        patch("src.services.gemini_agent.logfire") as mock_logfire,
+        pytest.raises(ModelHTTPError) as exc_info,
+    ):
+        await run_vertex_agent_with_retry(agent, "test prompt")
 
     assert exc_info.value.status_code == 429
     assert agent.run.call_count == MAX_VERTEX_429_ATTEMPTS
     assert mock_sleep.call_count == MAX_VERTEX_429_ATTEMPTS - 1
+    assert agent.run.call_args == call("test prompt")
+    mock_logfire.warning.assert_called_once_with(
+        "vertex_429_exhausted",
+        model_name="gemini-2.5-flash",
+        status_code=429,
+        attempts=MAX_VERTEX_429_ATTEMPTS,
+    )
 
 
 async def test_non_429_not_retried() -> None:
     agent = _mock_agent(_exc(400))
 
     with patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep, pytest.raises(ModelHTTPError) as exc_info:
-        await run_vertex_agent_with_retry(agent)
+        await run_vertex_agent_with_retry(agent, "test prompt")
 
     assert exc_info.value.status_code == 400
     assert agent.run.call_count == 1

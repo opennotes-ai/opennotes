@@ -163,13 +163,15 @@ HEARTBEAT_INTERVAL_SEC: float = 5.0
 
 
 EXTRACT_TRANSIENT_MAX_ATTEMPTS: Final[int] = 3
-"""Cloud Tasks max_attempts is 3 (cloud_tasks.tf line 33). On the 3rd
+"""Matches the max_attempts for the vibecheck-jobs Cloud Tasks queue
+(google_cloud_tasks_queue.vibecheck_jobs in cloud_tasks.tf). On the 3rd
 transient extraction failure, flip the row to TerminalError(UPSTREAM_ERROR).
 Tight local retries in run_vertex_agent_with_retry absorb fast Vertex 429
 bursts before they surface as TransientExtractionError, so each Cloud Tasks
 delivery may now consume one job-level transient attempt for a genuine
-upstream flake. Aligning this cap with Cloud Tasks max_attempts ensures all
-three deliveries are available before the job is terminated.
+upstream flake. This cap is intentionally equal to Cloud Tasks max_attempts:
+the backstop fires on the same final delivery that Cloud Tasks would also
+stop, preventing wasted deliveries that the prior cap of 2 caused.
 """
 
 

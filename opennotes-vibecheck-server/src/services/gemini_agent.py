@@ -130,6 +130,7 @@ async def run_vertex_agent_with_retry(
                 logfire.warning(
                     "vertex_429_exhausted",
                     model_name=exc.model_name,
+                    status_code=exc.status_code,
                     attempts=MAX_VERTEX_429_ATTEMPTS,
                 )
                 raise
