@@ -90,6 +90,48 @@ def test_detects_coral_signal_from_latimes_ps_comments_shape() -> None:
     )
 
 
+def test_detects_coral_signal_from_washington_post_comments_shape() -> None:
+    html = """
+    <html>
+      <head>
+        <link
+          rel="canonical"
+          href="https://www.washingtonpost.com/world/2026/05/04/us-ships-iran-hormuz-ceasefire/"
+        />
+        <script
+          src="https://talk.washingtonpost.com/assets/js/embed.js?token=1725896287"
+          id="comments-stream"
+        ></script>
+      </head>
+      <body>
+        <div data-testid="coral-comments">
+          <div id="comments-wrapper" data-qa="comments-embed">
+            <div class="wpds-light" data-qa="coral-comments" id="comments"></div>
+          </div>
+        </div>
+      </body>
+    </html>
+    """
+
+    signal = detect_coral(html)
+
+    assert signal == CoralSignal(
+        graphql_origin="https://talk.washingtonpost.com",
+        story_url=(
+            "https://www.washingtonpost.com/world/2026/05/04/"
+            "us-ships-iran-hormuz-ceasefire/"
+        ),
+        iframe_src=(
+            "https://talk.washingtonpost.com/embed/stream?storyURL="
+            "https%3A%2F%2Fwww.washingtonpost.com%2Fworld%2F2026%2F05%2F04%2F"
+            "us-ships-iran-hormuz-ceasefire%2F"
+        ),
+        supports_graphql=False,
+        embed_origin="https://talk.washingtonpost.com",
+        env_origin="https://talk.washingtonpost.com",
+    )
+
+
 def test_detects_coral_signal_from_valid_iframe_with_ps_comments_optional_marker() -> None:
     html = """
     <html>

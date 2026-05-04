@@ -913,6 +913,8 @@ def _eval_execute_javascript(
     match_selectors: list[str] | tuple[str, ...],
     html_fixture: str | None = None,
     shadow_html: str | None = None,
+    shadow_states: list[dict[str, Any]] | None = None,
+    light_dom_states: list[dict[str, Any]] | None = None,
     shadow_closed: bool = False,
 ) -> tuple[str, str | None, str | None]:
     """Run a generated executeJavascript payload against a stubbed document."""
@@ -925,11 +927,80 @@ def _eval_execute_javascript(
 const payload = JSON.parse(process.argv[1]);
 const matchingSelectors = new Set(payload.matchingSelectors);
 const htmlFixture = payload.htmlFixture || "";
+const shadowStates = Array.isArray(payload.shadowStates)
+    ? payload.shadowStates
+    : [];
+const lightDomStates = Array.isArray(payload.lightDomStates)
+    ? payload.lightDomStates
+    : [];
 const hasShadowHtml = payload.shadowHtml !== null && payload.shadowHtml !== undefined;
 const shadowHtml = hasShadowHtml ? payload.shadowHtml : "";
 const shadowClosed = Boolean(payload.shadowClosed);
+const hasShadowSource = hasShadowHtml || shadowStates.length > 0;
 let clickedSelector = null;
 let markerHtml = null;
+let shadowHostCallCount = 0;
+let lightDomHostCallCount = 0;
+
+function normalizeText(value) {
+    return String(value || "").replace(/\s+/g, " ").trim();
+}
+
+function stripTags(value) {
+    return String(value || "").replace(/<[^>]*>/g, " ").trim();
+}
+
+function normalizeShadowState(state) {
+    if (!state) {
+        return {text: "", comments: []};
+    }
+    if (typeof state === "string") {
+        return {text: stripTags(state), comments: []};
+    }
+    if (typeof state !== "object") {
+        return {text: "", comments: []};
+    }
+    const stateText = normalizeText(typeof state.text === "string" ? state.text : "");
+    const comments = Array.isArray(state.comments) ? state.comments : [];
+    const resolvedComments = comments
+        .map((comment) => {
+            if (!comment || typeof comment !== "object") {
+                return null;
+            }
+            const author = normalizeText(comment.author);
+            const text = normalizeText(comment.text);
+            if (!author || !text) {
+                return null;
+            }
+            return {
+                author,
+                text,
+                tagName: normalizeText(comment.tagName || "article"),
+                className: normalizeText(comment.className || ""),
+                ariaLabel: normalizeText(comment.ariaLabel || ""),
+                dataTestId: normalizeText(comment.dataTestId || ""),
+            };
+        })
+        .filter(Boolean);
+    return {
+        text: stateText,
+        comments: resolvedComments,
+    };
+}
+
+function resolveShadowState() {
+    const fallbackStates = hasShadowHtml ? [{text: stripTags(shadowHtml)}] : [{text: ""}];
+    const states = shadowStates.length > 0 ? shadowStates : fallbackStates;
+    const state = normalizeShadowState(states[Math.min(shadowHostCallCount, states.length - 1)]);
+    shadowHostCallCount += 1;
+    return state;
+}
+
+function resolveLightDomState() {
+    const state = normalizeShadowState(lightDomStates[Math.min(lightDomHostCallCount, lightDomStates.length - 1)]);
+    lightDomHostCallCount += 1;
+    return state;
+}
 
 function psCommentsBlock() {
     const match = htmlFixture.match(/<ps-comments\b([^>]*)>([\s\S]*?)<\/ps-comments>/i);
@@ -956,23 +1027,37 @@ function selectorMatchesFixture(selector) {
     return false;
 }
 
-function makeElement(tagName) {
+function makeElement(tagName, init = {}) {
     const element = {
-        tagName,
+        tagName: String(tagName || "div"),
         attributes: {},
         children: [],
-        textContent: "",
-        innerHTML: "",
+        textContent: init.textContent || "",
+        innerHTML: init.innerHTML || "",
+        className: init.className || "",
         setAttribute(name, value) {
-            this.attributes[name] = value;
+            this.attributes[name] = String(value);
+            if (name === "class") {
+                this.className = String(value);
+            }
+            if (name === "aria-label") {
+                this.ariaLabel = String(value);
+            }
+            if (name === "data-testid") {
+                this.dataTestId = String(value);
+            }
+        },
+        getAttribute(name) {
+            return this.attributes[name];
         },
         appendChild(child) {
             this.children.push(child);
             if (child.textContent) {
-                this.textContent += child.textContent;
+                const text = this.textContent ? `${this.textContent} ${child.textContent}` : child.textContent;
+                this.textContent = normalizeText(text);
             }
             if (child.innerHTML) {
-                this.innerHTML += child.innerHTML;
+                this.innerHTML = normalizeText(`${this.innerHTML} ${child.innerHTML}`);
             }
             if (this.attributes["data-coral-comments"] === "true") {
                 markerHtml = this.innerHTML || this.textContent;
@@ -984,6 +1069,100 @@ function makeElement(tagName) {
         },
     };
     return element;
+}
+
+function makeCommentNode(state) {
+    const node = makeElement(state.tagName || "article", {className: state.className || ""});
+    if (state.dataTestId) {
+        node.setAttribute("data-testid", state.dataTestId);
+    }
+    if (state.ariaLabel) {
+        node.setAttribute("aria-label", state.ariaLabel);
+    }
+    const headerNode = makeElement("header", {textContent: state.author});
+    const bodyNode = makeElement("p", {textContent: state.text});
+    const authorNode = makeElement("span", {
+        textContent: state.author,
+        className: "comment-author",
+    });
+    node.appendChild(headerNode);
+    node.appendChild(bodyNode);
+    node.appendChild(authorNode);
+    node.querySelector = (selector) => {
+        const normalized = String(selector || "");
+        if (normalized === "p") {
+            return bodyNode;
+        }
+        if (
+            normalized.includes("author")
+            || normalized.includes("username")
+            || normalized.includes("header")
+            || normalized.includes("data-testid*='author'")
+            || normalized.includes("class*='author'")
+            || normalized.includes("class*='username'")
+        ) {
+            return authorNode;
+        }
+        return null;
+    };
+    node.matchesSelector = (selector) => {
+        const normalized = String(selector || "");
+        if (normalized.includes("article")) {
+            return true;
+        }
+        if (normalized.includes("Comment_root")) {
+            return node.className.includes("Comment_root");
+        }
+        if (normalized.includes("comment-content")) {
+            return node.className.includes("comment-content");
+        }
+        if (normalized.includes("commentContent")) {
+            return node.className.includes("commentContent");
+        }
+        if (normalized.includes("data-testid='comment'")) {
+            return node.dataTestId === "comment";
+        }
+        if (normalized.includes("aria-label^='Comment from '")) {
+            return node.ariaLabel.startsWith("Comment from ");
+        }
+        if (normalized.includes("aria-label^='Reply from '")) {
+            return node.ariaLabel.startsWith("Reply from ");
+        }
+        return false;
+    };
+    node.querySelectorAll = (selector) => {
+        const normalized = String(selector || "");
+        if (normalized === "header" || normalized.includes("author") || normalized.includes("username")) {
+            return [authorNode];
+        }
+        if (normalized === "p") {
+            return [bodyNode];
+        }
+        return [];
+    };
+    return node;
+}
+
+function makeShadowRoot(state) {
+    const normalized = normalizeShadowState(state);
+    const comments = normalized.comments.map((comment) => makeCommentNode(comment));
+    const rootText = normalizeText(
+        [normalized.text, ...comments.map((node) => `${node.textContent}`)].join(" ")
+    );
+    return {
+        innerHTML: normalized.text,
+        textContent: rootText,
+        querySelectorAll(selector) {
+            const normalized = String(selector || "");
+            if (normalized.includes("button") || normalized.includes("role='button'")) {
+                return [];
+            }
+            if (comments.length === 0) {
+                return [];
+            }
+            return comments.filter((comment) => comment.matchesSelector(selector));
+        },
+    };
 }
 
 const article = makeElement("article");
@@ -998,13 +1177,17 @@ article.appendChild = body.appendChild;
 
 global.document = {
     querySelector(selector) {
-        if (selector === "#coral-shadow-container" && (hasShadowHtml || shadowClosed)) {
+        if (selector === "#coral-shadow-container" && (hasShadowSource || shadowClosed)) {
             return {
-                shadowRoot: shadowClosed ? null : {
-                    innerHTML: shadowHtml,
-                    textContent: shadowHtml.replace(/<[^>]*>/g, " "),
-                },
+                shadowRoot: shadowClosed ? null : makeShadowRoot(resolveShadowState()),
+                dispatchEvent() {},
             };
+        }
+        if (selector === "#comments" && lightDomStates.length > 0) {
+            const state = resolveLightDomState();
+            const root = makeShadowRoot(state);
+            root.dispatchEvent = () => {};
+            return root;
         }
         if (selector === "article") {
             return article;
@@ -1023,6 +1206,12 @@ global.document = {
         };
     },
     createElement: makeElement,
+    querySelectorAll(selector) {
+        if (selector === "button,[role='button']") {
+            return [];
+        }
+        return [];
+    },
     body,
 };
 
@@ -1053,6 +1242,8 @@ console.log(JSON.stringify(output));
                     "matchingSelectors": list(match_selectors),
                     "htmlFixture": html_fixture,
                     "shadowHtml": shadow_html,
+                    "shadowStates": shadow_states,
+                    "lightDomStates": light_dom_states,
                     "shadowClosed": shadow_closed,
                 }
             ),
@@ -1099,6 +1290,8 @@ def test_tier2_actions_for_coral_signal_expands_comment_stream() -> None:
     _assert_generated_js_contains_selector(
         js, 'button[data-testid="comments-show-comments-button"]'
     )
+    _assert_generated_js_contains_selector(js, 'button[data-testid="comments-button"]')
+    _assert_generated_js_contains_selector(js, 'button[data-qa="comments-btn"]')
     _assert_generated_js_contains_selector(js, 'button[data-gtm-class="open-community"]')
     _assert_generated_js_contains_selector(js, "#coral_talk_stream button")
     _assert_generated_js_contains_selector(js, "#coral_thread button")
@@ -1147,6 +1340,30 @@ def test_tier2_actions_for_coral_signal_expands_la_times_ps_comments() -> None:
     assert marker == "Comments"
 
 
+def test_tier2_actions_for_coral_signal_returns_shell_only_for_guideline_only_shadow_root() -> None:
+    """A shadow root with only Coral UI chrome is surfaced as shell-only."""
+
+    actions = _tier2_actions_for(_sample_coral_signal())
+    js = actions[2]["script"]
+
+    returned, clicked, marker = _eval_execute_javascript(
+        js,
+        match_selectors=[],
+        shadow_states=[
+            {
+                "text": (
+                    "Our comments are moderated and if it is off-topic, it will be removed. "
+                    "Let's have a nice conversation. All Comments(172)"
+                ),
+            },
+        ],
+    )
+
+    assert clicked is None
+    assert returned == "coral_status:shell_only;comments=0"
+    assert marker == "Comments"
+
+
 def test_tier2_actions_for_coral_signal_reports_shadow_failure_statuses() -> None:
     """Host and shadow-root failures remain visible as final action statuses."""
 
@@ -1173,7 +1390,109 @@ def test_tier2_actions_for_coral_signal_reports_shadow_failure_statuses() -> Non
 
 
 def test_tier2_actions_for_coral_signal_copies_shadow_comments_to_light_dom() -> None:
-    """Coral Tier 2 exposes LA Times shadow-root comments to captured HTML."""
+    """Coral Tier 2 only copies real comment rows, not shell chrome."""
+
+    actions = _tier2_actions_for(_sample_coral_signal())
+    js = actions[2]["script"]
+
+    returned, clicked, marker = _eval_execute_javascript(
+        js,
+        match_selectors=[],
+        shadow_states=[
+            {
+                "comments": [
+                    {
+                        "tagName": "article",
+                        "dataTestId": "comment",
+                        "author": "Like_it_really_matters",
+                        "text": "This initiative deserves debate.",
+                    },
+                    {
+                        "tagName": "article",
+                        "dataTestId": "comment",
+                        "author": "johntomas",
+                        "text": "Absolutely agree.",
+                    },
+                ]
+            }
+        ],
+    )
+
+    assert clicked is None
+    assert returned == "coral_status:copied;comments=2"
+    assert marker is not None
+    assert "Like_it_really_matters" in marker
+    assert "johntomas" in marker
+
+
+def test_tier2_actions_for_coral_signal_copies_text_only_coral_comments() -> None:
+    """The LA Times textContent shape is enough when DOM classes are unstable."""
+
+    actions = _tier2_actions_for(_sample_coral_signal())
+    js = actions[2]["script"]
+
+    returned, clicked, marker = _eval_execute_javascript(
+        js,
+        match_selectors=[],
+        shadow_states=[
+            {
+                "text": (
+                    "Comments Our comments are moderated and if it is off-topic, "
+                    "it will be removed. All Comments(172) Sort by Newest "
+                    "Comment from Like_it_really_matters 2 days ago"
+                    "Like_it_really_matters2 days ago"
+                    "Small print on page 26 reveals the real plans."
+                    "Respect1email-action-replyReplyShareReport"
+                    "Thread Level 1: Reply from johntomas 2 days ago"
+                    "johntomas2 days agoemail-action-reply In reply to "
+                    "Like_it_really_matters There is nothing unusual about "
+                    "that clause."
+                ),
+            },
+        ],
+    )
+
+    assert clicked is None
+    assert returned == "coral_status:copied;comments=2"
+    assert marker is not None
+    assert "Like_it_really_matters" in marker
+    assert "Small print on page 26 reveals the real plans." in marker
+    assert "johntomas" in marker
+    assert "There is nothing unusual about that clause." in marker
+
+
+def test_tier2_actions_for_coral_signal_copies_wapo_light_dom_comments() -> None:
+    """Washington Post Coral can render into #comments without a shadow root."""
+
+    actions = _tier2_actions_for(_sample_coral_signal())
+    js = actions[2]["script"]
+
+    returned, clicked, marker = _eval_execute_javascript(
+        js,
+        match_selectors=[],
+        light_dom_states=[
+            {
+                "comments": [
+                    {
+                        "tagName": "article",
+                        "dataTestId": "comment",
+                        "author": "WapoReader",
+                        "text": "The Strait of Hormuz context matters here.",
+                    },
+                ]
+            }
+        ],
+    )
+
+    assert clicked is None
+    assert returned == "coral_status:copied;comments=1"
+    assert marker is not None
+    assert "WapoReader" in marker
+    assert "The Strait of Hormuz context matters here." in marker
+
+
+def test_tier2_actions_for_coral_signal_waits_for_real_comments_after_click() -> None:
+    """Click path keeps polling until hydrated comments are visible."""
 
     actions = _tier2_actions_for(_sample_coral_signal())
     js = actions[2]["script"]
@@ -1182,15 +1501,34 @@ def test_tier2_actions_for_coral_signal_copies_shadow_comments_to_light_dom() ->
         js,
         match_selectors=[],
         html_fixture=_LA_TIMES_PS_COMMENTS_FIXTURE,
-        shadow_html=(
-            "<div><span>Like_it_really_matters</span>"
-            "<p>This initiative deserves debate.</p>"
-            "<span>johntomas</span></div>"
-        ),
+        shadow_states=[
+            {
+                "text": (
+                    "Our comments are moderated and if it is off-topic, it will be removed. "
+                    "All Comments(172)"
+                ),
+            },
+            {
+                "comments": [
+                    {
+                        "tagName": "article",
+                        "dataTestId": "comment",
+                        "author": "Like_it_really_matters",
+                        "text": "This initiative deserves debate.",
+                    },
+                    {
+                        "tagName": "article",
+                        "dataTestId": "comment",
+                        "author": "johntomas",
+                        "text": "Absolutely agree.",
+                    },
+                ],
+            },
+        ],
     )
 
-    assert clicked is None
-    assert returned == "coral_status:copied;comments=1"
+    assert clicked == "ps-comments#coral_talk_stream"
+    assert returned.startswith("coral_status:copied;comments=2;clicked=ps-comments#coral_talk_stream")
     assert marker is not None
     assert "Like_it_really_matters" in marker
     assert "johntomas" in marker
@@ -1245,6 +1583,8 @@ async def test_run_tier2_records_coral_specific_actions() -> None:
     _assert_generated_js_contains_selector(
         js, 'button[data-testid="comments-show-comments-button"]'
     )
+    _assert_generated_js_contains_selector(js, 'button[data-testid="comments-button"]')
+    _assert_generated_js_contains_selector(js, 'button[data-qa="comments-btn"]')
     _assert_generated_js_contains_selector(js, 'button[data-gtm-class="open-community"]')
     _assert_generated_js_contains_selector(js, "#coral_talk_stream button")
     _assert_generated_js_contains_selector(js, "#coral_thread button")
@@ -1277,6 +1617,32 @@ async def test_run_tier2_records_coral_action_status_from_script_outputs() -> No
 
     assert result.cached is not None
     assert result.coral_action_status == "copied"
+
+
+async def test_run_tier2_records_shell_only_action_status_from_script_output() -> None:
+    """Coral action status parsing handles the `shell_only` enum."""
+
+    url = "https://example.com/article"
+    cache = _FakeScrapeCache()
+    interact_client = _FakeFirecrawlClient(
+        interact_result=_ok_scrape_result(
+            actions={
+                "javascriptReturns": [
+                    {"type": "string", "value": "coral_status:shell_only;comments=0"}
+                ]
+            }
+        )
+    )
+
+    result = await _run_tier2(
+        url,
+        cast(FirecrawlClient, cast(object, interact_client)),
+        cast(SupabaseScrapeCache, cast(object, cache)),
+        coral_signal=_sample_coral_signal(),
+    )
+
+    assert result.cached is not None
+    assert result.coral_action_status == "shell_only"
 
 
 async def test_scrape_step_tier1_coral_detection_merges_graphql_comments(

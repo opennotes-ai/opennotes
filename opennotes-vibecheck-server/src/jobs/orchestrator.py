@@ -172,6 +172,9 @@ _LA_TIMES_HOSTS: Final[tuple[str, ...]] = ("latimes.com", "www.latimes.com")
 _LA_TIMES_CORAL_ORIGIN: Final[str] = "https://latimes.coral.coralproject.net"
 _CORAL_TIER2_ACTION_SELECTORS: Final[tuple[str, ...]] = (
     'button[data-testid="comments-show-comments-button"]',
+    'button[data-testid="comments-button"]',
+    'button[data-qa="comments-btn"]',
+    'button[aria-label*="comments" i]',
     'button[data-gtm-class="open-community"]',
     "#coral_talk_stream button",
     "#coral_thread button",
@@ -750,14 +753,43 @@ def _tier2_actions_for(coral_signal: CoralSignal | None) -> list[dict[str, Any]]
                         setTimeout(resolve, milliseconds);
                     });
                     const shadowHostSelector = "#coral-shadow-container";
+                    const lightDomHostSelector = "#comments";
                     const markerSelector = "[data-coral-comments]";
                     const statusPrefix = "coral_status:";
-                    const hasLoadedComments = (root) => {
-                        const text = (root?.textContent || "").replace(/\\s+/g, " ").trim();
-                        if (text.length < 20) {
-                            return false;
+                    const normalizeText = (value) => (value || "").replace(/\\s+/g, " ").trim();
+                    const escapeRegExp = (value) => value.replace(/[.*+?^${}()|[\\]\\\\]/g, "\\\\$&");
+                    const isBoilerplateText = (text) => {
+                        return (
+                            text.length === 0
+                            || /^(loading|show comments|comments)$/i.test(text)
+                            || /^All Comments?\\(\\d+\\)$/i.test(text)
+                            || /Our comments are moderated/i.test(text)
+                            || /let's have a nice conversation/i.test(text)
+                            || /advocating violence/i.test(text)
+                        );
+                    };
+                    const isShadowIdleText = (text) => !text || /^(loading|show comments|comments)$/i.test(text);
+                    const extractAuthorFromAriaLabel = (node) => {
+                        const ariaLabel = normalizeText(node?.getAttribute?.("aria-label"));
+                        if (!ariaLabel) {
+                            return "";
                         }
-                        return !/^(loading|show comments|comments)$/i.test(text);
+                        const match = ariaLabel.match(
+                            /^(?:Comment|Reply) from (.+?)\\s+\\d+\\s+(?:day|week|month|year|hour|minute|second)s?\\s+ago/i
+                        ) || ariaLabel.match(/^(?:Comment|Reply) from (.+)$/i);
+                        return normalizeText(match?.[1]);
+                    };
+                    const extractAuthor = (node) => {
+                        const authorNode = node.querySelector?.(
+                            "[data-testid*='author'],[class*='author'],[class*='username'],header"
+                        );
+                        if (authorNode) {
+                            const text = normalizeText(authorNode.textContent);
+                            if (text && text.toLowerCase() !== "commenter") {
+                                return text;
+                            }
+                        }
+                        return extractAuthorFromAriaLabel(node);
                     };
                     const appendStatusMarker = (status, comments = []) => {
                         document.querySelector(markerSelector)?.remove();
@@ -774,7 +806,7 @@ def _tier2_actions_for(coral_signal: CoralSignal | None) -> list[dict[str, Any]]
                             const item = document.createElement("article");
                             item.className = "comment";
                             const header = document.createElement("header");
-                            header.textContent = comment.author || "Commenter";
+                            header.textContent = comment.author;
                             const paragraph = document.createElement("p");
                             paragraph.textContent = comment.text;
                             item.appendChild(header);
@@ -785,44 +817,98 @@ def _tier2_actions_for(coral_signal: CoralSignal | None) -> list[dict[str, Any]]
                         (document.querySelector("article") || document.body).appendChild(marker);
                         return `${statusPrefix}${status};comments=${comments.length}`;
                     };
-                    const normalizeText = (value) => (value || "").replace(/\\s+/g, " ").trim();
                     const commentFromNode = (node) => {
                         const text = normalizeText(node?.textContent);
-                        if (!text || /^(loading|show comments|comments)$/i.test(text)) {
+                        if (!text || isBoilerplateText(text)) {
                             return null;
                         }
-                        const authorNode = node.querySelector?.(
-                            "[data-testid*='author'],[class*='author'],[class*='username'],header"
+                        const author = extractAuthor(node);
+                        if (!author) {
+                            return null;
+                        }
+                        const body = normalizeText(node.querySelector?.("p")?.textContent) || text;
+                        if (!body || isBoilerplateText(body)) {
+                            return null;
+                        }
+                        return {author, text: body};
+                    };
+                    const cleanTextCommentBody = (author, value) => {
+                        let body = normalizeText(value);
+                        const authorPattern = escapeRegExp(author);
+                        body = body.replace(
+                            new RegExp(
+                                `^${authorPattern}\\\\s*\\\\d+\\\\s+`
+                                + "(?:day|week|month|year|hour|minute|second)s?\\\\s+ago",
+                                "i"
+                            ),
+                            ""
                         );
-                        const author = normalizeText(authorNode?.textContent) || "Commenter";
-                        return {author, text};
+                        body = body.replace(/^email-action-reply\\s*/i, "");
+                        body = body.replace(/^In reply to [A-Za-z0-9_.-]+\\s*/i, "");
+                        body = body.replace(
+                            /(Respect\\d*email-action-reply|email-action-reply|ReplyShareReport|ShareReport|Thread Level \\d+:).*$/i,
+                            ""
+                        );
+                        return normalizeText(body);
+                    };
+                    const collectCommentsFromText = (rootText) => {
+                        const comments = [];
+                        const text = normalizeText(rootText);
+                        const pattern = /(?:Comment|Reply) from ([A-Za-z0-9_.-]{2,64})\\s+\\d+\\s+(?:day|week|month|year|hour|minute|second)s?\\s+ago/gi;
+                        const matches = Array.from(text.matchAll(pattern));
+                        for (let index = 0; index < matches.length; index += 1) {
+                            const match = matches[index];
+                            const author = normalizeText(match[1]);
+                            const nextMatch = matches[index + 1];
+                            const start = (match.index || 0) + match[0].length;
+                            const end = nextMatch?.index ?? text.length;
+                            const body = cleanTextCommentBody(author, text.slice(start, end));
+                            if (!author || author.toLowerCase() === "commenter" || isBoilerplateText(body)) {
+                                continue;
+                            }
+                            comments.push({author, text: body});
+                        }
+                        return comments;
                     };
                     const collectComments = (root) => {
                         const nodes = Array.from(root.querySelectorAll?.(
-                            "article,[role='article'],li,[class*='comment'],[data-testid*='comment']"
+                            "article[data-testid='comment'],[data-testid='comment'],[class*='Comment_root'],[class*='comment-content'],[class*='commentContent'],[aria-label^='Comment from '],[aria-label^='Reply from ']"
                         ) || []);
                         const comments = nodes.map(commentFromNode).filter(Boolean);
                         if (comments.length > 0) {
                             return comments;
                         }
-                        const text = normalizeText(root.textContent);
-                        return text ? [{author: "Commenter", text}] : [];
+                        return collectCommentsFromText(root.textContent);
+                    };
+                    const findCommentsRoot = () => {
+                        const shadowHost = document.querySelector(shadowHostSelector);
+                        if (shadowHost) {
+                            if (!shadowHost.shadowRoot) {
+                                return {root: null, status: "shadow_closed"};
+                            }
+                            return {root: shadowHost.shadowRoot, status: null};
+                        }
+                        const lightDomHost = document.querySelector(lightDomHostSelector);
+                        if (lightDomHost) {
+                            return {root: lightDomHost, status: null};
+                        }
+                        return {root: null, status: "host_missing"};
                     };
                     const copyShadowComments = () => {
-                        const host = document.querySelector(shadowHostSelector);
-                        if (!host) {
-                            return appendStatusMarker("host_missing");
+                        const {root, status} = findCommentsRoot();
+                        if (!root) {
+                            return appendStatusMarker(status || "host_missing");
                         }
-                        const shadowRoot = host?.shadowRoot;
-                        if (!shadowRoot) {
-                            return appendStatusMarker("shadow_closed");
-                        }
-                        if (!hasLoadedComments(shadowRoot)) {
+                        const rawText = normalizeText(root.textContent);
+                        if (isShadowIdleText(rawText)) {
                             return appendStatusMarker("shadow_empty");
                         }
 
-                        const comments = collectComments(shadowRoot);
+                        const comments = collectComments(root);
                         if (comments.length === 0) {
+                            if (rawText) {
+                                return appendStatusMarker("shell_only");
+                            }
                             return appendStatusMarker("shadow_empty");
                         }
                         return appendStatusMarker("copied", comments);
@@ -842,6 +928,20 @@ def _tier2_actions_for(coral_signal: CoralSignal | None) -> list[dict[str, Any]]
                         if (button) {
                             button.click();
                             clickedSelector = selector;
+                            if (typeof button.scrollIntoView === "function") {
+                                button.scrollIntoView({block: "center"});
+                            }
+                            const commentsHost = document.querySelector(shadowHostSelector)
+                                || document.querySelector(lightDomHostSelector);
+                            if (typeof WheelEvent === "function" && commentsHost?.dispatchEvent) {
+                                try {
+                                    commentsHost.dispatchEvent(
+                                        new WheelEvent("wheel", {deltaY: 500, bubbles: true})
+                                    );
+                                } catch (_error) {
+                                    // best-effort for non-browser test runtimes
+                                }
+                            }
                             break;
                         }
                     }
@@ -856,7 +956,11 @@ def _tier2_actions_for(coral_signal: CoralSignal | None) -> list[dict[str, Any]]
                     }
 
                     if (clickedSelector === null) {
-                        if (initialStatusName === "host_missing" || initialStatusName === "shadow_closed") {
+                        if (
+                            initialStatusName === "host_missing"
+                            || initialStatusName === "shadow_closed"
+                            || initialStatusName === "shell_only"
+                        ) {
                             return initialStatus;
                         }
                         return appendStatusMarker("clicked_no_match");

@@ -80,6 +80,8 @@ class _CoralMarkerParser(HTMLParser):
         self._has_static_script_signal = False
         self._latimes_signal_stack: list[_LatimesSignalCandidate] = []
         self._latimes_signals: list[_LatimesSignalCandidate] = []
+        self._wapo_script_origins: list[str] = []
+        self._has_wapo_comments_marker = False
         self._static_script_origins: list[str] = []
         self._canonical_urls: list[str] = []
         self._community_hostnames: list[str] = []
@@ -90,8 +92,11 @@ class _CoralMarkerParser(HTMLParser):
 
     @property
     def has_signal(self) -> bool:
-        return self._has_script_signal or self._has_optional_signal or bool(
-            self._latimes_signals
+        return (
+            self._has_script_signal
+            or self._has_optional_signal
+            or bool(self._latimes_signals)
+            or bool(self._wapo_script_origins and self._has_wapo_comments_marker)
         )
 
     @property
@@ -111,18 +116,11 @@ class _CoralMarkerParser(HTMLParser):
                 self._collect_state_json_values(value)
 
         if normalized_tag == "script":
-            self._in_script = True
-            src = attrs_map.get("src")
-            self._capture_script_data = src is None
-
-            self._has_script_signal = self._has_script_signal or self._script_src_matches(
-                src
-            )
-            static_script_origin = self._static_script_src_origin(src)
-            if static_script_origin is not None:
-                self._has_static_script_signal = True
-                self._static_script_origins.append(static_script_origin)
+            self._handle_script_start(attrs_map)
             return
+
+        if self._contains_wapo_comments_marker(attrs_map):
+            self._has_wapo_comments_marker = True
 
         if normalized_tag == "ps-comments":
             signal = self._capture_latimes_signal(attrs_map)
@@ -223,6 +221,26 @@ class _CoralMarkerParser(HTMLParser):
 
         return None
 
+    def wapo_signal(self) -> CoralSignal | None:
+        if not self._has_wapo_comments_marker or not self._wapo_script_origins:
+            return None
+
+        canonical_url = self._first_valid_url(
+            self._canonical_urls + self._canonical_urls_from_state
+        )
+        if not canonical_url:
+            return None
+
+        origin = self._wapo_script_origins[0]
+        return CoralSignal(
+            iframe_src=f"{origin}/embed/stream?{urlencode({'storyURL': canonical_url})}",
+            graphql_origin=origin,
+            story_url=canonical_url,
+            supports_graphql=False,
+            embed_origin=origin,
+            env_origin=origin,
+        )
+
     def _first_valid_url(self, candidates: list[str]) -> str | None:
         for candidate in candidates:
             parsed = urlparse(candidate)
@@ -300,6 +318,22 @@ class _CoralMarkerParser(HTMLParser):
             story_id=story_id,
         )
 
+    def _handle_script_start(self, attrs: dict[str, str | None]) -> None:
+        self._in_script = True
+        src = attrs.get("src")
+        self._capture_script_data = src is None
+
+        self._has_script_signal = self._has_script_signal or self._script_src_matches(
+            src
+        )
+        static_script_origin = self._static_script_src_origin(src)
+        if static_script_origin is not None:
+            self._has_static_script_signal = True
+            self._static_script_origins.append(static_script_origin)
+        wapo_script_origin = self._wapo_script_src_origin(src)
+        if wapo_script_origin is not None:
+            self._wapo_script_origins.append(wapo_script_origin)
+
     def _script_src_matches(self, src: str | None) -> bool:
         if not src:
             return False
@@ -317,6 +351,19 @@ class _CoralMarkerParser(HTMLParser):
             return f"{parsed.scheme}://{parsed.netloc}"
         return None
 
+    def _wapo_script_src_origin(self, src: str | None) -> str | None:
+        if not src:
+            return None
+
+        parsed = urlparse(src)
+        if (
+            parsed.path != "/assets/js/embed.js"
+            or parsed.hostname != "talk.washingtonpost.com"
+        ):
+            return None
+
+        return self._parse_http_origin(src)
+
     def _matching_static_script_origin(self, candidate: str) -> str | None:
         for origin in self._static_script_origins:
             if origin == candidate:
@@ -328,6 +375,16 @@ class _CoralMarkerParser(HTMLParser):
             return True
         class_value = attrs.get("class")
         return bool(class_value and "coral-talk-stream" in class_value.lower())
+
+    def _contains_wapo_comments_marker(self, attrs: dict[str, str | None]) -> bool:
+        data_testid = (attrs.get("data-testid") or "").lower()
+        data_qa = (attrs.get("data-qa") or "").lower()
+        node_id = (attrs.get("id") or "").lower()
+        return (
+            data_testid == "coral-comments"
+            or data_qa == "comments-embed"
+            or (node_id == "comments" and data_qa == "coral-comments")
+        )
 
     def _iframe_candidate(self, src: str) -> dict[str, str] | None:
         parsed = urlparse(src)
@@ -429,5 +486,9 @@ def detect_coral(html: str) -> CoralSignal | None:  # noqa: PLR0911
             )
         except Exception:
             return None
+
+    wapo_signal = parser.wapo_signal()
+    if wapo_signal is not None:
+        return wapo_signal
 
     return parser.latimes_signal()

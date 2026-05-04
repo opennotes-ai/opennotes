@@ -33,6 +33,8 @@ proceed from markdown alone.
 from __future__ import annotations
 
 import asyncio
+import html
+import re
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import cast
@@ -118,6 +120,31 @@ Coral comment extraction:
   structure clearly.
 """
 
+CORAL_COMMENTS_IGNORE_ADDENDUM = """\
+
+Coral comment extraction:
+- The scrape contains only Coral comment widget shell/chrome, not loaded user
+  comments.
+- Do not emit `kind='comment'` utterances from moderation guidelines, counters,
+  sort controls, or placeholder `Commenter` rows.
+"""
+
+_CORAL_MARKER_RE = re.compile(
+    r"<(?P<tag>section|div)\b(?P<attrs>[^>]*)\bdata-coral-comments\b(?P<attrs_after>[^>]*)>"
+    r"(?P<body>.*?)</(?P=tag)>",
+    re.IGNORECASE | re.DOTALL,
+)
+_CORAL_ARTICLE_RE = re.compile(
+    r"<article\b(?=[^>]*\bclass=[\"'][^\"']*\bcomment\b)[^>]*>"
+    r"(?P<body>.*?)</article>",
+    re.IGNORECASE | re.DOTALL,
+)
+_CORAL_HEADER_RE = re.compile(
+    r"<header\b[^>]*>(?P<value>.*?)</header>", re.IGNORECASE | re.DOTALL
+)
+_CORAL_PARAGRAPH_RE = re.compile(
+    r"<p\b[^>]*>(?P<value>.*?)</p>", re.IGNORECASE | re.DOTALL
+)
 
 @dataclass
 class ExtractorDeps:
@@ -236,16 +263,74 @@ def _sanitize_html(html: str) -> str:
     return cleaned or ""
 
 
-def _has_coral_comments_marker(scrape: CachedScrape) -> bool:
-    return "data-coral-comments" in (scrape.markdown or "") or "data-coral-comments" in (
-        scrape.html or ""
+def _strip_markup(value: str) -> str:
+    return html.unescape(re.sub(r"<[^>]+>", " ", value)).replace("\xa0", " ").strip()
+
+
+def _is_coral_boilerplate_text(value: str) -> bool:
+    text = re.sub(r"\s+", " ", value).strip()
+    return (
+        not text
+        or re.fullmatch(r"All Comments?\(\d+\)", text, flags=re.IGNORECASE) is not None
+        or text.lower() == "commenter"
+        or "our comments are moderated" in text.lower()
+        or "let's have a nice conversation" in text.lower()
+        or "advocating violence" in text.lower()
     )
 
 
+def _extract_attr_value(attrs: str, attr_name: str) -> str | None:
+    match = re.search(
+        rf"\b{re.escape(attr_name)}\s*=\s*[\"'](?P<value>[^\"']+)[\"']",
+        attrs,
+        flags=re.IGNORECASE,
+    )
+    return match.group("value").strip().lower() if match else None
+
+
+def _has_real_coral_comment_article(marker_body: str) -> bool:
+    for article_match in _CORAL_ARTICLE_RE.finditer(marker_body):
+        article = article_match.group("body")
+        header_match = _CORAL_HEADER_RE.search(article)
+        paragraph_match = _CORAL_PARAGRAPH_RE.search(article)
+        author = _strip_markup(header_match.group("value")) if header_match else ""
+        text = _strip_markup(paragraph_match.group("value")) if paragraph_match else ""
+        if not _is_coral_boilerplate_text(author) and not _is_coral_boilerplate_text(text):
+            return True
+    return False
+
+
+def _coral_comments_prompt_addendum(scrape: CachedScrape) -> str | None:
+    html_text = scrape.html or ""
+    saw_marker = "data-coral-comments" in html_text or "data-coral-comments" in (
+        scrape.markdown or ""
+    )
+    saw_shell_marker = False
+    for match in _CORAL_MARKER_RE.finditer(html_text):
+        attrs = f"{match.group('attrs')} {match.group('attrs_after')}"
+        status = _extract_attr_value(attrs, "data-coral-status")
+        body = match.group("body")
+        if status == "copied":
+            if _has_real_coral_comment_article(body):
+                return CORAL_COMMENTS_PROMPT_ADDENDUM
+            saw_shell_marker = True
+        elif status in {"shell_only", "shadow_empty", "timeout", "clicked_no_match"}:
+            saw_shell_marker = True
+        elif status is None:
+            return CORAL_COMMENTS_PROMPT_ADDENDUM
+
+    if saw_shell_marker:
+        return CORAL_COMMENTS_IGNORE_ADDENDUM
+    if saw_marker:
+        return CORAL_COMMENTS_PROMPT_ADDENDUM
+    return None
+
+
 def _agent_user_prompt(markdown: str, scrape: CachedScrape) -> str:
-    if not _has_coral_comments_marker(scrape):
+    addendum = _coral_comments_prompt_addendum(scrape)
+    if addendum is None:
         return markdown
-    return f"{CORAL_COMMENTS_PROMPT_ADDENDUM}\n\n{markdown}"
+    return f"{addendum}\n\n{markdown}"
 
 
 def _get_html_impl(deps: ExtractorDeps) -> str:
