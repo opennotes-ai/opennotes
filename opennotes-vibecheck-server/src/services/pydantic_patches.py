@@ -23,7 +23,7 @@ def patch_tool_call_json_repair() -> None:
         return
 
     _original = ToolManager._validate_tool_args
-    ToolManager.__validate_tool_args_original__ = _original  # type: ignore[attr-defined]
+    ToolManager.__validate_tool_args_original__ = _original  # pyright: ignore[reportAttributeAccessIssue]
 
     async def _patched(
         self,
@@ -41,7 +41,7 @@ def patch_tool_call_json_repair() -> None:
                     call.args = repaired
             except Exception:
                 pass
-        original = ToolManager.__validate_tool_args_original__  # type: ignore[attr-defined]
+        original = ToolManager.__validate_tool_args_original__  # pyright: ignore[reportAttributeAccessIssue]
         return await original(
             self,
             call,
@@ -51,7 +51,7 @@ def patch_tool_call_json_repair() -> None:
             args_override=args_override,
         )
 
-    _patched._repaired = True  # type: ignore[attr-defined]
+    _patched._repaired = True  # pyright: ignore[reportFunctionMemberAccess]
     ToolManager._validate_tool_args = _patched  # type: ignore[method-assign]
 
 

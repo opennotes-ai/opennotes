@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sys
+from typing import Any
 from types import ModuleType
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -15,7 +16,7 @@ def _reset_patch() -> None:
             wrapped = getattr(ToolManager, "__validate_tool_args_original__", None)
             if wrapped is not None:
                 ToolManager._validate_tool_args = wrapped
-                del ToolManager.__validate_tool_args_original__
+                del ToolManager.__validate_tool_args_original__  # pyright: ignore[reportAttributeAccessIssue]
     except Exception:
         pass
 
@@ -80,8 +81,8 @@ class TestMalformedJsonRepaired:
             *,
             allow_partial: bool,
             args_override: object = None,
-        ) -> dict:
-            received_args.append(str(call.args))  # type: ignore[union-attr]
+        ) -> dict[str, Any]:
+            received_args.append(str(call.args))  # pyright: ignore[reportAttributeAccessIssue]
             return {}
 
         original_attr = getattr(ToolManager, "__validate_tool_args_original__", None)
@@ -137,8 +138,8 @@ class TestValidJsonPassesThrough:
             *,
             allow_partial: bool,
             args_override: object = None,
-        ) -> dict:
-            received_args.append(str(call.args))  # type: ignore[union-attr]
+        ) -> dict[str, Any]:
+            received_args.append(str(call.args))  # pyright: ignore[reportAttributeAccessIssue]
             return {}
 
         import asyncio
