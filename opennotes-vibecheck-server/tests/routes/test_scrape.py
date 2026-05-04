@@ -197,7 +197,7 @@ async def test_oversized_html_returns_413(client: httpx.AsyncClient) -> None:
     resp = await client.post(
         "/api/scrape",
         headers=_headers(),
-        json={"url": "https://example.com/large", "html": "x" * (10 * 1024 * 1024 + 1)},
+        json={"url": "https://example.com/large", "html": "x" * (25 * 1024 * 1024 + 1)},
     )
 
     assert resp.status_code == 413

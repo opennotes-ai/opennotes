@@ -31,7 +31,7 @@ logger = get_logger(__name__)
 
 router = APIRouter(prefix="/api", tags=["scrape"])
 
-_MAX_HTML_BYTES = 10 * 1024 * 1024
+_MAX_HTML_BYTES = 25 * 1024 * 1024
 _MAX_MARKDOWN_BYTES = 2 * 1024 * 1024
 _BROWSER_HTML_TIER = "browser_html"
 
@@ -177,7 +177,7 @@ async def submit_scrape(  # noqa: PLR0911
     if not body.html:
         return _error_response(400, "invalid_html", "html is required")
     if _byte_len(body.html) > _MAX_HTML_BYTES:
-        return _error_response(413, "payload_too_large", "html exceeds 10MB limit")
+        return _error_response(413, "payload_too_large", "html exceeds 25MB limit")
     if body.markdown is not None and _byte_len(body.markdown) > _MAX_MARKDOWN_BYTES:
         return _error_response(413, "payload_too_large", "markdown exceeds 2MB limit")
 
