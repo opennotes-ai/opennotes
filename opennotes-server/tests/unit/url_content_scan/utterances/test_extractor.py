@@ -136,7 +136,7 @@ def test_extract_utterances_backfills_deterministic_ids_and_parent_links() -> No
             "markdown": "# Launch thread\n\nTop level\n\nThread reply\n\nSecond thread reply",
             "html": """
             <html><body>
-              <section data-page-kind="forum_thread">
+              <section>
                 <article data-role="post">
                   <h1>Launch thread</h1>
                   <p data-author>root_author</p>

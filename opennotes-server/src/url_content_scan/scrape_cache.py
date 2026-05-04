@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import logging
+from collections import defaultdict
 from contextlib import AbstractAsyncContextManager
 from datetime import UTC, datetime, timedelta
 from typing import Protocol
@@ -22,6 +24,7 @@ logger = logging.getLogger(__name__)
 ScrapeTier = str
 _BODY_TTL = timedelta(hours=72)
 _SIGNED_URL_TTL = timedelta(minutes=15)
+_KNOWN_TIERS: tuple[ScrapeTier, ...] = ("scrape", "interact")
 
 
 class RedisLike(Protocol):
@@ -62,6 +65,7 @@ class ScrapeCache:
         self._session_factory = session_factory
         self._screenshot_store = screenshot_store
         self._ttl = ttl
+        self._locks: defaultdict[str, asyncio.Lock] = defaultdict(asyncio.Lock)
 
     async def get(self, url: str, *, tier: ScrapeTier = "scrape") -> CachedScrape | None:
         normalized_url = canonical_cache_key(url)
@@ -94,6 +98,24 @@ class ScrapeCache:
         tier: ScrapeTier = "scrape",
     ) -> CachedScrape:
         normalized_url = canonical_cache_key(url)
+        async with self._locks[normalized_url]:
+            return await self._put_locked(
+                normalized_url,
+                url,
+                scrape,
+                screenshot_bytes,
+                tier=tier,
+            )
+
+    async def _put_locked(
+        self,
+        normalized_url: str,
+        url: str,
+        scrape: ScrapeResult,
+        screenshot_bytes: bytes | None,
+        *,
+        tier: ScrapeTier,
+    ) -> CachedScrape:
         expires_at = datetime.now(UTC) + self._ttl
         storage_key = None
         if screenshot_bytes is not None:
@@ -157,10 +179,15 @@ class ScrapeCache:
             return None
         return await self._screenshot_store.sign_url(cached.storage_key, ttl=_SIGNED_URL_TTL)
 
-    async def evict(self, url: str, *, tier: ScrapeTier = "scrape") -> None:
+    async def evict(self, url: str, *, tier: ScrapeTier | None = None) -> None:
         normalized_url = canonical_cache_key(url)
-        await self._redis.delete(self._redis_key(normalized_url, tier))
+        async with self._locks[normalized_url]:
+            tiers = _KNOWN_TIERS if tier is None else (tier,)
+            for item_tier in tiers:
+                await self._evict_tier(normalized_url, item_tier)
 
+    async def _evict_tier(self, normalized_url: str, tier: ScrapeTier) -> None:
+        await self._redis.delete(self._redis_key(normalized_url, tier))
         storage_key: str | None = None
         async with self._session_factory() as session:
             row = await session.get(UrlScanScrape, (normalized_url, tier))

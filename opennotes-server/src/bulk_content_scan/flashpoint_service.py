@@ -138,8 +138,12 @@ class FlashpointDetectionService:
         return dspy_module.LM(self.model)
 
     @staticmethod
-    def _format_speaker_line(author: str | None, content: str) -> str:
-        speaker = author or "unknown"
+    def _format_speaker_line(
+        author: str | None,
+        content: str,
+        fallback_speaker: str | None = None,
+    ) -> str:
+        speaker = author or fallback_speaker or "unknown"
         return f"{speaker}: {content}"
 
     @classmethod
@@ -147,12 +151,13 @@ class FlashpointDetectionService:
         cls,
         message_author: str | None,
         message_content: str,
-        context_messages: list[tuple[str | None, str]],
+        context_messages: list[tuple[str | None, str, str | None]],
         max_context: int,
     ) -> tuple[str, str, int]:
         recent_context = context_messages[-max_context:] if context_messages else []
         context_str = "\n".join(
-            cls._format_speaker_line(author, content) for author, content in recent_context
+            cls._format_speaker_line(author, content, fallback_speaker)
+            for author, content, fallback_speaker in recent_context
         )
         current_msg = cls._format_speaker_line(message_author, message_content)
         return context_str, current_msg, len(recent_context)
@@ -208,7 +213,7 @@ class FlashpointDetectionService:
             context_str, current_msg, context_count = self._build_context_and_message(
                 message.author_username or message.author_id,
                 message.content,
-                [(m.author_username or m.author_id, m.content) for m in context_messages],
+                [(m.author_username or m.author_id, m.content, None) for m in context_messages],
                 max_context,
             )
 
@@ -271,9 +276,9 @@ class FlashpointDetectionService:
 
         try:
             context_str, current_msg, context_count = self._build_context_and_message(
-                utterance.author,
+                utterance.author or utterance.utterance_id,
                 utterance.text,
-                [(item.author, item.text) for item in context],
+                [(item.author, item.text, item.utterance_id) for item in context],
                 max_context,
             )
 

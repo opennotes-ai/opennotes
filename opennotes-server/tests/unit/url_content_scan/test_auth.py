@@ -47,7 +47,7 @@ async def test_get_url_scan_api_key_rejects_jwt_without_invoking_jwt_or_user_loa
     )
 
     with (
-        patch("src.url_content_scan.auth.verify_api_key", new=AsyncMock(return_value=None)),
+        patch("src.url_content_scan.auth.verify_api_key", new=AsyncMock()) as mock_verify_api_key,
         patch(
             "src.auth.auth.verify_token",
             new=AsyncMock(side_effect=AssertionError("JWT verification path invoked")),
@@ -66,6 +66,7 @@ async def test_get_url_scan_api_key_rejects_jwt_without_invoking_jwt_or_user_loa
         )
 
     assert exc_info.value.status_code == 401
+    mock_verify_api_key.assert_not_awaited()
 
 
 async def test_get_url_scan_api_key_rejects_key_missing_scope():

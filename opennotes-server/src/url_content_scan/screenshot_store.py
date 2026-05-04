@@ -4,6 +4,8 @@ import asyncio
 from datetime import timedelta
 from typing import Any
 
+import google.auth
+import google.auth.transport.requests
 from google.cloud import storage
 
 from src.config import settings
@@ -44,7 +46,22 @@ class ScreenshotStore:
 
     async def sign_url(self, storage_key: str, *, ttl: timedelta) -> str:
         def _sign() -> str:
+            credentials, _project = google.auth.default()
+            credentials.refresh(google.auth.transport.requests.Request())
+            signer_email = getattr(credentials, "service_account_email", None) or getattr(
+                credentials, "signer_email", None
+            )
+            if not signer_email:
+                raise RuntimeError(
+                    "GCS signed URL generation requires service-account ADC credentials"
+                )
             blob = self._bucket().blob(storage_key)
-            return blob.generate_signed_url(expiration=ttl, method="GET")
+            return blob.generate_signed_url(
+                version="v4",
+                expiration=ttl,
+                method="GET",
+                service_account_email=signer_email,
+                access_token=credentials.token,
+            )
 
         return await asyncio.to_thread(_sign)

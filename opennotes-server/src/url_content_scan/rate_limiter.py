@@ -43,7 +43,7 @@ class UrlScanRateLimiter:
         self.ip_url_limit = ip_url_limit
         self.ip_url_window_seconds = ip_url_window_seconds
 
-    async def check_api_key_limit(self, api_key: APIKey | str) -> RateLimitStatus:
+    async def check_api_key_limit(self, api_key: APIKey) -> RateLimitStatus:
         api_key_identifier = self._api_key_identifier(api_key)
         return await self._check_fixed_window(
             bucket=f"url_scan:api_key:{api_key_identifier}",
@@ -117,17 +117,14 @@ class UrlScanRateLimiter:
                 reset_at_epoch=reset_at_epoch,
             )
 
-    def _api_key_identifier(self, api_key: APIKey | str) -> str:
-        if isinstance(api_key, str):
-            return api_key
-
+    def _api_key_identifier(self, api_key: APIKey) -> str:
         if getattr(api_key, "id", None) is not None:
             return str(api_key.id)
         if getattr(api_key, "key_prefix", None):
             return str(api_key.key_prefix)
         if getattr(api_key, "name", None):
             return str(api_key.name)
-        return "unknown"
+        raise ValueError("URL scan rate limiting requires a persisted APIKey identifier")
 
     def _fail_open_status(
         self,
