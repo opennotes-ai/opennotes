@@ -3,6 +3,8 @@ from __future__ import annotations
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import timedelta
+from types import SimpleNamespace
+from unittest.mock import patch
 
 import pytest
 
@@ -15,7 +17,7 @@ class _FakeBlob:
     path: str
     uploads: dict[str, bytes]
     deletes: list[str]
-    signed_calls: list[tuple[str, timedelta]]
+    signed_calls: list[tuple[str, timedelta, str | None, str | None]]
     fail_delete_once: bool = False
 
     def upload_from_string(self, value: bytes, *, content_type: str) -> None:
@@ -29,9 +31,20 @@ class _FakeBlob:
             raise RuntimeError("delete failed")
         self.uploads.pop(self.path, None)
 
-    def generate_signed_url(self, *, expiration: timedelta, method: str) -> str:
+    def generate_signed_url(
+        self,
+        *,
+        version: str,
+        expiration: timedelta,
+        method: str,
+        service_account_email: str,
+        access_token: str,
+    ) -> str:
+        assert version == "v4"
         assert method == "GET"
-        self.signed_calls.append((self.path, expiration))
+        self.signed_calls.append(
+            (self.path, expiration, service_account_email, access_token)
+        )
         return f"https://signed.example/{self.path}?ttl={int(expiration.total_seconds())}"
 
 
@@ -39,7 +52,7 @@ class _FakeBucket:
     def __init__(self) -> None:
         self.uploads: dict[str, bytes] = {}
         self.deletes: list[str] = []
-        self.signed_calls: list[tuple[str, timedelta]] = []
+        self.signed_calls: list[tuple[str, timedelta, str | None, str | None]] = []
         self.fail_delete_once_for: str | None = None
 
     def blob(self, path: str) -> _FakeBlob:
@@ -182,6 +195,15 @@ def _make_cache(
     return cache, redis, session, db_store, bucket
 
 
+def _fake_adc():
+    credentials = SimpleNamespace(
+        service_account_email="url-scan@example.iam.gserviceaccount.com",
+        token="adc-token",
+        refresh=lambda _request: None,
+    )
+    return patch("google.auth.default", return_value=(credentials, "open-notes-core"))
+
+
 @pytest.mark.asyncio
 async def test_get_returns_none_on_cache_miss() -> None:
     cache, _, _, _, _ = _make_cache()
@@ -238,10 +260,18 @@ async def test_signed_screenshot_url_uses_cached_storage_key_without_db_requery(
 
     db_row = next(iter(db_store.values()))
     db_row.screenshot_storage_key = "newer-key.png"
-    signed = await cache.signed_screenshot_url(original)
+    with _fake_adc():
+        signed = await cache.signed_screenshot_url(original)
 
     assert signed == f"https://signed.example/{original.storage_key}?ttl=900"
-    assert bucket.signed_calls == [(original.storage_key, timedelta(minutes=15))]
+    assert bucket.signed_calls == [
+        (
+            original.storage_key,
+            timedelta(minutes=15),
+            "url-scan@example.iam.gserviceaccount.com",
+            "adc-token",
+        )
+    ]
     assert session.commit_calls == 1
 
 
@@ -279,6 +309,32 @@ async def test_scrape_and_interact_tiers_are_separate() -> None:
         ("https://example.com/a", "scrape"),
         ("https://example.com/a", "interact"),
     }
+
+
+@pytest.mark.asyncio
+async def test_evict_without_tier_removes_scrape_and_interact_legs() -> None:
+    cache, redis, _, db_store, bucket = _make_cache()
+
+    scrape = await cache.put(
+        "https://example.com/a", _make_scrape(markdown="scrape"), screenshot_bytes=b"scrape"
+    )
+    interact = await cache.put(
+        "https://example.com/a",
+        _make_scrape(markdown="interact"),
+        screenshot_bytes=b"interact",
+        tier="interact",
+    )
+
+    await cache.evict("https://example.com/a")
+
+    assert await cache.get("https://example.com/a", tier="scrape") is None
+    assert await cache.get("https://example.com/a", tier="interact") is None
+    assert not db_store
+    assert not redis.values
+    assert scrape.storage_key is not None
+    assert interact.storage_key is not None
+    assert scrape.storage_key in bucket.deletes
+    assert interact.storage_key in bucket.deletes
 
 
 @pytest.mark.asyncio

@@ -25,7 +25,7 @@ ALLOWED_API_KEY_SCOPES = frozenset(
     }
 )
 
-RESTRICTED_SCOPES = frozenset({"api-keys:create"})
+RESTRICTED_SCOPES = frozenset({"api-keys:create", "vibecheck:submit"})
 
 USER_GRANTABLE_SCOPES = frozenset(
     {
@@ -42,6 +42,7 @@ ADMIN_GRANTABLE_SCOPES = ALLOWED_API_KEY_SCOPES - USER_GRANTABLE_SCOPES
 
 PRIVILEGED_SCOPE_REQUIREMENTS: dict[str, str] = {
     "platform:adapter": "platform_admin",
+    "vibecheck:submit": "platform_admin",
 }
 
 

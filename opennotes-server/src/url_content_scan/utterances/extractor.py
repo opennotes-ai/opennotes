@@ -87,7 +87,7 @@ def _classify_page_kind(scrape: ScrapeResult, root: HtmlElement | None) -> PageK
         inferred = PageKind.HIERARCHICAL_THREAD
     elif len(root.xpath("//*[@data-entry-id]")) > 1:
         inferred = PageKind.BLOG_INDEX
-    elif root.xpath("//*[@data-reply-id]"):
+    elif root.xpath("//*[@data-reply-id]") or root.xpath("//*[@data-role='post']"):
         inferred = PageKind.FORUM_THREAD
     elif root.xpath("//article"):
         inferred = PageKind.ARTICLE

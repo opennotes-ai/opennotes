@@ -279,6 +279,41 @@ class TestFlashpointDetectionService:
         assert result.context_messages == 1
 
     @pytest.mark.asyncio
+    async def test_detect_flashpoint_for_authorless_utterance_uses_id_as_speaker(self):
+        """Authorless URL-scan utterances retain distinct speaker labels via utterance_id."""
+        service = FlashpointDetectionService(model="vertex_ai/gemini-2.5-flash")
+
+        mock_prediction = MagicMock(spec=dspy.Prediction)
+        mock_prediction.derailment_score = 85
+        mock_prediction.risk_level = "Hostile"
+        mock_prediction.reasoning = "Escalation markers detected"
+
+        mock_detector = MagicMock()
+        mock_detector.return_value = mock_prediction
+
+        with patch.object(service, "_get_detector", return_value=mock_detector):
+            utterance = make_utterance(
+                utterance_id="utterance-42",
+                text="You keep twisting what I said.",
+                author=None,
+            )
+            context = [
+                make_utterance(
+                    utterance_id="utterance-41",
+                    text="That's not what I meant.",
+                    author=None,
+                ),
+            ]
+
+            result = await service.detect_flashpoint_for_utterance(utterance, context)
+
+        assert result is not None
+        mock_detector.assert_called_once_with(
+            context="utterance-41: That's not what I meant.",
+            message="utterance-42: You keep twisting what I said.",
+        )
+
+    @pytest.mark.asyncio
     async def test_returns_none_on_transient_error(self):
         """Returns None when detector raises a transient error."""
         service = FlashpointDetectionService(model="openai/gpt-5-mini")

@@ -24,6 +24,7 @@ def test_all_scopes_present():
 
 def test_restricted_scopes():
     assert "api-keys:create" in RESTRICTED_SCOPES
+    assert "vibecheck:submit" in RESTRICTED_SCOPES
 
 
 def test_restricted_scopes_subset_of_allowed():

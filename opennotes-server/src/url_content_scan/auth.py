@@ -9,6 +9,7 @@ from src.users.crud import verify_api_key
 from src.users.models import APIKey
 
 VIBECHECK_SUBMIT_SCOPE = "vibecheck:submit"
+API_KEY_PREFIX = "opk_"
 
 http_bearer = HTTPBearer(auto_error=False)
 
@@ -30,6 +31,12 @@ async def get_url_scan_api_key(
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Missing API key credentials",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    if not raw_api_key.startswith(API_KEY_PREFIX):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid API key credentials",
             headers={"WWW-Authenticate": "Bearer"},
         )
 
