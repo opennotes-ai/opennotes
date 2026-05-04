@@ -197,6 +197,94 @@ def test_detects_coral_signal_from_generic_render_only_static_embed_shape() -> N
     )
 
 
+def test_detects_mother_jones_style_inline_config_signal() -> None:
+    html = """
+    <html>
+      <body>
+        <div id="coral_thread"></div>
+        <a id="coral-display-comments" href="#comment-container">view comments</a>
+        <script>
+          var mj_comment_config = {
+            "storyID":"1201099",
+            "storyURL":"https://www.motherjones.com/?p=1201099#comment-container",
+            "root_URL":"motherjones.coral.coralproject.net",
+            "static_URL":"motherjones.coral.coralproject.net"
+          };
+        </script>
+      </body>
+    </html>
+    """
+
+    signal = detect_coral(html)
+
+    assert signal == CoralSignal(
+        graphql_origin="https://motherjones.coral.coralproject.net",
+        story_url="https://www.motherjones.com/?p=1201099#comment-container",
+        story_id="1201099",
+        iframe_src="https://motherjones.coral.coralproject.net/embed/stream?storyID=1201099",
+        supports_graphql=False,
+        embed_origin="https://motherjones.coral.coralproject.net",
+        env_origin="https://motherjones.coral.coralproject.net",
+    )
+
+
+def test_rejects_inline_coral_config_without_any_coral_marker() -> None:
+    html = """
+    <html>
+      <body>
+        <div id="comments"></div>
+        <script>
+          var mj_comment_config = {
+            "storyID":"1201099",
+            "storyURL":"https://www.motherjones.com/?p=1201099#comment-container",
+            "root_URL":"motherjones.coral.coralproject.net",
+            "static_URL":"motherjones.coral.coralproject.net"
+          };
+        </script>
+      </body>
+    </html>
+    """
+
+    assert detect_coral(html) is None
+
+
+@pytest.mark.parametrize(
+    "html",
+    [
+        """
+        <html>
+          <body>
+            <div id="coral-thread"></div>
+            <script>
+              var mj_comment_config = {
+                "storyID":"1201099",
+                "storyURL":"https://www.motherjones.com/?p=1201099#comment-container",
+                "root_URL":"javascript:void(0)",
+                "static_URL":"javascript:void(0)"
+              };
+            </script>
+          </body>
+        </html>
+        """,
+        """
+        <html>
+          <body>
+            <div id="coral-thread"></div>
+            <script>
+              var mj_comment_config = {
+                "root_URL":"motherjones.coral.coralproject.net",
+                "static_URL":"motherjones.coral.coralproject.net"
+              };
+            </script>
+          </body>
+        </html>
+        """,
+    ],
+)
+def test_rejects_inline_coral_config_without_usable_story_or_origin(html: str) -> None:
+    assert detect_coral(html) is None
+
+
 @pytest.mark.parametrize(
     "html",
     [

@@ -167,6 +167,10 @@ _CORAL_PARTIAL_MARKERS: tuple[str, ...] = (
     'comments-show-comments-button',
     "coral-talk-stream",
     "data-embed-coral",
+    "coral_thread",
+    "coral-thread",
+    "coral-display-comments",
+    "coral_display_comments",
 )
 _LA_TIMES_HOSTS: Final[tuple[str, ...]] = ("latimes.com", "www.latimes.com")
 _LA_TIMES_CORAL_ORIGIN: Final[str] = "https://latimes.coral.coralproject.net"
@@ -178,6 +182,9 @@ _CORAL_TIER2_ACTION_SELECTORS: Final[tuple[str, ...]] = (
     'button[data-gtm-class="open-community"]',
     "#coral_talk_stream button",
     "#coral_thread button",
+    "#coral-thread button",
+    "#coral-display-comments",
+    "#coral_display_comments",
     "[data-embed-coral] button",
     "ps-comments#coral_talk_stream button",
     "ps-comments#coral_talk_stream",
@@ -753,7 +760,7 @@ def _tier2_actions_for(coral_signal: CoralSignal | None) -> list[dict[str, Any]]
                         setTimeout(resolve, milliseconds);
                     });
                     const shadowHostSelector = "#coral-shadow-container";
-                    const lightDomHostSelector = "#comments";
+                    const lightDomHostSelectors = ["#comments", "#coral_thread", "#coral-thread"];
                     const markerSelector = "[data-coral-comments]";
                     const statusPrefix = "coral_status:";
                     const normalizeText = (value) => (value || "").replace(/\\s+/g, " ").trim();
@@ -888,9 +895,11 @@ def _tier2_actions_for(coral_signal: CoralSignal | None) -> list[dict[str, Any]]
                             }
                             return {root: shadowHost.shadowRoot, status: null};
                         }
-                        const lightDomHost = document.querySelector(lightDomHostSelector);
-                        if (lightDomHost) {
-                            return {root: lightDomHost, status: null};
+                        for (const selector of lightDomHostSelectors) {
+                            const lightDomHost = document.querySelector(selector);
+                            if (lightDomHost) {
+                                return {root: lightDomHost, status: null};
+                            }
                         }
                         return {root: null, status: "host_missing"};
                     };
@@ -932,7 +941,9 @@ def _tier2_actions_for(coral_signal: CoralSignal | None) -> list[dict[str, Any]]
                                 button.scrollIntoView({block: "center"});
                             }
                             const commentsHost = document.querySelector(shadowHostSelector)
-                                || document.querySelector(lightDomHostSelector);
+                                || lightDomHostSelectors
+                                    .map((selector) => document.querySelector(selector))
+                                    .find(Boolean);
                             if (typeof WheelEvent === "function" && commentsHost?.dispatchEvent) {
                                 try {
                                     commentsHost.dispatchEvent(

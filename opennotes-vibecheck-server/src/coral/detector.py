@@ -11,9 +11,11 @@ Coral markers:
 3. Generic render-only Coral embed path triggers on ``/assets/js/embed.js`` or
    ``/static/embed.js`` script origins plus corroborating markers and a valid
    canonical article URL; it builds ``embed/stream`` with a ``storyURL`` query.
-4. Iframe `src` contains ``/embed/stream`` and has a `storyURL` query
+4. Inline Coral config exposes ``root_URL`` / ``static_URL`` plus ``storyID`` or
+   ``storyURL`` alongside corroborating Coral comment markers.
+5. Iframe `src` contains ``/embed/stream`` and has a `storyURL` query
    parameter with a usable URL.
-5. Optional corroborating markers such as ``coral-talk-stream`` (class name)
+6. Optional corroborating markers such as ``coral-talk-stream`` (class name)
    ``data-testid=coral-comments``, ``data-qa=coral-comments``,
    ``coral_talk_stream``, ``coral_thread``, ``data-coral-comments`` and
    ``data-embed-coral``.
@@ -41,6 +43,10 @@ _CORAL_COMMUNITY_HOSTNAME_RE = re.compile(
 )
 _CORAL_CANONICAL_URL_RE = re.compile(r'"canonicalUrl"\s*:\s*"([^"]+)"')
 _CORAL_TALK_ASSET_ID_RE = re.compile(r'"talkAssetId"\s*:\s*"([^"]+)"')
+_CORAL_INLINE_ROOT_URL_RE = re.compile(r'"root_URL"\s*:\s*"([^"]+)"')
+_CORAL_INLINE_STATIC_URL_RE = re.compile(r'"static_URL"\s*:\s*"([^"]+)"')
+_CORAL_INLINE_STORY_URL_RE = re.compile(r'"storyURL"\s*:\s*"([^"]+)"')
+_CORAL_INLINE_STORY_ID_RE = re.compile(r'"storyID"\s*:\s*"([^"]+)"')
 
 
 def _normalize_coral_state_blob(value: str) -> str:
@@ -85,6 +91,10 @@ class _CoralMarkerParser(HTMLParser):
         self._has_optional_signal = False
         self._has_render_only_marker = False
         self._has_static_script_signal = False
+        self._inline_config_story_urls: list[str] = []
+        self._inline_config_story_ids: list[str] = []
+        self._inline_config_root_urls: list[str] = []
+        self._inline_config_static_urls: list[str] = []
         self._latimes_signal_stack: list[_LatimesSignalCandidate] = []
         self._latimes_signals: list[_LatimesSignalCandidate] = []
         self._generic_render_script_origins: list[str] = []
@@ -248,6 +258,43 @@ class _CoralMarkerParser(HTMLParser):
             env_origin=origin,
         )
 
+    def inline_config_signal(self) -> CoralSignal | None:
+        if not self._has_render_only_marker:
+            return None
+
+        story_id = self._first_value(self._inline_config_story_ids)
+        story_url = self._first_valid_url(self._inline_config_story_urls)
+        if not story_id and not story_url:
+            return None
+
+        origin = self._first_valid_origin(
+            self._inline_config_root_urls + self._inline_config_static_urls
+        )
+        if not origin:
+            return None
+
+        if story_id:
+            return CoralSignal(
+                iframe_src=f"{origin}/embed/stream?{urlencode({'storyID': story_id})}",
+                graphql_origin=origin,
+                story_url=story_url or story_id,
+                supports_graphql=False,
+                story_id=story_id,
+                embed_origin=origin,
+                env_origin=origin,
+            )
+
+        if not story_url:
+            return None
+        return CoralSignal(
+            iframe_src=f"{origin}/embed/stream?{urlencode({'storyURL': story_url})}",
+            graphql_origin=origin,
+            story_url=story_url,
+            supports_graphql=False,
+            embed_origin=origin,
+            env_origin=origin,
+        )
+
     def _first_valid_url(self, candidates: list[str]) -> str | None:
         for candidate in candidates:
             parsed = urlparse(candidate)
@@ -268,6 +315,14 @@ class _CoralMarkerParser(HTMLParser):
             self._community_hostnames.append(match.group(1))
         for match in _CORAL_CANONICAL_URL_RE.finditer(normalized):
             self._canonical_urls_from_state.append(match.group(1))
+        for match in _CORAL_INLINE_ROOT_URL_RE.finditer(normalized):
+            self._inline_config_root_urls.append(match.group(1))
+        for match in _CORAL_INLINE_STATIC_URL_RE.finditer(normalized):
+            self._inline_config_static_urls.append(match.group(1))
+        for match in _CORAL_INLINE_STORY_URL_RE.finditer(normalized):
+            self._inline_config_story_urls.append(match.group(1))
+        for match in _CORAL_INLINE_STORY_ID_RE.finditer(normalized):
+            self._inline_config_story_ids.append(match.group(1))
         for match in _CORAL_TALK_ASSET_ID_RE.finditer(normalized):
             self._talk_asset_ids.append(match.group(1))
 
@@ -383,7 +438,13 @@ class _CoralMarkerParser(HTMLParser):
         class_value = attrs.get("class")
         if class_value and "coral-talk-stream" in class_value.lower():
             return True
-        if (attrs.get("id") or "").lower() in {"coral_talk_stream", "coral_thread"}:
+        if (attrs.get("id") or "").lower() in {
+            "coral_talk_stream",
+            "coral_thread",
+            "coral-thread",
+            "coral-display-comments",
+            "coral_display_comments",
+        }:
             return True
         data_testid = (attrs.get("data-testid") or "").lower()
         data_qa = (attrs.get("data-qa") or "").lower()
@@ -428,12 +489,18 @@ class _CoralMarkerParser(HTMLParser):
                 graphql_origin = f"{parsed.scheme}://{parsed.netloc}"
             elif "://" not in value:
                 fallback = urlparse(f"//{value}")
-                if (
-                    fallback.scheme == ""
-                    and fallback.path in {"", "/"}
-                    and fallback.netloc
-                ):
-                    graphql_origin = f"https://{fallback.netloc}"
+                if fallback.scheme == "" and fallback.netloc and fallback.path in {"", "/"}:
+                    host = fallback.hostname
+                    if host is None:
+                        return None
+                    try:
+                        port = fallback.port
+                    except ValueError:
+                        return None
+                    if fallback.username is not None or fallback.password is not None:
+                        return None
+                    port_suffix = f":{port}" if port is not None else ""
+                    graphql_origin = f"https://{host.lower()}{port_suffix}"
         return graphql_origin
 
     def _parse_http_origin(self, candidate: str) -> str | None:
@@ -450,6 +517,15 @@ class _CoralMarkerParser(HTMLParser):
                 return None
             port_suffix = f":{port}" if port is not None else ""
             return f"{parsed.scheme}://{parsed.hostname.lower()}{port_suffix}"
+        return None
+
+    def _first_valid_origin(self, candidates: list[str]) -> str | None:
+        for candidate in candidates:
+            origin = self._parse_http_origin(candidate)
+            if origin is None:
+                origin = self._canonical_to_origin(candidate)
+            if origin is not None:
+                return origin
         return None
 
     @staticmethod
@@ -493,5 +569,9 @@ def detect_coral(html: str) -> CoralSignal | None:  # noqa: PLR0911
     render_only_signal = parser.render_only_signal()
     if render_only_signal is not None:
         return render_only_signal
+
+    inline_config_signal = parser.inline_config_signal()
+    if inline_config_signal is not None:
+        return inline_config_signal
 
     return parser.latimes_signal()

@@ -915,6 +915,7 @@ def _eval_execute_javascript(
     shadow_html: str | None = None,
     shadow_states: list[dict[str, Any]] | None = None,
     light_dom_states: list[dict[str, Any]] | None = None,
+    light_dom_selector: str = "#comments",
     shadow_closed: bool = False,
 ) -> tuple[str, str | None, str | None]:
     """Run a generated executeJavascript payload against a stubbed document."""
@@ -933,6 +934,7 @@ const shadowStates = Array.isArray(payload.shadowStates)
 const lightDomStates = Array.isArray(payload.lightDomStates)
     ? payload.lightDomStates
     : [];
+const lightDomSelector = payload.lightDomSelector || "#comments";
 const hasShadowHtml = payload.shadowHtml !== null && payload.shadowHtml !== undefined;
 const shadowHtml = hasShadowHtml ? payload.shadowHtml : "";
 const shadowClosed = Boolean(payload.shadowClosed);
@@ -1018,6 +1020,7 @@ function selectorMatchesFixture(selector) {
     if (!block) {
         return false;
     }
+
     if (selector === "ps-comments#coral_talk_stream") {
         return true;
     }
@@ -1183,7 +1186,7 @@ global.document = {
                 dispatchEvent() {},
             };
         }
-        if (selector === "#comments" && lightDomStates.length > 0) {
+        if (selector === lightDomSelector && lightDomStates.length > 0) {
             const state = resolveLightDomState();
             const root = makeShadowRoot(state);
             root.dispatchEvent = () => {};
@@ -1244,6 +1247,7 @@ console.log(JSON.stringify(output));
                     "shadowHtml": shadow_html,
                     "shadowStates": shadow_states,
                     "lightDomStates": light_dom_states,
+                    "lightDomSelector": light_dom_selector,
                     "shadowClosed": shadow_closed,
                 }
             ),
@@ -1295,6 +1299,8 @@ def test_tier2_actions_for_coral_signal_expands_comment_stream() -> None:
     _assert_generated_js_contains_selector(js, 'button[data-gtm-class="open-community"]')
     _assert_generated_js_contains_selector(js, "#coral_talk_stream button")
     _assert_generated_js_contains_selector(js, "#coral_thread button")
+    _assert_generated_js_contains_selector(js, "#coral-thread button")
+    _assert_generated_js_contains_selector(js, "#coral-display-comments")
     _assert_generated_js_contains_selector(js, "[data-embed-coral] button")
     _assert_generated_js_contains_selector(js, "ps-comments#coral_talk_stream button")
     _assert_generated_js_contains_selector(js, "ps-comments#coral_talk_stream")
@@ -1313,6 +1319,41 @@ def test_tier2_actions_for_coral_signal_expands_comment_stream() -> None:
     assert actions[3] == {"type": "wait", "milliseconds": 3000}
     assert actions[4] == {"type": "scroll", "direction": "down"}
     assert len(actions) == 5
+
+
+def test_tier2_actions_for_coral_signal_expands_generic_mother_jones_shape() -> None:
+    """Coral shapes with `#coral_thread` use it as a root and click the opener."""
+
+    actions = _tier2_actions_for(_sample_coral_signal())
+    js = actions[2]["script"]
+    _assert_generated_js_contains_selector(js, "#coral-display-comments")
+
+    returned, clicked, marker = _eval_execute_javascript(
+        js,
+        match_selectors=["#coral-display-comments"],
+        light_dom_selector="#coral_thread",
+        light_dom_states=[
+            {"text": ""},
+            {
+                "comments": [
+                    {
+                        "tagName": "article",
+                        "dataTestId": "comment",
+                        "author": "MoJoReader",
+                        "text": "This public-land context belongs in the discussion.",
+                    }
+                ]
+            },
+        ],
+    )
+
+    assert clicked == "#coral-display-comments"
+    assert returned.startswith(
+        "coral_status:copied;comments=1;clicked=#coral-display-comments"
+    )
+    assert marker is not None
+    assert "MoJoReader" in marker
+    assert "This public-land context belongs in the discussion." in marker
 
 
 def test_tier2_actions_for_coral_signal_expands_la_times_ps_comments() -> None:
@@ -1588,6 +1629,8 @@ async def test_run_tier2_records_coral_specific_actions() -> None:
     _assert_generated_js_contains_selector(js, 'button[data-gtm-class="open-community"]')
     _assert_generated_js_contains_selector(js, "#coral_talk_stream button")
     _assert_generated_js_contains_selector(js, "#coral_thread button")
+    _assert_generated_js_contains_selector(js, "#coral-thread button")
+    _assert_generated_js_contains_selector(js, "#coral-display-comments")
     _assert_generated_js_contains_selector(js, "[data-embed-coral] button")
     assert sum(1 for action in actions if action["type"] == "wait") >= 2
     assert sum(1 for action in actions if action["type"] == "scroll") >= 2
