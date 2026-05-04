@@ -2294,6 +2294,11 @@ async def _run_pipeline(  # noqa: PLR0912
     except TransientExtractionError as exc:
         await _classify_transient_or_raise(exc)
     except UtteranceExtractionError as exc:
+        logger.warning(
+            "vibecheck.extraction_failed",
+            extra={"url": url, "job_id": job_id},
+            exc_info=True,
+        )
         raise TerminalError(
             ErrorCode.EXTRACTION_FAILED, f"extraction failed: {exc}"
         ) from exc
@@ -2308,6 +2313,11 @@ async def _run_pipeline(  # noqa: PLR0912
         except TransientExtractionError as exc:
             await _classify_transient_or_raise(exc)
         except UtteranceExtractionError as exc:
+            logger.warning(
+                "vibecheck.extraction_failed",
+                extra={"url": url, "job_id": job_id},
+                exc_info=True,
+            )
             raise TerminalError(
                 ErrorCode.EXTRACTION_FAILED, f"extraction failed: {exc}"
             ) from exc
@@ -2324,6 +2334,11 @@ async def _run_pipeline(  # noqa: PLR0912
         except (TransientError, TerminalError):
             raise
         except Exception as exc:
+            logger.warning(
+                "vibecheck.extraction_failed",
+                extra={"url": url, "job_id": job_id},
+                exc_info=True,
+            )
             raise TerminalError(
                 ErrorCode.EXTRACTION_FAILED, f"extraction failed: {exc}"
             ) from exc
@@ -2332,6 +2347,11 @@ async def _run_pipeline(  # noqa: PLR0912
     except Exception as exc:
         # Defensive catch-all: anything not yet classified by the typed
         # arms still terminates so we don't loop forever on unknown bugs.
+        logger.warning(
+            "vibecheck.extraction_failed",
+            extra={"url": url, "job_id": job_id},
+            exc_info=True,
+        )
         raise TerminalError(
             ErrorCode.EXTRACTION_FAILED, f"extraction failed: {exc}"
         ) from exc
@@ -2546,6 +2566,7 @@ async def run_job(
                 job_id,
                 exc.error_code.value,
                 exc.error_detail,
+                exc_info=True,
             )
             error_host_raw = exc.detail.get("error_host")
             error_host = (
