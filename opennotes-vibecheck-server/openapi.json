@@ -58,9 +58,16 @@
           {
             "name": "url",
             "in": "query",
-            "required": true,
+            "required": false,
             "schema": {
-              "type": "string",
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
               "title": "Url"
             }
           },
@@ -88,6 +95,56 @@
               "type": "boolean",
               "default": false,
               "title": "Generate"
+            }
+          },
+          {
+            "name": "source_type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "url",
+              "title": "Source Type"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/pdf-read": {
+      "get": {
+        "tags": [
+          "frame"
+        ],
+        "summary": "Pdf Read",
+        "operationId": "pdf_read_api_pdf_read_get",
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Job Id"
             }
           }
         ],
@@ -323,6 +380,128 @@
         }
       }
     },
+    "/api/scrape": {
+      "post": {
+        "tags": [
+          "scrape"
+        ],
+        "summary": "Submit Scrape",
+        "operationId": "submit_scrape_api_scrape_post",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ScrapeSubmitRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScrapeSubmitResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/upload-pdf": {
+      "post": {
+        "tags": [
+          "analyze"
+        ],
+        "summary": "Upload Pdf",
+        "description": "Return `{ gcs_key, upload_url }` for a direct browser upload.\n\nReturns a stable 500 payload when configuration is missing or signing\nfails. We do not accept or buffer any PDF bytes in this path.",
+        "operationId": "upload_pdf_api_upload_pdf_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UploadPDFResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/analyze-pdf": {
+      "post": {
+        "tags": [
+          "analyze"
+        ],
+        "summary": "Analyze Pdf",
+        "operationId": "analyze_pdf_api_analyze_pdf_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AnalyzePDFRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnalyzeResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/_internal/jobs/{job_id}/run": {
       "post": {
         "tags": [
@@ -546,6 +725,30 @@
   },
   "components": {
     "schemas": {
+      "AnalyzePDFRequest": {
+        "properties": {
+          "gcs_key": {
+            "type": "string",
+            "title": "Gcs Key"
+          },
+          "filename": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Filename"
+          }
+        },
+        "type": "object",
+        "required": [
+          "gcs_key"
+        ],
+        "title": "AnalyzePDFRequest"
+      },
       "AnalyzeRequest": {
         "properties": {
           "url": {
@@ -662,6 +865,8 @@
           "upstream_error",
           "extraction_failed",
           "section_failure",
+          "pdf_too_large",
+          "pdf_extraction_failed",
           "timeout",
           "rate_limited",
           "internal"
@@ -1078,6 +1283,26 @@
               }
             ],
             "title": "Error Message"
+          },
+          "source_type": {
+            "type": "string",
+            "enum": [
+              "url",
+              "pdf"
+            ],
+            "title": "Source Type",
+            "default": "url"
+          },
+          "pdf_archive_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pdf Archive Url"
           },
           "error_host": {
             "anyOf": [
@@ -1511,6 +1736,84 @@
         "title": "SafetySection",
         "description": "Harmful-content matches surfaced by OpenAI moderation."
       },
+      "ScrapeSubmitRequest": {
+        "properties": {
+          "url": {
+            "type": "string",
+            "title": "Url",
+            "description": "HTTP(S) source URL of the scraped page"
+          },
+          "html": {
+            "type": "string",
+            "title": "Html",
+            "description": "Raw HTML from the browser extension"
+          },
+          "markdown": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Markdown"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          }
+        },
+        "type": "object",
+        "required": [
+          "url",
+          "html"
+        ],
+        "title": "ScrapeSubmitRequest"
+      },
+      "ScrapeSubmitResponse": {
+        "properties": {
+          "job_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Job Id"
+          },
+          "analyze_url": {
+            "type": "string",
+            "title": "Analyze Url"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "job_id",
+          "analyze_url",
+          "created_at"
+        ],
+        "title": "ScrapeSubmitResponse"
+      },
       "SectionSlot": {
         "properties": {
           "state": {
@@ -1860,6 +2163,24 @@
         ],
         "title": "ToneDynamicsSection",
         "description": "Speaker conversational dynamics + per-utterance flashpoint matches."
+      },
+      "UploadPDFResponse": {
+        "properties": {
+          "gcs_key": {
+            "type": "string",
+            "title": "Gcs Key"
+          },
+          "upload_url": {
+            "type": "string",
+            "title": "Upload Url"
+          }
+        },
+        "type": "object",
+        "required": [
+          "gcs_key",
+          "upload_url"
+        ],
+        "title": "UploadPDFResponse"
       },
       "UtteranceAnchor": {
         "properties": {

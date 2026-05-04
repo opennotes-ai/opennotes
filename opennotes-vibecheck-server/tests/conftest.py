@@ -63,7 +63,6 @@ CREATE TABLE vibecheck_jobs (
     normalized_url TEXT NOT NULL,
     host TEXT NOT NULL,
     status TEXT NOT NULL DEFAULT 'pending',
-    source_type TEXT NOT NULL DEFAULT 'url',
     attempt_id UUID NOT NULL DEFAULT uuid_generate_v4(),
     error_code TEXT,
     error_message TEXT,
@@ -84,8 +83,6 @@ CREATE TABLE vibecheck_jobs (
     extract_transient_attempts INT NOT NULL DEFAULT 0,
     CONSTRAINT vibecheck_jobs_status_check
         CHECK (status IN ('pending', 'extracting', 'analyzing', 'done', 'partial', 'failed')),
-    CONSTRAINT vibecheck_jobs_source_type_check
-        CHECK (source_type IN ('url', 'pdf')),
     CONSTRAINT vibecheck_jobs_error_code_check
         CHECK (
             error_code IS NULL
