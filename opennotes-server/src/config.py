@@ -143,6 +143,11 @@ class Settings(BaseSettings):
     DISCORD_API_TIMEOUT: float = Field(
         default=30.0, description="Timeout for Discord API requests in seconds"
     )
+    FIRECRAWL_API_KEY: str = Field(default="")
+    FIRECRAWL_API_BASE: str = Field(
+        default="https://api.firecrawl.dev",
+        description="Base URL for the Firecrawl v2 API.",
+    )
 
     REQUEST_TIMEOUT: float = Field(
         default=30.0, description="Request timeout in seconds for API endpoints"
