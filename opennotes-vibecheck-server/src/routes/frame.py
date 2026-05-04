@@ -34,6 +34,20 @@ _ARCHIVE_REQUEST_BUDGET_SECONDS = 8.0
 _BLOCKING_XFO_VALUES = {"deny", "sameorigin"}
 _ARCHIVE_CACHE_TIERS = ("scrape", "interact")
 _PERMISSIVE_FRAME_ANCESTOR_TOKENS = {"*", "https:", "http:", "data:"}
+_ALLOWED_GCS_HOSTS = frozenset({
+    "storage.googleapis.com",
+    "storage.cloud.google.com",
+})
+
+
+def _is_gcs_url(url: str) -> bool:
+    try:
+        from urllib.parse import urlparse  # noqa: PLC0415
+
+        parsed = urlparse(url)
+        return parsed.scheme in ("http", "https") and parsed.hostname in _ALLOWED_GCS_HOSTS
+    except Exception:
+        return False
 _ARCHIVE_CSP = (
     "default-src 'none'; img-src https: data:; style-src 'unsafe-inline' https:; "
     "font-src https: data:; frame-src 'none'; form-action 'none'; base-uri 'none'; "
@@ -434,6 +448,9 @@ async def pdf_read(request: Request, job_id: str = Query(...)) -> RedirectRespon
         gcs_key
     )
     if not signed_url:
+        raise HTTPException(status_code=502, detail="PDF unavailable")
+    if not _is_gcs_url(signed_url):
+        logger.warning("pdf_read: signed URL has unexpected domain, refusing redirect")
         raise HTTPException(status_code=502, detail="PDF unavailable")
     return RedirectResponse(
         signed_url,

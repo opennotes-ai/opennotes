@@ -781,7 +781,7 @@ class TestArchivePreview:
             ) -> str:
                 assert key == gcs_key
                 assert ttl_seconds == 900
-                return "https://storage.example/read-signed"
+                return "https://storage.googleapis.com/pdf-bucket/read-signed"
 
         monkeypatch.setattr(
             "src.routes.frame.get_settings",
@@ -797,7 +797,10 @@ class TestArchivePreview:
             del _client_state(client).db_pool
 
         assert resp.status_code == 302
-        assert resp.headers["location"] == "https://storage.example/read-signed"
+        assert (
+            resp.headers["location"]
+            == "https://storage.googleapis.com/pdf-bucket/read-signed"
+        )
         assert resp.headers["cache-control"] == "no-store, private"
         assert resp.headers["referrer-policy"] == "no-referrer"
 
@@ -817,6 +820,78 @@ class TestArchivePreview:
 
         assert resp.status_code == 404
         assert resp.json() == {"detail": "PDF unavailable"}
+
+    def test_pdf_read_rejects_non_gcs_signed_url(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        job_id = "11111111-1111-4111-8111-111111111111"
+        gcs_key = "22222222-2222-4222-8222-222222222222"
+
+        class Conn:
+            async def fetchval(self, query: str, received_job_id: object) -> str:
+                return gcs_key
+
+        class Store:
+            def __init__(self, bucket_name: str) -> None:
+                pass
+
+            def signed_read_url(
+                self, key: str, *, ttl_seconds: int = 900
+            ) -> str:
+                return "https://evil.example.com/foo"
+
+        monkeypatch.setattr(
+            "src.routes.frame.get_settings",
+            lambda: SimpleNamespace(VIBECHECK_PDF_UPLOAD_BUCKET="pdf-bucket"),
+        )
+        monkeypatch.setattr("src.routes.frame.get_pdf_upload_store", Store)
+        _client_state(client).db_pool = _FakePool(Conn())
+        try:
+            resp = client.get(
+                "/api/pdf-read", params={"job_id": job_id}, follow_redirects=False
+            )
+        finally:
+            del _client_state(client).db_pool
+
+        assert resp.status_code == 502
+        assert resp.json() == {"detail": "PDF unavailable"}
+
+    def test_pdf_read_accepts_storage_cloud_google_com_url(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        job_id = "11111111-1111-4111-8111-111111111111"
+        gcs_key = "22222222-2222-4222-8222-222222222222"
+
+        class Conn:
+            async def fetchval(self, query: str, received_job_id: object) -> str:
+                return gcs_key
+
+        class Store:
+            def __init__(self, bucket_name: str) -> None:
+                pass
+
+            def signed_read_url(
+                self, key: str, *, ttl_seconds: int = 900
+            ) -> str:
+                return "https://storage.cloud.google.com/bucket/key"
+
+        monkeypatch.setattr(
+            "src.routes.frame.get_settings",
+            lambda: SimpleNamespace(VIBECHECK_PDF_UPLOAD_BUCKET="pdf-bucket"),
+        )
+        monkeypatch.setattr("src.routes.frame.get_pdf_upload_store", Store)
+        _client_state(client).db_pool = _FakePool(Conn())
+        try:
+            resp = client.get(
+                "/api/pdf-read", params={"job_id": job_id}, follow_redirects=False
+            )
+        finally:
+            del _client_state(client).db_pool
+
+        assert resp.status_code == 302
+        assert (
+            resp.headers["location"] == "https://storage.cloud.google.com/bucket/key"
+        )
 
     def test_cached_html_with_mismatched_job_url_stays_unannotated(
         self, client: TestClient
