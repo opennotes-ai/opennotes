@@ -914,6 +914,7 @@ def _eval_execute_javascript(
     html_fixture: str | None = None,
     shadow_html: str | None = None,
     shadow_states: list[dict[str, Any]] | None = None,
+    shadow_host_selector: str = "#coral-shadow-container",
     light_dom_states: list[dict[str, Any]] | None = None,
     light_dom_selector: str = "#comments",
     shadow_closed: bool = False,
@@ -935,6 +936,7 @@ const lightDomStates = Array.isArray(payload.lightDomStates)
     ? payload.lightDomStates
     : [];
 const lightDomSelector = payload.lightDomSelector || "#comments";
+const shadowHostSelector = payload.shadowHostSelector || "#coral-shadow-container";
 const hasShadowHtml = payload.shadowHtml !== null && payload.shadowHtml !== undefined;
 const shadowHtml = hasShadowHtml ? payload.shadowHtml : "";
 const shadowClosed = Boolean(payload.shadowClosed);
@@ -1180,12 +1182,6 @@ article.appendChild = body.appendChild;
 
 global.document = {
     querySelector(selector) {
-        if (selector === "#coral-shadow-container" && (hasShadowSource || shadowClosed)) {
-            return {
-                shadowRoot: shadowClosed ? null : makeShadowRoot(resolveShadowState()),
-                dispatchEvent() {},
-            };
-        }
         if (selector === lightDomSelector && lightDomStates.length > 0) {
             const state = resolveLightDomState();
             const root = makeShadowRoot(state);
@@ -1210,6 +1206,13 @@ global.document = {
     },
     createElement: makeElement,
     querySelectorAll(selector) {
+        if (selector === shadowHostSelector && (hasShadowSource || shadowClosed)) {
+            return [{
+                id: shadowHostSelector.replace(/^#/, ""),
+                shadowRoot: shadowClosed ? null : makeShadowRoot(resolveShadowState()),
+                dispatchEvent() {},
+            }];
+        }
         if (selector === "button,[role='button']") {
             return [];
         }
@@ -1246,6 +1249,7 @@ console.log(JSON.stringify(output));
                     "htmlFixture": html_fixture,
                     "shadowHtml": shadow_html,
                     "shadowStates": shadow_states,
+                    "shadowHostSelector": shadow_host_selector,
                     "lightDomStates": light_dom_states,
                     "lightDomSelector": light_dom_selector,
                     "shadowClosed": shadow_closed,
@@ -1530,6 +1534,37 @@ def test_tier2_actions_for_coral_signal_copies_wapo_light_dom_comments() -> None
     assert marker is not None
     assert "WapoReader" in marker
     assert "The Strait of Hormuz context matters here." in marker
+
+
+def test_tier2_actions_for_coral_signal_copies_generic_shadow_root_comments() -> None:
+    """Coral Tier 2 finds live Wapo-style open shadow roots beyond one id."""
+
+    actions = _tier2_actions_for(_sample_coral_signal())
+    js = actions[2]["script"]
+    assert "#coral-shadow-root" in js
+
+    returned, clicked, marker = _eval_execute_javascript(
+        js,
+        match_selectors=[],
+        shadow_host_selector="#coral-shadow-root",
+        shadow_states=[
+            {
+                "text": (
+                    "Subscribe to comment and get the full experience. "
+                    "453 comments Conversation summary Automatically generated "
+                    "from recent comments Comment from LiverpoolFCfan Just now"
+                    "LiverpoolFCfanJust nowTrump and Hegseth are playing chicken, "
+                    "with our troops as pawns.0 Reactmore_horiz"
+                ),
+            },
+        ],
+    )
+
+    assert clicked is None
+    assert returned == "coral_status:copied;comments=1"
+    assert marker is not None
+    assert "LiverpoolFCfan" in marker
+    assert "Trump and Hegseth are playing chicken, with our troops as pawns." in marker
 
 
 def test_tier2_actions_for_coral_signal_waits_for_real_comments_after_click() -> None:

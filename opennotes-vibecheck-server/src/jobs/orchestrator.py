@@ -759,7 +759,14 @@ def _tier2_actions_for(coral_signal: CoralSignal | None) -> list[dict[str, Any]]
                     const sleep = (milliseconds) => new Promise((resolve) => {
                         setTimeout(resolve, milliseconds);
                     });
-                    const shadowHostSelector = "#coral-shadow-container";
+                    const shadowHostSelectors = [
+                        "#coral-shadow-container",
+                        "#coral-shadow-root",
+                        "[id*='coral' i]",
+                        "[class*='coral' i]",
+                        "[data-testid*='coral' i]",
+                        "[data-qa*='coral' i]",
+                    ];
                     const lightDomHostSelectors = ["#comments", "#coral_thread", "#coral-thread"];
                     const markerSelector = "[data-coral-comments]";
                     const statusPrefix = "coral_status:";
@@ -844,8 +851,9 @@ def _tier2_actions_for(coral_signal: CoralSignal | None) -> list[dict[str, Any]]
                         const authorPattern = escapeRegExp(author);
                         body = body.replace(
                             new RegExp(
-                                `^${authorPattern}\\\\s*\\\\d+\\\\s+`
-                                + "(?:day|week|month|year|hour|minute|second)s?\\\\s+ago",
+                                `^${authorPattern}\\\\s*`
+                                + "(?:Just now|\\\\d+\\\\s+"
+                                + "(?:day|week|month|year|hour|minute|second)s?\\\\s+ago)",
                                 "i"
                             ),
                             ""
@@ -853,7 +861,7 @@ def _tier2_actions_for(coral_signal: CoralSignal | None) -> list[dict[str, Any]]
                         body = body.replace(/^email-action-reply\\s*/i, "");
                         body = body.replace(/^In reply to [A-Za-z0-9_.-]+\\s*/i, "");
                         body = body.replace(
-                            /(Respect\\d*email-action-reply|email-action-reply|ReplyShareReport|ShareReport|Thread Level \\d+:).*$/i,
+                            /(Respect\\d*email-action-reply|email-action-reply|ReplyShareReport|ShareReport|Thread Level \\d+:|\\d+\\s*Reactmore_horiz|Reactmore_horiz|more_horiz).*$/i,
                             ""
                         );
                         return normalizeText(body);
@@ -861,7 +869,7 @@ def _tier2_actions_for(coral_signal: CoralSignal | None) -> list[dict[str, Any]]
                     const collectCommentsFromText = (rootText) => {
                         const comments = [];
                         const text = normalizeText(rootText);
-                        const pattern = /(?:Comment|Reply) from ([A-Za-z0-9_.-]{2,64})\\s+\\d+\\s+(?:day|week|month|year|hour|minute|second)s?\\s+ago/gi;
+                        const pattern = /(?:Comment|Reply) from ([A-Za-z0-9_.-]{2,64})\\s+(?:Just now|\\d+\\s+(?:day|week|month|year|hour|minute|second)s?\\s+ago)/gi;
                         const matches = Array.from(text.matchAll(pattern));
                         for (let index = 0; index < matches.length; index += 1) {
                             const match = matches[index];
@@ -887,19 +895,44 @@ def _tier2_actions_for(coral_signal: CoralSignal | None) -> list[dict[str, Any]]
                         }
                         return collectCommentsFromText(root.textContent);
                     };
-                    const findCommentsRoot = () => {
-                        const shadowHost = document.querySelector(shadowHostSelector);
-                        if (shadowHost) {
-                            if (!shadowHost.shadowRoot) {
-                                return {root: null, status: "shadow_closed"};
+                    const queryAll = (selector) => Array.from(document.querySelectorAll?.(selector) || []);
+                    const findShadowHost = () => {
+                        let sawClosedShadowHost = false;
+                        const seen = new Set();
+                        for (const selector of shadowHostSelectors) {
+                            for (const shadowHost of queryAll(selector)) {
+                                if (!shadowHost || seen.has(shadowHost)) {
+                                    continue;
+                                }
+                                seen.add(shadowHost);
+                                if (shadowHost.shadowRoot) {
+                                    return {host: shadowHost, root: shadowHost.shadowRoot, status: null};
+                                }
+                                const id = shadowHost.id || "";
+                                if (/^coral-shadow-(container|root)$/i.test(id)) {
+                                    sawClosedShadowHost = true;
+                                }
                             }
-                            return {root: shadowHost.shadowRoot, status: null};
+                        }
+                        return {
+                            host: null,
+                            root: null,
+                            status: sawClosedShadowHost ? "shadow_closed" : null,
+                        };
+                    };
+                    const findCommentsRoot = () => {
+                        const shadow = findShadowHost();
+                        if (shadow.root) {
+                            return {root: shadow.root, status: null};
                         }
                         for (const selector of lightDomHostSelectors) {
                             const lightDomHost = document.querySelector(selector);
                             if (lightDomHost) {
                                 return {root: lightDomHost, status: null};
                             }
+                        }
+                        if (shadow.status) {
+                            return {root: null, status: shadow.status};
                         }
                         return {root: null, status: "host_missing"};
                     };
@@ -940,7 +973,7 @@ def _tier2_actions_for(coral_signal: CoralSignal | None) -> list[dict[str, Any]]
                             if (typeof button.scrollIntoView === "function") {
                                 button.scrollIntoView({block: "center"});
                             }
-                            const commentsHost = document.querySelector(shadowHostSelector)
+                            const commentsHost = findShadowHost().host
                                 || lightDomHostSelectors
                                     .map((selector) => document.querySelector(selector))
                                     .find(Boolean);
