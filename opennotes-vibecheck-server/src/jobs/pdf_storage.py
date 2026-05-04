@@ -57,3 +57,25 @@ class PdfUploadStore:
                 exc,
             )
             return None
+
+    def get_metadata(self, key: str) -> dict[str, object] | None:
+        """Return object metadata for a previously uploaded PDF key.
+
+        The upload path stores the object directly in GCS; this method is
+        a lightweight existence + header check before analysis starts.
+        """
+        try:
+            blob = self._bucket.blob(key)
+            blob.reload()
+            return {
+                "size": blob.size,
+                "content_type": blob.content_type,
+            }
+        except Exception as exc:
+            logger.warning(
+                "gcs pdf metadata lookup failed bucket=%s key=%s: %s",
+                self._bucket_name,
+                key,
+                exc,
+            )
+            return None

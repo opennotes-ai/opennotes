@@ -276,6 +276,7 @@ async def _insert_pending_job(
     url: str,
     normalized_url: str,
     host: str,
+    source_type: str = "url",
     test_fail_slug: str | None = None,
 ) -> tuple[UUID, UUID]:
     """Insert a `status=pending` row and return `(job_id, attempt_id)`.
@@ -289,14 +290,15 @@ async def _insert_pending_job(
     job_id = await conn.fetchval(
         """
         INSERT INTO vibecheck_jobs (
-            url, normalized_url, host, status, attempt_id, test_fail_slug
+            url, normalized_url, host, source_type, status, attempt_id, test_fail_slug
         )
-        VALUES ($1, $2, $3, 'pending', $4, $5)
+        VALUES ($1, $2, $3, $4, 'pending', $5, $6)
         RETURNING job_id
         """,
         url,
         normalized_url,
         host,
+        source_type,
         attempt_id,
         test_fail_slug,
     )
@@ -327,6 +329,7 @@ async def handle_locked_submit(
     url: str,
     normalized_url: str,
     host: str,
+    source_type: str = "url",
     unsafe_finding: WebRiskFinding | None,
     test_fail_slug: str | None = None,
 ) -> tuple[SubmitResult, UUID | None]:
@@ -355,17 +358,18 @@ async def handle_locked_submit(
             None,
         )
 
-    cached_payload = await _lookup_cache(conn, normalized_url)
-    if cached_payload is not None:
-        job_id = await _insert_cached_done_job(
-            conn,
-            url=url,
-            normalized_url=normalized_url,
-            host=host,
-            sidebar_payload=cached_payload,
-        )
-        CACHE_HITS.labels(tier="analysis").inc()
-        return SubmitResult(job_id=job_id, status=JobStatus.DONE, cached=True), None
+    if source_type == "url":
+        cached_payload = await _lookup_cache(conn, normalized_url)
+        if cached_payload is not None:
+            job_id = await _insert_cached_done_job(
+                conn,
+                url=url,
+                normalized_url=normalized_url,
+                host=host,
+                sidebar_payload=cached_payload,
+            )
+            CACHE_HITS.labels(tier="analysis").inc()
+            return SubmitResult(job_id=job_id, status=JobStatus.DONE, cached=True), None
 
     existing = await _find_inflight_job(conn, normalized_url)
     if existing is not None:
@@ -380,6 +384,7 @@ async def handle_locked_submit(
         url=url,
         normalized_url=normalized_url,
         host=host,
+        source_type=source_type,
         test_fail_slug=test_fail_slug,
     )
     return SubmitResult(job_id=job_id, status=JobStatus.PENDING, cached=False), attempt_id

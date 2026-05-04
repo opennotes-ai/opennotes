@@ -73,6 +73,7 @@ logger = get_logger(__name__)
 router = APIRouter(prefix="/api", tags=["analyze"])
 
 limiter = Limiter(key_func=get_remote_address)
+SUBMIT_RATE_LIMIT_SCOPE = "vibecheck-submit"
 
 
 class AnalyzeRequest(BaseModel):
@@ -201,7 +202,7 @@ async def _try_advisory_lock(conn: Any, normalized_url: str) -> bool:
     status_code=202,
     response_model=AnalyzeResponse,
 )
-@limiter.limit(_rate_limit_value)
+@limiter.shared_limit(_rate_limit_value, scope=SUBMIT_RATE_LIMIT_SCOPE)
 async def analyze(request: Request, body: AnalyzeRequest) -> Any:  # noqa: PLR0911
     """Async handoff for `POST /api/analyze`.
 
