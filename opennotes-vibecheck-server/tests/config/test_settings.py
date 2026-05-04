@@ -9,6 +9,8 @@ def test_defaults():
     assert s.MAX_IMAGES_MODERATED == 30
     assert s.MAX_VIDEOS_MODERATED == 5
     assert s.WEB_RISK_CACHE_TTL_HOURS == 6
+    assert s.VIBECHECK_SCRAPE_API_TOKEN == ""
+    assert s.VIBECHECK_WEB_URL == ""
 
 
 def test_max_images_moderated_env_override(monkeypatch):
