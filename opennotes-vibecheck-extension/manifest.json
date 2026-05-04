@@ -1,0 +1,15 @@
+{
+  "manifest_version": 3,
+  "name": "Vibecheck Submitter",
+  "version": "0.1.0",
+  "description": "Submit the current page to a Vibecheck /api/scrape endpoint.",
+  "permissions": [
+    "activeTab",
+    "storage",
+    "scripting"
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Submit to Vibecheck"
+  }
+}
