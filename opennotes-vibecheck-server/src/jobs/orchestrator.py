@@ -342,7 +342,6 @@ SELECT
 FROM vibecheck_scrapes
 WHERE tier = 'browser_html'
   AND job_id = $1
-  AND attempt_id = $2
   AND expires_at > now()
   AND evicted_at IS NULL
 """
@@ -371,19 +370,18 @@ async def _load_job_source_type(pool: Any, job_id: UUID, task_attempt: UUID) -> 
 
 
 async def _load_browser_html_scrape(
-    pool: Any, job_id: UUID, task_attempt: UUID
+    pool: Any, job_id: UUID
 ) -> CachedScrape | None:
     try:
         async with pool.acquire() as conn:
             row = await conn.fetchrow(
                 _LOAD_BROWSER_HTML_SCRAPE_SQL,
                 job_id,
-                task_attempt,
             )
     except Exception as exc:
         raise TerminalError(
             ErrorCode.INTERNAL,
-            f"failed to load browser_html scrape for job={job_id} attempt={task_attempt}: {exc}",
+            f"failed to load browser_html scrape for job={job_id}: {exc}",
         ) from exc
 
     if row is None:
@@ -2209,7 +2207,7 @@ async def _run_pipeline(  # noqa: PLR0912
         `_scrape_step`.
         """
         if source_type == "browser_html":
-            scrape = await _load_browser_html_scrape(pool, job_id, task_attempt)
+            scrape = await _load_browser_html_scrape(pool, job_id)
             if scrape is None:
                 raise TerminalError(
                     ErrorCode.EXTRACTION_FAILED,
