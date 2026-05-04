@@ -5,6 +5,8 @@ from types import ModuleType
 from typing import Any
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 
 def _reset_patch() -> None:
     """Remove the _repaired marker so each test starts from an unpatched state."""
@@ -21,11 +23,10 @@ def _reset_patch() -> None:
         pass
 
 
-def setup_function() -> None:
+@pytest.fixture(autouse=True)
+def _reset_patch_fixture() -> pytest.Generator[None, None, None]:
     _reset_patch()
-
-
-def teardown_function() -> None:
+    yield
     _reset_patch()
 
 
