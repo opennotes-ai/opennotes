@@ -328,7 +328,7 @@ describe("analyzePdfAction", () => {
     expect(location).toBe("/?error=pdf_too_large");
   });
 
-  it("maps pdf_extraction_failed backend error to pending analyze error", async () => {
+  it("maps pdf_extraction_failed backend error to home error page", async () => {
     const { VibecheckApiError } = await import("~/lib/api-client.server");
     requestPdfUploadUrlMock.mockResolvedValue({
       gcs_key: "gcs-key",
@@ -343,9 +343,9 @@ describe("analyzePdfAction", () => {
 
     const response = await callPdfAction(createPdf(16, "paper.pdf"));
     const location = response.headers.get("Location") ?? "";
-    expect(location).toContain("pending_error=pdf_extraction_failed");
-    expect(location).toContain(`url=${encodeURIComponent("paper.pdf")}`);
-    expect(location).not.toContain("/?error=pdf_extraction_failed");
+    expect(location).toBe("/?error=pdf_extraction_failed");
+    expect(location).not.toContain("pending_error=");
+    expect(location).not.toContain("paper.pdf");
   });
 });
 

@@ -46,10 +46,7 @@ class PdfUploadStore:
         needs_refresh = not token
         if not needs_refresh and expiry is not None:
             now = datetime.now(UTC)
-            if expiry.tzinfo is None:
-                expiry_aware = expiry.replace(tzinfo=UTC)
-            else:
-                expiry_aware = expiry
+            expiry_aware = expiry.replace(tzinfo=UTC) if expiry.tzinfo is None else expiry
             if expiry_aware <= now + timedelta(seconds=60):
                 needs_refresh = True
         if needs_refresh:
@@ -112,8 +109,9 @@ class PdfUploadStore:
             return None
 
 
-_pdf_store: PdfUploadStore | None = None
-_pdf_store_bucket: str | None = None
+class _StoreCache:
+    store: PdfUploadStore | None = None
+    bucket: str | None = None
 
 
 def get_pdf_upload_store(bucket_name: str) -> PdfUploadStore:
@@ -124,8 +122,7 @@ def get_pdf_upload_store(bucket_name: str) -> PdfUploadStore:
     repeating that work on every request. A bucket-name change rebuilds
     the singleton (covers test/dev rebinds and configuration reloads).
     """
-    global _pdf_store, _pdf_store_bucket
-    if _pdf_store is None or _pdf_store_bucket != bucket_name:
-        _pdf_store = PdfUploadStore(bucket_name)
-        _pdf_store_bucket = bucket_name
-    return _pdf_store
+    if _StoreCache.store is None or _StoreCache.bucket != bucket_name:
+        _StoreCache.store = PdfUploadStore(bucket_name)
+        _StoreCache.bucket = bucket_name
+    return _StoreCache.store
