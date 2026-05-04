@@ -33,6 +33,8 @@ function copyFor(
       return "This PDF is too large to analyze.";
     case "pdf_extraction_failed":
       return "We couldn't extract text from this PDF.";
+    case "section_failure":
+      return "Some analysis sections couldn't be completed.";
     case "timeout":
       return "The analysis took too long and was cancelled.";
     case "rate_limited":

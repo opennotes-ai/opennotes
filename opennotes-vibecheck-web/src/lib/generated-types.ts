@@ -483,7 +483,7 @@ export interface components {
          * @description Stable error codes the frontend branches on for inline copy + retry UX.
          * @enum {string}
          */
-        ErrorCode: "invalid_url" | "unsafe_url" | "unsupported_site" | "upstream_error" | "extraction_failed" | "section_failure" | "pdf_too_large" | "pdf_extraction_failed" | "timeout" | "rate_limited" | "internal";
+        ErrorCode: "invalid_url" | "unsafe_url" | "unsupported_site" | "upstream_error" | "extraction_failed" | "section_failure" | "pdf_too_large" | "pdf_extraction_failed" | "upload_key_invalid" | "upload_not_found" | "invalid_pdf_type" | "timeout" | "rate_limited" | "internal";
         /**
          * FactCheckMatch
          * @description A single fact-check article surfaced by the Google Fact Check Tools API.

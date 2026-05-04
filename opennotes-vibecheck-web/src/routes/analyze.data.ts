@@ -342,11 +342,13 @@ export async function resolveAnalyzePdfRedirect(formData: FormData): Promise<nev
       throw redirect("/?error=invalid_url");
     }
     if (code === "pdf_extraction_failed") {
-      const qs = redirectParams({
-        pending_error: code,
-        url: rawFile.name,
-      });
-      throw redirect(`/analyze?${qs}`);
+      throw redirect("/?error=pdf_extraction_failed");
+    }
+    if (code === "upload_key_invalid" || code === "upload_not_found") {
+      throw redirect("/?error=upload_not_found");
+    }
+    if (code === "invalid_pdf_type") {
+      throw redirect("/?error=invalid_pdf_type");
     }
 
     const qs = redirectParams({

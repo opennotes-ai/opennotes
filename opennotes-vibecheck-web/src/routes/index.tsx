@@ -19,6 +19,13 @@ function errorLabelFor(
         : "We can't analyze that site yet. Try a different URL.";
     case "pdf_too_large":
       return "PDF upload is limited to 50 MB.";
+    case "pdf_extraction_failed":
+      return "We couldn't extract text from this PDF. Try a different file.";
+    case "upload_key_invalid":
+    case "upload_not_found":
+      return "Upload may not have completed. Please try uploading the PDF again.";
+    case "invalid_pdf_type":
+      return "Only PDF files are accepted.";
     case "upstream_error":
       return "The analyzer couldn't reach that page. Try again in a moment.";
     default:

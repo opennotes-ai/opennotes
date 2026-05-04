@@ -245,8 +245,12 @@ export default function AnalyzePage() {
     setFrameCompatUrl("");
     setFrameCompatError(null);
     setArchiveProbeState(
-      pdf ? (pdfArchive ? "available" : "unavailable") : "pending",
+      pdf ? (pdfArchive ? "available" : "pending") : "pending",
     );
+    if (pdf && pdfArchive && untrack(previewMode) !== "archived") {
+      setPreviewMode("archived");
+      setSelectedPreviewMode("archived");
+    }
     setFrameCompatPending(!pdf && shouldProbe);
     setResolvedPreviewMode(url ? "unavailable" : "original");
     if (pdf) {
@@ -757,6 +761,7 @@ export default function AnalyzePage() {
                   </div>
                   <PageFrame
                     url={jobUrl()}
+                    sourcePdf={isPdf()}
                     pdfReadUrl={pdfReadUrl()}
                     loading={isPreviewLoading()}
                     canIframe={frameCompat().canIframe}

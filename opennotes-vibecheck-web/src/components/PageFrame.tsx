@@ -7,6 +7,7 @@ export type ResolvedPreviewMode = PreviewMode | "unavailable";
 export interface PageFrameProps {
   url: string;
   pdfReadUrl?: string | null;
+  sourcePdf?: boolean;
   loading?: boolean;
   canIframe: boolean;
   blockingHeader?: string | null;
@@ -34,7 +35,7 @@ export default function PageFrame(props: PageFrameProps) {
   const hasBlockingHint = () =>
     !props.canIframe || !!props.blockingHeader || !!props.cspFrameAncestors;
   const hasUrl = () => props.url.trim().length > 0;
-  const isPdf = () => Boolean(props.pdfReadUrl);
+  const isPdf = () => Boolean(props.sourcePdf || props.pdfReadUrl);
   const requestedMode = () => props.previewMode;
   const hasArchive = () => !!props.archivedPreviewUrl && !archivedFailed();
 
@@ -109,6 +110,7 @@ export default function PageFrame(props: PageFrameProps) {
   let archivedIframeRef: HTMLIFrameElement | undefined;
   let currentUrl = props.url;
   let currentArchiveUrl = props.archivedPreviewUrl ?? null;
+  let currentPdfUrl = props.pdfReadUrl ?? null;
   let lastEmittedResolvedMode: ResolvedPreviewMode | null = null;
 
   const clearLoadTimeout = () => {
@@ -137,9 +139,11 @@ export default function PageFrame(props: PageFrameProps) {
 
   createEffect(() => {
     const archiveUrl = props.archivedPreviewUrl ?? null;
-    if (props.url !== currentUrl || archiveUrl !== currentArchiveUrl) {
+    const pdfUrl = props.pdfReadUrl ?? null;
+    if (props.url !== currentUrl || archiveUrl !== currentArchiveUrl || pdfUrl !== currentPdfUrl) {
       currentUrl = props.url;
       currentArchiveUrl = archiveUrl;
+      currentPdfUrl = pdfUrl;
       setIframeFailed(false);
       setIframeLoaded(false);
       setArchivedFailed(false);

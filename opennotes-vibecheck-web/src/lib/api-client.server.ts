@@ -37,6 +37,9 @@ export const PUBLIC_ERROR_CODES: readonly PublicErrorCode[] = [
   "internal",
   "pdf_too_large",
   "pdf_extraction_failed",
+  "upload_key_invalid",
+  "upload_not_found",
+  "invalid_pdf_type",
 ];
 
 export function clampErrorCode(raw: unknown): PublicErrorCode | undefined {
@@ -47,6 +50,7 @@ export function clampErrorCode(raw: unknown): PublicErrorCode | undefined {
 }
 
 const ANALYZE_SUBMIT_TIMEOUT_MS = 300_000;
+const GCS_PUT_TIMEOUT_MS = 10 * 60_000;
 const POLL_FETCH_TIMEOUT_MS = 60_000;
 const DEFAULT_FETCH_TIMEOUT_MS = 60_000;
 const FETCH_MAX_ATTEMPTS = 2;
@@ -67,6 +71,9 @@ function timeoutForRequest(request: Request): number {
     (pathname === "/api/analyze" || pathname === "/api/analyze-pdf")
   ) {
     return ANALYZE_SUBMIT_TIMEOUT_MS;
+  }
+  if (request.method === "PUT") {
+    return GCS_PUT_TIMEOUT_MS;
   }
   return POLL_FETCH_TIMEOUT_MS;
 }

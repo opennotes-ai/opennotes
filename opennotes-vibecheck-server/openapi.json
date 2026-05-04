@@ -867,6 +867,9 @@
           "section_failure",
           "pdf_too_large",
           "pdf_extraction_failed",
+          "upload_key_invalid",
+          "upload_not_found",
+          "invalid_pdf_type",
           "timeout",
           "rate_limited",
           "internal"
