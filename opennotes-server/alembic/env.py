@@ -33,6 +33,7 @@ from src.notes import models as notes_models  # noqa: F401
 from src.notes import note_publisher_models  # noqa: F401
 from src.notes.scoring import models as scoring_models  # noqa: F401
 from src.simulation import models as simulation_models  # noqa: F401
+from src.url_content_scan import models as url_content_scan_models  # noqa: F401
 from src.users import models as users_models  # noqa: F401
 from src.webhooks import delivery_models as webhooks_delivery_models  # noqa: F401
 from src.webhooks import models as webhooks_models  # noqa: F401
