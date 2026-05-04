@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import sys
-from typing import Any
 from types import ModuleType
-from unittest.mock import AsyncMock, MagicMock, patch
+from typing import Any
+from unittest.mock import MagicMock, patch
 
 
 def _reset_patch() -> None:
@@ -11,7 +11,7 @@ def _reset_patch() -> None:
     try:
         from pydantic_ai.tool_manager import ToolManager
 
-        original = getattr(ToolManager, "_validate_tool_args")
+        original = ToolManager._validate_tool_args
         if getattr(original, "_repaired", False):
             wrapped = getattr(ToolManager, "__validate_tool_args_original__", None)
             if wrapped is not None:
@@ -31,8 +31,9 @@ def teardown_function() -> None:
 
 class TestPatchIdempotency:
     def test_applying_patch_twice_does_not_double_wrap(self) -> None:
-        from src.services.pydantic_patches import apply_all_patches
         from pydantic_ai.tool_manager import ToolManager
+
+        from src.services.pydantic_patches import apply_all_patches
 
         apply_all_patches()
         first_patched = ToolManager._validate_tool_args
@@ -66,8 +67,9 @@ class TestImportErrorSilentNoop:
 
 class TestMalformedJsonRepaired:
     def test_malformed_json_args_repaired_before_underlying_validate(self) -> None:
-        from src.services.pydantic_patches import apply_all_patches
         from pydantic_ai.tool_manager import ToolManager
+
+        from src.services.pydantic_patches import apply_all_patches
 
         apply_all_patches()
 
@@ -123,8 +125,9 @@ class TestMalformedJsonRepaired:
 
 class TestValidJsonPassesThrough:
     def test_valid_json_args_pass_through_unchanged(self) -> None:
-        from src.services.pydantic_patches import apply_all_patches
         from pydantic_ai.tool_manager import ToolManager
+
+        from src.services.pydantic_patches import apply_all_patches
 
         apply_all_patches()
 

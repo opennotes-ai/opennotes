@@ -14,8 +14,8 @@ from __future__ import annotations
 
 def patch_tool_call_json_repair() -> None:
     try:
-        from fast_json_repair import repair_json
-        from pydantic_ai.tool_manager import ToolManager
+        from fast_json_repair import repair_json  # noqa: PLC0415
+        from pydantic_ai.tool_manager import ToolManager  # noqa: PLC0415
     except ImportError:
         return
 

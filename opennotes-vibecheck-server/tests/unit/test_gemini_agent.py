@@ -7,14 +7,18 @@ making post-Gemini traces correlatable per analysis.
 
 from __future__ import annotations
 
+from unittest.mock import MagicMock, patch
+
 import pytest
 from pydantic import BaseModel
 from pydantic_ai.models.google import GoogleModel
 
-from unittest.mock import MagicMock, patch
-
 from src.config import Settings
-from src.services.gemini_agent import OUTPUT_VALIDATION_RETRIES, build_agent, google_vertex_model_name
+from src.services.gemini_agent import (
+    OUTPUT_VALIDATION_RETRIES,
+    build_agent,
+    google_vertex_model_name,
+)
 
 
 class _Out(BaseModel):

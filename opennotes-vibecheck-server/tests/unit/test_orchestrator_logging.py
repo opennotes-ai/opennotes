@@ -73,15 +73,15 @@ async def test_first_pass_extraction_error_logs_warning_with_exc_info(
         patch.object(orch_mod, "_scrape_step", new=AsyncMock(return_value=MagicMock())),
         patch.object(orch_mod, "_revalidate_final_url", new=AsyncMock()),
         caplog.at_level(logging.WARNING, logger="src.jobs.orchestrator"),
+        pytest.raises(TerminalError) as exc_info_ctx,
     ):
-        with pytest.raises(TerminalError) as exc_info_ctx:
-            await orch_mod._run_pipeline(
-                fake_pool,
-                job_id,
-                task_attempt,
-                url,
-                fake_settings,
-            )
+        await orch_mod._run_pipeline(
+            fake_pool,
+            job_id,
+            task_attempt,
+            url,
+            fake_settings,
+        )
 
     terminal_err = exc_info_ctx.value
     assert terminal_err.error_code == ErrorCode.EXTRACTION_FAILED
@@ -145,15 +145,15 @@ async def test_second_pass_extraction_error_logs_warning_with_exc_info(
         patch.object(orch_mod, "_scrape_step", new=AsyncMock(return_value=MagicMock())),
         patch.object(orch_mod, "_revalidate_final_url", new=AsyncMock()),
         caplog.at_level(logging.WARNING, logger="src.jobs.orchestrator"),
+        pytest.raises(TerminalError) as exc_info_ctx,
     ):
-        with pytest.raises(TerminalError) as exc_info_ctx:
-            await orch_mod._run_pipeline(
-                fake_pool,
-                job_id,
-                task_attempt,
-                url,
-                fake_settings,
-            )
+        await orch_mod._run_pipeline(
+            fake_pool,
+            job_id,
+            task_attempt,
+            url,
+            fake_settings,
+        )
 
     terminal_err = exc_info_ctx.value
     assert terminal_err.error_code == ErrorCode.EXTRACTION_FAILED

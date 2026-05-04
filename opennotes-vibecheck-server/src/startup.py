@@ -111,7 +111,7 @@ def _resolve_thread_pool_workers(container_concurrency: int) -> int:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    from src.services.pydantic_patches import apply_all_patches
+    from src.services.pydantic_patches import apply_all_patches  # noqa: PLC0415
 
     apply_all_patches()
 
