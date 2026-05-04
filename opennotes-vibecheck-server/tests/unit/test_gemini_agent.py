@@ -7,12 +7,18 @@ making post-Gemini traces correlatable per analysis.
 
 from __future__ import annotations
 
+from unittest.mock import MagicMock, patch
+
 import pytest
 from pydantic import BaseModel
 from pydantic_ai.models.google import GoogleModel
 
 from src.config import Settings
-from src.services.gemini_agent import build_agent, google_vertex_model_name
+from src.services.gemini_agent import (
+    OUTPUT_VALIDATION_RETRIES,
+    build_agent,
+    google_vertex_model_name,
+)
 
 
 class _Out(BaseModel):
@@ -76,3 +82,16 @@ def test_google_vertex_model_name_rejects_malformed_setting() -> None:
             "gemini-3-flash-preview",
             setting_name="VERTEXAI_FAST_MODEL",
         )
+
+
+def test_output_validation_retries_constant_is_three() -> None:
+    assert OUTPUT_VALIDATION_RETRIES == 3
+
+
+def test_build_agent_passes_output_retries_to_agent_constructor(settings: Settings) -> None:
+    with patch("src.services.gemini_agent.Agent") as mock_agent_cls:
+        mock_agent_cls.return_value = MagicMock()
+        build_agent(settings, output_type=_Out, system_prompt="test")
+        _, kwargs = mock_agent_cls.call_args
+        assert kwargs.get("output_retries") == 3
+        assert "retries" not in kwargs

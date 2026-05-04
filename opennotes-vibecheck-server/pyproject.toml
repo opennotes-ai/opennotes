@@ -24,6 +24,7 @@ dependencies = [
     "html2text>=2025.4.15",
     "prometheus-client>=0.20.0",
     "asyncpg>=0.29.0",
+    "fast-json-repair>=0.2.0",
 ]
 
 [project.optional-dependencies]

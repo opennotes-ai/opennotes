@@ -111,6 +111,10 @@ def _resolve_thread_pool_workers(container_concurrency: int) -> int:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    from src.services.pydantic_patches import apply_all_patches  # noqa: PLC0415
+
+    apply_all_patches()
+
     # Install Logfire span scrubbing before any route handler (and therefore
     # any pydantic-ai agent invocation) can emit spans. `configure_logfire`
     # is idempotent and swallows ImportError if the logfire package is
