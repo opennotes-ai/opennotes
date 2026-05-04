@@ -162,11 +162,14 @@ HEARTBEAT_INTERVAL_SEC: float = 5.0
 """Heartbeat bump cadence. Tests override to a shorter interval."""
 
 
-EXTRACT_TRANSIENT_MAX_ATTEMPTS: Final[int] = 2
-"""Cloud Tasks max_attempts is 3 (cloud_tasks.tf line 33). On the 2nd
-transient extraction failure, flip the row to TerminalError(UPSTREAM_ERROR)
-so the user sees a stable error instead of waiting on a silently-dropped 3rd
-delivery. Subtract 1 to keep the terminal flip strictly before exhaustion.
+EXTRACT_TRANSIENT_MAX_ATTEMPTS: Final[int] = 3
+"""Cloud Tasks max_attempts is 3 (cloud_tasks.tf line 33). On the 3rd
+transient extraction failure, flip the row to TerminalError(UPSTREAM_ERROR).
+Tight local retries in run_vertex_agent_with_retry absorb fast Vertex 429
+bursts before they surface as TransientExtractionError, so each Cloud Tasks
+delivery may now consume one job-level transient attempt for a genuine
+upstream flake. Aligning this cap with Cloud Tasks max_attempts ensures all
+three deliveries are available before the job is terminated.
 """
 
 

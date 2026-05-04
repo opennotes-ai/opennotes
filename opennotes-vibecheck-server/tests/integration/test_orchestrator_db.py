@@ -235,7 +235,7 @@ async def test_run_pipeline_translates_transient_extraction_error_to_transient(
     db_pool: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """First TransientExtractionError increments the in-row counter to
-    1 (below EXTRACT_TRANSIENT_MAX_ATTEMPTS=2) and surfaces as
+    1 (below EXTRACT_TRANSIENT_MAX_ATTEMPTS=3) and surfaces as
     TransientError so `run_job`'s outer arm resets the row to pending
     and returns 503.
 
