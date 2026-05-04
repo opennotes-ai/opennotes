@@ -41,4 +41,28 @@ describe("<JobFailureCard />", () => {
       "encrypted",
     );
   });
+
+  it("hides Try again button when url is a GCS UUID (non-HTTP string)", () => {
+    render(() => (
+      <JobFailureCard
+        url="abc123-uuid-style-gcs-key"
+        errorCode="pdf_extraction_failed"
+      />
+    ));
+
+    expect(screen.queryByTestId("job-failure-try-again-form")).toBeNull();
+    expect(screen.queryByTestId("job-failure-try-again")).toBeNull();
+  });
+
+  it("shows Try again button when url is a normal HTTP URL", () => {
+    render(() => (
+      <JobFailureCard
+        url="https://example.com/article"
+        errorCode="extraction_failed"
+      />
+    ));
+
+    expect(screen.getByTestId("job-failure-try-again-form")).toBeTruthy();
+    expect(screen.getByTestId("job-failure-try-again")).toBeTruthy();
+  });
 });

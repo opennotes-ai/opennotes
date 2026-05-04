@@ -6,6 +6,15 @@ import { analyzeAction } from "~/routes/analyze.data";
 
 type WebRiskFinding = components["schemas"]["WebRiskFinding"];
 
+function isHttpUrl(candidate: string): boolean {
+  try {
+    const parsed = new URL(candidate);
+    return parsed.protocol === "http:" || parsed.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
 export interface JobFailureCardProps {
   url: string;
   errorCode: PublicErrorCode | null;
@@ -33,6 +42,11 @@ function copyFor(
       return "This PDF is too large to analyze.";
     case "pdf_extraction_failed":
       return "We couldn't extract text from this PDF.";
+    case "upload_key_invalid":
+    case "upload_not_found":
+      return "The PDF upload could not be found.";
+    case "invalid_pdf_type":
+      return "That file type isn't supported — please upload a PDF.";
     case "section_failure":
       return "Some analysis sections couldn't be completed.";
     case "timeout":
@@ -69,6 +83,11 @@ function detailFor(code: PublicErrorCode | null): string {
       return "Please upload a PDF that is 50 MB or smaller.";
     case "pdf_extraction_failed":
       return "Your PDF may be encrypted or image-only. Try a different file.";
+    case "upload_key_invalid":
+    case "upload_not_found":
+      return "The upload session expired or was not found. Please try uploading again.";
+    case "invalid_pdf_type":
+      return "Only PDF files are supported. Please select a valid PDF and try again.";
     case "section_failure":
       return "Some analysis sections couldn't complete.";
     case "timeout":
@@ -145,18 +164,20 @@ export default function JobFailureCard(props: JobFailureCardProps): JSX.Element 
       </p>
 
       <div class="flex flex-wrap items-center gap-3">
-        <form
-          action={analyzeAction}
-          method="post"
-          data-testid="job-failure-try-again-form"
-          onSubmit={() => props.onTryAgain?.()}
-          class="inline-flex"
-        >
-          <input type="hidden" name="url" value={props.url} />
-          <Button type="submit" size="sm" data-testid="job-failure-try-again">
-            Try again
-          </Button>
-        </form>
+        <Show when={isHttpUrl(props.url)}>
+          <form
+            action={analyzeAction}
+            method="post"
+            data-testid="job-failure-try-again-form"
+            onSubmit={() => props.onTryAgain?.()}
+            class="inline-flex"
+          >
+            <input type="hidden" name="url" value={props.url} />
+            <Button type="submit" size="sm" data-testid="job-failure-try-again">
+              Try again
+            </Button>
+          </form>
+        </Show>
         <a
           href="/"
           data-testid="job-failure-home"
