@@ -704,6 +704,33 @@ ALTER TABLE public.vibecheck_jobs
   );
 
 -- =========================================================================
+-- Sync vibecheck_jobs_status_check to include 'partial' (TASK-1529)
+-- =========================================================================
+-- Commit ab7aa1b1 (TASK-1474.29) added 'partial' to the inline CREATE TABLE
+-- CHECK definition but never added the ALTER blocks that propagate the change
+-- to existing tables. Production Postgres still has the pre-1474.29 constraint,
+-- so finalize.py raises CheckViolationError when writing status='partial'.
+ALTER TABLE public.vibecheck_jobs
+  DROP CONSTRAINT IF EXISTS vibecheck_jobs_status_check;
+
+ALTER TABLE public.vibecheck_jobs
+  ADD CONSTRAINT vibecheck_jobs_status_check
+  CHECK (status IN ('pending', 'extracting', 'analyzing', 'done', 'partial', 'failed'));
+
+-- =========================================================================
+-- Sync vibecheck_jobs_terminal_finished_at to include 'partial' (TASK-1529)
+-- =========================================================================
+ALTER TABLE public.vibecheck_jobs
+  DROP CONSTRAINT IF EXISTS vibecheck_jobs_terminal_finished_at;
+
+ALTER TABLE public.vibecheck_jobs
+  ADD CONSTRAINT vibecheck_jobs_terminal_finished_at
+  CHECK (
+    (status NOT IN ('done', 'partial', 'failed') AND finished_at IS NULL)
+    OR (status IN ('done', 'partial', 'failed') AND finished_at IS NOT NULL)
+  );
+
+-- =========================================================================
 -- pg_cron schedules (idempotent)
 -- =========================================================================
 -- cron.schedule fails on duplicate jobname, so unschedule first when present.
