@@ -3292,6 +3292,53 @@ async def test_scrape_step_force_tier_interact_honors_tier2_cache_hit() -> None:
     assert len(interact_client.interact_calls) == 0
 
 
+@pytest.mark.parametrize(
+    ("cached_tier", "expected_storage_key", "expected_cache_reads"),
+    [
+        ("browser_html", "cached-browser-html", ["browser_html"]),
+        ("interact", "cached-interact", ["browser_html", "interact"]),
+        ("scrape", "cached-scrape", ["browser_html", "interact", "scrape"]),
+    ],
+)
+async def test_scrape_step_default_reuses_successful_cached_scrape_from_any_tier(
+    cached_tier: str,
+    expected_storage_key: str,
+    expected_cache_reads: list[str],
+) -> None:
+    """A retry of a timed-out job should not re-scrape just because the
+    prior successful scrape was stored under a richer tier.
+    """
+    from src.jobs import orchestrator
+
+    url = "https://example.com/retry-cached-page"
+    cache = _FakeScrapeCache()
+    cache.store[(url, cached_tier)] = CachedScrape(
+        markdown="cached article body " * 10,
+        html="<article><h1>Cached</h1><p>cached article body</p></article>",
+        metadata=ScrapeMetadata(status_code=200, source_url=url),
+        storage_key=expected_storage_key,
+    )
+
+    def _fail() -> ScrapeResult:
+        raise AssertionError("retry must reuse the cached scrape without Firecrawl")
+
+    scrape_client = _FakeFirecrawlClient(scrape_result=_fail)
+    interact_client = _FakeFirecrawlClient(interact_result=_fail)
+
+    result = await orchestrator._scrape_step(
+        url,
+        cast(FirecrawlClient, cast(object, scrape_client)),
+        cast(FirecrawlClient, cast(object, interact_client)),
+        cast(SupabaseScrapeCache, cast(object, cache)),
+    )
+
+    assert result.storage_key == expected_storage_key
+    assert [entry[1] for entry in cache.gets] == expected_cache_reads
+    assert cache.evicts == []
+    assert len(scrape_client.scrape_calls) == 0
+    assert len(interact_client.interact_calls) == 0
+
+
 async def test_scrape_step_default_call_unchanged_no_force_tier(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

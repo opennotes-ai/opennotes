@@ -1152,6 +1152,13 @@ class _Tier1Outcome:
     coral_outcome: str | None
 
 
+_SUCCESSFUL_CACHE_REUSE_TIERS: Final[tuple[ScrapeTier, ...]] = (
+    "browser_html",
+    "interact",
+    "scrape",
+)
+
+
 async def _run_tier1(  # noqa: PLR0911, PLR0912
     url: str,
     scrape_client: FirecrawlClient,
@@ -1397,6 +1404,29 @@ def _classify_cached_tier1(cached: CachedScrape) -> _Tier1Outcome:
     )
 
 
+async def _find_successful_cached_scrape(
+    url: str,
+    scrape_cache: SupabaseScrapeCache,
+) -> tuple[ScrapeTier, _Tier1Outcome] | None:
+    """Find a successful cached scrape across all persisted scrape tiers.
+
+    A timed-out job can already have good page content cached under a richer
+    tier. Retrying should reuse that content instead of re-hitting the source.
+    Non-OK richer-tier rows are ignored; a non-OK `scrape` row is returned so
+    `_scrape_step` preserves the existing Tier 1 terminal/escalation behavior.
+    """
+    for tier in _SUCCESSFUL_CACHE_REUSE_TIERS:
+        cached = await scrape_cache.get(url, tier=tier)
+        if cached is None:
+            continue
+        cached_t1 = _classify_cached_tier1(cached)
+        if cached_t1.cached is not None:
+            return tier, cached_t1
+        if tier == "scrape":
+            return tier, cached_t1
+    return None
+
+
 @dataclass
 class _Tier2Outcome:
     """Result of running Tier 2. `cached` is set on OK; otherwise
@@ -1585,20 +1615,18 @@ async def _scrape_step(
                     detail={"error_host": urlparse(url).hostname},
                 )
 
-            # Tier 1 cache hit: re-classify before short-circuiting. The
-            # Tier 1 path caches INTERSTITIAL bundles under tier='scrape'
-            # so retries skip the upstream Firecrawl probe; without
-            # re-classification a degraded row would return as if OK and
-            # bypass Tier 2. (codex P1, PR #426 review.)
-            cached = await scrape_cache.get(url, tier="scrape")
-            if cached is not None:
-                tier_attempted.append("scrape")
-                cached_t1 = _classify_cached_tier1(cached)
+            # Cache hit: scan every successful scrape tier before probing
+            # Firecrawl. Retries of timed-out jobs may have already fetched
+            # good content via /interact or browser HTML submission.
+            cached_hit = await _find_successful_cached_scrape(url, scrape_cache)
+            if cached_hit is not None:
+                cached_tier, cached_t1 = cached_hit
+                tier_attempted.append(cached_tier)
                 final_classification = cached_t1.final_classification
                 coral_detected = cached_t1.coral_signal is not None
                 coral_outcome = cached_t1.coral_outcome
                 if cached_t1.cached is not None:
-                    tier_success = "scrape"
+                    tier_success = cached_tier
                     return cached_t1.cached
                 if cached_t1.terminal is not None:
                     raise cached_t1.terminal
