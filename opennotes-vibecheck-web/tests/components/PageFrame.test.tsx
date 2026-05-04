@@ -58,6 +58,35 @@ describe("<PageFrame />", () => {
     expect(screen.queryByTestId("page-frame-screenshot")).toBeNull();
   });
 
+  it("renders PDF originals with object and embed elements instead of an iframe", () => {
+    render(() => (
+      <PageFrame
+        url="pdfs/sample.pdf"
+        pdfReadUrl="/api/pdf-read?job_id=job-pdf-preview"
+        canIframe={true}
+        screenshotUrl={null}
+        previewMode="original"
+      />
+    ));
+
+    expect(screen.queryByTestId("page-frame-iframe")).toBeNull();
+    const object = screen.getByTestId("page-frame-pdf-object");
+    const embed = screen.getByTestId("page-frame-pdf-embed");
+    expect(object.tagName.toLowerCase()).toBe("object");
+    expect(object.getAttribute("data")).toBe(
+      "/api/pdf-read?job_id=job-pdf-preview",
+    );
+    expect(object.getAttribute("type")).toBe("application/pdf");
+    expect(embed.tagName.toLowerCase()).toBe("embed");
+    expect(embed.getAttribute("src")).toBe(
+      "/api/pdf-read?job_id=job-pdf-preview",
+    );
+    expect(embed.getAttribute("type")).toBe("application/pdf");
+    expect(
+      screen.getByRole("link", { name: /open original/i }).getAttribute("href"),
+    ).toBe("/api/pdf-read?job_id=job-pdf-preview");
+  });
+
   it("uses the shared Lucide external-link icon for the Open original action", () => {
     render(() => (
       <PageFrame

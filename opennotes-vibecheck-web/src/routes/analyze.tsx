@@ -90,6 +90,15 @@ function asErrorCode(raw: string | undefined): PublicErrorCode | null {
     : null;
 }
 
+function isHttpUrl(candidate: string): boolean {
+  try {
+    const parsed = new URL(candidate);
+    return parsed.protocol === "http:" || parsed.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
 export default function AnalyzePage() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
@@ -152,7 +161,16 @@ export default function AnalyzePage() {
   const jobState = () => polling.state();
   const jobStatus = () => jobState()?.status;
   const jobUrl = createMemo(() => jobState()?.url ?? pendingUrl());
-  const shouldProbePreview = () => Boolean(jobUrl()) && !pendingError();
+  const isPdf = createMemo(() => jobState()?.source_type === "pdf");
+  const pdfArchiveUrl = createMemo(() => jobState()?.pdf_archive_url ?? null);
+  const pdfReadUrl = () => {
+    const currentJobId = jobId();
+    return isPdf() && currentJobId
+      ? `/api/pdf-read?job_id=${encodeURIComponent(currentJobId)}`
+      : null;
+  };
+  const shouldProbePreview = () =>
+    !isPdf() && Boolean(jobUrl()) && isHttpUrl(jobUrl()) && !pendingError();
   const [frameCompat, setFrameCompat] =
     createSignal<FrameCompatResult>(DEFAULT_FRAME_COMPAT);
   const [frameCompatPending, setFrameCompatPending] = createSignal(false);
@@ -213,13 +231,35 @@ export default function AnalyzePage() {
   createEffect(() => {
     const url = jobUrl();
     const shouldProbe = shouldProbePreview();
+    const pdf = isPdf();
+    const pdfArchive = pdfArchiveUrl();
     const request = ++frameCompatRequest;
-    setFrameCompat(DEFAULT_FRAME_COMPAT);
+    setFrameCompat(
+      pdf
+        ? {
+            ...DEFAULT_FRAME_COMPAT,
+            archivedPreviewUrl: pdfArchive,
+          }
+        : DEFAULT_FRAME_COMPAT,
+    );
     setFrameCompatUrl("");
     setFrameCompatError(null);
-    setArchiveProbeState("pending");
-    setFrameCompatPending(shouldProbe);
+    setArchiveProbeState(
+      pdf ? (pdfArchive ? "available" : "unavailable") : "pending",
+    );
+    setFrameCompatPending(!pdf && shouldProbe);
     setResolvedPreviewMode(url ? "unavailable" : "original");
+    if (pdf) {
+      const currentMode = untrack(previewMode);
+      if (currentMode === "screenshot" || (currentMode === "archived" && !pdfArchive)) {
+        setPreviewMode("original");
+        setSelectedPreviewMode(null);
+      }
+      setFrameCompatPending(false);
+      setFrameCompatUrl(url);
+      setResolvedPreviewMode(url ? "original" : "unavailable");
+      return;
+    }
     if (!url || !shouldProbe) {
       setFrameCompatPending(false);
       return;
@@ -608,6 +648,11 @@ export default function AnalyzePage() {
                             const isArchivedUnavailable = () =>
                               option.value === "archived" &&
                               archiveProbeState() === "unavailable";
+                            const isScreenshotUnavailable = () =>
+                              option.value === "screenshot" && isPdf();
+                            const isUnavailable = () =>
+                              isArchivedUnavailable() ||
+                              isScreenshotUnavailable();
                             return (
                               <button
                                 type="button"
@@ -627,11 +672,18 @@ export default function AnalyzePage() {
                                     ? ORIGINAL_BLOCKED_TIP_ID
                                     : undefined
                                 }
-                                disabled={isArchivedUnavailable()}
+                                aria-label={
+                                  isScreenshotUnavailable()
+                                    ? "Not available for PDFs"
+                                    : undefined
+                                }
+                                disabled={isUnavailable()}
                                 title={
                                   isArchivedUnavailable()
                                     ? "No archive available for this page"
-                                    : undefined
+                                    : isScreenshotUnavailable()
+                                      ? "Not available for PDFs"
+                                      : undefined
                                 }
                                 onMouseEnter={() => {
                                   if (isOriginalBlocked()) {
@@ -705,6 +757,7 @@ export default function AnalyzePage() {
                   </div>
                   <PageFrame
                     url={jobUrl()}
+                    pdfReadUrl={pdfReadUrl()}
                     loading={isPreviewLoading()}
                     canIframe={frameCompat().canIframe}
                     blockingHeader={frameCompat().blockingHeader}
