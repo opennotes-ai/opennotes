@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Vibecheck Submitter</title>
+    <link rel="stylesheet" href="popup.css">
+  </head>
+  <body>
+    <main>
+      <details id="settings" open>
+        <summary>Settings</summary>
+        <div class="settings-grid">
+          <label for="endpoint-url">
+            Endpoint URL
+            <input id="endpoint-url" name="endpoint-url" type="url" inputmode="url" placeholder="http://localhost:3000">
+          </label>
+          <label for="api-key">
+            API Key
+            <input id="api-key" name="api-key" type="password" autocomplete="off" placeholder="Bearer token">
+          </label>
+        </div>
+      </details>
+
+      <section class="panel" aria-labelledby="submit-heading">
+        <h1 id="submit-heading" class="field-label">Current page</h1>
+        <textarea id="current-url" readonly rows="2" aria-label="Current page URL"></textarea>
+        <button id="submit-btn" type="button">Submit</button>
+        <div id="status" role="status" aria-live="polite"></div>
+      </section>
+
+      <section id="result" class="panel" aria-live="polite" hidden>
+        <h2 id="result-heading">Result</h2>
+        <div id="result-content"></div>
+      </section>
+    </main>
+    <script src="popup.js"></script>
+  </body>
+</html>
