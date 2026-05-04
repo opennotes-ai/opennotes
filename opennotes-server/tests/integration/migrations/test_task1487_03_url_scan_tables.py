@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import os
 from pathlib import Path
 from uuid import uuid4
 
@@ -8,6 +9,7 @@ import pytest
 from alembic.migration import MigrationContext
 from alembic.operations import Operations
 from sqlalchemy import text
+from sqlalchemy.engine import make_url
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _MIGRATION_PATH = _REPO_ROOT / "alembic" / "versions" / "task1487_03_url_scan_tables.py"
@@ -76,19 +78,23 @@ async def test_upgrade_creates_tables_and_enables_rls(db_session):
 async def test_upgrade_creates_application_role_policy_when_role_lacks_bypassrls(db_session):
     await _run_upgrade(db_session)
 
+    configured_role = make_url(os.environ["DATABASE_URL"]).username
+    assert configured_role is not None
+
     result = await db_session.execute(
         text(
             """
-            SELECT current_user AS role_name, rolbypassrls
+            SELECT rolname AS role_name, rolbypassrls
             FROM pg_roles
-            WHERE rolname = current_user
+            WHERE rolname = :role_name
             """
-        )
+        ),
+        {"role_name": configured_role},
     )
     role_name, has_bypassrls = result.one()
 
     if has_bypassrls:
-        pytest.skip(f"current role {role_name} already has BYPASSRLS")
+        pytest.skip(f"configured app role {role_name} already has BYPASSRLS")
 
     policies = await db_session.execute(
         text(
@@ -109,6 +115,82 @@ async def test_upgrade_creates_application_role_policy_when_role_lacks_bypassrls
         assert role_name in row.roles
         assert row.qual == "true"
         assert row.with_check == "true"
+
+
+@pytest.mark.asyncio
+async def test_upgrade_cascade_deletes_url_scan_child_rows_with_batch_job(db_session):
+    await _run_upgrade(db_session)
+
+    job_id = uuid4()
+    attempt_id = uuid4()
+
+    await db_session.execute(
+        text(
+            """
+            INSERT INTO batch_jobs (
+                id, job_type, status, total_tasks, completed_tasks, failed_tasks, metadata
+            )
+            VALUES (
+                CAST(:job_id AS uuid), 'url_scan', 'pending', 0, 0, 0, '{}'::jsonb
+            )
+            """
+        ),
+        {"job_id": str(job_id)},
+    )
+    await db_session.execute(
+        text(
+            """
+            INSERT INTO url_scan_state (
+                job_id, source_url, normalized_url, host, attempt_id, utterance_count
+            )
+            VALUES (
+                CAST(:job_id AS uuid),
+                'https://example.com/a',
+                'https://example.com/a',
+                'example.com',
+                CAST(:attempt_id AS uuid),
+                0
+            )
+            """
+        ),
+        {"job_id": str(job_id), "attempt_id": str(attempt_id)},
+    )
+    await db_session.execute(
+        text(
+            """
+            INSERT INTO url_scan_section_slots (
+                job_id, slug, state, attempt_id, created_at, updated_at
+            )
+            VALUES (
+                CAST(:job_id AS uuid), 'safety', 'PENDING', CAST(:attempt_id AS uuid), NOW(), NOW()
+            )
+            """
+        ),
+        {"job_id": str(job_id), "attempt_id": str(attempt_id)},
+    )
+    await db_session.execute(
+        text(
+            """
+            INSERT INTO url_scan_utterances (job_id, utterance_id, payload)
+            VALUES (
+                CAST(:job_id AS uuid), 'utt-1', '{"kind":"fact"}'::jsonb
+            )
+            """
+        ),
+        {"job_id": str(job_id)},
+    )
+
+    await db_session.execute(
+        text("DELETE FROM batch_jobs WHERE id = CAST(:job_id AS uuid)"),
+        {"job_id": str(job_id)},
+    )
+
+    for table_name in ("url_scan_state", "url_scan_section_slots", "url_scan_utterances"):
+        result = await db_session.execute(
+            text(f"SELECT COUNT(*) FROM {table_name} WHERE job_id = CAST(:job_id AS uuid)"),
+            {"job_id": str(job_id)},
+        )
+        assert result.scalar_one() == 0
 
 
 @pytest.mark.asyncio
