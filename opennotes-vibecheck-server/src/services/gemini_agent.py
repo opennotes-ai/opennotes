@@ -9,11 +9,15 @@ Agents bound to Vertex AI Gemini. Mirrors opennotes-server's pattern:
 
 from __future__ import annotations
 
+import asyncio
+import random
 from functools import lru_cache
-from typing import Any, Literal, TypeVar, overload
+from typing import Any, Final, Literal, TypeVar, overload
 
+import logfire
 from pydantic import BaseModel
-from pydantic_ai import Agent
+from pydantic_ai import Agent, AgentRunResult
+from pydantic_ai.exceptions import ModelHTTPError
 from pydantic_ai.models.google import GoogleModel
 from pydantic_ai.providers.google import GoogleProvider
 
@@ -21,6 +25,8 @@ from src.config import Settings
 
 T = TypeVar("T", bound=BaseModel)
 GeminiTier = Literal["fast", "synthesis"]
+
+MAX_VERTEX_429_ATTEMPTS: Final[int] = 3
 
 
 @lru_cache(maxsize=4)
@@ -104,3 +110,35 @@ def build_agent(
     if name is not None:
         kwargs["name"] = name
     return Agent(model, **kwargs)
+
+
+async def run_vertex_agent_with_retry(
+    agent: Agent[Any, T],
+    /,
+    *args: Any,
+    **kwargs: Any,
+) -> AgentRunResult[T]:
+    attempts_used = 0
+    while True:
+        try:
+            return await agent.run(*args, **kwargs)
+        except ModelHTTPError as exc:
+            if exc.status_code != 429:
+                raise
+            attempts_used += 1
+            if attempts_used >= MAX_VERTEX_429_ATTEMPTS:
+                logfire.warning(
+                    "vertex_429_exhausted",
+                    model_name=exc.model_name,
+                    attempts=MAX_VERTEX_429_ATTEMPTS,
+                )
+                raise
+            delay = (1.0 * 2 ** (attempts_used - 1)) * random.uniform(0.5, 1.5)
+            logfire.info(
+                "vertex_429_retry",
+                model_name=exc.model_name,
+                status_code=exc.status_code,
+                attempt_number=attempts_used,
+                backoff_delay_s=delay,
+            )
+            await asyncio.sleep(delay)
