@@ -104,7 +104,11 @@ from src.analyses.tone._flashpoint_schemas import FlashpointMatch
 from src.analyses.tone._scd_schemas import SCDReport
 from src.analyses.tone.flashpoint_slot import run_flashpoint
 from src.analyses.tone.scd_slot import run_scd
-from src.cache.scrape_cache import CachedScrape, ScrapeTier, SupabaseScrapeCache
+from src.cache.scrape_cache import (
+    CachedScrape,
+    ScrapeTier,
+    SupabaseScrapeCache,
+)
 from src.config import Settings
 from src.coral import (
     CoralFetchError,
@@ -114,7 +118,13 @@ from src.coral import (
     fetch_coral_comments,
     merge_coral_into_scrape,
 )
-from src.firecrawl_client import FirecrawlBlocked, FirecrawlClient, FirecrawlError, ScrapeResult
+from src.firecrawl_client import (
+    FirecrawlBlocked,
+    FirecrawlClient,
+    FirecrawlError,
+    ScrapeMetadata,
+    ScrapeResult,
+)
 from src.jobs.finalize import maybe_finalize_job
 from src.jobs.scrape_quality import ScrapeQuality, classify_scrape
 from src.jobs.section_defaults import empty_section_data as _empty_section_data
@@ -298,6 +308,85 @@ FROM vibecheck_jobs
 WHERE job_id = $1
   AND attempt_id = $2
 """
+
+_LOAD_JOB_SOURCE_TYPE_SQL = """
+SELECT source_type
+FROM vibecheck_jobs
+WHERE job_id = $1
+  AND attempt_id = $2
+"""
+
+_LOAD_BROWSER_HTML_SCRAPE_SQL = """
+SELECT
+    url,
+    final_url,
+    page_title,
+    markdown,
+    html,
+    screenshot_storage_key
+FROM vibecheck_scrapes
+WHERE tier = 'browser_html'
+  AND job_id = $1
+  AND attempt_id = $2
+  AND expires_at > now()
+  AND evicted_at IS NULL
+"""
+
+
+async def _load_job_source_type(pool: Any, job_id: UUID, task_attempt: UUID) -> str:
+    try:
+        async with pool.acquire() as conn:
+            source_type = await conn.fetchval(
+                _LOAD_JOB_SOURCE_TYPE_SQL,
+                job_id,
+                task_attempt,
+            )
+    except Exception as exc:
+        raise TerminalError(
+            ErrorCode.INTERNAL,
+            f"failed to load source_type for job={job_id} attempt={task_attempt}: {exc}",
+        ) from exc
+
+    if source_type not in {"url", "pdf", "browser_html"}:
+        raise TerminalError(
+            ErrorCode.INTERNAL,
+            f"unsupported source_type for job={job_id} attempt={task_attempt}: {source_type}",
+        )
+    return source_type
+
+
+async def _load_browser_html_scrape(
+    pool: Any, job_id: UUID, task_attempt: UUID
+) -> CachedScrape | None:
+    try:
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(
+                _LOAD_BROWSER_HTML_SCRAPE_SQL,
+                job_id,
+                task_attempt,
+            )
+    except Exception as exc:
+        raise TerminalError(
+            ErrorCode.INTERNAL,
+            f"failed to load browser_html scrape for job={job_id} attempt={task_attempt}: {exc}",
+        ) from exc
+
+    if row is None:
+        return None
+
+    return CachedScrape(
+        markdown=row["markdown"] or "",
+        html=row["html"],
+        raw_html=None,
+        screenshot=None,
+        links=None,
+        metadata=ScrapeMetadata(
+            title=row["page_title"],
+            source_url=row["final_url"] or row["url"],
+        ),
+        warning=None,
+        storage_key=row["screenshot_storage_key"],
+    )
 
 _WRITE_SAFETY_RECOMMENDATION_SQL = """
 UPDATE vibecheck_jobs
@@ -1945,6 +2034,7 @@ async def _run_pipeline(  # noqa: PLR0912
     # /v2/extract calls keep their existing retry budget.
     client = _build_firecrawl_client(settings)
     tier1_client = _build_firecrawl_tier1_client(settings)
+    source_type = await _load_job_source_type(pool, job_id, task_attempt)
 
     # Scrape (cache or fresh) via the tiered ladder, then extract.
     #
@@ -1965,14 +2055,23 @@ async def _run_pipeline(  # noqa: PLR0912
         the only difference is the `force_tier` argument threaded into
         `_scrape_step`.
         """
-        try:
-            scrape = await _scrape_step(
-                url, tier1_client, client, scrape_cache, force_tier=force_tier
-            )
-        except (TransientError, TerminalError):
-            raise
-        except Exception as exc:
-            raise TransientError(f"scrape step failed: {exc}") from exc
+        if source_type == "browser_html":
+            scrape = await _load_browser_html_scrape(pool, job_id, task_attempt)
+            if scrape is None:
+                raise TerminalError(
+                    ErrorCode.EXTRACTION_FAILED,
+                    "browser-submitted HTML cache row missing",
+                    detail={"error_host": urlparse(url).hostname},
+                )
+        else:
+            try:
+                scrape = await _scrape_step(
+                    url, tier1_client, client, scrape_cache, force_tier=force_tier
+                )
+            except (TransientError, TerminalError):
+                raise
+            except Exception as exc:
+                raise TransientError(f"scrape step failed: {exc}") from exc
 
         # Post-scrape revalidate: reject redirects into private space.
         await _revalidate_final_url(scrape, url=url, scrape_cache=scrape_cache)

@@ -85,6 +85,8 @@ class Settings(BaseSettings):
     # share a budget.
     RATE_LIMIT_POLL_BURST: int = 10
     RATE_LIMIT_POLL_SUSTAINED: int = 300
+    VIBECHECK_SCRAPE_API_TOKEN: str = ""
+    VIBECHECK_WEB_URL: str = ""
 
     # TASK-1473.35: when set + the public POST carries
     # `X-Vibecheck-Test-Fail-Slug: <slug>`, the orchestrator forces a

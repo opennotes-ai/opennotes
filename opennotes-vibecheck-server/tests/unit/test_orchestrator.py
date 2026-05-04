@@ -15,7 +15,7 @@ from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import asyncpg
 import pytest
@@ -39,6 +39,7 @@ from src.firecrawl_client import (
 from src.jobs.orchestrator import (
     TerminalError,
     TransientError,
+    _load_job_source_type,
     _run_section,
     _run_tier2,
     _tier2_actions_for,
@@ -116,6 +117,44 @@ async def test_run_section_write_slot_exception_still_raises_when_mark_slot_also
 
     with pytest.raises(TransientError, match="write_slot failed"):
         await _run_section(pool, job_id, task_attempt, slug, payload, settings)
+
+
+async def test_load_job_source_type_raises_terminal_on_invalid_value() -> None:
+    class SourceTypeConn:
+        async def fetchval(self, *args: Any, **kwargs: Any) -> str:
+            return "unsupported_source"
+
+    class ConnPool:
+        def __init__(self) -> None:
+            self.conn = SourceTypeConn()
+
+        def acquire(self) -> FakeAcquire:
+            return FakeAcquire(self.conn)
+
+    with pytest.raises(TerminalError) as exc_info:
+        await _load_job_source_type(ConnPool(), uuid4(), uuid4())
+
+    assert exc_info.value.error_code == ErrorCode.INTERNAL
+    assert "unsupported source_type" in exc_info.value.error_detail
+
+
+async def test_load_job_source_type_raises_terminal_on_db_error() -> None:
+    class SourceTypeConn:
+        async def fetchval(self, *args: Any, **kwargs: Any) -> None:
+            raise RuntimeError("db unavailable")
+
+    class ConnPool:
+        def __init__(self) -> None:
+            self.conn = SourceTypeConn()
+
+        def acquire(self) -> FakeAcquire:
+            return FakeAcquire(self.conn)
+
+    with pytest.raises(TerminalError) as exc_info:
+        await _load_job_source_type(ConnPool(), uuid4(), uuid4())
+
+    assert exc_info.value.error_code == ErrorCode.INTERNAL
+    assert "failed to load source_type" in exc_info.value.error_detail
 
 
 class FakeAcquire:
@@ -309,11 +348,15 @@ def _stub_pre_gemini(monkeypatch: pytest.MonkeyPatch) -> None:
     """Short-circuit the scrape/extract preamble so tests focus on post-Gemini."""
     from src.jobs import orchestrator
 
+    async def stub_source_type(*args: Any, **kwargs: Any) -> str:
+        return "url"
+
     monkeypatch.setattr(orchestrator, "_build_scrape_cache", lambda s: MagicMock())
     monkeypatch.setattr(orchestrator, "_build_firecrawl_client", lambda s: MagicMock())
     monkeypatch.setattr(
         orchestrator, "_build_firecrawl_tier1_client", lambda s: MagicMock()
     )
+    monkeypatch.setattr(orchestrator, "_load_job_source_type", stub_source_type)
 
     async def stub_scrape_step(*args, **kwargs):
         return MagicMock(metadata=None)
@@ -444,6 +487,9 @@ def _stub_extract_arm_only(monkeypatch: pytest.MonkeyPatch) -> None:
     """
     from src.jobs import orchestrator
 
+    async def stub_source_type(*args: Any, **kwargs: Any) -> str:
+        return "url"
+
     monkeypatch.setattr(orchestrator, "_build_scrape_cache", lambda s: MagicMock())
     monkeypatch.setattr(
         orchestrator, "_build_firecrawl_client", lambda s: MagicMock()
@@ -451,6 +497,7 @@ def _stub_extract_arm_only(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         orchestrator, "_build_firecrawl_tier1_client", lambda s: MagicMock()
     )
+    monkeypatch.setattr(orchestrator, "_load_job_source_type", stub_source_type)
 
     async def stub_scrape_step(*args, **kwargs):
         return MagicMock(metadata=None)
@@ -713,19 +760,37 @@ class _FakeScrapeCache:
     """
 
     def __init__(self) -> None:
-        self.store: dict[tuple[str, str], CachedScrape] = {}
-        self.gets: list[tuple[str, str]] = []
+        self.store: dict[tuple[Any, ...], CachedScrape] = {}
+        self.gets: list[tuple[str, str, str | None, str | None]] = []
         self.puts: list[tuple[str, str]] = []
         self.evicts: list[tuple[str, str | None]] = []
 
     async def get(
-        self, url: str, *, tier: str = "scrape"
+        self,
+        url: str,
+        *,
+        tier: str = "scrape",
+        job_id: UUID | None = None,
+        attempt_id: UUID | None = None,
     ) -> CachedScrape | None:
-        self.gets.append((url, tier))
+        job_key = str(job_id) if job_id is not None else None
+        attempt_key = str(attempt_id) if attempt_id is not None else None
+        self.gets.append((url, tier, job_key, attempt_key))
+
+        if job_id is not None and attempt_id is not None:
+            by_job = self.store.get((url, tier, job_key, attempt_key))
+            if by_job is not None:
+                return by_job
         return self.store.get((url, tier))
 
     async def put(
-        self, url: str, scrape: ScrapeResult, *, tier: str = "scrape"
+        self,
+        url: str,
+        scrape: ScrapeResult,
+        *,
+        tier: str = "scrape",
+        job_id: UUID | None = None,
+        attempt_id: UUID | None = None,
     ) -> CachedScrape:
         self.puts.append((url, tier))
         cached = CachedScrape(
@@ -739,6 +804,8 @@ class _FakeScrapeCache:
             storage_key=f"{tier}-key-{len(self.puts)}",
         )
         self.store[(url, tier)] = cached
+        if job_id is not None and attempt_id is not None:
+            self.store[(url, tier, str(job_id), str(attempt_id))] = cached
         return cached
 
     async def evict(self, url: str, *, tier: str | None = None) -> None:
@@ -2752,7 +2819,7 @@ async def test_scrape_step_force_tier_interact_skips_tier1_entirely() -> None:
     # Tier 1 client never touched.
     assert len(scrape_client.scrape_calls) == 0
     # Tier 1 cache never read either — the bypass is total.
-    assert all(tier == "interact" for _u, tier in cache.gets)
+    assert all(entry[1] == "interact" for entry in cache.gets)
     # Tier 2 ran and the row was cached under tier='interact'.
     assert len(interact_client.interact_calls) == 1
     assert (url, "interact") in cache.store
@@ -2836,6 +2903,9 @@ def _stub_post_gemini_for_escalation(monkeypatch: pytest.MonkeyPatch) -> None:
     """
     from src.jobs import orchestrator
 
+    async def stub_source_type(*args: Any, **kwargs: Any) -> str:
+        return "url"
+
     async def noop_set_last_stage(*args: Any, **kwargs: Any) -> None:
         return None
 
@@ -2857,6 +2927,7 @@ def _stub_post_gemini_for_escalation(monkeypatch: pytest.MonkeyPatch) -> None:
     async def noop_finalize(*args: Any, **kwargs: Any) -> bool:
         return True
 
+    monkeypatch.setattr(orchestrator, "_load_job_source_type", stub_source_type)
     monkeypatch.setattr(orchestrator, "_set_last_stage", noop_set_last_stage)
     monkeypatch.setattr(orchestrator, "persist_utterances", noop_persist)
     monkeypatch.setattr(orchestrator, "_set_analyzing", noop_set_analyzing)
@@ -2877,11 +2948,15 @@ def _stub_scrape_preamble(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, Any
     """
     from src.jobs import orchestrator
 
+    async def stub_source_type(*args: Any, **kwargs: Any) -> str:
+        return "url"
+
     monkeypatch.setattr(orchestrator, "_build_scrape_cache", lambda s: MagicMock())
     monkeypatch.setattr(orchestrator, "_build_firecrawl_client", lambda s: MagicMock())
     monkeypatch.setattr(
         orchestrator, "_build_firecrawl_tier1_client", lambda s: MagicMock()
     )
+    monkeypatch.setattr(orchestrator, "_load_job_source_type", stub_source_type)
 
     async def noop_revalidate(*args: Any, **kwargs: Any) -> None:
         return None
@@ -3130,6 +3205,72 @@ async def test_run_pipeline_threads_scrape_step_result_into_extractor(
         )
 
     assert captured["kwargs"].get("scrape") is sentinel_scrape
+
+
+async def test_run_pipeline_uses_browser_html_cache_without_classifying(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """browser_html jobs trust the operator-submitted cache row and skip the
+    normal Tier 1 quality classifier path, which would reject auth-gated pages.
+    """
+    from src.jobs import orchestrator
+
+    _stub_extract_arm_only(monkeypatch)
+
+    job_id = uuid4()
+    task_attempt = uuid4()
+    url = "https://example.com/private"
+    cache = _FakeScrapeCache()
+    monkeypatch.setattr(orchestrator, "_build_scrape_cache", lambda s: cache)
+    monkeypatch.setattr(orchestrator, "_build_firecrawl_client", lambda s: MagicMock())
+    monkeypatch.setattr(
+        orchestrator, "_build_firecrawl_tier1_client", lambda s: MagicMock()
+    )
+
+    async def no_scrape_step(*args: Any, **kwargs: Any) -> CachedScrape:
+        raise AssertionError("_scrape_step must not run for browser_html jobs")
+
+    async def noop_revalidate(*args: Any, **kwargs: Any) -> None:
+        return None
+
+    captured: dict[str, Any] = {}
+
+    async def capturing_extract(*args: Any, **kwargs: Any):
+        captured["kwargs"] = kwargs
+        raise UtteranceExtractionError("stop here")
+
+    class SourceTypeConn:
+        async def fetchval(self, *args: Any, **kwargs: Any) -> str:
+            return "browser_html"
+
+        async def fetchrow(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
+            return {
+                "url": url,
+                "final_url": url,
+                "page_title": "Private",
+                "markdown": "private page",
+                "html": "<html><body>private browser html</body></html>",
+                "screenshot_storage_key": None,
+            }
+
+    async def stub_source_type(*args: Any, **kwargs: Any) -> str:
+        return "browser_html"
+
+    monkeypatch.setattr(orchestrator, "_load_job_source_type", stub_source_type)
+    monkeypatch.setattr(orchestrator, "_scrape_step", no_scrape_step)
+    monkeypatch.setattr(orchestrator, "_revalidate_final_url", noop_revalidate)
+    monkeypatch.setattr(orchestrator, "extract_utterances", capturing_extract)
+
+    with pytest.raises(orchestrator.TerminalError):
+        await orchestrator._run_pipeline(
+            FakePool(SourceTypeConn()), job_id, task_attempt, url, MagicMock()
+        )
+
+    assert cache.gets == []
+    scrape = captured["kwargs"].get("scrape")
+    assert scrape.markdown == "private page"
+    assert scrape.html == "<html><body>private browser html</body></html>"
+    assert scrape.metadata.title == "Private"
 
 
 # ---------------------------------------------------------------------------

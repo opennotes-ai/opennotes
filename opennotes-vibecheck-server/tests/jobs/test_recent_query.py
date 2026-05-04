@@ -39,7 +39,7 @@ CREATE TABLE vibecheck_scrapes (
     scrape_id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     normalized_url TEXT NOT NULL,
     tier TEXT NOT NULL DEFAULT 'scrape'
-        CHECK (tier IN ('scrape', 'interact')),
+        CHECK (tier IN ('scrape', 'interact', 'browser_html')),
     url TEXT NOT NULL,
     host TEXT NOT NULL,
     page_kind TEXT NOT NULL DEFAULT 'other',
@@ -300,6 +300,7 @@ async def _seed_job(
     *,
     url: str,
     status: str = "done",
+    source_type: str = "url",
     sections: dict[str, dict[str, str]] | None = None,
     preview: str | None = "preview blurb",
     finished_at: datetime | None = None,
@@ -312,8 +313,8 @@ async def _seed_job(
             """
             INSERT INTO vibecheck_jobs
                 (url, normalized_url, host, status, sections, finished_at,
-                 preview_description)
-            VALUES ($1, $1, 'example.com', $2, $3::jsonb, $4, $5)
+                 preview_description, source_type)
+            VALUES ($1, $1, 'example.com', $2, $3::jsonb, $4, $5, $6)
             RETURNING job_id
             """,
             url,
@@ -321,6 +322,7 @@ async def _seed_job(
             json.dumps(sections),
             finished_at,
             preview,
+            source_type,
         )
 
 
@@ -494,6 +496,13 @@ class TestListRecentExclusionRules:
         url = "https://example.com/no-preview"
         await _seed_job(db_pool, url=url, preview=None)
         await _seed_scrape(db_pool, url=url)
+        result = await list_recent(db_pool, limit=5, signer=_StubSigner())
+        assert result == []
+
+    async def test_excludes_browser_html_source_type(self, db_pool: Any) -> None:
+        url = "https://example.com/private-browser-html"
+        await _seed_job(db_pool, url=url, source_type="browser_html")
+        await _seed_scrape(db_pool, url=url, tier="browser_html")
         result = await list_recent(db_pool, limit=5, signer=_StubSigner())
         assert result == []
 

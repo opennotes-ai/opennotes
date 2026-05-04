@@ -114,18 +114,22 @@ async def _insert_job(
     attempt_id: UUID,
     url: str = "https://example.com/a",
     normalized_url: str | None = None,
+    source_type: str = "url",
 ) -> UUID:
     async with pool.acquire() as conn:
         job_id = await conn.fetchval(
             """
-            INSERT INTO vibecheck_jobs (url, normalized_url, host, status, attempt_id)
-            VALUES ($1, $2, $3, 'analyzing', $4)
+            INSERT INTO vibecheck_jobs (
+                url, normalized_url, host, status, attempt_id, source_type
+            )
+            VALUES ($1, $2, $3, 'analyzing', $4, $5)
             RETURNING job_id
             """,
             url,
             normalized_url if normalized_url is not None else url,
             "example.com",
             attempt_id,
+            source_type,
         )
     assert isinstance(job_id, UUID)
     return job_id
@@ -1082,6 +1086,35 @@ async def test_finalize_upserts_cache_keyed_by_normalized_url_not_original(
             "SELECT url FROM vibecheck_analyses WHERE url = $1", original_url
         )
         assert cached_by_original is None
+
+
+async def test_finalize_does_not_write_url_cache_for_browser_html_jobs(
+    db_pool,
+) -> None:
+    url = "https://example.com/private"
+    task_attempt = uuid4()
+    job_id = await _insert_job(
+        db_pool, task_attempt, url=url, source_type="browser_html"
+    )
+    await _seed_slots(db_pool, job_id, task_attempt, _ALL_SLUGS)
+
+    finalized = await maybe_finalize_job(
+        db_pool, job_id, expected_task_attempt=task_attempt
+    )
+    assert finalized is True
+
+    async with db_pool.acquire() as conn:
+        cached_count = await conn.fetchval(
+            "SELECT COUNT(*) FROM vibecheck_analyses WHERE url = $1", url
+        )
+        job = await conn.fetchrow(
+            "SELECT status, sidebar_payload FROM vibecheck_jobs WHERE job_id = $1",
+            job_id,
+        )
+
+    assert cached_count == 0
+    assert job["status"] == "done"
+    assert job["sidebar_payload"] is not None
 
 
 async def test_maybe_finalize_job_marks_partial_when_web_risk_slot_failed(
