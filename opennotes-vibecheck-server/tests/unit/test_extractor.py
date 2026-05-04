@@ -39,6 +39,7 @@ from src.utterances.errors import (
     UtteranceExtractionError,
 )
 from src.utterances.extractor import (
+    CORAL_COMMENTS_IGNORE_ADDENDUM,
     CORAL_COMMENTS_PROMPT_ADDENDUM,
     EXTRACTOR_SYSTEM_PROMPT,
     ExtractorDeps,
@@ -368,6 +369,62 @@ async def test_extract_utterances_adds_coral_marker_guidance(
     assert fake_agent.prompts
     assert CORAL_COMMENTS_PROMPT_ADDENDUM.strip() in fake_agent.prompts[0]
     assert "article.comment" in fake_agent.prompts[0]
+
+
+@pytest.mark.asyncio
+async def test_extract_utterances_ignores_shell_only_coral_marker(
+    monkeypatch: pytest.MonkeyPatch, settings: Settings
+) -> None:
+    """Coral shell-only markers must not ask Gemini to emit comments."""
+
+    cached = _cached_scrape(
+        markdown="# Article\n\nBody",
+        html=(
+            "<article><p>Body</p></article>"
+            '<section data-coral-comments="true" data-coral-status="shell_only">'
+            "<h2>Comments</h2>"
+            "</section>"
+        ),
+    )
+    client = _FakeFirecrawlClient()
+    cache = _FakeScrapeCache(cached=cached)
+    fake_agent = _stub_agent(monkeypatch, _payload())
+
+    await _call(TARGET_URL, client, cache, settings)
+
+    assert fake_agent.prompts
+    assert CORAL_COMMENTS_PROMPT_ADDENDUM.strip() not in fake_agent.prompts[0]
+    assert CORAL_COMMENTS_IGNORE_ADDENDUM.strip() in fake_agent.prompts[0]
+
+
+@pytest.mark.asyncio
+async def test_extract_utterances_ignores_coral_boilerplate_comment_rows(
+    monkeypatch: pytest.MonkeyPatch, settings: Settings
+) -> None:
+    """Placeholder Commenter rows from Coral chrome are not real comments."""
+
+    cached = _cached_scrape(
+        markdown="# Article\n\nBody\n\nComments\n\nCommenter: All Comments(172)",
+        html=(
+            "<article><p>Body</p></article>"
+            '<section data-coral-comments="true" data-coral-status="copied">'
+            '<article class="comment"><header>Commenter</header>'
+            "<p>Our comments are moderated. Let's have a nice conversation.</p>"
+            "</article>"
+            '<article class="comment"><header>Commenter</header>'
+            "<p>All Comments(172)</p></article>"
+            "</section>"
+        ),
+    )
+    client = _FakeFirecrawlClient()
+    cache = _FakeScrapeCache(cached=cached)
+    fake_agent = _stub_agent(monkeypatch, _payload())
+
+    await _call(TARGET_URL, client, cache, settings)
+
+    assert fake_agent.prompts
+    assert CORAL_COMMENTS_PROMPT_ADDENDUM.strip() not in fake_agent.prompts[0]
+    assert CORAL_COMMENTS_IGNORE_ADDENDUM.strip() in fake_agent.prompts[0]
 
 
 # ---------------------------------------------------------------------------
