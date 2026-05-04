@@ -320,13 +320,6 @@ WHERE job_id = $1
   AND attempt_id = $2
 """
 
-_LOAD_JOB_SOURCE_TYPE_SQL = """
-SELECT source_type
-FROM vibecheck_jobs
-WHERE job_id = $1
-  AND attempt_id = $2
-"""
-
 _LOAD_BROWSER_HTML_SCRAPE_SQL = """
 SELECT
     url,
@@ -342,28 +335,6 @@ WHERE tier = 'browser_html'
   AND expires_at > now()
   AND evicted_at IS NULL
 """
-
-
-async def _load_job_source_type(pool: Any, job_id: UUID, task_attempt: UUID) -> str:
-    try:
-        async with pool.acquire() as conn:
-            source_type = await conn.fetchval(
-                _LOAD_JOB_SOURCE_TYPE_SQL,
-                job_id,
-                task_attempt,
-            )
-    except Exception as exc:
-        raise TerminalError(
-            ErrorCode.INTERNAL,
-            f"failed to load source_type for job={job_id} attempt={task_attempt}: {exc}",
-        ) from exc
-
-    if source_type not in {"url", "pdf", "browser_html"}:
-        raise TerminalError(
-            ErrorCode.INTERNAL,
-            f"unsupported source_type for job={job_id} attempt={task_attempt}: {source_type}",
-        )
-    return source_type
 
 
 async def _load_browser_html_scrape(
@@ -2187,7 +2158,6 @@ async def _run_pipeline(  # noqa: PLR0912
     # /v2/extract calls keep their existing retry budget.
     client = _build_firecrawl_client(settings)
     tier1_client = _build_firecrawl_tier1_client(settings)
-    source_type = await _load_job_source_type(pool, job_id, task_attempt)
 
     # Scrape (cache or fresh) via the tiered ladder, then extract.
     #
@@ -2543,11 +2513,10 @@ async def run_job(
 
     try:
         try:
-            pipeline_kwargs: dict[str, Any] = {"test_fail_slug": test_fail_slug}
-            if source_type == "pdf":
-                pipeline_kwargs["source_type"] = "pdf"
             await _run_pipeline(
-                pool, job_id, task_attempt, url, settings, **pipeline_kwargs
+                pool, job_id, task_attempt, url, settings,
+                source_type=source_type,
+                test_fail_slug=test_fail_slug,
             )
         except TransientError as exc:
             terminal_status = "pending"

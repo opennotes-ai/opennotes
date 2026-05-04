@@ -8,12 +8,13 @@ from uuid import UUID
 from src.cache.scrape_cache import CachedScrape, SupabaseScrapeCache
 from src.config import Settings
 from src.firecrawl_client import FirecrawlClient, ScrapeMetadata
-from src.jobs.pdf_storage import PdfUploadStore
+from src.jobs.pdf_storage import get_pdf_upload_store
 from src.jobs.scrape_quality import ScrapeQuality, classify_scrape
 from src.monitoring import get_logger
 from src.utils.html_sanitize import strip_noise
 from src.utterances.errors import (
     TransientExtractionError,
+    ZeroUtterancesError,
     classify_firecrawl_error,
 )
 from src.utterances.extractor import extract_utterances
@@ -26,7 +27,6 @@ INSERT INTO vibecheck_pdf_archives (job_id, html, expires_at)
 VALUES ($1, $2, now() + INTERVAL '7 days')
 ON CONFLICT (job_id) DO UPDATE
 SET html = EXCLUDED.html,
-    created_at = now(),
     expires_at = EXCLUDED.expires_at
 """
 
@@ -79,9 +79,9 @@ async def pdf_extract_step(
     if not settings.VIBECHECK_PDF_UPLOAD_BUCKET:
         raise PDFExtractionError("PDF upload bucket is not configured")
 
-    signed_url = PdfUploadStore(settings.VIBECHECK_PDF_UPLOAD_BUCKET).signed_read_url(
-        gcs_key
-    )
+    signed_url = get_pdf_upload_store(
+        settings.VIBECHECK_PDF_UPLOAD_BUCKET
+    ).signed_read_url(gcs_key)
     if not signed_url:
         raise PDFExtractionError("could not sign PDF read URL")
 
@@ -112,10 +112,30 @@ async def pdf_extract_step(
     if not archive_probe.markdown or not archive_probe.markdown.strip():
         raise PDFExtractionError("Firecrawl PDF scrape returned no text")
 
+    # TASK-1498.16: populate the scrape cache BEFORE writing the archive row
+    # so that a transient Postgres failure during the archive write (which we
+    # raise as TransientExtractionError below to trigger Cloud Tasks redelivery)
+    # does not re-charge Firecrawl on retry — `extract_utterances` will hit the
+    # cache for `gcs_key` instead of re-scraping.
+    try:
+        await scrape_cache.put(gcs_key, archive_probe)
+    except Exception as exc:
+        logger.warning(
+            "pdf scrape cache put failed gcs_key=%s job_id=%s: %s",
+            gcs_key,
+            job_id,
+            exc,
+        )
+
     try:
         await _store_pdf_archive(pool, job_id, html)
     except Exception as exc:
-        raise PDFExtractionError(f"PDF archive write failed: {exc}") from exc
+        raise TransientExtractionError(
+            provider="postgres",
+            status_code=None,
+            status="ERROR",
+            fallback_message=f"PDF archive write failed: {exc}",
+        ) from exc
 
     try:
         return await extract_utterances(
@@ -127,5 +147,9 @@ async def pdf_extract_step(
         )
     except TransientExtractionError:
         raise
+    except ZeroUtterancesError as exc:
+        raise PDFExtractionError(
+            f"PDF text extraction produced zero utterances: {exc}"
+        ) from exc
     except Exception as exc:
         raise PDFExtractionError(f"PDF utterance extraction failed: {exc}") from exc

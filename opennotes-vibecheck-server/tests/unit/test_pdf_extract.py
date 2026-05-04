@@ -10,7 +10,10 @@ import pytest
 from src.config import Settings
 from src.firecrawl_client import FirecrawlError, ScrapeResult
 from src.jobs import pdf_extract
-from src.utterances.errors import TransientExtractionError
+from src.utterances.errors import (
+    TransientExtractionError,
+    ZeroUtterancesError,
+)
 from src.utterances.schema import Utterance, UtterancesPayload
 
 
@@ -26,11 +29,14 @@ class FakeAcquire:
 
 
 class FakePool:
-    def __init__(self) -> None:
+    def __init__(self, *, raise_on_execute: BaseException | None = None) -> None:
         self.conn = SimpleNamespace(executed=[])
+        self._raise = raise_on_execute
 
         async def execute(query: str, *args: object) -> str:
             self.conn.executed.append((query, args))
+            if self._raise is not None:
+                raise self._raise
             return "INSERT 0 1"
 
         self.conn.execute = execute
@@ -46,6 +52,15 @@ class FakePdfStore:
     def signed_read_url(self, key: str, *, ttl_seconds: int = 900) -> str:
         assert ttl_seconds == 900
         return f"https://storage.example/{key}?signed=1"
+
+
+class FakeScrapeCache:
+    def __init__(self) -> None:
+        self.puts: list[tuple[str, object]] = []
+
+    async def put(self, url: str, scrape: object, **kwargs: object) -> object:
+        self.puts.append((url, scrape))
+        return scrape
 
 
 class FakeClient:
@@ -65,6 +80,10 @@ def _settings() -> Settings:
         Settings,
         SimpleNamespace(VIBECHECK_PDF_UPLOAD_BUCKET="pdf-bucket"),
     )
+
+
+def _fake_store_factory(_bucket: str) -> FakePdfStore:
+    return FakePdfStore("pdf-bucket")
 
 
 async def test_pdf_extract_stores_html_and_extracts_from_signed_url(
@@ -107,10 +126,10 @@ async def test_pdf_extract_stores_html_and_extracts_from_signed_url(
         )
         return payload
 
-    monkeypatch.setattr(pdf_extract, "PdfUploadStore", FakePdfStore)
+    monkeypatch.setattr(pdf_extract, "get_pdf_upload_store", _fake_store_factory)
     monkeypatch.setattr(pdf_extract, "extract_utterances", fake_extract_utterances)
 
-    scrape_cache = object()
+    scrape_cache = FakeScrapeCache()
     result = await pdf_extract.pdf_extract_step(
         pool,
         job_id,
@@ -135,6 +154,10 @@ async def test_pdf_extract_stores_html_and_extracts_from_signed_url(
     cached = cast(Any, extract_calls[0]["scrape"])
     assert cached.markdown == "Alice opens calmly."
     assert cached.metadata.source_url == gcs_key
+    # TASK-1498.16: scrape cache populated BEFORE archive write so retry
+    # after a transient archive failure does not re-pay Firecrawl.
+    assert len(scrape_cache.puts) == 1
+    assert scrape_cache.puts[0][0] == gcs_key
 
 
 async def test_pdf_extract_rejects_html_without_block_content(
@@ -142,7 +165,7 @@ async def test_pdf_extract_rejects_html_without_block_content(
 ) -> None:
     pool = FakePool()
     client = FakeClient(ScrapeResult(html="<span>tiny</span>", markdown="tiny"))
-    monkeypatch.setattr(pdf_extract, "PdfUploadStore", FakePdfStore)
+    monkeypatch.setattr(pdf_extract, "get_pdf_upload_store", _fake_store_factory)
 
     with pytest.raises(
         pdf_extract.PDFExtractionError, match="no usable HTML"
@@ -153,7 +176,7 @@ async def test_pdf_extract_rejects_html_without_block_content(
             uuid4().hex,
             settings=_settings(),
             client=cast(Any, client),
-            scrape_cache=cast(Any, object()),
+            scrape_cache=cast(Any, FakeScrapeCache()),
         )
 
     assert pool.conn.executed == []
@@ -164,7 +187,7 @@ async def test_pdf_extract_preserves_retriable_firecrawl_errors(
 ) -> None:
     pool = FakePool()
     client = FakeClient(FirecrawlError("rate limited", status_code=429))
-    monkeypatch.setattr(pdf_extract, "PdfUploadStore", FakePdfStore)
+    monkeypatch.setattr(pdf_extract, "get_pdf_upload_store", _fake_store_factory)
 
     with pytest.raises(TransientExtractionError) as info:
         await pdf_extract.pdf_extract_step(
@@ -173,7 +196,7 @@ async def test_pdf_extract_preserves_retriable_firecrawl_errors(
             uuid4().hex,
             settings=_settings(),
             client=cast(Any, client),
-            scrape_cache=cast(Any, object()),
+            scrape_cache=cast(Any, FakeScrapeCache()),
         )
 
     assert info.value.provider == "firecrawl"
@@ -200,7 +223,7 @@ async def test_pdf_extract_preserves_transient_utterance_errors(
             fallback_message="Vertex 503",
         )
 
-    monkeypatch.setattr(pdf_extract, "PdfUploadStore", FakePdfStore)
+    monkeypatch.setattr(pdf_extract, "get_pdf_upload_store", _fake_store_factory)
     monkeypatch.setattr(pdf_extract, "extract_utterances", fake_extract_utterances)
 
     with pytest.raises(TransientExtractionError) as info:
@@ -210,8 +233,76 @@ async def test_pdf_extract_preserves_transient_utterance_errors(
             uuid4().hex,
             settings=_settings(),
             client=cast(Any, client),
-            scrape_cache=cast(Any, object()),
+            scrape_cache=cast(Any, FakeScrapeCache()),
         )
 
     assert info.value.provider == "vertex"
     assert len(pool.conn.executed) == 1
+
+
+async def test_pdf_extract_archive_db_failure_is_transient(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """TASK-1498.16: A transient Postgres failure during the archive write
+    must surface as TransientExtractionError so Cloud Tasks redelivers the
+    job, instead of permanently failing a job whose content already extracted
+    successfully."""
+    pool = FakePool(raise_on_execute=RuntimeError("connection reset"))
+    client = FakeClient(
+        ScrapeResult(
+            html="<main><p>Alice opens calmly.</p></main>",
+            markdown="Alice opens calmly.",
+        )
+    )
+    monkeypatch.setattr(pdf_extract, "get_pdf_upload_store", _fake_store_factory)
+
+    scrape_cache = FakeScrapeCache()
+    with pytest.raises(TransientExtractionError) as info:
+        await pdf_extract.pdf_extract_step(
+            pool,
+            uuid4(),
+            uuid4().hex,
+            settings=_settings(),
+            client=cast(Any, client),
+            scrape_cache=cast(Any, scrape_cache),
+        )
+
+    assert info.value.provider == "postgres"
+    assert "PDF archive write failed" in info.value.fallback_message
+    # Cache write happened BEFORE the archive write, so the next retry
+    # picks up the cached scrape rather than re-charging Firecrawl.
+    assert len(scrape_cache.puts) == 1
+
+
+async def test_pdf_extract_zero_utterances_is_terminal_pdf_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """TASK-1498.17: ZeroUtterancesError is caught explicitly so the failure
+    code distinguishes 'no utterances' from generic extraction failure, while
+    still terminating as PDFExtractionError (no tier escalation for PDFs)."""
+    pool = FakePool()
+    client = FakeClient(
+        ScrapeResult(
+            html="<main><p>Alice opens calmly.</p></main>",
+            markdown="Alice opens calmly.",
+        )
+    )
+
+    async def fake_extract_utterances(*args: object, **kwargs: object) -> None:
+        raise ZeroUtterancesError("Gemini returned 0 utterances")
+
+    monkeypatch.setattr(pdf_extract, "get_pdf_upload_store", _fake_store_factory)
+    monkeypatch.setattr(pdf_extract, "extract_utterances", fake_extract_utterances)
+
+    with pytest.raises(pdf_extract.PDFExtractionError) as info:
+        await pdf_extract.pdf_extract_step(
+            pool,
+            uuid4(),
+            uuid4().hex,
+            settings=_settings(),
+            client=cast(Any, client),
+            scrape_cache=cast(Any, FakeScrapeCache()),
+        )
+
+    assert "zero utterances" in str(info.value)
+    assert info.value.__cause__.__class__ is ZeroUtterancesError
