@@ -40,6 +40,11 @@ class Settings(BaseSettings):
     # screenshot_storage_key. Provisioned in infra (gcs_screenshots.tf).
     VIBECHECK_GCS_SCREENSHOT_BUCKET: str = ""
 
+    # TASK-1498: bucket for direct browser-to-GCS PDF uploads. The
+    # POST /api/upload-pdf route fails fast (500) if unset so callers
+    # never get a partially configured URL.
+    VIBECHECK_PDF_UPLOAD_BUCKET: str = ""
+
     # TASK-1483.09: per-real-user rate limiting now lives at the web tier
     # (vibecheck-web reads the GCLB-set X-Forwarded-For and enforces a
     # per-IP bucket before calling /api/analyze). This backend limiter is
