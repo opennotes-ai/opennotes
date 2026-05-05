@@ -72,6 +72,8 @@ def test_section_slug_matches_vibecheck_wire_contract():
         "opinions_sentiments__sentiment",
         "opinions_sentiments__subjective",
     ]
+    assert len(list(schemas.SectionSlug)) == 10
+    assert "recommendation_agent" not in {slug.value for slug in schemas.SectionSlug}
 
 
 @pytest.mark.unit
