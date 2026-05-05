@@ -117,7 +117,7 @@ describe("<SafetyModerationReport />", () => {
     expect(categories[1]?.getAttribute("data-color")).toBe("yellow");
   });
 
-  it("groups matches by neutral moderator labels", () => {
+  it("groups matches by provider name", () => {
     const matches: HarmfulContentMatch[] = [
       {
         utterance_id: "utt-1",

@@ -1240,7 +1240,7 @@ describe("Sidebar (done slots, per-slug reports)", () => {
     expect(subjectiveReport.textContent).not.toContain("mean valence");
   });
 
-  it("neutralizes safety provider labels and hides non-harm confidence numbers", () => {
+  it("shows explicit provider names and hides non-harm confidence numbers", () => {
     const sections = doneSections();
     sections.safety__moderation = {
       state: "done",
