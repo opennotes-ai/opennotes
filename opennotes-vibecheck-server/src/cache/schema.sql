@@ -631,6 +631,17 @@ REVOKE ALL ON FUNCTION public.vibecheck_sweep_orphan_jobs() FROM PUBLIC, anon, a
 -- Scrape bundles are TTL-pruned independently via vibecheck_scrapes.expires_at
 -- (used by future tickets); kept here as a single hourly maintenance pass.
 -- See vibecheck_sweep_orphan_jobs for the SECURITY DEFINER rationale.
+-- expired_at: soft-delete marker set by vibecheck_purge_terminal_jobs (TASK-1541).
+-- Terminal jobs older than 7 days have their sensitive payload columns nulled
+-- and `expired_at = now()` set so the row sticks around (preserving job_id +
+-- url + status for audit/idempotency) without retaining user-content payloads.
+ALTER TABLE public.vibecheck_jobs
+  ADD COLUMN IF NOT EXISTS expired_at TIMESTAMPTZ;
+
+CREATE INDEX IF NOT EXISTS vibecheck_jobs_expired_at_idx
+  ON public.vibecheck_jobs (expired_at)
+  WHERE expired_at IS NOT NULL;
+
 CREATE OR REPLACE FUNCTION public.vibecheck_purge_terminal_jobs()
 RETURNS INT
 LANGUAGE plpgsql
@@ -640,11 +651,28 @@ AS $$
 DECLARE
     purged INT;
 BEGIN
-    DELETE FROM public.vibecheck_jobs
-    WHERE status IN ('done', 'partial', 'failed')
-      AND finished_at IS NOT NULL
-      AND finished_at < (pg_catalog.now() - INTERVAL '7 days');
-    GET DIAGNOSTICS purged = ROW_COUNT;
+    WITH expired AS (
+        UPDATE public.vibecheck_jobs
+        SET
+            expired_at            = pg_catalog.now(),
+            sidebar_payload       = NULL,
+            sections              = '{}'::jsonb,
+            error_message         = NULL,
+            headline_summary      = NULL,
+            safety_recommendation = NULL,
+            last_stage            = NULL
+        WHERE status IN ('done', 'partial', 'failed')
+          AND finished_at IS NOT NULL
+          AND finished_at < (pg_catalog.now() - INTERVAL '7 days')
+          AND expired_at IS NULL
+        RETURNING job_id
+    ),
+    del_utterances AS (
+        DELETE FROM public.vibecheck_job_utterances
+        WHERE job_id IN (SELECT job_id FROM expired)
+        RETURNING 1
+    )
+    SELECT COUNT(*) INTO purged FROM expired;
 
     DELETE FROM public.vibecheck_scrapes
     WHERE expires_at < pg_catalog.now();

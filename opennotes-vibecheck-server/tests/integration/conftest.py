@@ -104,6 +104,7 @@ CREATE TABLE IF NOT EXISTS vibecheck_jobs (
     last_stage TEXT,
     preview_description TEXT,
     extract_transient_attempts INT NOT NULL DEFAULT 0,
+    expired_at TIMESTAMPTZ,
     CONSTRAINT vibecheck_jobs_status_check
         CHECK (status IN ('pending', 'extracting', 'analyzing', 'done', 'partial', 'failed')),
     CONSTRAINT vibecheck_jobs_error_code_check
@@ -240,6 +241,46 @@ BEGIN
         );
     GET DIAGNOSTICS swept = ROW_COUNT;
     RETURN swept;
+END;
+$$;
+
+-- Purge function — verbatim contract copy of src/cache/schema.sql so the
+-- purge test exercises the real soft-delete + utterance-delete CTE.
+-- SECURITY DEFINER is elided since the testcontainer Postgres has no RLS
+-- configured.
+CREATE OR REPLACE FUNCTION vibecheck_purge_terminal_jobs()
+RETURNS INT
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    purged INT;
+BEGIN
+    WITH expired AS (
+        UPDATE vibecheck_jobs
+        SET
+            expired_at            = now(),
+            sidebar_payload       = NULL,
+            sections              = '{}'::jsonb,
+            error_message         = NULL,
+            headline_summary      = NULL,
+            safety_recommendation = NULL,
+            last_stage            = NULL
+        WHERE status IN ('done', 'partial', 'failed')
+          AND finished_at IS NOT NULL
+          AND finished_at < (now() - INTERVAL '7 days')
+          AND expired_at IS NULL
+        RETURNING job_id
+    ),
+    del_utterances AS (
+        DELETE FROM vibecheck_job_utterances
+        WHERE job_id IN (SELECT job_id FROM expired)
+        RETURNING 1
+    )
+    SELECT COUNT(*) INTO purged FROM expired;
+
+    DELETE FROM vibecheck_analyses WHERE expires_at < now();
+
+    RETURN purged;
 END;
 $$;
 """
