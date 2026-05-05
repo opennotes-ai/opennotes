@@ -32,6 +32,13 @@ export default function ExpiredAnalysisCard(props: ExpiredAnalysisCardProps): JS
         >
           This analysis has expired
         </p>
+        <Show when={props.expiredAt}>
+          {(date) => (
+            <p class="text-xs text-muted-foreground" data-testid="expired-analysis-date">
+              Expired {date().toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" })}
+            </p>
+          )}
+        </Show>
         <Show when={props.url}>
           <p
             class="break-all text-xs text-muted-foreground"

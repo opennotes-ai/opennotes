@@ -2368,6 +2368,7 @@ describe("AnalyzePage Original tab — soft-disabled when canIframe=false (TASK-
         utterance_count: 0,
       } as unknown as JobState);
       expect(await screen.findByTestId("expired-analysis-card")).not.toBeNull();
+      expect(screen.queryByTestId("expired-analysis-date")).not.toBeNull();
       expect(screen.queryByTestId("job-failure-card")).toBeNull();
       expect(screen.queryByTestId("analyze-layout")).toBeNull();
     });

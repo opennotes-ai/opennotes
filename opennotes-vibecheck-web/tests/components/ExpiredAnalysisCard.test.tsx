@@ -83,4 +83,17 @@ describe("<ExpiredAnalysisCard />", () => {
       (typeof form.action === "string" ? form.action : "");
     expect(resolved).toContain("/__mock_analyze_action");
   });
+
+  it("renders formatted expiredAt date when provided", async () => {
+    renderCard({ url: URL, expiredAt: new Date("2026-04-28T10:00:00Z") });
+    const dateEl = await screen.findByTestId("expired-analysis-date");
+    expect(dateEl).not.toBeNull();
+    const text = dateEl.textContent ?? "";
+    expect(text.match(/Apr|28|2026/)).not.toBeNull();
+  });
+
+  it("does not render expiredAt date when null", async () => {
+    renderCard({ url: URL, expiredAt: null });
+    expect(screen.queryByTestId("expired-analysis-date")).toBeNull();
+  });
 });
