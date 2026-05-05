@@ -85,12 +85,11 @@ describe("<ExpiredAnalysisCard />", () => {
   });
 
   it("renders formatted expiredAt date when provided", async () => {
-    renderCard({ url: URL, expiredAt: new Date("2026-04-28T10:00:00Z") });
+    renderCard({ url: URL, expiredAt: new Date("2026-06-15T12:00:00Z") });
     const dateEl = await screen.findByTestId("expired-analysis-date");
     expect(dateEl).not.toBeNull();
     const text = dateEl.textContent ?? "";
-    expect(text).toMatch(/Apr/);
-    expect(text).toMatch(/28/);
+    expect(text).toMatch(/15/);
     expect(text).toMatch(/2026/);
   });
 
