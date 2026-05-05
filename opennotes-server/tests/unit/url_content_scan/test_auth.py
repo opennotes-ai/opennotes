@@ -24,9 +24,9 @@ def _make_api_key(scopes: list[str]) -> APIKey:
 
 
 async def test_get_url_scan_api_key_rejects_missing_credentials():
-    from src.url_content_scan.auth import get_url_scan_api_key
+    from src.url_content_scan.auth import UrlScanAuthError, get_url_scan_api_key
 
-    with pytest.raises(HTTPException) as exc_info:
+    with pytest.raises(UrlScanAuthError) as exc_info:
         await get_url_scan_api_key(
             request=_make_request(),
             credentials=None,
@@ -35,6 +35,8 @@ async def test_get_url_scan_api_key_rejects_missing_credentials():
         )
 
     assert exc_info.value.status_code == 401
+    assert exc_info.value.error_code == "unauthorized"
+    assert exc_info.value.message == "Missing API key credentials"
 
 
 async def test_get_url_scan_api_key_rejects_jwt_without_invoking_jwt_or_user_loader():
@@ -70,7 +72,7 @@ async def test_get_url_scan_api_key_rejects_jwt_without_invoking_jwt_or_user_loa
 
 
 async def test_get_url_scan_api_key_rejects_key_missing_scope():
-    from src.url_content_scan.auth import get_url_scan_api_key
+    from src.url_content_scan.auth import UrlScanAuthError, get_url_scan_api_key
 
     request = _make_request()
     api_key = _make_api_key(scopes=["notes:read"])
@@ -80,7 +82,7 @@ async def test_get_url_scan_api_key_rejects_key_missing_scope():
             "src.url_content_scan.auth.verify_api_key",
             new=AsyncMock(return_value=(api_key, MagicMock())),
         ),
-        pytest.raises(HTTPException) as exc_info,
+        pytest.raises(UrlScanAuthError) as exc_info,
     ):
         await get_url_scan_api_key(
             request=request,
@@ -90,6 +92,8 @@ async def test_get_url_scan_api_key_rejects_key_missing_scope():
         )
 
     assert exc_info.value.status_code == 403
+    assert exc_info.value.error_code == "forbidden"
+    assert exc_info.value.message == "API key lacks required scope"
 
 
 async def test_get_url_scan_api_key_accepts_scoped_key_and_attaches_it_to_request():
