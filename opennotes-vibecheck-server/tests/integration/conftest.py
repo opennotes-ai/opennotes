@@ -280,13 +280,8 @@ BEGIN
     )
     SELECT COUNT(*) INTO purged FROM expired;
 
-    DELETE FROM vibecheck_analyses
-    WHERE expires_at < now()
-      AND NOT EXISTS (
-          SELECT 1 FROM vibecheck_jobs j
-          WHERE j.normalized_url = vibecheck_analyses.url
-            AND j.protected = true
-      );
+    DELETE FROM vibecheck_scrapes
+    WHERE expires_at < now();
 
     DELETE FROM vibecheck_pdf_archives
     WHERE expires_at < now()
@@ -295,6 +290,17 @@ BEGIN
           WHERE j.job_id = vibecheck_pdf_archives.job_id
             AND j.protected = true
       );
+
+    DELETE FROM vibecheck_analyses
+    WHERE expires_at < now()
+      AND NOT EXISTS (
+          SELECT 1 FROM vibecheck_jobs j
+          WHERE j.normalized_url = vibecheck_analyses.url
+            AND j.protected = true
+      );
+
+    DELETE FROM vibecheck_web_risk_lookups
+    WHERE expires_at < now();
 
     RETURN purged;
 END;
