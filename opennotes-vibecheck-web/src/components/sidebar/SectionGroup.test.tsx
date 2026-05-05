@@ -1240,7 +1240,7 @@ describe("Sidebar (done slots, per-slug reports)", () => {
     expect(subjectiveReport.textContent).not.toContain("mean valence");
   });
 
-  it("neutralizes safety provider labels and hides non-harm confidence numbers", () => {
+  it("shows explicit provider names and hides non-harm confidence numbers", () => {
     const sections = doneSections();
     sections.safety__moderation = {
       state: "done",
@@ -1274,9 +1274,7 @@ describe("Sidebar (done slots, per-slug reports)", () => {
     const labels = screen
       .getAllByTestId("safety-provider-label")
       .map((node) => node.textContent);
-    expect(labels).toEqual(["Moderator A", "Moderator B"]);
-    expect(container.textContent).not.toContain("OpenAI moderation");
-    expect(container.textContent).not.toContain("Google Natural Language");
+    expect(labels).toEqual(["OpenAI Moderation", "Google Natural Language Moderation"]);
     expect(container.textContent).toContain("91%");
     expect(container.textContent).not.toContain("72%");
     expect(screen.queryByTestId("image-moderation-max")).toBeNull();
