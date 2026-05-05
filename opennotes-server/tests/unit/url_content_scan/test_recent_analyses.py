@@ -251,6 +251,26 @@ async def test_list_recent_strips_url_fragment_before_returning_source_url() -> 
 
 
 @pytest.mark.asyncio
+async def test_list_recent_uses_sanitized_source_url_for_preview_fallback() -> None:
+    pool = _FakePool(
+        [
+            _row(
+                normalized_url="https://example.com/page",
+                source_url="https://example.com/page#access_token=abc",
+                page_title="",
+                preview_description="",
+            )
+        ]
+    )
+
+    result = await list_recent(pool, limit=5, signer=_StubSigner())
+
+    assert len(result) == 1
+    assert result[0].preview_description == "https://example.com/page"
+    assert "access_token" not in result[0].preview_description
+
+
+@pytest.mark.asyncio
 async def test_list_recent_overfetches_limit_times_eight() -> None:
     pool = _FakePool([_row(normalized_url="https://example.com/page")])
 

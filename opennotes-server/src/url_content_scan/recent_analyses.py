@@ -211,7 +211,7 @@ async def list_recent(
         if signed is None:
             continue
         preview_description = str(
-            row.get("preview_description") or row.get("page_title") or source_url
+            row.get("preview_description") or row.get("page_title") or sanitized_source_url
         )
         out.append(
             RecentAnalysis(
