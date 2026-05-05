@@ -6,6 +6,7 @@ from collections import defaultdict
 from collections.abc import Sequence
 from datetime import datetime
 from typing import Protocol
+from urllib.parse import quote
 
 from lxml import html as lxml_html
 from lxml.html import HtmlElement
@@ -48,8 +49,11 @@ def _body_html_to_markdown_text(body: str) -> str:  # noqa: PLR0912
         br.drop_tag()
     for list_item in root.xpath(".//li"):
         if isinstance(list_item, HtmlElement):
-            list_item.text = f"- {_collapse_inline_whitespace(list_item.text or '')}".rstrip()
-            list_item.tail = f"\n{list_item.tail or ''}"
+            tail = list_item.tail or ""
+            text = _collapse_inline_whitespace(list_item.text_content())
+            list_item.clear()
+            list_item.text = f"- {text}".rstrip()
+            list_item.tail = f"\n{tail}"
     for tag_name in _BLOCK_TAGS:
         for block in root.xpath(f".//{tag_name}"):
             if isinstance(block, HtmlElement):
@@ -83,7 +87,7 @@ def _to_markdown_lines(nodes: Sequence[_CommentLike]) -> list[str]:
     def walk(node: _CommentLike, depth: int) -> None:
         indent = "  " * depth
         body = _body_html_to_markdown_text(node.body or "")
-        author = node.author_username or "anonymous"
+        author = quote(node.author_username or "anonymous", safe="")
         parent = node.parent_id or "null"
         lines.append(
             f"{indent}- [{node.id}] author={author} created_at={node.created_at.isoformat()} parent={parent}"

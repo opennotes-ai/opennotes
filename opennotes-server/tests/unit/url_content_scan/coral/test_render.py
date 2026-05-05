@@ -51,3 +51,35 @@ def test_render_to_markdown_preserves_anchor_href_targets() -> None:
 
     assert "Read the [source](https://example.com/ref) before replying." in rendered
     assert "<a " not in rendered
+
+
+def test_render_to_markdown_url_encodes_authors_with_spaces() -> None:
+    nodes = [
+        CoralCommentNode(
+            id="comment-1",
+            body="<p>Hello.</p>",
+            author_username="Alice Smith",
+            parent_id=None,
+            created_at=datetime(2026, 4, 29, 10, 0, tzinfo=UTC),
+        )
+    ]
+
+    rendered = render_to_markdown(nodes)
+
+    assert "[comment-1] author=Alice%20Smith" in rendered
+
+
+def test_render_to_markdown_preserves_nested_inline_text_in_list_items() -> None:
+    nodes = [
+        CoralCommentNode(
+            id="comment-1",
+            body="<ul><li>One <strong>nested</strong> item</li></ul>",
+            author_username="alice",
+            parent_id=None,
+            created_at=datetime(2026, 4, 29, 10, 0, tzinfo=UTC),
+        )
+    ]
+
+    rendered = render_to_markdown(nodes)
+
+    assert "- One nested item" in rendered
