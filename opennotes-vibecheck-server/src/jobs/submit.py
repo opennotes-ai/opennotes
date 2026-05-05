@@ -195,7 +195,10 @@ async def _insert_cached_done_job(
             """,
             normalized_url,
         )
-    assert isinstance(job_id, UUID)
+    if not isinstance(job_id, UUID):
+        raise RuntimeError(
+            "cached done job re-fetch returned None; possible concurrent eviction"
+        )
     return job_id
 
 
@@ -355,13 +358,21 @@ async def _find_source_job_with_utterances(
 
 async def _copy_utterances_to_job(
     conn: Any, source_job_id: UUID, target_job_id: UUID
-) -> None:
-    existing = await conn.fetchval(
-        "SELECT COUNT(*) FROM vibecheck_job_utterances WHERE job_id = $1",
-        target_job_id,
-    )
-    if existing and existing > 0:
-        return
+) -> bool:
+    """Copy utterance rows from source to target, idempotently.
+
+    Uses a single WHERE NOT EXISTS INSERT to avoid the TOCTOU window between a
+    COUNT check and a subsequent INSERT — two concurrent callers get the same
+    atomic semantics without a unique index.
+
+    Copies all utterance kinds (not just comment-*): the caller qualifies the
+    source job by comment-% existence, but article/post rows from the same job
+    are valid annotation targets too.
+
+    Returns True if the target now has utterance rows (pre-existing or just
+    copied). Returns False when the source job's utterances were purged between
+    selection and copy — the caller should treat this as an eviction failure.
+    """
     await conn.execute(
         """
         INSERT INTO vibecheck_job_utterances (
@@ -373,10 +384,18 @@ async def _copy_utterances_to_job(
             parent_id, position, page_title, page_kind
         FROM vibecheck_job_utterances
         WHERE job_id = $1
+          AND NOT EXISTS (
+              SELECT 1 FROM vibecheck_job_utterances WHERE job_id = $2
+          )
         """,
         source_job_id,
         target_job_id,
     )
+    count = await conn.fetchval(
+        "SELECT COUNT(*) FROM vibecheck_job_utterances WHERE job_id = $1",
+        target_job_id,
+    )
+    return bool(count and count > 0)
 
 
 async def _evict_url_cache(conn: Any, normalized_url: str) -> None:
@@ -417,7 +436,14 @@ async def _materialize_cache_hit(
             host=host,
             sidebar_payload=cached_payload,
         )
-        await _copy_utterances_to_job(conn, source_job_id, job_id)
+        has_utterances = await _copy_utterances_to_job(conn, source_job_id, job_id)
+        if not has_utterances:
+            await _evict_url_cache(conn, normalized_url)
+            logger.warning(
+                "evicted analysis cache for %s: source job utterances purged before copy",
+                normalized_url,
+            )
+            return None
     else:
         job_id = await _insert_cached_done_job(
             conn,

@@ -327,6 +327,65 @@ class TestCacheHitUtteranceMaterialization:
 
         assert not await _cache_exists(pool, url)
 
+    async def test_copy_utterances_is_idempotent_second_call_does_not_double_rows(
+        self, pool: Any
+    ) -> None:
+        from src.jobs.submit import _copy_utterances_to_job
+
+        url = "https://latimes.example.com/coral-idempotent"
+        source_job_id = await _insert_fresh_done_job(pool, url)
+        await _insert_utterances(pool, source_job_id, count=3)
+
+        async with pool.acquire() as conn:
+            target_job_id = await conn.fetchval(
+                """
+                INSERT INTO vibecheck_jobs
+                    (url, normalized_url, host, status, cached, finished_at)
+                VALUES ($1, $1, 'latimes.example.com', 'done', true, now())
+                RETURNING job_id
+                """,
+                url + "-target",
+            )
+        assert isinstance(target_job_id, UUID)
+
+        async with pool.acquire() as conn:
+            result1 = await _copy_utterances_to_job(conn, source_job_id, target_job_id)
+        async with pool.acquire() as conn:
+            result2 = await _copy_utterances_to_job(conn, source_job_id, target_job_id)
+
+        assert result1 is True
+        assert result2 is True
+        count = await _utterance_count(pool, target_job_id)
+        assert count == 3
+
+    async def test_copy_utterances_returns_false_when_source_has_no_rows(
+        self, pool: Any
+    ) -> None:
+        from src.jobs.submit import _copy_utterances_to_job
+
+        url = "https://latimes.example.com/coral-source-empty"
+        source_job_id = await _insert_fresh_done_job(pool, url)
+        # No utterances inserted for source — simulates purged utterances
+
+        async with pool.acquire() as conn:
+            target_job_id = await conn.fetchval(
+                """
+                INSERT INTO vibecheck_jobs
+                    (url, normalized_url, host, status, cached, finished_at)
+                VALUES ($1, $1, 'latimes.example.com', 'done', true, now())
+                RETURNING job_id
+                """,
+                url + "-target",
+            )
+        assert isinstance(target_job_id, UUID)
+
+        async with pool.acquire() as conn:
+            result = await _copy_utterances_to_job(conn, source_job_id, target_job_id)
+
+        assert result is False
+        count = await _utterance_count(pool, target_job_id)
+        assert count == 0
+
     async def test_cache_hit_with_comment_refs_but_only_non_comment_utterances_evicts_cache(
         self, pool: Any
     ) -> None:
