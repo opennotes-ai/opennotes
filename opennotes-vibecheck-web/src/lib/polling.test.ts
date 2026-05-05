@@ -505,6 +505,7 @@ describe("createPollingResource", () => {
       expect(mockPollJob).toHaveBeenCalledTimes(1);
 
       refetch();
+      await flushMicrotasks();
       expect(mockPollJob).toHaveBeenCalledTimes(2);
       expect(state()?.status).toBe("done");
 

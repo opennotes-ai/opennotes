@@ -108,7 +108,7 @@ export function createPollingResource(
     if (gen !== generation || stopped || currentJobId === null) return;
     const idAtStart = currentJobId;
     try {
-      void revalidate(getJobState.keyFor(idAtStart));
+      await revalidate(getJobState.keyFor(idAtStart));
       const result = await getJobState(idAtStart);
       if (gen !== generation || stopped) return;
       consecutiveErrors = 0;
