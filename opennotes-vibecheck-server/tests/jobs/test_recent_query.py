@@ -313,6 +313,7 @@ async def _seed_job(
     sections: dict[str, dict[str, str]] | None = None,
     preview: str | None = "preview blurb",
     finished_at: datetime | None = None,
+    expired_at: datetime | None = None,
 ) -> UUID:
     sections = sections if sections is not None else _full_sections()
     if finished_at is None and status in ("done", "partial", "failed"):
@@ -322,8 +323,8 @@ async def _seed_job(
             """
             INSERT INTO vibecheck_jobs
                 (url, normalized_url, host, status, sections, finished_at,
-                 preview_description, source_type)
-            VALUES ($1, $1, 'example.com', $2, $3::jsonb, $4, $5, $6)
+                 preview_description, source_type, expired_at)
+            VALUES ($1, $1, 'example.com', $2, $3::jsonb, $4, $5, $6, $7)
             RETURNING job_id
             """,
             url,
@@ -332,6 +333,7 @@ async def _seed_job(
             finished_at,
             preview,
             source_type,
+            expired_at,
         )
 
 
@@ -533,22 +535,7 @@ class TestListRecentExclusionRules:
         analysis card with empty sidebar_payload.
         """
         url = "https://example.com/expired-job"
-        async with db_pool.acquire() as conn:
-            await conn.execute(
-                """
-                INSERT INTO vibecheck_jobs
-                    (url, normalized_url, host, status, sections,
-                     finished_at, preview_description, expired_at,
-                     source_type)
-                VALUES ($1, $1, 'example.com', 'done', $2::jsonb,
-                        $3, $4, $5, 'url')
-                """,
-                url,
-                json.dumps(_full_sections()),
-                datetime.now(UTC),
-                "preview blurb",
-                datetime.now(UTC),
-            )
+        await _seed_job(db_pool, url=url, expired_at=datetime.now(UTC))
         await _seed_scrape(db_pool, url=url)
         result = await list_recent(db_pool, limit=5, signer=_StubSigner())
         assert result == []

@@ -67,6 +67,7 @@ async def _insert_unsafe_url_row(
     expired: bool,
 ) -> UUID:
     job_id = uuid4()
+    raw_url = normalized_url + "?ref=test"
     await conn.execute(
         """
         INSERT INTO vibecheck_jobs (
@@ -74,12 +75,13 @@ async def _insert_unsafe_url_row(
             error_code, error_message, finished_at, expired_at
         )
         VALUES (
-            $1, $2, $2, 'example.com', 'failed', $3,
+            $1, $2, $3, 'example.com', 'failed', $4,
             'unsafe_url', 'flagged: MALWARE', now(),
-            CASE WHEN $4 THEN now() ELSE NULL END
+            CASE WHEN $5 THEN now() ELSE NULL END
         )
         """,
         job_id,
+        raw_url,
         normalized_url,
         uuid4(),
         expired,
