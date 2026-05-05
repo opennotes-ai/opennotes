@@ -1062,6 +1062,61 @@ class TestArchivePreview:
         assert resp.status_code == 200
         assert 'data-utterance-id="comment-0-aaa"' in resp.text
 
+    def test_coral_archive_html_with_comment_utterances_returns_annotated_markers(
+        self, client: TestClient
+    ) -> None:
+        from src.cache.scrape_cache import CachedScrape
+        from src.utterances.schema import Utterance
+
+        coral_html = (
+            '<main><section aria-label="Comments" data-coral-comments="true">'
+            "<article class=\"comment\"><p>Small print matters.</p></article>"
+            "</section></main>"
+        )
+
+        class StubCache:
+            async def get(
+                self, url: str, *, tier: str = "scrape"
+            ) -> CachedScrape:
+                if tier == "interact":
+                    return CachedScrape(html=coral_html)
+                return CachedScrape(html=coral_html)
+
+        async def stub_lookup(
+            pool: object, job_id: object, requested_url: str
+        ) -> list[Utterance]:
+            return [
+                Utterance(
+                    utterance_id="comment-36-bcec4f13",
+                    kind="comment",
+                    text="Small print matters.",
+                )
+            ]
+
+        _client_state(client).db_pool = object()
+        try:
+            with (
+                patch("src.routes.frame.get_scrape_cache", return_value=StubCache()),
+                patch(
+                    "src.routes.frame.get_utterances_for_archive",
+                    side_effect=stub_lookup,
+                    create=True,
+                ),
+            ):
+                resp = client.get(
+                    "/api/archive-preview",
+                    params={
+                        "url": "https://latimes.example.com/coral-article",
+                        "job_id": "f4646c83-add2-4a54-ac8a-38f2d31f51ea",
+                    },
+                )
+        finally:
+            del _client_state(client).db_pool
+
+        assert resp.status_code == 200
+        assert 'data-coral-comments="true"' in resp.text
+        assert 'data-utterance-id="comment-36-bcec4f13"' in resp.text
+
     def test_cached_html_without_job_id_preserves_unannotated_response(
         self, client: TestClient
     ) -> None:
