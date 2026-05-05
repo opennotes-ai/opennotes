@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
@@ -353,3 +355,48 @@ async def test_run_safety_recommendation_uses_injected_agent_runner() -> None:
     assert captured["inputs"] is not None
     assert result.level is SafetyLevel.CAUTION
     assert result.unavailable_inputs == ["video_moderation"]
+
+
+async def test_run_safety_recommendation_uses_default_agent_runner(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.url_content_scan.analyses.safety import recommendation as recommendation_module
+
+    model = object()
+    agent_run = AsyncMock(
+        return_value=SimpleNamespace(
+            output=SafetyRecommendation(
+                level=SafetyLevel.CAUTION,
+                rationale="One isolated signal needs review.",
+                top_signals=["SOCIAL_ENGINEERING on https://example.com/page"],
+                unavailable_inputs=["video_moderation"],
+            )
+        )
+    )
+    monkeypatch.setattr(
+        recommendation_module,
+        "_default_recommendation_model",
+        lambda: model,
+    )
+    monkeypatch.setattr(recommendation_module.recommendation_agent, "run", agent_run)
+
+    result = await recommendation_module.run_safety_recommendation(
+        recommendation_module.SafetyRecommendationInputs(
+            harmful_content_matches=[],
+            web_risk_findings=[],
+            image_moderation_matches=[],
+            video_moderation_matches=[],
+            unavailable_inputs=["video_moderation"],
+        )
+    )
+
+    assert result.level is SafetyLevel.CAUTION
+    assert result.unavailable_inputs == ["video_moderation"]
+    agent_run.assert_awaited_once()
+    payload = json.loads(agent_run.await_args.args[0])
+    assert payload["unavailable_inputs"] == ["video_moderation"]
+    assert agent_run.await_args.kwargs["model"] is model
+    assert (
+        agent_run.await_args.kwargs["instructions"]
+        == recommendation_module.RECOMMENDATION_SYSTEM_PROMPT
+    )
