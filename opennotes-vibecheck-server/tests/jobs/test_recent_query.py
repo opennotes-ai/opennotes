@@ -525,6 +525,34 @@ class TestListRecentExclusionRules:
         result = await list_recent(db_pool, limit=5, signer=_StubSigner())
         assert result == []
 
+    async def test_excludes_expired_jobs(self, db_pool: Any) -> None:
+        """TASK-1541.04: expired (soft-deleted) jobs must not appear in
+        the gallery. The purge sets `expired_at` but does not null
+        `preview_description`, so without the `expired_at IS NULL`
+        guard the row would leak into list_recent and render a broken
+        analysis card with empty sidebar_payload.
+        """
+        url = "https://example.com/expired-job"
+        async with db_pool.acquire() as conn:
+            await conn.execute(
+                """
+                INSERT INTO vibecheck_jobs
+                    (url, normalized_url, host, status, sections,
+                     finished_at, preview_description, expired_at,
+                     source_type)
+                VALUES ($1, $1, 'example.com', 'done', $2::jsonb,
+                        $3, $4, $5, 'url')
+                """,
+                url,
+                json.dumps(_full_sections()),
+                datetime.now(UTC),
+                "preview blurb",
+                datetime.now(UTC),
+            )
+        await _seed_scrape(db_pool, url=url)
+        result = await list_recent(db_pool, limit=5, signer=_StubSigner())
+        assert result == []
+
 
 # TASK-1488.16 — gallery join must prefer tier='interact' when both tier
 # rows exist for the same URL. Without the preference, the JOIN is
