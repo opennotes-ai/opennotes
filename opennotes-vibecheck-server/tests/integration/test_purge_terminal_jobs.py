@@ -98,6 +98,35 @@ async def _analyses_exists(pool: Any, *, url: str) -> bool:
     return row is not None
 
 
+async def _insert_pdf_archive(
+    pool: Any,
+    *,
+    job_id: UUID,
+    expires_delta: timedelta,
+    html: str = "<html>archived</html>",
+) -> None:
+    expires_at = datetime.now(UTC) - expires_delta
+    async with pool.acquire() as conn:
+        await conn.execute(
+            """
+            INSERT INTO vibecheck_pdf_archives (job_id, html, expires_at)
+            VALUES ($1, $2, $3)
+            """,
+            job_id,
+            html,
+            expires_at,
+        )
+
+
+async def _pdf_archive_exists(pool: Any, *, job_id: UUID) -> bool:
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT 1 FROM vibecheck_pdf_archives WHERE job_id = $1",
+            job_id,
+        )
+    return row is not None
+
+
 async def _insert_utterance(pool: Any, job_id: UUID, *, text: str = "hello") -> None:
     async with pool.acquire() as conn:
         await conn.execute(
@@ -365,3 +394,53 @@ async def test_unprotecting_job_lets_next_purge_soft_delete(db_pool: Any) -> Non
     assert row_two["protected"] is False
     assert row_two["expired_at"] is not None
     assert row_two["sidebar_payload"] is None
+
+
+# ---------------------------------------------------------------------------
+# TASK-1540.03: protected flag also exempts the vibecheck_pdf_archives row.
+# Unlike URL-keyed regeneration caches, pdf_archives stores user-uploaded
+# PDF HTML that cannot be re-fetched from the original URL.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_pdf_archive_survives_when_job_is_protected(db_pool: Any) -> None:
+    """An expired pdf_archives row must survive when its job is protected."""
+    job_id = await _insert_terminal_job(
+        db_pool,
+        url="https://example.com/protected-pdf",
+        status="done",
+        finished_delta=timedelta(days=30),
+        protected=True,
+    )
+    await _insert_pdf_archive(
+        db_pool,
+        job_id=job_id,
+        expires_delta=timedelta(days=1),
+    )
+
+    purged = await _purge(db_pool)
+
+    assert purged == 0
+    assert await _pdf_archive_exists(db_pool, job_id=job_id) is True
+
+
+@pytest.mark.asyncio
+async def test_unprotected_pdf_archive_still_purged(db_pool: Any) -> None:
+    """Regression: an expired pdf_archives row whose job is not protected is deleted."""
+    job_id = await _insert_terminal_job(
+        db_pool,
+        url="https://example.com/unprotected-pdf",
+        status="done",
+        finished_delta=timedelta(days=1),
+        protected=False,
+    )
+    await _insert_pdf_archive(
+        db_pool,
+        job_id=job_id,
+        expires_delta=timedelta(days=1),
+    )
+
+    await _purge(db_pool)
+
+    assert await _pdf_archive_exists(db_pool, job_id=job_id) is False

@@ -647,11 +647,13 @@ CREATE INDEX IF NOT EXISTS vibecheck_jobs_expired_at_idx
 -- editor. When true, the job and its `vibecheck_analyses` cache row are
 -- never soft-deleted by `vibecheck_purge_terminal_jobs()`.
 --
--- Other caches (vibecheck_scrapes, vibecheck_pdf_archives,
--- vibecheck_web_risk_lookups) are explicitly NOT propagated — they are
--- regeneration caches keyed by URL and do not need protection: the next
--- read will simply re-populate them. Only the job row + its analyses
--- sidebar payload contain user-visible state worth protecting from TTL.
+-- Other caches (vibecheck_scrapes, vibecheck_web_risk_lookups) are
+-- explicitly NOT propagated — they are regeneration caches keyed by URL
+-- and do not need protection: the next read will simply re-populate them.
+-- vibecheck_pdf_archives IS protected (see vibecheck_purge_terminal_jobs)
+-- because it stores user-uploaded PDF HTML that cannot be re-fetched from
+-- a URL — losing it would permanently break the `pdf_archive_url`
+-- reference on the protected job.
 ALTER TABLE public.vibecheck_jobs
   ADD COLUMN IF NOT EXISTS protected BOOLEAN NOT NULL DEFAULT false;
 
@@ -688,16 +690,26 @@ BEGIN
     )
     SELECT COUNT(*) INTO purged FROM expired;
 
-    -- Other caches (vibecheck_scrapes, vibecheck_pdf_archives,
-    -- vibecheck_web_risk_lookups) intentionally do NOT honor the protected
-    -- flag — they are regeneration caches keyed by URL/host and a future
-    -- read trivially re-populates them (TASK-1540). Only `vibecheck_analyses`
-    -- carries the user-visible sidebar payload that pairs 1:1 with a job row.
+    -- vibecheck_scrapes and vibecheck_web_risk_lookups intentionally do NOT
+    -- honor the protected flag — they are regeneration caches keyed by
+    -- URL/host that a future read trivially re-populates (TASK-1540).
+    -- vibecheck_analyses and vibecheck_pdf_archives DO honor the protected
+    -- flag because they carry user-visible state (sidebar payload) or
+    -- user-uploaded content (PDF HTML) that cannot be regenerated from a URL.
     DELETE FROM public.vibecheck_scrapes
     WHERE expires_at < pg_catalog.now();
 
+    -- TASK-1540: protect the pdf_archives row for any protected job, otherwise
+    -- the user-uploaded PDF HTML (which cannot be re-fetched) would vanish 7
+    -- days after upload while the (protected) job row continued to exist,
+    -- permanently breaking the `pdf_archive_url` reference.
     DELETE FROM public.vibecheck_pdf_archives
-    WHERE expires_at < pg_catalog.now();
+    WHERE expires_at < pg_catalog.now()
+      AND NOT EXISTS (
+          SELECT 1 FROM public.vibecheck_jobs j
+          WHERE j.job_id = public.vibecheck_pdf_archives.job_id
+            AND j.protected = true
+      );
 
     -- TASK-1540: protect the analyses cache row for any protected job that
     -- shares the same normalized_url, otherwise the sidebar payload would

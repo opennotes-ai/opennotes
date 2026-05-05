@@ -288,6 +288,14 @@ BEGIN
             AND j.protected = true
       );
 
+    DELETE FROM vibecheck_pdf_archives
+    WHERE expires_at < now()
+      AND NOT EXISTS (
+          SELECT 1 FROM vibecheck_jobs j
+          WHERE j.job_id = vibecheck_pdf_archives.job_id
+            AND j.protected = true
+      );
+
     RETURN purged;
 END;
 $$;
