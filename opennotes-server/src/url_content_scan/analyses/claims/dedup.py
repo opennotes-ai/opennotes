@@ -70,14 +70,18 @@ async def _extract_claim_batches(
     max_concurrency: int,
 ) -> list[list[ExtractedClaim]]:
     semaphore = asyncio.Semaphore(max_concurrency)
+    results: list[list[ExtractedClaim]] = [[] for _utterance in utterances]
 
-    async def _extract_one(utterance: Utterance) -> list[ExtractedClaim]:
+    async def _extract_one(index: int, utterance: Utterance) -> None:
         if not utterance.text.strip():
-            return []
+            return
         async with semaphore:
-            return await extract_claims(utterance)
+            results[index] = await extract_claims(utterance)
 
-    return await asyncio.gather(*[_extract_one(utterance) for utterance in utterances])
+    async with asyncio.TaskGroup() as task_group:
+        for index, utterance in enumerate(utterances):
+            task_group.create_task(_extract_one(index, utterance))
+    return results
 
 
 def _flatten_claims(

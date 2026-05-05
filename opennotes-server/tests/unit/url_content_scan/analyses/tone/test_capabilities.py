@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 
 import pytest
 
+from src.url_content_scan.schemas import PageKind
 from src.url_content_scan.tone_schemas import FlashpointMatch, RiskLevel
 from src.url_content_scan.utterances.schema import Utterance
 
@@ -89,12 +90,53 @@ async def test_run_flashpoint_uses_parent_chain_context_for_threaded_replies() -
         _utterance("reply-3", "Sibling reply", author="drew", parent_id="root-1"),
     ]
 
-    await run_flashpoint(utterances, service=RecordingFlashpointService())
+    await run_flashpoint(
+        utterances,
+        service=RecordingFlashpointService(),
+        page_kind=PageKind.HIERARCHICAL_THREAD,
+    )
 
     assert seen_contexts["root-1"] == []
     assert seen_contexts["reply-1"] == ["root-1"]
     assert seen_contexts["reply-2"] == ["root-1", "reply-1"]
     assert seen_contexts["reply-3"] == ["root-1"]
+
+
+@pytest.mark.asyncio
+async def test_run_flashpoint_keeps_flat_forum_replies_on_linear_context() -> None:
+    from src.url_content_scan.analyses.tone import run_flashpoint
+
+    seen_contexts: dict[str, list[str]] = {}
+
+    class RecordingFlashpointService:
+        async def detect_flashpoint_for_utterance(
+            self,
+            utterance: Utterance,
+            context: list[Utterance],
+            max_context: int | None = None,
+            score_threshold: int | None = None,
+        ) -> FlashpointMatch | None:
+            seen_contexts[utterance.utterance_id or ""] = [
+                item.utterance_id or "" for item in context
+            ]
+            return None
+
+    utterances = [
+        _utterance("root-1", "Launch thread", author="alice", kind="post"),
+        _utterance("reply-1", "First reply", author="bob", parent_id="root-1"),
+        _utterance("reply-2", "Second reply", author="carol", parent_id="root-1"),
+        _utterance("reply-3", "Third reply", author="drew", parent_id="root-1"),
+    ]
+
+    await run_flashpoint(
+        utterances,
+        service=RecordingFlashpointService(),
+        page_kind=PageKind.FORUM_THREAD,
+    )
+
+    assert seen_contexts["reply-1"] == ["root-1"]
+    assert seen_contexts["reply-2"] == ["root-1", "reply-1"]
+    assert seen_contexts["reply-3"] == ["root-1", "reply-1", "reply-2"]
 
 
 @pytest.mark.asyncio
@@ -169,6 +211,7 @@ def test_run_scd_reports_non_zero_multi_speaker_stats() -> None:
     assert "speaker_count=3" in report.summary
     assert "turn_entropy=" in report.summary
     assert "repeat_ratio=" in report.summary
+    assert "avg_latency_seconds=120" in report.summary
     assert "alice" in report.per_speaker_notes
     assert report.speaker_arcs
     assert "multi_speaker" in report.tone_labels
@@ -200,3 +243,19 @@ def test_run_scd_tolerates_missing_timestamps() -> None:
     assert report.insufficient_conversation is False
     assert "timing_coverage=0.00" in report.summary
     assert "repeat_ratio=" in report.summary
+
+
+@pytest.mark.unit
+def test_run_scd_marks_single_speaker_thread_insufficient() -> None:
+    from src.url_content_scan.analyses.tone import run_scd
+
+    utterances = [
+        _utterance("utt-1", "First point", author="alice"),
+        _utterance("utt-2", "Follow-up point", author="alice", parent_id="utt-1"),
+    ]
+
+    report = run_scd(utterances)
+
+    assert report.insufficient_conversation is True
+    assert "single_speaker" in report.tone_labels
+    assert "insufficient_conversation" in report.tone_labels

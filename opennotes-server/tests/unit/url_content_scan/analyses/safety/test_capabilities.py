@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock
 
 import pytest
@@ -84,7 +86,7 @@ async def test_run_safety_moderation_maps_flagged_openai_results() -> None:
     from src.url_content_scan.analyses.safety import run_safety_moderation
 
     moderation_service = AsyncMock()
-    moderation_service.moderate_texts.return_value = [
+    moderation_service.moderate_text.side_effect = [
         ModerationResult(
             flagged=True,
             categories={"violence": True},
@@ -106,10 +108,48 @@ async def test_run_safety_moderation_maps_flagged_openai_results() -> None:
         moderation_service=moderation_service,
     )
 
-    moderation_service.moderate_texts.assert_awaited_once_with(["violent text", "harmless text"])
+    assert moderation_service.moderate_text.await_count == 2
+    moderation_service.moderate_text.assert_any_await("violent text")
+    moderation_service.moderate_text.assert_any_await("harmless text")
     assert [match.utterance_id for match in section.harmful_content_matches] == ["u-1"]
     assert section.harmful_content_matches[0].utterance_text == "violent text"
     assert section.harmful_content_matches[0].source == "openai"
+
+
+async def test_run_safety_moderation_bounds_openai_concurrency() -> None:
+    from src.url_content_scan.analyses.safety import run_safety_moderation
+
+    active = 0
+    peak = 0
+    lock = asyncio.Lock()
+    moderation_service = AsyncMock()
+
+    async def fake_moderate(_text: str) -> ModerationResult:
+        nonlocal active, peak
+        async with lock:
+            active += 1
+            peak = max(peak, active)
+        await asyncio.sleep(0.01)
+        async with lock:
+            active -= 1
+        return ModerationResult(
+            flagged=False,
+            categories={},
+            scores={},
+            max_score=0.0,
+            flagged_categories=[],
+        )
+
+    moderation_service.moderate_text.side_effect = fake_moderate
+
+    section = await run_safety_moderation(
+        [_utterance(f"u-{index}", f"text {index}") for index in range(20)],
+        moderation_service=moderation_service,
+        max_concurrency=4,
+    )
+
+    assert section.harmful_content_matches == []
+    assert peak == 4
 
 
 async def test_run_pre_enqueue_web_risk_caches_clean_lookup() -> None:
@@ -120,11 +160,13 @@ async def test_run_pre_enqueue_web_risk_caches_clean_lookup() -> None:
     client.check_url.return_value = None
     lookup_cache: dict[str, object | None] = {}
 
+    now = datetime(2026, 5, 4, 12, 0, tzinfo=UTC)
     finding = await run_pre_enqueue_web_risk(
         "https://example.com/path?utm_source=test",
         session=session,
         web_risk_client=client,
         lookup_cache=lookup_cache,
+        now=now,
     )
 
     assert finding is None
@@ -135,6 +177,7 @@ async def test_run_pre_enqueue_web_risk_caches_clean_lookup() -> None:
         "url": "https://example.com/path",
         "threat_types": [],
     }
+    assert session.rows["https://example.com/path"].expires_at == now + timedelta(hours=24)
     assert lookup_cache["https://example.com/path"] is None
 
 

@@ -17,6 +17,7 @@ from src.bulk_content_scan.flashpoint_service import (
     FlashpointDetectionService,
     get_flashpoint_service,
 )
+from src.url_content_scan.schemas import PageKind
 from src.url_content_scan.tone_schemas import FlashpointMatch, SCDReport, SpeakerArc
 from src.url_content_scan.utterances.schema import Utterance
 
@@ -55,6 +56,8 @@ def _build_parent_chain_context(
 def _build_flashpoint_contexts(
     utterances: list[Utterance],
     max_linear_context: int,
+    *,
+    page_kind: PageKind,
 ) -> dict[str, list[Utterance]]:
     by_id = {
         utterance.utterance_id: utterance for utterance in utterances if utterance.utterance_id
@@ -65,7 +68,7 @@ def _build_flashpoint_contexts(
         utterance_id = utterance.utterance_id
         if utterance_id is None:
             continue
-        if utterance.parent_id:
+        if page_kind == PageKind.HIERARCHICAL_THREAD and utterance.parent_id:
             contexts[utterance_id] = _build_parent_chain_context(utterance, by_id)
             continue
         start_index = max(0, index - max_linear_context)
@@ -81,6 +84,7 @@ async def run_flashpoint(
     max_context: int | None = None,
     score_threshold: int | None = None,
     max_concurrency: int = _MAX_FLASHPOINT_CONCURRENCY,
+    page_kind: PageKind = PageKind.OTHER,
 ) -> list[FlashpointMatch]:
     """Analyze utterances for flashpoint risk using the shared service."""
     if not utterances:
@@ -88,7 +92,11 @@ async def run_flashpoint(
 
     flashpoint_service = service or get_flashpoint_service()
     linear_context = max_context or _DEFAULT_LINEAR_CONTEXT
-    contexts = _build_flashpoint_contexts(utterances, max_linear_context=linear_context)
+    contexts = _build_flashpoint_contexts(
+        utterances,
+        max_linear_context=linear_context,
+        page_kind=page_kind,
+    )
     semaphore = asyncio.Semaphore(max_concurrency)
     results: list[FlashpointMatch | None] = [None] * len(utterances)
 
@@ -114,6 +122,7 @@ class _ConversationStats:
     turn_entropy: float
     repetition_ratio: float
     timing_coverage: float
+    average_latency_seconds: float
 
 
 def _compute_conversation_stats(utterances: list[Utterance]) -> _ConversationStats:
@@ -124,6 +133,7 @@ def _compute_conversation_stats(utterances: list[Utterance]) -> _ConversationSta
             turn_entropy=0.0,
             repetition_ratio=0.0,
             timing_coverage=0.0,
+            average_latency_seconds=0.0,
         )
 
     speakers = [_speaker_label(utterance, index + 1) for index, utterance in enumerate(utterances)]
@@ -148,6 +158,14 @@ def _compute_conversation_stats(utterances: list[Utterance]) -> _ConversationSta
 
     timed_turns = sum(1 for utterance in utterances if utterance.timestamp is not None)
     timing_coverage = timed_turns / total_turns if total_turns else 0.0
+    latencies = [
+        (current.timestamp - previous.timestamp).total_seconds()
+        for previous, current in pairwise(utterances)
+        if previous.timestamp is not None
+        and current.timestamp is not None
+        and current.timestamp >= previous.timestamp
+    ]
+    average_latency_seconds = sum(latencies) / len(latencies) if latencies else 0.0
 
     return _ConversationStats(
         speaker_count=speaker_count,
@@ -155,6 +173,7 @@ def _compute_conversation_stats(utterances: list[Utterance]) -> _ConversationSta
         turn_entropy=normalized_entropy,
         repetition_ratio=repetition_ratio,
         timing_coverage=timing_coverage,
+        average_latency_seconds=average_latency_seconds,
     )
 
 
@@ -213,19 +232,21 @@ def run_scd(utterances: list[Utterance]) -> SCDReport:
             )
         )
 
-    insufficient = total_turns < 2
+    insufficient = total_turns < 2 or stats.speaker_count < 2
     if insufficient and "insufficient_conversation" not in labels:
         labels.append("insufficient_conversation")
 
     narrative = (
         f"The thread spans {total_turns} turns across {stats.speaker_count} speakers. "
         f"Turn-taking entropy is {stats.turn_entropy:.2f} and speaker transitions land at "
-        f"{stats.transition_ratio:.2f}, with repetition at {stats.repetition_ratio:.2f}."
+        f"{stats.transition_ratio:.2f}, with repetition at {stats.repetition_ratio:.2f} "
+        f"and average reply latency at {stats.average_latency_seconds:.0f} seconds."
     )
     summary = (
         f"speaker_count={stats.speaker_count} total_turns={total_turns} "
         f"turn_entropy={stats.turn_entropy:.2f} transition_ratio={stats.transition_ratio:.2f} "
-        f"repeat_ratio={stats.repetition_ratio:.2f} timing_coverage={stats.timing_coverage:.2f}"
+        f"repeat_ratio={stats.repetition_ratio:.2f} timing_coverage={stats.timing_coverage:.2f} "
+        f"avg_latency_seconds={stats.average_latency_seconds:.0f}"
     )
 
     return SCDReport(

@@ -87,3 +87,37 @@ async def test_run_claims_dedup_bounds_per_utterance_extraction_concurrency() ->
     assert report.total_unique == 0
     assert max_seen <= 8
     assert max_seen == 8
+
+
+@pytest.mark.asyncio
+async def test_run_claims_dedup_cancels_sibling_extractions_on_error() -> None:
+    from src.url_content_scan.analyses.claims.dedup import run_claims_dedup
+
+    utterances = [
+        Utterance(utterance_id="u-1", kind="comment", text="boom"),
+        Utterance(utterance_id="u-2", kind="comment", text="wait"),
+    ]
+    cancelled = asyncio.Event()
+
+    async def fake_extract(utterance: Utterance) -> list[object]:
+        if utterance.utterance_id == "u-1":
+            raise RuntimeError("extract failed")
+        try:
+            await asyncio.sleep(30)
+        except asyncio.CancelledError:
+            cancelled.set()
+            raise
+        return []
+
+    async def fake_embed(_texts: list[str]) -> list[list[float]]:
+        raise AssertionError("embed_texts should not run")
+
+    with pytest.raises(ExceptionGroup):
+        await run_claims_dedup(
+            utterances,
+            extract_claims=fake_extract,
+            embed_texts=fake_embed,
+            max_concurrency=2,
+        )
+
+    assert cancelled.is_set()

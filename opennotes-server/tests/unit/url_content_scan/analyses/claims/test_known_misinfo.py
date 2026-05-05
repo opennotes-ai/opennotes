@@ -80,3 +80,53 @@ async def test_run_known_misinfo_maps_existing_fact_check_index_matches() -> Non
     assert matches[0].review_date is not None
     assert fake_service.calls[0]["query_text"] == "Vaccines cause autism."
     assert fake_service.calls[0]["dataset_tags"] == []
+
+
+@pytest.mark.asyncio
+async def test_embedding_adapter_rejects_mismatched_embedding_model_before_search() -> None:
+    from src.url_content_scan.analyses.claims.known_misinfo import (
+        EmbeddingServiceKnownMisinfoAdapter,
+    )
+
+    class _Embedder:
+        _model = "openai:text-embedding-3-large"
+
+    class _LLMService:
+        _embedder = _Embedder()
+
+    class _FakeEmbeddingService:
+        llm_service = _LLMService()
+
+        async def similarity_search(self, **_kwargs):
+            raise AssertionError("similarity_search should not run")
+
+    adapter = EmbeddingServiceKnownMisinfoAdapter(
+        embedding_service=_FakeEmbeddingService(),
+        db=object(),
+        community_server_id="123",
+        expected_embedding_model="openai:text-embedding-3-small",
+    )
+
+    with pytest.raises(ValueError, match="fact-check embedding model"):
+        await adapter.lookup("Vaccines cause autism.")
+
+
+@pytest.mark.asyncio
+async def test_embedding_adapter_rejects_mismatched_index_dimension_before_search() -> None:
+    from src.url_content_scan.analyses.claims.known_misinfo import (
+        EmbeddingServiceKnownMisinfoAdapter,
+    )
+
+    class _FakeEmbeddingService:
+        async def similarity_search(self, **_kwargs):
+            raise AssertionError("similarity_search should not run")
+
+    adapter = EmbeddingServiceKnownMisinfoAdapter(
+        embedding_service=_FakeEmbeddingService(),
+        db=object(),
+        community_server_id="123",
+        expected_embedding_dimensions=3072,
+    )
+
+    with pytest.raises(ValueError, match="fact-check index dimension"):
+        await adapter.lookup("Vaccines cause autism.")

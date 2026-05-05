@@ -54,18 +54,25 @@ async def run_sentiment(
             valence=classification.valence,
         )
 
-    per_utterance = await asyncio.gather(
-        *[_classify_one(index, utterance) for index, utterance in enumerate(utterances)]
-    )
+    per_utterance: list[SentimentScore | None] = [None for _utterance in utterances]
 
-    total = len(per_utterance)
-    positive = sum(1 for row in per_utterance if row.label == "positive")
-    negative = sum(1 for row in per_utterance if row.label == "negative")
-    neutral = sum(1 for row in per_utterance if row.label == "neutral")
-    mean_valence = round(sum(row.valence for row in per_utterance) / total, 4)
+    async def _store_one(index: int, utterance: Utterance) -> None:
+        per_utterance[index] = await _classify_one(index, utterance)
+
+    async with asyncio.TaskGroup() as task_group:
+        for index, utterance in enumerate(utterances):
+            task_group.create_task(_store_one(index, utterance))
+
+    scores = [score for score in per_utterance if score is not None]
+
+    total = len(scores)
+    positive = sum(1 for row in scores if row.label == "positive")
+    negative = sum(1 for row in scores if row.label == "negative")
+    neutral = sum(1 for row in scores if row.label == "neutral")
+    mean_valence = round(sum(row.valence for row in scores) / total, 4)
 
     return SentimentStatsReport(
-        per_utterance=per_utterance,
+        per_utterance=scores,
         positive_pct=_round_pct(positive, total),
         negative_pct=_round_pct(negative, total),
         neutral_pct=_round_pct(neutral, total),
