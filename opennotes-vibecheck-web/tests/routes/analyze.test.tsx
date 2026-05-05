@@ -2339,4 +2339,94 @@ describe("AnalyzePage Original tab — soft-disabled when canIframe=false (TASK-
     expect(await screen.findByTestId("analyze-layout")).not.toBeNull();
     expect(screen.queryByTestId("root-error-boundary")).toBeNull();
   });
+
+  describe("expired analysis card", () => {
+    beforeEach(() => {
+      pollingHandles.length = 0;
+    });
+    afterEach(() => cleanup());
+
+    it("renders ExpiredAnalysisCard when jobState has expired_at set", async () => {
+      renderAt("/analyze?job=expired-job-id&url=https://example.com/article");
+      await flushMicrotasks();
+      setPolledJobState({
+        job_id: "expired-job-id",
+        url: "https://example.com/article",
+        status: "done",
+        attempt_id: "attempt-1",
+        error_code: null,
+        error_message: null,
+        source_type: "url",
+        created_at: "2026-04-28T00:00:00Z",
+        updated_at: "2026-04-28T00:00:00Z",
+        cached: false,
+        expired_at: "2026-04-28T10:00:00Z",
+        sidebar_payload: null,
+        sidebar_payload_complete: false,
+        sections: {},
+        next_poll_ms: 1500,
+        utterance_count: 0,
+      } as unknown as JobState);
+      expect(await screen.findByTestId("expired-analysis-card")).not.toBeNull();
+      expect(screen.queryByTestId("job-failure-card")).toBeNull();
+      expect(screen.queryByTestId("analyze-layout")).toBeNull();
+    });
+
+    it("renders ExpiredAnalysisCard when polling 404 AND searchParams has url=", async () => {
+      renderAt("/analyze?job=old-job-id&c=1&url=https%3A%2F%2Fexample.com%2Farticle");
+      await flushMicrotasks();
+      const handle = pollingHandles[pollingHandles.length - 1];
+      const err = Object.assign(new Error("not found"), { statusCode: 404 });
+      handle.setError(err);
+      expect(await screen.findByTestId("expired-analysis-card")).not.toBeNull();
+      expect(screen.queryByTestId("job-failure-card")).toBeNull();
+    });
+
+    it("renders JobFailureCard (NOT expired card) when polling 404 but no searchParams.url", async () => {
+      renderAt("/analyze?job=old-job-id&c=1");
+      await flushMicrotasks();
+      const handle = pollingHandles[pollingHandles.length - 1];
+      const err = Object.assign(new Error("not found"), { statusCode: 404 });
+      handle.setError(err);
+      expect(await screen.findByTestId("job-failure-card")).not.toBeNull();
+      expect(screen.queryByTestId("expired-analysis-card")).toBeNull();
+    });
+
+    it("renders JobFailureCard (NOT expired card) when polling 5xx", async () => {
+      renderAt("/analyze?job=error-job-id&c=1&url=https://example.com/a");
+      await flushMicrotasks();
+      const handle = pollingHandles[pollingHandles.length - 1];
+      const err = Object.assign(new Error("server error"), { statusCode: 500 });
+      handle.setError(err);
+      expect(await screen.findByTestId("job-failure-card")).not.toBeNull();
+      expect(screen.queryByTestId("expired-analysis-card")).toBeNull();
+    });
+
+    it("renders JobFailureCard (NOT expired card) for a failed job without expired_at", async () => {
+      renderAt("/analyze?job=failed-job-id");
+      await flushMicrotasks();
+      setPolledJobState({
+        job_id: "failed-job-id",
+        url: "https://example.com/article",
+        status: "failed",
+        attempt_id: "attempt-1",
+        error_code: "upstream_error",
+        error_message: "upstream failed",
+        source_type: "url",
+        created_at: "2026-04-28T00:00:00Z",
+        updated_at: "2026-04-28T00:00:00Z",
+        cached: false,
+        expired_at: null,
+        sidebar_payload: null,
+        sidebar_payload_complete: false,
+        sections: {},
+        next_poll_ms: 1500,
+        utterance_count: 0,
+      } as unknown as JobState);
+      expect(await screen.findByTestId("job-failure-card")).not.toBeNull();
+      const card = screen.getByTestId("job-failure-card");
+      expect(card.getAttribute("data-error-code")).toBe("upstream_error");
+      expect(screen.queryByTestId("expired-analysis-card")).toBeNull();
+    });
+  });
 });
