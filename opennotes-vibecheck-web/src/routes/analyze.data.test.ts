@@ -344,6 +344,7 @@ describe("analyzePdfAction", () => {
 
   it("rate limits PDF uploads when over threshold", async () => {
     let currentRequest: Request | null = null;
+    const origNodeEnv = process.env.NODE_ENV;
     vi.doMock("solid-js/web", async () => {
       const actual = await vi.importActual<typeof import("solid-js/web")>(
         "solid-js/web",
@@ -405,6 +406,11 @@ describe("analyzePdfAction", () => {
     const r3 = await call();
     expect(r3.headers.get("Location")).toContain("pending_error=rate_limited");
 
+    if (origNodeEnv !== undefined) {
+      process.env.NODE_ENV = origNodeEnv;
+    } else {
+      delete process.env.NODE_ENV;
+    }
     delete process.env.VIBECHECK_RATE_LIMIT_PER_HOUR;
     delete process.env.VIBECHECK_RATE_LIMIT_DISABLED;
   });
@@ -415,6 +421,7 @@ describe("resolveAnalyzeRedirect web-tier rate limiter (TASK-1483.09)", () => {
     new Headers({ "x-forwarded-for": `${clientIp}, 10.0.0.1` });
 
   let currentRequest: Request | null = null;
+  let origNodeEnv: string | undefined;
 
   async function callWithRequest(
     url: string,
@@ -452,6 +459,7 @@ describe("resolveAnalyzeRedirect web-tier rate limiter (TASK-1483.09)", () => {
             : undefined,
       };
     });
+    origNodeEnv = process.env.NODE_ENV;
     process.env.NODE_ENV = "production";
     process.env.VIBECHECK_RATE_LIMIT_DISABLED = "0";
     process.env.VIBECHECK_RATE_LIMIT_PER_HOUR = "10";
@@ -528,6 +536,11 @@ describe("resolveAnalyzeRedirect web-tier rate limiter (TASK-1483.09)", () => {
   });
 
   afterEach(() => {
+    if (origNodeEnv !== undefined) {
+      process.env.NODE_ENV = origNodeEnv;
+    } else {
+      delete process.env.NODE_ENV;
+    }
     delete process.env.VIBECHECK_RATE_LIMIT_PER_HOUR;
     delete process.env.VIBECHECK_RATE_LIMIT_DISABLED;
   });

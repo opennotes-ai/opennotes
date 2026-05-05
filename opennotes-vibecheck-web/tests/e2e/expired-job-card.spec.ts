@@ -96,13 +96,10 @@ test("legacy 404 with ?url= shows ExpiredAnalysisCard with decoded URL", async (
       await route.fallback();
       return;
     }
-    const response = await route.fetch();
-    const body = await response.text();
-    const rewritten = body.replace(/statusCode:\d+/g, "statusCode:404");
     await route.fulfill({
-      status: response.status(),
-      headers: Object.fromEntries(Object.entries(response.headers())),
-      body: rewritten,
+      status: 404,
+      contentType: "application/json",
+      body: JSON.stringify({ detail: "not_found" }),
     });
   });
 
