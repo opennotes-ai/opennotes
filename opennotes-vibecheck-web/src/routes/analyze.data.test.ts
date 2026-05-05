@@ -177,7 +177,10 @@ describe("analyzeAction", () => {
     });
     const url = "https://example.com/p?a=1&b=two#frag";
     const response = await callAction(url);
-    expect(response.headers.get("Location")).toBe("/analyze?job=job-q");
+    const location = response.headers.get("Location") ?? "";
+    const params = new URLSearchParams(location.split("?")[1]);
+    expect(params.get("job")).toBe("job-q");
+    expect(params.get("url")).toBe(url);
   });
 
   it("URL containing CRLF-like control characters yields a Location with no raw newline (header-injection safe)", async () => {
@@ -190,7 +193,7 @@ describe("analyzeAction", () => {
       "https://example.com/p\r\nLocation: https://attacker.example/",
     );
     const location = response.headers.get("Location") ?? "";
-    expect(location).toBe("/analyze?job=job-crlf");
+    expect(location).toContain("job=job-crlf");
     expect(location).not.toContain("\n");
     expect(location).not.toContain("\r");
   });
@@ -269,8 +272,10 @@ describe("analyzePdfAction", () => {
     const file = createPdf(12);
     const response = await callPdfAction(file);
     const location = response.headers.get("Location") ?? "";
+    const params = new URLSearchParams(location.split("?")[1]);
 
-    expect(location).toBe("/analyze?job=pdf-job-1");
+    expect(params.get("job")).toBe("pdf-job-1");
+    expect(params.get("filename")).toBe("policy.pdf");
     expect(requestPdfUploadUrlMock).toHaveBeenCalledTimes(1);
     expect(requestPdfAnalysisMock).toHaveBeenCalledWith("gcs-key", "policy.pdf");
   });
@@ -339,6 +344,7 @@ describe("analyzePdfAction", () => {
 
   it("rate limits PDF uploads when over threshold", async () => {
     let currentRequest: Request | null = null;
+    const origNodeEnv = process.env.NODE_ENV;
     vi.doMock("solid-js/web", async () => {
       const actual = await vi.importActual<typeof import("solid-js/web")>(
         "solid-js/web",
@@ -351,57 +357,66 @@ describe("analyzePdfAction", () => {
             : undefined,
       };
     });
-    process.env.NODE_ENV = "production";
-    process.env.VIBECHECK_RATE_LIMIT_DISABLED = "0";
-    process.env.VIBECHECK_RATE_LIMIT_PER_HOUR = "2";
     const { _resetRateLimitForTesting } = await import(
       "~/lib/rate-limit.server"
     );
-    _resetRateLimitForTesting();
-    requestPdfUploadUrlMock.mockResolvedValue({
-      gcs_key: "gcs-key",
-      upload_url: "https://storage.example.com/upload",
-    });
-    requestPdfAnalysisMock.mockResolvedValue({
-      job_id: "pdf-rl-job",
-      status: "pending",
-      cached: false,
-    });
-
-    const file = new File([new Uint8Array(16)], "doc.pdf", {
-      type: "application/pdf",
-    });
-    const headers = new Headers({ "x-forwarded-for": "203.0.113.42, 10.0.0.1" });
-    const makeRequest = () =>
-      new Request("https://vibecheck.opennotes.ai/", {
-        method: "POST",
-        headers,
+    try {
+      process.env.NODE_ENV = "production";
+      process.env.VIBECHECK_RATE_LIMIT_DISABLED = "0";
+      process.env.VIBECHECK_RATE_LIMIT_PER_HOUR = "2";
+      _resetRateLimitForTesting();
+      requestPdfUploadUrlMock.mockResolvedValue({
+        gcs_key: "gcs-key",
+        upload_url: "https://storage.example.com/upload",
+      });
+      requestPdfAnalysisMock.mockResolvedValue({
+        job_id: "pdf-rl-job",
+        status: "pending",
+        cached: false,
       });
 
-    const { resolveAnalyzePdfRedirect } = await import("./analyze.data");
+      const file = new File([new Uint8Array(16)], "doc.pdf", {
+        type: "application/pdf",
+      });
+      const headers = new Headers({ "x-forwarded-for": "203.0.113.42, 10.0.0.1" });
+      const makeRequest = () =>
+        new Request("https://vibecheck.opennotes.ai/", {
+          method: "POST",
+          headers,
+        });
 
-    const call = async () => {
-      currentRequest = makeRequest();
-      const fd = new FormData();
-      fd.set("pdf", file);
-      try {
-        await resolveAnalyzePdfRedirect(fd);
-        throw new Error("did not redirect");
-      } catch (thrown) {
-        if (thrown instanceof Response) return thrown;
-        throw thrown;
+      const { resolveAnalyzePdfRedirect } = await import("./analyze.data");
+
+      const call = async () => {
+        currentRequest = makeRequest();
+        const fd = new FormData();
+        fd.set("pdf", file);
+        try {
+          await resolveAnalyzePdfRedirect(fd);
+          throw new Error("did not redirect");
+        } catch (thrown) {
+          if (thrown instanceof Response) return thrown;
+          throw thrown;
+        }
+      };
+
+      const r1 = await call();
+      expect(r1.headers.get("Location")).toContain("/analyze?job=");
+      const r2 = await call();
+      expect(r2.headers.get("Location")).toContain("/analyze?job=");
+      const r3 = await call();
+      expect(r3.headers.get("Location")).toContain("pending_error=rate_limited");
+    } finally {
+      vi.doUnmock("solid-js/web");
+      _resetRateLimitForTesting();
+      if (origNodeEnv !== undefined) {
+        process.env.NODE_ENV = origNodeEnv;
+      } else {
+        delete process.env.NODE_ENV;
       }
-    };
-
-    const r1 = await call();
-    expect(r1.headers.get("Location")).toContain("/analyze?job=");
-    const r2 = await call();
-    expect(r2.headers.get("Location")).toContain("/analyze?job=");
-    const r3 = await call();
-    expect(r3.headers.get("Location")).toContain("pending_error=rate_limited");
-
-    delete process.env.VIBECHECK_RATE_LIMIT_PER_HOUR;
-    delete process.env.VIBECHECK_RATE_LIMIT_DISABLED;
+      delete process.env.VIBECHECK_RATE_LIMIT_PER_HOUR;
+      delete process.env.VIBECHECK_RATE_LIMIT_DISABLED;
+    }
   });
 });
 
@@ -410,6 +425,7 @@ describe("resolveAnalyzeRedirect web-tier rate limiter (TASK-1483.09)", () => {
     new Headers({ "x-forwarded-for": `${clientIp}, 10.0.0.1` });
 
   let currentRequest: Request | null = null;
+  let origNodeEnv: string | undefined;
 
   async function callWithRequest(
     url: string,
@@ -447,6 +463,7 @@ describe("resolveAnalyzeRedirect web-tier rate limiter (TASK-1483.09)", () => {
             : undefined,
       };
     });
+    origNodeEnv = process.env.NODE_ENV;
     process.env.NODE_ENV = "production";
     process.env.VIBECHECK_RATE_LIMIT_DISABLED = "0";
     process.env.VIBECHECK_RATE_LIMIT_PER_HOUR = "10";
@@ -523,6 +540,11 @@ describe("resolveAnalyzeRedirect web-tier rate limiter (TASK-1483.09)", () => {
   });
 
   afterEach(() => {
+    if (origNodeEnv !== undefined) {
+      process.env.NODE_ENV = origNodeEnv;
+    } else {
+      delete process.env.NODE_ENV;
+    }
     delete process.env.VIBECHECK_RATE_LIMIT_PER_HOUR;
     delete process.env.VIBECHECK_RATE_LIMIT_DISABLED;
   });

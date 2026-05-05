@@ -18,6 +18,7 @@ import {
 } from "@solidjs/router";
 import { Title } from "@solidjs/meta";
 import CachedBadge from "~/components/CachedBadge";
+import ExpiredAnalysisCard from "~/components/ExpiredAnalysisCard";
 import JobFailureCard from "~/components/JobFailureCard";
 import LoadingSavedAnalysis from "~/components/LoadingSavedAnalysis";
 import PageFrame from "~/components/PageFrame";
@@ -444,6 +445,23 @@ function AnalyzePageContent(props: { initialJobState: JobState | null }) {
 
   const transportError = () => polling.error();
 
+  type ExpiredState = { url: string | null; expiredAt: Date | null };
+
+  const isExpired = createMemo<ExpiredState | null>(() => {
+    const s = jobState();
+    if (s?.expired_at) {
+      return {
+        url: s.url ?? null,
+        expiredAt: new Date(s.expired_at),
+      };
+    }
+    const transportErr = transportError() as (Error & { statusCode?: number }) | null;
+    if (transportErr?.statusCode === 404 && pendingUrl()) {
+      return { url: pendingUrl(), expiredAt: null };
+    }
+    return null;
+  });
+
   const failureProps = createMemo(() => {
     if (jobId()) {
       const s = jobState();
@@ -652,223 +670,235 @@ function AnalyzePageContent(props: { initialJobState: JobState | null }) {
           }
         >
           <Show
-            when={showFailure()}
+            when={isExpired()}
             fallback={
-              <div
-                data-testid="analyze-layout"
-                data-preview-size={previewSize()}
-                class={layoutClass()}
-              >
-                <div
-                  data-testid="analyze-left-column"
-                  class="order-2 flex min-w-0 flex-col gap-4 lg:order-1"
-                >
-                  <Show when={sidebarPayloadComplete()}>
-                    <HeadlineSummaryReport
-                      headline={resolveHeadline(
-                        sidebarPayload()?.headline ?? null,
-                        {
-                          url: jobUrl(),
-                          pageTitle: jobState()?.page_title,
-                          recommendation:
-                            sidebarPayload()?.safety?.recommendation ?? null,
-                        },
-                      )}
-                    />
-                  </Show>
-                  <div class="flex flex-wrap items-center justify-between gap-2">
+              <Show
+                when={showFailure()}
+                fallback={
+                  <div
+                    data-testid="analyze-layout"
+                    data-preview-size={previewSize()}
+                    class={layoutClass()}
+                  >
                     <div
-                      data-testid="preview-mode-selector"
-                      class="relative flex items-center"
-                      role="group"
-                      aria-label="Preview mode"
+                      data-testid="analyze-left-column"
+                      class="order-2 flex min-w-0 flex-col gap-4 lg:order-1"
                     >
-                      <div class="inline-flex rounded-lg border border-border bg-muted/50 p-1">
-                        <For each={PREVIEW_MODE_OPTIONS}>
-                          {(option, index) => {
-                            const isOriginalBlocked = () =>
-                              option.value === "original" &&
-                              !frameCompat().canIframe;
-                            const isArchivedUnavailable = () =>
-                              option.value === "archived" &&
-                              archiveProbeState() === "unavailable";
-                            const isScreenshotUnavailable = () =>
-                              option.value === "screenshot" && isPdf();
-                            const isUnavailable = () =>
-                              isArchivedUnavailable() ||
-                              isScreenshotUnavailable();
-                            return (
-                              <button
-                                type="button"
-                                data-testid={`preview-mode-${option.value}`}
-                                class={`${segmentClass(
-                                  isPreviewModePressed(option.value),
-                                  segmentCornerClass(
-                                    index(),
-                                    PREVIEW_MODE_OPTIONS.length,
-                                  ),
-                                )}${isOriginalBlocked() ? " opacity-60" : ""}`}
-                                aria-pressed={isPreviewModePressed(
-                                  option.value,
-                                )}
-                                aria-describedby={
-                                  isOriginalBlocked()
-                                    ? ORIGINAL_BLOCKED_TIP_ID
-                                    : undefined
+                        <Show when={sidebarPayloadComplete()}>
+                          <HeadlineSummaryReport
+                            headline={resolveHeadline(
+                              sidebarPayload()?.headline ?? null,
+                              {
+                                url: jobUrl(),
+                                pageTitle: jobState()?.page_title,
+                                recommendation:
+                                  sidebarPayload()?.safety?.recommendation ?? null,
+                              },
+                            )}
+                          />
+                        </Show>
+                        <div class="flex flex-wrap items-center justify-between gap-2">
+                          <div
+                            data-testid="preview-mode-selector"
+                            class="relative flex items-center"
+                            role="group"
+                            aria-label="Preview mode"
+                          >
+                            <div class="inline-flex rounded-lg border border-border bg-muted/50 p-1">
+                              <For each={PREVIEW_MODE_OPTIONS}>
+                                {(option, index) => {
+                                  const isOriginalBlocked = () =>
+                                    option.value === "original" &&
+                                    !frameCompat().canIframe;
+                                  const isArchivedUnavailable = () =>
+                                    option.value === "archived" &&
+                                    archiveProbeState() === "unavailable";
+                                  const isScreenshotUnavailable = () =>
+                                    option.value === "screenshot" && isPdf();
+                                  const isUnavailable = () =>
+                                    isArchivedUnavailable() ||
+                                    isScreenshotUnavailable();
+                                  return (
+                                    <button
+                                      type="button"
+                                      data-testid={`preview-mode-${option.value}`}
+                                      class={`${segmentClass(
+                                        isPreviewModePressed(option.value),
+                                        segmentCornerClass(
+                                          index(),
+                                          PREVIEW_MODE_OPTIONS.length,
+                                        ),
+                                      )}${isOriginalBlocked() ? " opacity-60" : ""}`}
+                                      aria-pressed={isPreviewModePressed(
+                                        option.value,
+                                      )}
+                                      aria-describedby={
+                                        isOriginalBlocked()
+                                          ? ORIGINAL_BLOCKED_TIP_ID
+                                          : undefined
+                                      }
+                                      aria-label={
+                                        isScreenshotUnavailable()
+                                          ? "Not available for PDFs"
+                                          : undefined
+                                      }
+                                      disabled={isUnavailable()}
+                                      title={
+                                        isArchivedUnavailable()
+                                          ? "No archive available for this page"
+                                          : isScreenshotUnavailable()
+                                            ? "Not available for PDFs"
+                                            : undefined
+                                      }
+                                      onMouseEnter={() => {
+                                        if (isOriginalBlocked()) {
+                                          setIsOriginalBlockedTipHovered(true);
+                                        }
+                                      }}
+                                      onMouseLeave={() => {
+                                        setIsOriginalBlockedTipHovered(false);
+                                      }}
+                                      onFocus={() => {
+                                        if (isOriginalBlocked()) {
+                                          setIsOriginalBlockedTipFocused(true);
+                                        }
+                                      }}
+                                      onBlur={() => {
+                                        setIsOriginalBlockedTipFocused(false);
+                                      }}
+                                      onClick={() => selectPreviewMode(option.value)}
+                                    >
+                                      {option.label}
+                                    </button>
+                                  );
+                                }}
+                              </For>
+                            </div>
+                            <Show when={!frameCompat().canIframe}>
+                              <span
+                                id={ORIGINAL_BLOCKED_TIP_ID}
+                                data-testid={ORIGINAL_BLOCKED_TIP_ID}
+                                role="tooltip"
+                                data-visible={
+                                  showOriginalBlockedTip() ? "true" : "false"
                                 }
-                                aria-label={
-                                  isScreenshotUnavailable()
-                                    ? "Not available for PDFs"
-                                    : undefined
+                                class={
+                                  showOriginalBlockedTip()
+                                    ? "pointer-events-none absolute left-0 top-full z-20 mt-2 w-max max-w-64 rounded-md border border-border bg-popover px-2.5 py-1.5 text-xs font-medium text-popover-foreground shadow-md"
+                                    : "sr-only"
                                 }
-                                disabled={isUnavailable()}
-                                title={
-                                  isArchivedUnavailable()
-                                    ? "No archive available for this page"
-                                    : isScreenshotUnavailable()
-                                      ? "Not available for PDFs"
-                                      : undefined
-                                }
-                                onMouseEnter={() => {
-                                  if (isOriginalBlocked()) {
-                                    setIsOriginalBlockedTipHovered(true);
-                                  }
-                                }}
-                                onMouseLeave={() => {
-                                  setIsOriginalBlockedTipHovered(false);
-                                }}
-                                onFocus={() => {
-                                  if (isOriginalBlocked()) {
-                                    setIsOriginalBlockedTipFocused(true);
-                                  }
-                                }}
-                                onBlur={() => {
-                                  setIsOriginalBlockedTipFocused(false);
-                                }}
-                                onClick={() => selectPreviewMode(option.value)}
                               >
-                                {option.label}
-                              </button>
-                            );
+                                {ORIGINAL_BLOCKED_TIP_TEXT}
+                              </span>
+                            </Show>
+                          </div>
+                          <div
+                            data-testid="preview-size-selector"
+                            class="flex items-center justify-end rounded-md border border-dashed border-border/80 bg-background/60 p-1"
+                            role="group"
+                            aria-label="Preview size"
+                          >
+                            <div class="inline-flex rounded-md bg-transparent">
+                              <For each={PREVIEW_SIZE_OPTIONS}>
+                                {(option, index) => (
+                                  <button
+                                    type="button"
+                                    class={sizeSegmentClass(
+                                      previewSize() === option.value,
+                                      segmentCornerClass(
+                                        index(),
+                                        PREVIEW_SIZE_OPTIONS.length,
+                                      ),
+                                    )}
+                                    aria-pressed={previewSize() === option.value}
+                                    onClick={() => selectPreviewSize(option.value)}
+                                  >
+                                    {option.label}
+                                  </button>
+                                )}
+                              </For>
+                            </div>
+                          </div>
+                        </div>
+                        <PageFrame
+                          url={jobUrl()}
+                          sourcePdf={isPdf()}
+                          pdfReadUrl={pdfReadUrl()}
+                          loading={isPreviewLoading()}
+                          canIframe={frameCompat().canIframe}
+                          blockingHeader={frameCompat().blockingHeader}
+                          cspFrameAncestors={frameCompat().cspFrameAncestors}
+                          archivedPreviewUrl={frameCompat().archivedPreviewUrl}
+                          screenshotUrl={frameCompat().screenshotUrl}
+                          previewMode={previewMode()}
+                          previewModeRequestId={previewModeRequestId()}
+                          onResolvedModeChange={(mode) => {
+                            setResolvedPreviewMode(mode);
+                            if (mode !== selectedPreviewMode()) {
+                              setSelectedPreviewMode(null);
+                            }
                           }}
-                        </For>
-                      </div>
-                      <Show when={!frameCompat().canIframe}>
-                        <span
-                          id={ORIGINAL_BLOCKED_TIP_ID}
-                          data-testid={ORIGINAL_BLOCKED_TIP_ID}
-                          role="tooltip"
-                          data-visible={
-                            showOriginalBlockedTip() ? "true" : "false"
-                          }
-                          class={
-                            showOriginalBlockedTip()
-                              ? "pointer-events-none absolute left-0 top-full z-20 mt-2 w-max max-w-64 rounded-md border border-border bg-popover px-2.5 py-1.5 text-xs font-medium text-popover-foreground shadow-md"
-                              : "sr-only"
-                          }
-                        >
-                          {ORIGINAL_BLOCKED_TIP_TEXT}
-                        </span>
-                      </Show>
-                    </div>
-                    <div
-                      data-testid="preview-size-selector"
-                      class="flex items-center justify-end rounded-md border border-dashed border-border/80 bg-background/60 p-1"
-                      role="group"
-                      aria-label="Preview size"
-                    >
-                      <div class="inline-flex rounded-md bg-transparent">
-                        <For each={PREVIEW_SIZE_OPTIONS}>
-                          {(option, index) => (
-                            <button
-                              type="button"
-                              class={sizeSegmentClass(
-                                previewSize() === option.value,
-                                segmentCornerClass(
-                                  index(),
-                                  PREVIEW_SIZE_OPTIONS.length,
-                                ),
-                              )}
-                              aria-pressed={previewSize() === option.value}
-                              onClick={() => selectPreviewSize(option.value)}
+                          onArchivedIframeReady={handleArchivedIframeReady}
+                        />
+                        <Show when={frameCompatError()}>
+                          {(message) => (
+                            <p
+                              data-testid="frame-compat-warning"
+                              class="text-xs text-muted-foreground"
                             >
-                              {option.label}
-                            </button>
+                              {message()} Showing the page directly.
+                            </p>
                           )}
-                        </For>
+                        </Show>
+                        <Show when={jobStatus() && jobStatus() !== "done"}>
+                          <p
+                            data-testid="analyze-status"
+                            class="text-xs text-muted-foreground"
+                          >
+                            Status: {jobStatus()}
+                          </p>
+                        </Show>
                       </div>
-                    </div>
+                      <Sidebar
+                        sections={jobState()?.sections}
+                        payload={sidebarPayload()}
+                        payloadComplete={sidebarPayloadComplete()}
+                        jobId={jobId() || undefined}
+                        jobStatus={jobStatus()}
+                        onRetry={handleRetry}
+                        cachedHint={cachedHint()}
+                        onUtteranceClick={handleUtteranceClick}
+                        canJumpToUtterance={
+                          Boolean(frameCompat().archivedPreviewUrl) &&
+                          hasCurrentUtteranceAnchors()
+                        }
+                        activityLabel={jobState()?.activity_label}
+                        activityAt={jobState()?.activity_at}
+                        class="order-1 lg:order-2"
+                      />
                   </div>
-                  <PageFrame
-                    url={jobUrl()}
-                    sourcePdf={isPdf()}
-                    pdfReadUrl={pdfReadUrl()}
-                    loading={isPreviewLoading()}
-                    canIframe={frameCompat().canIframe}
-                    blockingHeader={frameCompat().blockingHeader}
-                    cspFrameAncestors={frameCompat().cspFrameAncestors}
-                    archivedPreviewUrl={frameCompat().archivedPreviewUrl}
-                    screenshotUrl={frameCompat().screenshotUrl}
-                    previewMode={previewMode()}
-                    previewModeRequestId={previewModeRequestId()}
-                    onResolvedModeChange={(mode) => {
-                      setResolvedPreviewMode(mode);
-                      if (mode !== selectedPreviewMode()) {
-                        setSelectedPreviewMode(null);
-                      }
-                    }}
-                    onArchivedIframeReady={handleArchivedIframeReady}
-                  />
-                  <Show when={frameCompatError()}>
-                    {(message) => (
-                      <p
-                        data-testid="frame-compat-warning"
-                        class="text-xs text-muted-foreground"
-                      >
-                        {message()} Showing the page directly.
-                      </p>
-                    )}
-                  </Show>
-                  <Show when={jobStatus() && jobStatus() !== "done"}>
-                    <p
-                      data-testid="analyze-status"
-                      class="text-xs text-muted-foreground"
-                    >
-                      Status: {jobStatus()}
-                    </p>
-                  </Show>
-                </div>
-                <Sidebar
-                  sections={jobState()?.sections}
-                  payload={sidebarPayload()}
-                  payloadComplete={sidebarPayloadComplete()}
-                  jobId={jobId() || undefined}
-                  jobStatus={jobStatus()}
-                  onRetry={handleRetry}
-                  cachedHint={cachedHint()}
-                  onUtteranceClick={handleUtteranceClick}
-                  canJumpToUtterance={
-                    Boolean(frameCompat().archivedPreviewUrl) &&
-                    hasCurrentUtteranceAnchors()
-                  }
-                  activityLabel={jobState()?.activity_label}
-                  activityAt={jobState()?.activity_at}
-                  class="order-1 lg:order-2"
-                />
-              </div>
+                }
+              >
+                {(_ready) => {
+                  const f = failureProps()!;
+                  return (
+                    <JobFailureCard
+                      url={f.url ?? ""}
+                      errorCode={f.errorCode}
+                      errorHost={f.errorHost}
+                      webRiskFindings={f.webRiskFindings}
+                    />
+                  );
+                }}
+              </Show>
             }
           >
-            {(_ready) => {
-              const f = failureProps()!;
-              return (
-                <JobFailureCard
-                  url={f.url ?? ""}
-                  errorCode={f.errorCode}
-                  errorHost={f.errorHost}
-                  webRiskFindings={f.webRiskFindings}
-                />
-              );
-            }}
+            {(expired) => (
+              <ExpiredAnalysisCard
+                url={expired().url}
+                expiredAt={expired().expiredAt}
+              />
+            )}
           </Show>
         </Show>
       </main>

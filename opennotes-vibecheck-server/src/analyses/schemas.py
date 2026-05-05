@@ -292,6 +292,16 @@ class JobState(BaseModel):
         default=0,
         description="Number of utterances extracted for this job. 0 until the extractor writes any rows.",
     )
+    expired_at: datetime | None = Field(
+        default=None,
+        description=(
+            "When set, this job has been soft-deleted by the 7-day purge cron. "
+            "Heavy payload columns are cleared: sidebar_payload is NULL, sections is "
+            "'{}' (empty JSON object). "
+            "The job_id permalink remains addressable; clients should render an "
+            "'analysis expired — re-analyze' card instead of the standard sidebar."
+        ),
+    )
 
 
 class RecentAnalysis(BaseModel):

@@ -50,7 +50,10 @@ describe("POST /embed/v1/start", () => {
     const { POST } = await import("./start");
     const response = await POST(makeEvent(fdRequest("POST", "https://example.com/p")));
     expect(response.status).toBe(303);
-    expect(response.headers.get("Location")).toBe("/analyze?job=job-abc");
+    const loc = response.headers.get("Location") ?? "";
+    const params = new URLSearchParams(loc.split("?")[1]);
+    expect(params.get("job")).toBe("job-abc");
+    expect(params.get("url")).toBe("https://example.com/p");
     expect(response.headers.get("Cache-Control")).toBe("no-store, private");
   });
 
@@ -159,7 +162,10 @@ describe("POST /embed/v1/start", () => {
     const { POST } = await import("./start");
     const response = await POST(makeEvent(req));
     expect(response.status).toBe(303);
-    expect(response.headers.get("Location")).toBe("/analyze?job=job-multipart");
+    const loc = response.headers.get("Location") ?? "";
+    const params = new URLSearchParams(loc.split("?")[1]);
+    expect(params.get("job")).toBe("job-multipart");
+    expect(params.get("url")).toBe("https://example.com/p");
   });
 
   it("accepts application/x-www-form-urlencoded submissions", async () => {
@@ -180,7 +186,10 @@ describe("POST /embed/v1/start", () => {
     const { POST } = await import("./start");
     const response = await POST(makeEvent(req));
     expect(response.status).toBe(303);
-    expect(response.headers.get("Location")).toBe("/analyze?job=job-urlencoded");
+    const loc = response.headers.get("Location") ?? "";
+    const params = new URLSearchParams(loc.split("?")[1]);
+    expect(params.get("job")).toBe("job-urlencoded");
+    expect(params.get("url")).toBe("https://example.com/p");
   });
 
   it("POST invokes analyzeUrl exactly once per request (downstream dedup is enforced by the backend single-flight, not this layer)", async () => {

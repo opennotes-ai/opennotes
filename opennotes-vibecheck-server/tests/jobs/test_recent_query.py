@@ -313,6 +313,7 @@ async def _seed_job(
     sections: dict[str, dict[str, str]] | None = None,
     preview: str | None = "preview blurb",
     finished_at: datetime | None = None,
+    expired_at: datetime | None = None,
 ) -> UUID:
     sections = sections if sections is not None else _full_sections()
     if finished_at is None and status in ("done", "partial", "failed"):
@@ -322,8 +323,8 @@ async def _seed_job(
             """
             INSERT INTO vibecheck_jobs
                 (url, normalized_url, host, status, sections, finished_at,
-                 preview_description, source_type)
-            VALUES ($1, $1, 'example.com', $2, $3::jsonb, $4, $5, $6)
+                 preview_description, source_type, expired_at)
+            VALUES ($1, $1, 'example.com', $2, $3::jsonb, $4, $5, $6, $7)
             RETURNING job_id
             """,
             url,
@@ -332,6 +333,7 @@ async def _seed_job(
             finished_at,
             preview,
             source_type,
+            expired_at,
         )
 
 
@@ -522,6 +524,19 @@ class TestListRecentExclusionRules:
         url = "https://example.com/private-browser-html"
         await _seed_job(db_pool, url=url, source_type="browser_html")
         await _seed_scrape(db_pool, url=url, tier="browser_html")
+        result = await list_recent(db_pool, limit=5, signer=_StubSigner())
+        assert result == []
+
+    async def test_excludes_expired_jobs(self, db_pool: Any) -> None:
+        """TASK-1541.04: expired (soft-deleted) jobs must not appear in
+        the gallery. The purge sets `expired_at` but does not null
+        `preview_description`, so without the `expired_at IS NULL`
+        guard the row would leak into list_recent and render a broken
+        analysis card with empty sidebar_payload.
+        """
+        url = "https://example.com/expired-job"
+        await _seed_job(db_pool, url=url, expired_at=datetime.now(UTC))
+        await _seed_scrape(db_pool, url=url)
         result = await list_recent(db_pool, limit=5, signer=_StubSigner())
         assert result == []
 
