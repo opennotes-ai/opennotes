@@ -29,7 +29,7 @@ _SECRET_QUERY_PARAM_KEYS = frozenset(
 _SAFE_PORTS = frozenset({80, 443})
 _DEFAULT_OVERFETCH_MULTIPLIER = 8
 
-_RECENT_SQL = """
+_RECENT_SQL_BODY = """
 SELECT
     j.id AS job_id,
     st.normalized_url,
@@ -93,8 +93,9 @@ WHERE j.status IN ('completed', 'partial')
     )
   )
 ORDER BY COALESCE(st.finished_at, j.completed_at) DESC
-LIMIT :limit
 """
+_RECENT_SQL = f"{_RECENT_SQL_BODY}\nLIMIT $1"
+_RECENT_SQL_SQLALCHEMY = f"{_RECENT_SQL_BODY}\nLIMIT :limit"
 
 
 class RecentAnalysis(BaseModel):
@@ -172,7 +173,7 @@ async def _fetch_rows(pool_or_session: Any, *, overfetch: int) -> list[Mapping[s
         rows = await pool_or_session.fetch(_RECENT_SQL, overfetch)
         return [dict(row) for row in rows]
     if hasattr(pool_or_session, "execute"):
-        result = await pool_or_session.execute(text(_RECENT_SQL), {"limit": overfetch})
+        result = await pool_or_session.execute(text(_RECENT_SQL_SQLALCHEMY), {"limit": overfetch})
         return [dict(row) for row in result.mappings().all()]
     raise TypeError(
         "list_recent requires an asyncpg-style pool/connection or SQLAlchemy async session"
