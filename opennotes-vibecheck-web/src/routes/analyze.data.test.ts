@@ -177,7 +177,10 @@ describe("analyzeAction", () => {
     });
     const url = "https://example.com/p?a=1&b=two#frag";
     const response = await callAction(url);
-    expect(response.headers.get("Location")).toBe("/analyze?job=job-q");
+    const location = response.headers.get("Location") ?? "";
+    const params = new URLSearchParams(location.split("?")[1]);
+    expect(params.get("job")).toBe("job-q");
+    expect(params.get("url")).toBe(url);
   });
 
   it("URL containing CRLF-like control characters yields a Location with no raw newline (header-injection safe)", async () => {
@@ -190,7 +193,7 @@ describe("analyzeAction", () => {
       "https://example.com/p\r\nLocation: https://attacker.example/",
     );
     const location = response.headers.get("Location") ?? "";
-    expect(location).toBe("/analyze?job=job-crlf");
+    expect(location).toContain("job=job-crlf");
     expect(location).not.toContain("\n");
     expect(location).not.toContain("\r");
   });
@@ -269,8 +272,10 @@ describe("analyzePdfAction", () => {
     const file = createPdf(12);
     const response = await callPdfAction(file);
     const location = response.headers.get("Location") ?? "";
+    const params = new URLSearchParams(location.split("?")[1]);
 
-    expect(location).toBe("/analyze?job=pdf-job-1");
+    expect(params.get("job")).toBe("pdf-job-1");
+    expect(params.get("filename")).toBe("policy.pdf");
     expect(requestPdfUploadUrlMock).toHaveBeenCalledTimes(1);
     expect(requestPdfAnalysisMock).toHaveBeenCalledWith("gcs-key", "policy.pdf");
   });

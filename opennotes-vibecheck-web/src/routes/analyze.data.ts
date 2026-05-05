@@ -233,6 +233,28 @@ function redirectParams(params: Record<string, string | undefined>): string {
   return usp.toString();
 }
 
+export function buildAnalyzeSuccessRedirectUrl(
+  jobId: string,
+  cached: boolean,
+  rawUrl: string,
+): string {
+  const qs = new URLSearchParams({ job: jobId });
+  if (cached) qs.set("c", "1");
+  qs.set("url", rawUrl);
+  return `/analyze?${qs.toString()}`;
+}
+
+export function buildPdfSuccessRedirectUrl(
+  jobId: string,
+  cached: boolean,
+  filename: string,
+): string {
+  const qs = new URLSearchParams({ job: jobId });
+  if (cached) qs.set("c", "1");
+  qs.set("filename", filename);
+  return `/analyze?${qs.toString()}`;
+}
+
 export async function resolveAnalyzeRedirect(formData: FormData): Promise<never> {
   "use server";
   const { analyzeUrl, VibecheckApiError, clampErrorCode } = await import(
@@ -302,9 +324,7 @@ export async function resolveAnalyzeRedirect(formData: FormData): Promise<never>
     throw err;
   }
 
-  const qs = new URLSearchParams({ job: response.job_id });
-  if (response.cached) qs.set("c", "1");
-  throw redirect(`/analyze?${qs.toString()}`);
+  throw redirect(buildAnalyzeSuccessRedirectUrl(response.job_id, response.cached, rawUrl));
 }
 
 export const analyzeAction = action(async (formData: FormData) => {
@@ -380,9 +400,7 @@ export async function resolveAnalyzePdfRedirect(formData: FormData): Promise<nev
 
   try {
     const response = await requestPdfAnalysis(upload.gcs_key, rawFile.name);
-    const qs = new URLSearchParams({ job: response.job_id });
-    if (response.cached) qs.set("c", "1");
-    throw redirect(`/analyze?${qs.toString()}`);
+    throw redirect(buildPdfSuccessRedirectUrl(response.job_id, response.cached, rawFile.name));
   } catch (err: unknown) {
     if (!(err instanceof VibecheckApiError)) {
       throw err;
@@ -478,9 +496,7 @@ export const submitPdfAnalysisAction = action(async (formData: FormData) => {
 
   try {
     const response = await requestPdfAnalysis(gcsKey, filename);
-    const qs = new URLSearchParams({ job: response.job_id });
-    if (response.cached) qs.set("c", "1");
-    throw redirect(`/analyze?${qs.toString()}`);
+    throw redirect(buildPdfSuccessRedirectUrl(response.job_id, response.cached, filename));
   } catch (err: unknown) {
     if (!(err instanceof VibecheckApiError)) {
       throw err;
