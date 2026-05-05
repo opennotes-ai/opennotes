@@ -89,7 +89,9 @@ describe("<ExpiredAnalysisCard />", () => {
     const dateEl = await screen.findByTestId("expired-analysis-date");
     expect(dateEl).not.toBeNull();
     const text = dateEl.textContent ?? "";
-    expect(text.match(/Apr|28|2026/)).not.toBeNull();
+    expect(text).toMatch(/Apr/);
+    expect(text).toMatch(/28/);
+    expect(text).toMatch(/2026/);
   });
 
   it("does not render expiredAt date when null", async () => {

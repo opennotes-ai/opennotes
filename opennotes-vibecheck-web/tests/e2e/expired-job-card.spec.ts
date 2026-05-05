@@ -70,6 +70,9 @@ test("expired job (expired_at set) shows ExpiredAnalysisCard, not failure card",
   const cardText = await expiredCard.textContent();
   expect(cardText).toContain("example.com");
 
+  const dateEl = page.locator('[data-testid="expired-analysis-date"]');
+  await expect(dateEl).toBeVisible();
+
   const reanalyzeBtn = page.locator('[data-testid="expired-analysis-reanalyze"]');
   await expect(reanalyzeBtn).toBeVisible();
   await expect(reanalyzeBtn).toBeEnabled();
@@ -129,7 +132,6 @@ test("Re-analyze CTA on expired card submits the original URL for reanalysis", a
 
   const jobId = crypto.randomUUID();
   const originalUrl = "https://example.com/article";
-  const newJobId = crypto.randomUUID();
 
   await page.route("**/*", async (route) => {
     const url = route.request().url();
@@ -151,7 +153,7 @@ test("Re-analyze CTA on expired card submits the original URL for reanalysis", a
   const reanalyzeBtn = page.locator('[data-testid="expired-analysis-reanalyze"]');
   await expect(reanalyzeBtn).toBeVisible({ timeout: 20_000 });
 
-  let actionRequested = false;
+  // Set up request listener before click to avoid race condition
   const actionRequestPromise = page.waitForRequest(
     (req) =>
       req.method() === "POST" &&
@@ -162,11 +164,9 @@ test("Re-analyze CTA on expired card submits the original URL for reanalysis", a
 
   await reanalyzeBtn.click();
 
-  await actionRequestPromise
-    .then(() => {
-      actionRequested = true;
-    })
-    .catch(() => {});
+  // Primary assertion: Re-analyze must POST to the server action
+  const actionRequest = await actionRequestPromise;
+  expect(actionRequest).toBeDefined();
 
   await page
     .waitForURL(
@@ -183,10 +183,7 @@ test("Re-analyze CTA on expired card submits the original URL for reanalysis", a
       { timeout: 20_000 },
     )
     .catch(() => {
-      expect(
-        actionRequested,
-        "Re-analyze must either navigate to a new job URL or POST the action to /_server",
-      ).toBe(true);
+      // Navigation may not complete in test environment — POST assertion above is sufficient
     });
 });
 
