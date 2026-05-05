@@ -90,6 +90,10 @@ async def _lookup_cache(conn: Any, normalized_url: str) -> dict[str, Any] | None
     return _strip_job_scoped_cache_fields(payload)
 
 
+def _payload_has_comment_refs(payload: dict[str, Any]) -> bool:
+    return '"comment-' in json.dumps(payload)
+
+
 def _strip_job_scoped_cache_fields(payload: dict[str, Any]) -> dict[str, Any]:
     """Drop fields that are only valid for the job that generated the cache."""
     sanitized = dict(payload)
@@ -323,6 +327,63 @@ async def _mark_job_failed_enqueue(pool: Any, job_id: UUID) -> None:
         )
 
 
+async def _find_source_job_with_utterances(
+    conn: Any, normalized_url: str
+) -> UUID | None:
+    row = await conn.fetchrow(
+        """
+        SELECT j.job_id
+        FROM vibecheck_jobs j
+        WHERE j.normalized_url = $1
+          AND j.status = 'done'
+          AND j.cached = false
+          AND EXISTS (
+              SELECT 1 FROM vibecheck_job_utterances u WHERE u.job_id = j.job_id
+          )
+        ORDER BY j.finished_at DESC NULLS LAST
+        LIMIT 1
+        """,
+        normalized_url,
+    )
+    if row is None:
+        return None
+    job_id = row["job_id"]
+    return job_id if isinstance(job_id, UUID) else None
+
+
+async def _copy_utterances_to_job(
+    conn: Any, source_job_id: UUID, target_job_id: UUID
+) -> None:
+    existing = await conn.fetchval(
+        "SELECT COUNT(*) FROM vibecheck_job_utterances WHERE job_id = $1",
+        target_job_id,
+    )
+    if existing and existing > 0:
+        return
+    await conn.execute(
+        """
+        INSERT INTO vibecheck_job_utterances (
+            job_id, utterance_id, kind, text, author, timestamp_at,
+            parent_id, position, page_title, page_kind
+        )
+        SELECT
+            $2, utterance_id, kind, text, author, timestamp_at,
+            parent_id, position, page_title, page_kind
+        FROM vibecheck_job_utterances
+        WHERE job_id = $1
+        """,
+        source_job_id,
+        target_job_id,
+    )
+
+
+async def _evict_url_cache(conn: Any, normalized_url: str) -> None:
+    await conn.execute(
+        "DELETE FROM vibecheck_analyses WHERE url = $1",
+        normalized_url,
+    )
+
+
 async def handle_locked_submit(
     conn: Any,
     *,
@@ -361,15 +422,35 @@ async def handle_locked_submit(
     if source_type == "url":
         cached_payload = await _lookup_cache(conn, normalized_url)
         if cached_payload is not None:
-            job_id = await _insert_cached_done_job(
-                conn,
-                url=url,
-                normalized_url=normalized_url,
-                host=host,
-                sidebar_payload=cached_payload,
-            )
-            CACHE_HITS.labels(tier="analysis").inc()
-            return SubmitResult(job_id=job_id, status=JobStatus.DONE, cached=True), None
+            if _payload_has_comment_refs(cached_payload):
+                source_job_id = await _find_source_job_with_utterances(conn, normalized_url)
+                if source_job_id is None:
+                    await _evict_url_cache(conn, normalized_url)
+                    logger.info(
+                        "evicted stale analysis cache for %s: comment refs with no source utterances",
+                        normalized_url,
+                    )
+                else:
+                    job_id = await _insert_cached_done_job(
+                        conn,
+                        url=url,
+                        normalized_url=normalized_url,
+                        host=host,
+                        sidebar_payload=cached_payload,
+                    )
+                    await _copy_utterances_to_job(conn, source_job_id, job_id)
+                    CACHE_HITS.labels(tier="analysis").inc()
+                    return SubmitResult(job_id=job_id, status=JobStatus.DONE, cached=True), None
+            else:
+                job_id = await _insert_cached_done_job(
+                    conn,
+                    url=url,
+                    normalized_url=normalized_url,
+                    host=host,
+                    sidebar_payload=cached_payload,
+                )
+                CACHE_HITS.labels(tier="analysis").inc()
+                return SubmitResult(job_id=job_id, status=JobStatus.DONE, cached=True), None
 
     existing = await _find_inflight_job(conn, normalized_url)
     if existing is not None:
