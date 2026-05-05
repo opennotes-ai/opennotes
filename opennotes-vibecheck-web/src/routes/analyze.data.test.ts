@@ -357,13 +357,13 @@ describe("analyzePdfAction", () => {
             : undefined,
       };
     });
+    const { _resetRateLimitForTesting } = await import(
+      "~/lib/rate-limit.server"
+    );
     try {
       process.env.NODE_ENV = "production";
       process.env.VIBECHECK_RATE_LIMIT_DISABLED = "0";
       process.env.VIBECHECK_RATE_LIMIT_PER_HOUR = "2";
-      const { _resetRateLimitForTesting } = await import(
-        "~/lib/rate-limit.server"
-      );
       _resetRateLimitForTesting();
       requestPdfUploadUrlMock.mockResolvedValue({
         gcs_key: "gcs-key",
@@ -407,6 +407,8 @@ describe("analyzePdfAction", () => {
       const r3 = await call();
       expect(r3.headers.get("Location")).toContain("pending_error=rate_limited");
     } finally {
+      vi.doUnmock("solid-js/web");
+      _resetRateLimitForTesting();
       if (origNodeEnv !== undefined) {
         process.env.NODE_ENV = origNodeEnv;
       } else {
