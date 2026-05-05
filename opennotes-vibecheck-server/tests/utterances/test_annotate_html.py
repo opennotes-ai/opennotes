@@ -72,6 +72,57 @@ def test_whitespace_differences_do_not_prevent_matching() -> None:
     assert find_tag(soup, "p")["data-utterance-id"] == "comment-2-space"
 
 
+def test_marks_hidden_utterance_ancestors_visible() -> None:
+    annotated = annotate_utterances_in_html(
+        """
+        <html>
+          <head><style>.spcv_mainContainer { display: none; }</style></head>
+          <body>
+            <div class="spcv_mainContainer">
+              <ul><li><p>Hidden OpenWeb comment.</p></li></ul>
+            </div>
+          </body>
+        </html>
+        """,
+        [utterance("comment-openweb", "Hidden OpenWeb comment.")],
+    )
+
+    soup = BeautifulSoup(annotated, "html.parser")
+    paragraph = find_tag(soup, "p")
+    hidden_container = soup.find("div", class_="spcv_mainContainer")
+    assert isinstance(hidden_container, Tag)
+    assert paragraph["data-utterance-id"] == "comment-openweb"
+    assert hidden_container.has_attr("data-vibecheck-utterance-ancestor")
+    style = soup.find("style", attrs={"data-vibecheck-utterance-style": True})
+    assert isinstance(style, Tag)
+    assert "display: revert !important" in style.get_text()
+
+
+def test_does_not_rewrite_visible_archive_layout_ancestors() -> None:
+    annotated = annotate_utterances_in_html(
+        """
+        <html>
+          <body>
+            <main class="article-layout" style="display: grid; overflow: hidden;">
+              <section class="comment-shell">
+                <p>Already visible comment.</p>
+              </section>
+            </main>
+          </body>
+        </html>
+        """,
+        [utterance("comment-visible", "Already visible comment.")],
+    )
+
+    soup = BeautifulSoup(annotated, "html.parser")
+    paragraph = find_tag(soup, "p")
+    layout = soup.find("main", class_="article-layout")
+    assert isinstance(layout, Tag)
+    assert paragraph["data-utterance-id"] == "comment-visible"
+    assert not layout.has_attr("data-vibecheck-utterance-ancestor")
+    assert soup.find("style", attrs={"data-vibecheck-utterance-style": True}) is None
+
+
 def test_idempotent_for_already_annotated_html() -> None:
     html = "<main><p>Alice opens the thread calmly.</p></main>"
     utterances = [utterance("comment-0-aaa", "Alice opens the thread calmly.")]
@@ -79,9 +130,30 @@ def test_idempotent_for_already_annotated_html() -> None:
     once = annotate_utterances_in_html(html, utterances)
     twice = annotate_utterances_in_html(once, utterances)
 
-    assert BeautifulSoup(twice, "html.parser").decode() == BeautifulSoup(
-        once, "html.parser"
-    ).decode()
+    assert (
+        BeautifulSoup(twice, "html.parser").decode() == BeautifulSoup(once, "html.parser").decode()
+    )
+
+
+def test_hidden_ancestor_reveal_style_is_idempotent() -> None:
+    html = """
+    <html>
+      <head><style>.spcv_mainContainer { display: none; }</style></head>
+      <body>
+        <div class="spcv_mainContainer"><p>Hidden OpenWeb comment.</p></div>
+      </body>
+    </html>
+    """
+    utterances = [utterance("comment-openweb", "Hidden OpenWeb comment.")]
+
+    once = annotate_utterances_in_html(html, utterances)
+    twice = annotate_utterances_in_html(once, utterances)
+    soup = BeautifulSoup(twice, "html.parser")
+
+    assert len(soup.find_all("style", attrs={"data-vibecheck-utterance-style": True})) == 1
+    assert (
+        BeautifulSoup(twice, "html.parser").decode() == BeautifulSoup(once, "html.parser").decode()
+    )
 
 
 def test_empty_utterance_list_returns_html_unchanged() -> None:
