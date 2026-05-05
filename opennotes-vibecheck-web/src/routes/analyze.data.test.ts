@@ -357,62 +357,64 @@ describe("analyzePdfAction", () => {
             : undefined,
       };
     });
-    process.env.NODE_ENV = "production";
-    process.env.VIBECHECK_RATE_LIMIT_DISABLED = "0";
-    process.env.VIBECHECK_RATE_LIMIT_PER_HOUR = "2";
-    const { _resetRateLimitForTesting } = await import(
-      "~/lib/rate-limit.server"
-    );
-    _resetRateLimitForTesting();
-    requestPdfUploadUrlMock.mockResolvedValue({
-      gcs_key: "gcs-key",
-      upload_url: "https://storage.example.com/upload",
-    });
-    requestPdfAnalysisMock.mockResolvedValue({
-      job_id: "pdf-rl-job",
-      status: "pending",
-      cached: false,
-    });
-
-    const file = new File([new Uint8Array(16)], "doc.pdf", {
-      type: "application/pdf",
-    });
-    const headers = new Headers({ "x-forwarded-for": "203.0.113.42, 10.0.0.1" });
-    const makeRequest = () =>
-      new Request("https://vibecheck.opennotes.ai/", {
-        method: "POST",
-        headers,
+    try {
+      process.env.NODE_ENV = "production";
+      process.env.VIBECHECK_RATE_LIMIT_DISABLED = "0";
+      process.env.VIBECHECK_RATE_LIMIT_PER_HOUR = "2";
+      const { _resetRateLimitForTesting } = await import(
+        "~/lib/rate-limit.server"
+      );
+      _resetRateLimitForTesting();
+      requestPdfUploadUrlMock.mockResolvedValue({
+        gcs_key: "gcs-key",
+        upload_url: "https://storage.example.com/upload",
+      });
+      requestPdfAnalysisMock.mockResolvedValue({
+        job_id: "pdf-rl-job",
+        status: "pending",
+        cached: false,
       });
 
-    const { resolveAnalyzePdfRedirect } = await import("./analyze.data");
+      const file = new File([new Uint8Array(16)], "doc.pdf", {
+        type: "application/pdf",
+      });
+      const headers = new Headers({ "x-forwarded-for": "203.0.113.42, 10.0.0.1" });
+      const makeRequest = () =>
+        new Request("https://vibecheck.opennotes.ai/", {
+          method: "POST",
+          headers,
+        });
 
-    const call = async () => {
-      currentRequest = makeRequest();
-      const fd = new FormData();
-      fd.set("pdf", file);
-      try {
-        await resolveAnalyzePdfRedirect(fd);
-        throw new Error("did not redirect");
-      } catch (thrown) {
-        if (thrown instanceof Response) return thrown;
-        throw thrown;
+      const { resolveAnalyzePdfRedirect } = await import("./analyze.data");
+
+      const call = async () => {
+        currentRequest = makeRequest();
+        const fd = new FormData();
+        fd.set("pdf", file);
+        try {
+          await resolveAnalyzePdfRedirect(fd);
+          throw new Error("did not redirect");
+        } catch (thrown) {
+          if (thrown instanceof Response) return thrown;
+          throw thrown;
+        }
+      };
+
+      const r1 = await call();
+      expect(r1.headers.get("Location")).toContain("/analyze?job=");
+      const r2 = await call();
+      expect(r2.headers.get("Location")).toContain("/analyze?job=");
+      const r3 = await call();
+      expect(r3.headers.get("Location")).toContain("pending_error=rate_limited");
+    } finally {
+      if (origNodeEnv !== undefined) {
+        process.env.NODE_ENV = origNodeEnv;
+      } else {
+        delete process.env.NODE_ENV;
       }
-    };
-
-    const r1 = await call();
-    expect(r1.headers.get("Location")).toContain("/analyze?job=");
-    const r2 = await call();
-    expect(r2.headers.get("Location")).toContain("/analyze?job=");
-    const r3 = await call();
-    expect(r3.headers.get("Location")).toContain("pending_error=rate_limited");
-
-    if (origNodeEnv !== undefined) {
-      process.env.NODE_ENV = origNodeEnv;
-    } else {
-      delete process.env.NODE_ENV;
+      delete process.env.VIBECHECK_RATE_LIMIT_PER_HOUR;
+      delete process.env.VIBECHECK_RATE_LIMIT_DISABLED;
     }
-    delete process.env.VIBECHECK_RATE_LIMIT_PER_HOUR;
-    delete process.env.VIBECHECK_RATE_LIMIT_DISABLED;
   });
 });
 
