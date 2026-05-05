@@ -1,5 +1,6 @@
 import type { JSX } from "solid-js";
 import { For, splitProps } from "solid-js";
+import * as DropdownMenuPrimitive from "@kobalte/core/dropdown-menu";
 import { cn } from "../utils";
 
 export type NavBarItem = {
@@ -8,18 +9,33 @@ export type NavBarItem = {
   external?: boolean;
 };
 
+export type NavBarDropdownItem = {
+  label: string;
+  items: NavBarItem[];
+};
+
+export type NavBarEntry = NavBarItem | NavBarDropdownItem;
+
 export type NavBarProps = {
   logo: JSX.Element;
   logoHref?: string;
-  items?: NavBarItem[];
+  items?: NavBarEntry[];
   actions?: JSX.Element;
   class?: string;
 };
+
+function isDropdown(entry: NavBarEntry): entry is NavBarDropdownItem {
+  return "items" in entry;
+}
+
+const linkClass =
+  "text-sm font-medium text-foreground whitespace-nowrap transition-all duration-300 cursor-pointer hover:text-primary";
 
 export function NavBar(props: NavBarProps): JSX.Element {
   const [local, others] = splitProps(props, ["logo", "logoHref", "items", "actions", "class"]);
   return (
     <nav
+      aria-label="Main navigation"
       class={cn(
         "flex h-16 items-center gap-6 border-b border-border bg-background/80 backdrop-blur-lg px-4 sm:px-6 lg:px-8",
         local.class,
@@ -32,16 +48,66 @@ export function NavBar(props: NavBarProps): JSX.Element {
       <div class="flex-1" />
       <ul class="hidden sm:flex items-center gap-5">
         <For each={local.items ?? []}>
-          {(item) => (
+          {(entry) => (
             <li>
-              <a
-                href={item.href}
-                target={item.external ? "_blank" : undefined}
-                rel={item.external ? "noopener noreferrer" : undefined}
-                class="text-sm font-medium text-foreground whitespace-nowrap transition-all duration-300 cursor-pointer hover:text-primary"
-              >
-                {item.label}
-              </a>
+              {isDropdown(entry) ? (
+                <DropdownMenuPrimitive.Root gutter={8}>
+                  <DropdownMenuPrimitive.Trigger
+                    class={cn(linkClass, "flex items-center gap-1 outline-none")}
+                  >
+                    {entry.label}
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="2"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      class="size-3 opacity-60"
+                    >
+                      <path d="M6 9l6 6 6-6" />
+                    </svg>
+                  </DropdownMenuPrimitive.Trigger>
+                  <DropdownMenuPrimitive.Portal>
+                    <DropdownMenuPrimitive.Content class="z-50 min-w-[10rem] origin-[var(--kb-menu-content-transform-origin)] overflow-hidden rounded-md border border-border bg-background/95 backdrop-blur-lg p-1 shadow-md animate-in data-[expanded]:animate-content-show data-[closed]:animate-content-hide">
+                      <For each={entry.items}>
+                        {(item) => (
+                          <DropdownMenuPrimitive.Item
+                            class="rounded-sm outline-none focus:bg-accent data-[highlighted]:bg-accent"
+                            onSelect={() => {
+                              window.open(
+                                item.href,
+                                item.external ? "_blank" : "_self",
+                                item.external ? "noopener,noreferrer" : "",
+                              );
+                            }}
+                          >
+                            <a
+                              href={item.href}
+                              target={item.external ? "_blank" : undefined}
+                              rel={item.external ? "noopener noreferrer" : undefined}
+                              class="flex w-full px-3 py-2 text-sm text-foreground transition-colors hover:text-primary"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              {item.label}
+                            </a>
+                          </DropdownMenuPrimitive.Item>
+                        )}
+                      </For>
+                    </DropdownMenuPrimitive.Content>
+                  </DropdownMenuPrimitive.Portal>
+                </DropdownMenuPrimitive.Root>
+              ) : (
+                <a
+                  href={entry.href}
+                  target={entry.external ? "_blank" : undefined}
+                  rel={entry.external ? "noopener noreferrer" : undefined}
+                  class={linkClass}
+                >
+                  {entry.label}
+                </a>
+              )}
             </li>
           )}
         </For>

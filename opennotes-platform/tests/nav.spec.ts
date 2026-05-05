@@ -19,30 +19,34 @@ test.describe("NavBar marketing items", () => {
     await page.goto("/");
   });
 
-  test("renders all four marketing nav links", async ({ page }) => {
-    await expect(page.getByRole("link", { name: "Home" })).toBeVisible();
-    await expect(page.getByRole("link", { name: "Pricing" })).toBeVisible();
-    await expect(page.getByRole("link", { name: "Open Tools" })).toBeVisible();
-    await expect(page.getByRole("link", { name: "Blog" })).toBeVisible();
+  test("renders three marketing nav links and one dropdown trigger", async ({ page }) => {
+    await expect(page.locator("nav").getByRole("link", { name: "Home" })).toBeVisible();
+    await expect(page.locator("nav").getByRole("link", { name: "Pricing" })).toBeVisible();
+    await expect(page.locator("nav").getByRole("button", { name: /open tools/i })).toBeVisible();
+    await expect(page.locator("nav").getByRole("link", { name: "Blog" })).toBeVisible();
   });
 
   test("nav links point to marketing-site URLs", async ({ page }) => {
-    await expect(page.getByRole("link", { name: "Home" })).toHaveAttribute(
+    await expect(page.locator("nav").getByRole("link", { name: "Home" })).toHaveAttribute(
       "href",
       "https://opennotes.ai",
     );
-    await expect(page.getByRole("link", { name: "Pricing" })).toHaveAttribute(
+    await expect(page.locator("nav").getByRole("link", { name: "Pricing" })).toHaveAttribute(
       "href",
       "https://opennotes.ai/pricing",
     );
-    await expect(page.getByRole("link", { name: "Open Tools" })).toHaveAttribute(
-      "href",
-      "https://opennotes.ai/open-tools",
-    );
-    await expect(page.getByRole("link", { name: "Blog" })).toHaveAttribute(
+    await expect(page.locator("nav").getByRole("link", { name: "Blog" })).toHaveAttribute(
       "href",
       "https://opennotes.ai/#blog",
     );
+  });
+
+  test("Open Tools dropdown reveals sub-items when clicked", async ({ page }) => {
+    await page.locator("nav").getByRole("button", { name: /open tools/i }).click();
+    await expect(page.getByRole("link", { name: "Discord Bot" })).toBeVisible();
+    await expect(page.getByRole("link", { name: "Playground" })).toBeVisible();
+    await expect(page.getByRole("link", { name: "Free Eval" })).toBeVisible();
+    await expect(page.getByRole("link", { name: "Vibe Check" })).toBeVisible();
   });
 
   test("Sign In link is present in the nav actions slot (actions unchanged)", async ({
@@ -74,11 +78,14 @@ test.describe("NavBar marketing items", () => {
   test("nav items are right-aligned (flex-1 spacer pushes them beside actions)", async ({
     page,
   }) => {
-    const homeLink = page.getByRole("link", { name: "Home" });
-    const signIn = page.locator("nav").getByRole("link", { name: /Sign In/i });
+    const nav = page.locator("nav").first();
+    const homeLink = nav.getByRole("link", { name: "Home" });
+    const signIn = nav.getByRole("link", { name: /Sign In/i });
+    const navBox = await nav.boundingBox();
     const homeBox = await homeLink.boundingBox();
     const signInBox = await signIn.boundingBox();
-    expect(homeBox!.x).toBeGreaterThan(700);
+    const navMidX = navBox!.x + navBox!.width / 2;
+    expect(homeBox!.x).toBeGreaterThan(navMidX);
     expect(homeBox!.x).toBeLessThan(signInBox!.x);
   });
 });

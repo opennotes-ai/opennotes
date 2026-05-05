@@ -30,10 +30,18 @@ export function RootLayout(props: { children?: JSX.Element }): JSX.Element {
         }
         logoHref="/"
         items={[
-          { label: "Home", href: "https://opennotes.ai" },
-          { label: "Pricing", href: "https://opennotes.ai/pricing" },
-          { label: "Open Tools", href: "https://opennotes.ai/open-tools" },
-          { label: "Blog", href: "https://opennotes.ai/#blog" },
+          { label: "Home", href: "https://opennotes.ai", external: true },
+          { label: "Pricing", href: "https://opennotes.ai/pricing", external: true },
+          {
+            label: "Open Tools",
+            items: [
+              { label: "Discord Bot", href: "https://opennotes.ai/discord-bot", external: true },
+              { label: "Playground", href: "https://opennotes.ai/playground", external: true },
+              { label: "Free Eval", href: "https://opennotes.ai/eval", external: true },
+              { label: "Vibe Check", href: "https://vibecheck.opennotes.ai/", external: true },
+            ],
+          },
+          { label: "Blog", href: "https://opennotes.ai/#blog", external: true },
         ]}
         actions={
           <>

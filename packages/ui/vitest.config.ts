@@ -5,6 +5,11 @@ export default defineConfig({
     environment: "jsdom",
     globals: true,
     include: ["src/**/*.{test,spec}.{ts,tsx}"],
+    server: {
+      deps: {
+        inline: ["@kobalte/core"],
+      },
+    },
   },
   resolve: {
     conditions: ["development", "browser"],
