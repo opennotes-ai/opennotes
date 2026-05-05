@@ -9,7 +9,6 @@ from typing import Any, cast
 from pydantic_ai import Agent
 from pydantic_ai.settings import ModelSettings
 
-from src.llm_config.constants import get_default_model_for_provider
 from src.llm_config.model_id import ModelId
 from src.url_content_scan.safety_schemas import (
     HarmfulContentMatch,
@@ -21,6 +20,7 @@ from src.url_content_scan.safety_schemas import (
 )
 
 _logger = logging.getLogger(__name__)
+DEFAULT_RECOMMENDATION_MODEL = "google-vertex:gemini-3.1-pro-preview"
 
 RECOMMENDATION_SYSTEM_PROMPT = """You synthesize the safety findings for one scanned page.
 Inputs are already-filtered safety matches from four analyses: text moderation,
@@ -64,8 +64,9 @@ async def run_safety_recommendation(
 ) -> SafetyRecommendation:
     if agent_runner is not None:
         return await agent_runner(inputs)
+    model = _default_recommendation_model()
     try:
-        return await _run_default_recommendation_agent(inputs)
+        return await _run_default_recommendation_agent(inputs, model=model)
     except Exception:
         _logger.warning("Default safety recommendation agent failed; using fallback", exc_info=True)
         return _fallback_recommendation(inputs)
@@ -73,10 +74,12 @@ async def run_safety_recommendation(
 
 async def _run_default_recommendation_agent(
     inputs: SafetyRecommendationInputs,
+    *,
+    model: Any,
 ) -> SafetyRecommendation:
     result = await recommendation_agent.run(
         _serialize_inputs(inputs),
-        model=_default_recommendation_model(),
+        model=model,
         instructions=RECOMMENDATION_SYSTEM_PROMPT,
         model_settings=ModelSettings(temperature=0.0),
     )
@@ -84,9 +87,7 @@ async def _run_default_recommendation_agent(
 
 
 def _default_recommendation_model() -> Any:
-    return ModelId.from_pydantic_ai(
-        get_default_model_for_provider("vertex_ai")
-    ).to_pydantic_ai_model()
+    return ModelId.from_pydantic_ai(DEFAULT_RECOMMENDATION_MODEL).to_pydantic_ai_model()
 
 
 def _model_dump(value: Any) -> Any:

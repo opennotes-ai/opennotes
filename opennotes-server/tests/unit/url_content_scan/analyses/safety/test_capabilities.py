@@ -400,3 +400,30 @@ async def test_run_safety_recommendation_uses_default_agent_runner(
         agent_run.await_args.kwargs["instructions"]
         == recommendation_module.RECOMMENDATION_SYSTEM_PROMPT
     )
+
+
+async def test_run_safety_recommendation_does_not_fallback_on_model_config_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.url_content_scan.analyses.safety import recommendation as recommendation_module
+
+    async def agent_run(*_args: object, **_kwargs: object) -> SimpleNamespace:
+        raise AssertionError("agent should not run when model selection fails")
+
+    monkeypatch.setattr(
+        recommendation_module,
+        "_default_recommendation_model",
+        lambda: (_ for _ in ()).throw(ValueError("missing Vertex config")),
+    )
+    monkeypatch.setattr(recommendation_module.recommendation_agent, "run", agent_run)
+
+    with pytest.raises(ValueError, match="missing Vertex config"):
+        await recommendation_module.run_safety_recommendation(
+            recommendation_module.SafetyRecommendationInputs(
+                harmful_content_matches=[],
+                web_risk_findings=[],
+                image_moderation_matches=[],
+                video_moderation_matches=[],
+                unavailable_inputs=[],
+            )
+        )
