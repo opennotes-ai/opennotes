@@ -12,10 +12,10 @@ from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 from supabase import create_client
 
-from src.cache.scrape_cache import CachedScrape, SupabaseScrapeCache
+from src.cache.scrape_cache import CachedScrape, SupabaseScrapeCache, canonical_cache_key
 from src.cache.screenshot_store import GCSScreenshotStore, InMemoryScreenshotStore, ScreenshotStore
 from src.config import get_settings
-from src.firecrawl_client import FirecrawlClient, ScrapeResult
+from src.firecrawl_client import FirecrawlClient, ScrapeMetadata, ScrapeResult
 from src.jobs.pdf_storage import get_pdf_upload_store
 from src.jobs.scrape_quality import ScrapeQuality, classify_scrape
 from src.monitoring import get_logger
@@ -33,7 +33,8 @@ _SCREENSHOT_TIMEOUT_SECONDS = 60.0
 _SCREENSHOT_REQUEST_BUDGET_SECONDS = 90.0
 _ARCHIVE_REQUEST_BUDGET_SECONDS = 8.0
 _BLOCKING_XFO_VALUES = {"deny", "sameorigin"}
-_ARCHIVE_CACHE_TIERS = ("scrape", "interact")
+_BROWSER_HTML_ARCHIVE_TIER = "browser_html"
+_ARCHIVE_CACHE_TIERS = ("interact", "scrape")
 _PERMISSIVE_FRAME_ANCESTOR_TOKENS = {"*", "https:", "http:", "data:"}
 _ALLOWED_GCS_HOSTS = frozenset({
     "storage.googleapis.com",
@@ -73,6 +74,26 @@ JOIN vibecheck_pdf_archives a ON a.job_id = j.job_id
 WHERE j.job_id = $1
   AND j.source_type = 'pdf'
   AND a.expires_at > now()
+"""
+
+_SELECT_BROWSER_HTML_ARCHIVE_SQL = """
+SELECT
+    s.url,
+    s.final_url,
+    s.page_title,
+    s.markdown,
+    s.html,
+    s.screenshot_storage_key
+FROM vibecheck_jobs j
+JOIN vibecheck_scrapes s ON s.job_id = j.job_id
+WHERE j.job_id = $1
+  AND j.source_type = 'browser_html'
+  AND j.normalized_url = $2
+  AND s.tier = 'browser_html'
+  AND s.normalized_url = $2
+  AND s.html IS NOT NULL
+  AND s.expires_at > now()
+  AND s.evicted_at IS NULL
 """
 
 # Map machine-readable `InvalidURL.reason` slugs back to the human-readable
@@ -194,9 +215,17 @@ async def _request_with_validated_redirects(
 
 
 @router.get("/frame-compat", response_model=FrameCompatResponse)
-async def frame_compat(url: str = Query(...)) -> FrameCompatResponse:
+async def frame_compat(
+    request: Request,
+    url: str = Query(...),
+    job_id: str | None = Query(None),
+) -> FrameCompatResponse:
     _validate_http_url(url)
-    headers, has_archive = await asyncio.gather(_probe_target(url), _has_cached_archive(url))
+    parsed_job_id = _parse_archive_job_id(job_id)
+    headers, has_archive = await asyncio.gather(
+        _probe_target(url),
+        _has_cached_archive(url, request=request, job_id=parsed_job_id),
+    )
     can_iframe, blocking_header, csp_frame_ancestors = _evaluate_headers(headers)
     return FrameCompatResponse(
         can_iframe=can_iframe,
@@ -231,23 +260,39 @@ def get_scrape_cache() -> SupabaseScrapeCache:
     return SupabaseScrapeCache(client, store, ttl_hours=settings.CACHE_TTL_HOURS)
 
 
-async def _has_cached_archive(url: str) -> bool:
+async def _has_cached_archive(
+    url: str, *, request: Request | None = None, job_id: UUID | None = None
+) -> bool:
     try:
         scrape_cache = get_scrape_cache()
     except Exception as exc:
         logger.info("archive cache lookup failed for %s: %s", url, exc)
         return False
 
-    cached, _ = await _get_cached_archive(url, scrape_cache, require_usable=True)
+    cached, _ = await _get_cached_archive(
+        url, scrape_cache, request=request, job_id=job_id, require_usable=True
+    )
     return bool(cached)
 
 
 async def _get_cached_archive(
-    url: str, scrape_cache: SupabaseScrapeCache, *, require_usable: bool = False
+    url: str,
+    scrape_cache: SupabaseScrapeCache,
+    *,
+    request: Request | None = None,
+    job_id: UUID | None = None,
+    require_usable: bool = False,
 ) -> tuple[CachedScrape | None, str | None]:
     try:
-        tiers = ("interact", "scrape") if require_usable else _ARCHIVE_CACHE_TIERS
-        for tier in tiers:
+        if request is not None and job_id is not None:
+            cached = await _get_browser_html_archive(request, job_id, requested_url=url)
+            if (
+                cached
+                and cached.html
+                and (not require_usable or classify_scrape(cached) is ScrapeQuality.OK)
+            ):
+                return cached, _BROWSER_HTML_ARCHIVE_TIER
+        for tier in _ARCHIVE_CACHE_TIERS:
             cached = await scrape_cache.get(url, tier=tier)
             if cached and cached.html:
                 if require_usable and classify_scrape(cached) is not ScrapeQuality.OK:
@@ -257,6 +302,38 @@ async def _get_cached_archive(
     except Exception as exc:
         logger.info("archive cache lookup failed for %s: %s", url, exc)
         return None, None
+
+
+async def _get_browser_html_archive(
+    request: Request, job_id: UUID, *, requested_url: str
+) -> CachedScrape | None:
+    pool = getattr(request.app.state, "db_pool", None)
+    if pool is None:
+        logger.info("browser_html archive lookup skipped for %s: database unavailable", job_id)
+        return None
+
+    normalized_url = canonical_cache_key(requested_url)
+    try:
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(_SELECT_BROWSER_HTML_ARCHIVE_SQL, job_id, normalized_url)
+    except Exception as exc:
+        logger.info("browser_html archive lookup failed for %s: %s", job_id, exc)
+        return None
+    if row is None:
+        return None
+    return CachedScrape(
+        markdown=row["markdown"] or "",
+        html=row["html"],
+        raw_html=None,
+        screenshot=None,
+        links=None,
+        metadata=ScrapeMetadata(
+            title=row["page_title"],
+            source_url=row["final_url"] or row["url"],
+        ),
+        warning=None,
+        storage_key=row["screenshot_storage_key"],
+    )
 
 
 async def _revalidate_archive_final_url(
@@ -273,7 +350,7 @@ async def _revalidate_archive_final_url(
         _validate_http_url(final)
     except HTTPException:
         evict = getattr(scrape_cache, "evict", None)
-        if callable(evict):
+        if callable(evict) and tier != _BROWSER_HTML_ARCHIVE_TIER:
             try:
                 result = evict(original_url, tier=tier)
                 if isawaitable(result):
@@ -380,7 +457,11 @@ async def archive_preview(
     _validate_http_url(url)
     scrape_cache = get_scrape_cache()
     cached, cached_tier = await _get_cached_archive(
-        url, scrape_cache, require_usable=True
+        url,
+        scrape_cache,
+        request=request,
+        job_id=parsed_job_id,
+        require_usable=True,
     )
     if cached and cached.html:
         # TODO: If Firecrawl exposes a hosted archive URL in CachedScrape metadata,

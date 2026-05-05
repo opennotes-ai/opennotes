@@ -667,20 +667,28 @@ describe("getArchiveProbe and getScreenshot split queries", () => {
     });
 
     const { getArchiveProbe } = await import("./analyze.data");
-    const result = await getArchiveProbe("https://news.example.com/a?x=1");
+    const result = await getArchiveProbe(
+      "https://news.example.com/a?x=1",
+      "11111111-1111-1111-1111-111111111111",
+    );
 
     expect(result).toEqual({
       ok: true,
       has_archive: true,
       archived_preview_url:
-        "/api/archive-preview?url=https%3A%2F%2Fnews.example.com%2Fa%3Fx%3D1",
+        "/api/archive-preview?url=https%3A%2F%2Fnews.example.com%2Fa%3Fx%3D1&job_id=11111111-1111-1111-1111-111111111111",
       can_iframe: false,
       blocking_header: "x-frame-options: DENY",
       csp_frame_ancestors: null,
     });
     expect(clientGetMock).toHaveBeenCalledTimes(1);
     expect(clientGetMock).toHaveBeenCalledWith("/api/frame-compat", {
-      params: { query: { url: "https://news.example.com/a?x=1" } },
+      params: {
+        query: {
+          url: "https://news.example.com/a?x=1",
+          job_id: "11111111-1111-1111-1111-111111111111",
+        },
+      },
     });
   });
 

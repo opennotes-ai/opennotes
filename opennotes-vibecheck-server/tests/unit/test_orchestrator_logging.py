@@ -68,7 +68,6 @@ async def test_first_pass_extraction_error_logs_warning_with_exc_info(
         patch.object(orch_mod, "_build_scrape_cache", return_value=MagicMock()),
         patch.object(orch_mod, "_build_firecrawl_client", return_value=MagicMock()),
         patch.object(orch_mod, "_build_firecrawl_tier1_client", return_value=MagicMock()),
-        patch.object(orch_mod, "_load_job_source_type", new=AsyncMock(return_value="url")),
         patch.object(orch_mod, "extract_utterances", side_effect=_raise_extraction),
         patch.object(orch_mod, "_scrape_step", new=AsyncMock(return_value=MagicMock())),
         patch.object(orch_mod, "_revalidate_final_url", new=AsyncMock()),
@@ -81,6 +80,7 @@ async def test_first_pass_extraction_error_logs_warning_with_exc_info(
             task_attempt,
             url,
             fake_settings,
+            source_type="url",
         )
 
     terminal_err = exc_info_ctx.value
@@ -140,7 +140,6 @@ async def test_second_pass_extraction_error_logs_warning_with_exc_info(
         patch.object(orch_mod, "_build_scrape_cache", return_value=MagicMock()),
         patch.object(orch_mod, "_build_firecrawl_client", return_value=MagicMock()),
         patch.object(orch_mod, "_build_firecrawl_tier1_client", return_value=MagicMock()),
-        patch.object(orch_mod, "_load_job_source_type", new=AsyncMock(return_value="url")),
         patch.object(orch_mod, "extract_utterances", side_effect=_first_zero_then_extraction),
         patch.object(orch_mod, "_scrape_step", new=AsyncMock(return_value=MagicMock())),
         patch.object(orch_mod, "_revalidate_final_url", new=AsyncMock()),
@@ -153,6 +152,7 @@ async def test_second_pass_extraction_error_logs_warning_with_exc_info(
             task_attempt,
             url,
             fake_settings,
+            source_type="url",
         )
 
     terminal_err = exc_info_ctx.value

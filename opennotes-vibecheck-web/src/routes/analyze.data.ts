@@ -70,8 +70,10 @@ async function fetchArchiveProbe(
   jobId?: string,
 ): Promise<ArchiveProbeResult> {
   try {
+    const frameParams: { url: string; job_id?: string } = { url: targetUrl };
+    if (jobId) frameParams.job_id = jobId;
     const { data, error } = await client.GET("/api/frame-compat", {
-      params: { query: { url: targetUrl } },
+      params: { query: frameParams },
     });
     if (error || !data) {
       return { ok: false, kind: "transient_error" };

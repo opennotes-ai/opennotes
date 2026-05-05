@@ -3,6 +3,7 @@ import time
 from types import SimpleNamespace
 from typing import Any, cast
 from unittest.mock import patch
+from uuid import UUID
 
 import pytest
 from fastapi.testclient import TestClient
@@ -95,6 +96,8 @@ class TestFrameCompat:
             ) -> CachedScrape | None:
                 assert url == "https://archived.example.com/"
                 calls.append(tier)
+                if tier == "browser_html":
+                    return None
                 if tier == "interact":
                     return None
                 return CachedScrape(html="<main>Archived</main>")
@@ -114,6 +117,53 @@ class TestFrameCompat:
         assert body["has_archive"] is True
         assert calls == ["interact", "scrape"]
 
+    def test_has_archive_is_true_for_browser_html_job(
+        self, client: TestClient, httpx_mock: HTTPXMock
+    ) -> None:
+        job_id = "11111111-1111-1111-1111-111111111111"
+
+        class StubConn:
+            async def fetchrow(self, query: str, *args: object) -> dict[str, object] | None:
+                assert "vibecheck_scrapes" in query
+                assert args == (
+                    UUID(job_id),
+                    "https://extension-cache.example.com/",
+                )
+                return {
+                    "url": "https://extension-cache.example.com/",
+                    "final_url": "https://extension-cache.example.com/",
+                    "page_title": "Extension submitted",
+                    "markdown": "Extension submitted article body",
+                    "html": "<main>Extension submitted article body</main>",
+                    "screenshot_storage_key": None,
+                }
+
+        class StubCache:
+            async def get(self, url: str, *, tier: str = "scrape") -> None:
+                raise AssertionError("browser_html lookup must be job-scoped")
+
+        httpx_mock.add_response(
+            method="HEAD",
+            url="https://extension-cache.example.com/",
+            headers={"x-frame-options": "DENY"},
+        )
+        _client_state(client).db_pool = _FakePool(StubConn())
+        try:
+            with patch("src.routes.frame.get_scrape_cache", return_value=StubCache()):
+                resp = client.get(
+                    "/api/frame-compat",
+                    params={
+                        "url": "https://extension-cache.example.com/",
+                        "job_id": job_id,
+                    },
+                )
+        finally:
+            del _client_state(client).db_pool
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["can_iframe"] is False
+        assert body["has_archive"] is True
+
     def test_has_archive_uses_interact_tier_first(
         self, client: TestClient, httpx_mock: HTTPXMock
     ) -> None:
@@ -127,6 +177,8 @@ class TestFrameCompat:
             ) -> CachedScrape | None:
                 assert url == "https://interact-cache.example.com/"
                 calls.append(tier)
+                if tier == "browser_html":
+                    return None
                 if tier == "interact":
                     return CachedScrape(html="<main>Interact archived</main>")
                 return None
@@ -159,6 +211,8 @@ class TestFrameCompat:
             ) -> CachedScrape | None:
                 assert url == "https://interstitial-archive.example.com/"
                 calls.append(tier)
+                if tier == "browser_html":
+                    return None
                 if tier == "interact":
                     return None
                 return CachedScrape(html="<main>Just a moment</main>")
@@ -436,6 +490,8 @@ class TestArchivePreview:
             ) -> CachedScrape | None:
                 assert url == "https://example.com/article"
                 calls.append(tier)
+                if tier == "browser_html":
+                    return None
                 if tier == "scrape":
                     return CachedScrape(
                         html="<main><h1>Scrape preview</h1></main>",
@@ -461,6 +517,109 @@ class TestArchivePreview:
         assert "Interact preview" in resp.text
         assert calls == ["interact"]
 
+    def test_cached_browser_html_job_served_to_archive_preview(
+        self, client: TestClient
+    ) -> None:
+        job_id = "22222222-2222-2222-2222-222222222222"
+
+        class StubConn:
+            async def fetchrow(self, query: str, *args: object) -> dict[str, object] | None:
+                assert "vibecheck_scrapes" in query
+                assert args == (
+                    UUID(job_id),
+                    "https://example.com/extension-submitted",
+                )
+                return {
+                    "url": "https://example.com/extension-submitted",
+                    "final_url": "https://example.com/extension-submitted",
+                    "page_title": "Extension archive",
+                    "markdown": "Extension archive",
+                    "html": "<main><h1>Extension archive</h1></main>",
+                    "screenshot_storage_key": None,
+                }
+
+        class StubCache:
+            async def get(self, url: str, *, tier: str = "scrape") -> None:
+                raise AssertionError("browser_html lookup must be job-scoped")
+
+        _client_state(client).db_pool = _FakePool(StubConn())
+        try:
+            with patch("src.routes.frame.get_scrape_cache", return_value=StubCache()):
+                resp = client.get(
+                    "/api/archive-preview",
+                    params={
+                        "url": "https://example.com/extension-submitted",
+                        "job_id": job_id,
+                    },
+                )
+        finally:
+            del _client_state(client).db_pool
+
+        assert resp.status_code == 200
+        assert resp.headers["content-type"] == "text/html; charset=utf-8"
+        assert "Extension archive" in resp.text
+
+    def test_browser_html_archive_preview_is_scoped_by_job_id(
+        self, client: TestClient
+    ) -> None:
+        first_job_id = UUID("33333333-3333-3333-3333-333333333333")
+        second_job_id = UUID("44444444-4444-4444-4444-444444444444")
+        rows = {
+            first_job_id: {
+                "url": "https://example.com/repeated",
+                "final_url": "https://example.com/repeated",
+                "page_title": "First archive",
+                "markdown": "First archive",
+                "html": "<main><h1>First archive</h1></main>",
+                "screenshot_storage_key": None,
+            },
+            second_job_id: {
+                "url": "https://example.com/repeated",
+                "final_url": "https://example.com/repeated",
+                "page_title": "Second archive",
+                "markdown": "Second archive",
+                "html": "<main><h1>Second archive</h1></main>",
+                "screenshot_storage_key": None,
+            },
+        }
+
+        class StubConn:
+            async def fetchrow(self, query: str, *args: object) -> dict[str, object] | None:
+                assert "vibecheck_scrapes" in query
+                assert args[1] == "https://example.com/repeated"
+                return rows.get(args[0])
+
+        class StubCache:
+            async def get(self, url: str, *, tier: str = "scrape") -> None:
+                raise AssertionError("browser_html lookup must be job-scoped")
+
+        _client_state(client).db_pool = _FakePool(StubConn())
+        try:
+            with patch("src.routes.frame.get_scrape_cache", return_value=StubCache()):
+                first = client.get(
+                    "/api/archive-preview",
+                    params={
+                        "url": "https://example.com/repeated",
+                        "job_id": str(first_job_id),
+                    },
+                )
+                second = client.get(
+                    "/api/archive-preview",
+                    params={
+                        "url": "https://example.com/repeated",
+                        "job_id": str(second_job_id),
+                    },
+                )
+        finally:
+            del _client_state(client).db_pool
+
+        assert first.status_code == 200
+        assert "First archive" in first.text
+        assert "Second archive" not in first.text
+        assert second.status_code == 200
+        assert "Second archive" in second.text
+        assert "First archive" not in second.text
+
     def test_cached_interact_html_served_when_scrape_tier_is_non_ok(
         self, client: TestClient
     ) -> None:
@@ -474,6 +633,8 @@ class TestArchivePreview:
             ) -> CachedScrape | None:
                 assert url == "https://example.com/article"
                 calls.append(tier)
+                if tier == "browser_html":
+                    return None
                 if tier == "scrape":
                     return CachedScrape(html="<main>Just a moment</main>")
                 return CachedScrape(html="<main><h1>Interact preview</h1></main>")
@@ -502,6 +663,8 @@ class TestArchivePreview:
             ) -> CachedScrape | None:
                 assert url == "https://example.com/article"
                 calls.append(tier)
+                if tier == "browser_html":
+                    return None
                 if tier == "interact":
                     return CachedScrape(html="<main>Just a moment</main>")
                 return CachedScrape(html="<main><h1>Scrape preview</h1></main>")
@@ -530,6 +693,8 @@ class TestArchivePreview:
             ) -> CachedScrape | None:
                 assert url == "https://example.com/fallback"
                 calls.append(tier)
+                if tier == "browser_html":
+                    return None
                 if tier == "scrape":
                     return None
                 return CachedScrape(html="<main><h1>Interact preview</h1></main>")
@@ -556,6 +721,8 @@ class TestArchivePreview:
             async def get(
                 self, url: str, *, tier: str = "scrape"
             ) -> CachedScrape | None:
+                if tier == "browser_html":
+                    return None
                 if tier == "scrape":
                     return None
                 return CachedScrape(
