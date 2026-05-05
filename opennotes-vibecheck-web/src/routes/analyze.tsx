@@ -132,7 +132,8 @@ export default function AnalyzePage() {
     if (!id) return null;
     try {
       return await getJobState(id);
-    } catch {
+    } catch (err) {
+      console.warn("vibecheck initial job state failed; deferring to polling:", err);
       return null;
     }
   });

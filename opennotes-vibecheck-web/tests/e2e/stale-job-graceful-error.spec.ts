@@ -26,13 +26,13 @@ test("stale job URL shows inline failure card, not root ErrorBoundary", async ({
     "Must stay on /analyze, never redirect away",
   ).toBe("/analyze");
 
-  await expect(
-    page.getByText(/something went wrong/i),
-    "Root ErrorBoundary fallback must not appear",
-  ).toHaveCount(0);
-
   const failureCard = page.locator('[data-testid="job-failure-card"]');
   await expect(failureCard).toBeVisible({ timeout: 20_000 });
+
+  await expect(
+    page.locator('[data-testid="root-error-boundary"]'),
+    "Root ErrorBoundary fallback must not appear",
+  ).toHaveCount(0);
 
   expect(
     new URL(page.url()).pathname,
