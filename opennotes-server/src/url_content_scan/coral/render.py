@@ -36,24 +36,26 @@ def _body_html_to_markdown_text(body: str) -> str:  # noqa: PLR0912
         href = anchor.get("href")
         parent = anchor.getparent()
         replacement = f"[{label}]({href})" if label and href else label
-        tail = anchor.tail or ""
         if parent is not None and replacement:
             previous = anchor.getprevious()
             if previous is not None:
-                previous.tail = f"{previous.tail or ''}{replacement}{tail}"
+                previous.tail = f"{previous.tail or ''}{replacement}"
             else:
-                parent.text = f"{parent.text or ''}{replacement}{tail}"
+                parent.text = f"{parent.text or ''}{replacement}"
         anchor.drop_tree()
     for br in root.xpath(".//br"):
         br.tail = f"\n{br.tail or ''}"
         br.drop_tag()
     for list_item in root.xpath(".//li"):
         if isinstance(list_item, HtmlElement):
-            tail = list_item.tail or ""
-            text = _collapse_inline_whitespace(list_item.text_content())
-            list_item.clear()
-            list_item.text = f"- {text}".rstrip()
-            list_item.tail = f"\n{tail}"
+            if list_item.text and list_item.text.strip():
+                list_item.text = f"- {list_item.text}"
+            elif len(list_item):
+                first_child = list_item[0]
+                first_child.text = f"- {first_child.text or ''}"
+            else:
+                list_item.text = "-"
+            list_item.tail = f"\n{list_item.tail or ''}"
     for tag_name in _BLOCK_TAGS:
         for block in root.xpath(f".//{tag_name}"):
             if isinstance(block, HtmlElement):
