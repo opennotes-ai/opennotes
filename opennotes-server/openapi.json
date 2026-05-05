@@ -13596,10 +13596,12 @@
         ],
         "responses": {
           "200": {
-            "description": "Successful Response",
+            "description": "HTML archive preview",
             "content": {
-              "application/json": {
-                "schema": {}
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
               }
             }
           },

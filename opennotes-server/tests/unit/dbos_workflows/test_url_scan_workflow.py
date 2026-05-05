@@ -422,13 +422,50 @@ class TestUrlScanSectionRetryWorkflow:
             )
 
         assert result == {"status": "done"}
-        mock_rotate.assert_called_once_with(job_id, SectionSlug.SAFETY_WEB_RISK.value)
+        mock_rotate.assert_called_once_with(job_id, SectionSlug.SAFETY_WEB_RISK.value, None)
         mock_section_workflow.assert_called_once_with(
             job_id=job_id,
             section_slug=SectionSlug.SAFETY_WEB_RISK.value,
             attempt_id=new_attempt_id,
             section_inputs=inputs,
             parent_holds_token=True,
+        )
+
+    def test_uses_public_retry_attempt_when_supplied(self) -> None:
+        from src.dbos_workflows.url_scan_section_retry_workflow import (
+            UrlScanWorkflowInputs,
+            url_scan_section_retry_workflow,
+        )
+
+        job_id = str(uuid4())
+        attempt_id = str(uuid4())
+        inputs = UrlScanWorkflowInputs()
+
+        with (
+            patch(
+                "src.dbos_workflows.url_scan_section_retry_workflow.rotate_url_scan_section_attempt_step",
+                return_value=attempt_id,
+            ) as mock_rotate,
+            patch(
+                "src.dbos_workflows.url_scan_section_retry_workflow.url_scan_section_workflow",
+                return_value={"status": "done", "attempt_id": attempt_id},
+            ) as mock_section_workflow,
+        ):
+            result = url_scan_section_retry_workflow.__wrapped__(  # type: ignore[attr-defined]
+                job_id=job_id,
+                section_slug=SectionSlug.SAFETY_WEB_RISK.value,
+                section_inputs=inputs,
+                attempt_id=attempt_id,
+            )
+
+        assert result == {"status": "done", "attempt_id": attempt_id}
+        mock_rotate.assert_called_once_with(job_id, SectionSlug.SAFETY_WEB_RISK.value, attempt_id)
+        mock_section_workflow.assert_called_once_with(
+            job_id=job_id,
+            section_slug=SectionSlug.SAFETY_WEB_RISK.value,
+            attempt_id=attempt_id,
+            section_inputs=inputs,
+            parent_holds_token=False,
         )
 
 

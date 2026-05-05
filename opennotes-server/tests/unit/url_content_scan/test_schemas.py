@@ -161,6 +161,10 @@ def test_router_openapi_anchor_emits_url_scan_components():
 
     assert "/api/v1/url_scan/_schema_anchor" in schema["paths"]
     assert "/api/v1/url_scan/_sidebar_schema_anchor" in schema["paths"]
+    archive_response = schema["paths"]["/api/v1/url_scan/archive-preview"]["get"]["responses"][
+        "200"
+    ]
+    assert "text/html" in archive_response["content"]
     assert "JobState" in components
     assert "SidebarPayload" in components
     assert "SectionSlot" in components

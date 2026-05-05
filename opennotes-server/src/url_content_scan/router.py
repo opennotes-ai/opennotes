@@ -5,13 +5,13 @@ from uuid import UUID
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
-from fastapi.responses import JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.cache.redis_client import redis_client
 from src.config import settings
 from src.database import get_db, get_session_maker
-from src.services.firecrawl_client import FirecrawlClient
+from src.services.firecrawl_client import FirecrawlClient, FirecrawlError
 from src.url_content_scan.analyze_handler import AnalyzeSubmissionError, submit_url_scan
 from src.url_content_scan.auth import get_url_scan_api_key
 from src.url_content_scan.frame import archive_preview, frame_compat, lookup_screenshot
@@ -239,6 +239,8 @@ async def frame_compat_route(
             )
     except InvalidURL as exc:
         return _error_response(status.HTTP_400_BAD_REQUEST, "invalid_url", exc.reason)
+    except httpx.HTTPError as exc:
+        return _error_response(status.HTTP_502_BAD_GATEWAY, "upstream_error", str(exc))
     return FrameCompatResponse.model_validate(result.model_dump())
 
 
@@ -257,11 +259,21 @@ async def screenshot_route(
     except InvalidURL as exc:
         return _error_response(status.HTTP_400_BAD_REQUEST, "invalid_url", exc.reason)
     if result is None:
-        raise HTTPException(status_code=404, detail="Screenshot unavailable")
+        return _error_response(status.HTTP_404_NOT_FOUND, "not_found", "Screenshot unavailable")
     return ScreenshotResponse.model_validate(result)
 
 
-@router.get("/archive-preview", response_model=None)
+@router.get(
+    "/archive-preview",
+    response_model=None,
+    response_class=HTMLResponse,
+    responses={
+        200: {
+            "description": "HTML archive preview",
+            "content": {"text/html": {"schema": {"type": "string"}}},
+        }
+    },
+)
 async def archive_preview_route(
     request: Request,
     url: str = Query(...),
@@ -277,14 +289,16 @@ async def archive_preview_route(
         )
     except InvalidURL as exc:
         return _error_response(status.HTTP_400_BAD_REQUEST, "invalid_url", exc.reason)
+    except FirecrawlError as exc:
+        return _error_response(status.HTTP_502_BAD_GATEWAY, "upstream_error", str(exc))
     if html is None:
-        raise HTTPException(status_code=404, detail="Archive unavailable")
+        return _error_response(status.HTTP_404_NOT_FOUND, "not_found", "Archive unavailable")
     return Response(
         html,
         media_type="text/html; charset=utf-8",
         headers={
             "cache-control": "no-store, private",
-            "content-security-policy": "default-src 'none'; img-src https: data:; style-src 'unsafe-inline'; frame-ancestors 'self'",
+            "content-security-policy": "default-src 'none'; img-src https: data:; style-src 'unsafe-inline' https:; font-src https: data:; frame-src 'none'; form-action 'none'; base-uri 'none'; frame-ancestors 'self'",
             "x-content-type-options": "nosniff",
         },
     )

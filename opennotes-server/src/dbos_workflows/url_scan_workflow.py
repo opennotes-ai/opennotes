@@ -440,8 +440,12 @@ async def _update_slot_failed_async(
         return bool(result.rowcount)
 
 
-async def _rotate_slot_attempt_async(job_id: UUID, slug: SectionSlug) -> UUID:
-    new_attempt_id = uuid4()
+async def _rotate_slot_attempt_async(
+    job_id: UUID,
+    slug: SectionSlug,
+    attempt_id: UUID | None = None,
+) -> UUID:
+    new_attempt_id = attempt_id or uuid4()
     async with get_session_maker()() as session:
         result = await session.execute(
             update(UrlScanSectionSlot)
@@ -904,14 +908,15 @@ async def _finalize_async(
         if sidebar_payload is not None:
             encoded_payload = jsonable_encoder(sidebar_payload)
             state.sidebar_payload = encoded_payload
-            expires_at = datetime.now(UTC) + _SIDEBAR_CACHE_TTL
-            await session.merge(
-                UrlScanSidebarCache(
-                    normalized_url=state.normalized_url,
-                    sidebar_payload=encoded_payload,
-                    expires_at=expires_at,
+            if status == BatchJobStatus.COMPLETED.value:
+                expires_at = datetime.now(UTC) + _SIDEBAR_CACHE_TTL
+                await session.merge(
+                    UrlScanSidebarCache(
+                        normalized_url=state.normalized_url,
+                        sidebar_payload=encoded_payload,
+                        expires_at=expires_at,
+                    )
                 )
-            )
         else:
             state.sidebar_payload = None
 
@@ -994,8 +999,20 @@ def fail_url_scan_section_step(
 
 
 @DBOS.step()
-def rotate_url_scan_section_attempt_step(job_id: str, slug: str) -> str:
-    return str(run_sync(_rotate_slot_attempt_async(UUID(job_id), SectionSlug(slug))))
+def rotate_url_scan_section_attempt_step(
+    job_id: str,
+    slug: str,
+    attempt_id: str | None = None,
+) -> str:
+    return str(
+        run_sync(
+            _rotate_slot_attempt_async(
+                UUID(job_id),
+                SectionSlug(slug),
+                UUID(attempt_id) if attempt_id is not None else None,
+            )
+        )
+    )
 
 
 @DBOS.step()
