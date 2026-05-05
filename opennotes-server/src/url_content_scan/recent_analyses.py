@@ -37,8 +37,7 @@ SELECT
     COALESCE(st.finished_at, j.completed_at) AS finished_at,
     COALESCE(
         st.sidebar_payload #>> '{headline,text}',
-        st.page_title,
-        st.source_url
+        st.page_title
     ) AS preview_description,
     slots.sections,
     j.status,
@@ -210,8 +209,11 @@ async def list_recent(
         signed = signer.sign_screenshot_key(row.get("screenshot_storage_key"))
         if signed is None:
             continue
-        preview_description = str(
-            row.get("preview_description") or row.get("page_title") or sanitized_source_url
+        raw_preview_description = row.get("preview_description") or row.get("page_title")
+        preview_description = (
+            sanitized_source_url
+            if str(raw_preview_description or "") == source_url
+            else str(raw_preview_description or sanitized_source_url)
         )
         out.append(
             RecentAnalysis(
