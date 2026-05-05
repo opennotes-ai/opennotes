@@ -129,7 +129,13 @@ export default function AnalyzePage() {
     typeof searchParams.job === "string" ? searchParams.job : "";
   const initialJobState = createAsync(async () => {
     const id = jobParam();
-    return id ? getJobState(id) : null;
+    if (!id) return null;
+    try {
+      return await getJobState(id);
+    } catch (err) {
+      console.warn("vibecheck initial job state failed; deferring to polling:", err);
+      return null;
+    }
   });
 
   return (

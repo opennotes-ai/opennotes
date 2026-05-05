@@ -12,7 +12,7 @@ export default function App() {
           <Title>vibecheck</Title>
           <ErrorBoundary
             fallback={(err, reset) => (
-              <div class="p-8">
+              <div class="p-8" data-testid="root-error-boundary">
                 <p class="text-red-600">Something went wrong: {err.message}</p>
                 <button
                   type="button"
