@@ -85,6 +85,7 @@ async def _default_dispatch_workflow(
         job_id=str(job_id),
         section_slug=_coerce_slug_value(slug),
         section_inputs=section_inputs,
+        attempt_id=str(attempt_id),
     )
     if inspect.isawaitable(maybe_result):
         await maybe_result

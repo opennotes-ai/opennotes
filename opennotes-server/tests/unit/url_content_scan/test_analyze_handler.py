@@ -264,6 +264,10 @@ async def test_submit_url_scan_retries_lock_once_then_creates_pending_job_and_di
     assert job.metadata_["api_key_id"] == str(api_key_id)
     assert state.attempt_id == attempt_id
     assert state.normalized_url == "https://example.com/post"
+    assert session.web_risk_lookups["https://example.com/post"].findings == {
+        "url": "https://example.com/post",
+        "threat_types": [],
+    }
     assert len(session.section_slots) == len(SectionSlug)
     assert {slot.slug for slot in session.section_slots} == {slug.value for slug in SectionSlug}
     assert {slot.attempt_id for slot in session.section_slots} == {attempt_id}

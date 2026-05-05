@@ -258,8 +258,21 @@ async def _run_web_risk_lookup(
 
     maybe_result = web_risk(source_url)
     if isawaitable(maybe_result):
-        return await maybe_result
-    return maybe_result
+        finding = await maybe_result
+    else:
+        finding = maybe_result
+    await session.merge(
+        UrlScanWebRiskLookup(
+            normalized_url=normalized_url,
+            findings=(
+                finding.model_dump(mode="json")
+                if finding is not None
+                else {"url": normalized_url, "threat_types": []}
+            ),
+            expires_at=now + _WEB_RISK_LOOKUP_TTL,
+        )
+    )
+    return finding
 
 
 def _request_api_key_id(request: Request) -> str | None:
