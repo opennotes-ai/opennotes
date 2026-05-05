@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import importlib
 import math
 from collections.abc import Awaitable, Callable
 
@@ -61,6 +62,11 @@ class _UnionFind:
 
 def _empty_report() -> ClaimsReport:
     return ClaimsReport(deduped_claims=[], total_claims=0, total_unique=0)
+
+
+async def _default_extract_claims(utterance: Utterance) -> list[ExtractedClaim]:
+    extract_module = importlib.import_module("src.url_content_scan.analyses.claims.extract")
+    return await extract_module.extract_claims(utterance)
 
 
 async def _extract_claim_batches(
@@ -149,7 +155,7 @@ def _to_deduped_claim(
 async def run_claims_dedup(
     utterances: list[Utterance],
     *,
-    extract_claims: ClaimExtractor,
+    extract_claims: ClaimExtractor | None = None,
     embed_texts: TextEmbedder,
     similarity_threshold: float = DEFAULT_CLAIMS_SIMILARITY_THRESHOLD,
     max_concurrency: int = DEFAULT_CLAIMS_CONCURRENCY,
@@ -162,9 +168,11 @@ async def run_claims_dedup(
     if not utterances:
         return _empty_report()
 
+    extractor = extract_claims or _default_extract_claims
+
     per_utterance_claims = await _extract_claim_batches(
         utterances,
-        extract_claims=extract_claims,
+        extract_claims=extractor,
         max_concurrency=max_concurrency,
     )
     flattened, author_by_utterance = _flatten_claims(utterances, per_utterance_claims)

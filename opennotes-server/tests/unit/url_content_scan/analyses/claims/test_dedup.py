@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from types import SimpleNamespace
 
 import pytest
 
@@ -53,6 +54,41 @@ async def test_run_claims_dedup_collapses_semantic_duplicates() -> None:
     assert cluster.author_count == 2
     assert set(cluster.utterance_ids) == {"u-1", "u-2", "u-3"}
     assert set(cluster.representative_authors) == {"alice", "bob"}
+
+
+@pytest.mark.asyncio
+async def test_run_claims_dedup_uses_default_extractor_when_not_injected(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    utterances = [
+        Utterance(utterance_id="u-1", kind="post", text="Rain is coming today.", author="alice")
+    ]
+
+    async def fake_extract(utterance: Utterance) -> list[SimpleNamespace]:
+        assert utterance.utterance_id == "u-1"
+        from src.url_content_scan.analyses.claims.extract import ExtractedClaim
+
+        return [ExtractedClaim(claim_text="Rain is coming today.", confidence=0.9)]
+
+    async def fake_embed(texts: list[str]) -> list[list[float]]:
+        assert texts == ["Rain is coming today."]
+        return [[1.0, 0.0, 0.0]]
+
+    monkeypatch.setattr(
+        "src.url_content_scan.analyses.claims.extract.extract_claims",
+        fake_extract,
+    )
+
+    from src.url_content_scan.analyses.claims.dedup import run_claims_dedup
+
+    report = await run_claims_dedup(
+        utterances,
+        embed_texts=fake_embed,
+    )
+
+    assert report.total_claims == 1
+    assert report.total_unique == 1
+    assert report.deduped_claims[0].canonical_text == "Rain is coming today."
 
 
 @pytest.mark.asyncio
