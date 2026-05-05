@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
-import { NavBar, type NavBarItem, type NavBarProps } from "./nav-bar";
+import { NavBar, type NavBarDropdownItem, type NavBarEntry, type NavBarItem, type NavBarProps } from "./nav-bar";
 
 describe("<NavBar /> source contract", () => {
   const navBarSource = readFileSync(
@@ -16,8 +16,20 @@ describe("<NavBar /> source contract", () => {
   it("uses border-border + bg-background tokens, not raw colors", () => {
     expect(navBarSource).toContain("border-border");
     expect(navBarSource).toContain("bg-background");
-    expect(navBarSource).toContain("text-muted-foreground");
-    expect(navBarSource).toContain("hover:text-foreground");
+  });
+
+  it("nav links use text-foreground (marketing-site match)", () => {
+    expect(navBarSource).toContain("text-foreground");
+    expect(navBarSource).not.toContain("text-muted-foreground");
+  });
+
+  it("nav links use hover:text-primary (marketing-site match)", () => {
+    expect(navBarSource).toContain("hover:text-primary");
+    expect(navBarSource).not.toContain("hover:text-foreground");
+  });
+
+  it("nav links use whitespace-nowrap (marketing-site match)", () => {
+    expect(navBarSource).toContain("whitespace-nowrap");
   });
 
   it("renders external links with target=_blank and rel=noopener noreferrer", () => {
@@ -43,6 +55,16 @@ describe("<NavBar /> source contract", () => {
     expect(beforeExport).not.toMatch(/\bwindow\./);
     expect(beforeExport).not.toMatch(/\bdocument\./);
   });
+
+  it("dropdown branch is present for NavBarDropdownItem entries", () => {
+    expect(navBarSource).toContain("isDropdown");
+    expect(navBarSource).toContain("NavBarDropdownItem");
+    expect(navBarSource).toContain("DropdownMenuPrimitive");
+  });
+
+  it("nav element has aria-label for accessibility", () => {
+    expect(navBarSource).toContain('aria-label="Main navigation"');
+  });
 });
 
 describe("<NavBar /> module surface", () => {
@@ -64,5 +86,29 @@ describe("<NavBar /> module surface", () => {
     expect(item.label).toBe("Docs");
     expect(externalItem.external).toBe(true);
     expect(props.items?.length).toBe(2);
+  });
+
+  it("exposes NavBarDropdownItem type for dropdown nav entries", () => {
+    const dropdown: NavBarDropdownItem = {
+      label: "Open Tools",
+      items: [
+        { label: "Discord Bot", href: "https://opennotes.ai/discord-bot", external: true },
+        { label: "Playground", href: "https://opennotes.ai/playground", external: true },
+      ],
+    };
+    expect(dropdown.label).toBe("Open Tools");
+    expect(dropdown.items).toHaveLength(2);
+    expect(dropdown.items[0]?.external).toBe(true);
+  });
+
+  it("NavBarEntry accepts both NavBarItem and NavBarDropdownItem", () => {
+    const entries: NavBarEntry[] = [
+      { label: "Home", href: "https://opennotes.ai", external: true },
+      {
+        label: "Open Tools",
+        items: [{ label: "Playground", href: "https://opennotes.ai/playground", external: true }],
+      },
+    ];
+    expect(entries).toHaveLength(2);
   });
 });
