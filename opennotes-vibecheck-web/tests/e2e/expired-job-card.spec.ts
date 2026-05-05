@@ -158,7 +158,7 @@ test("Re-analyze CTA on expired card submits the original URL for reanalysis", a
     (req) =>
       req.method() === "POST" &&
       /\/_server(\?|$)/.test(req.url()) &&
-      !req.url().includes("id="),
+      !isJobPollUrl(req.url()),
     { timeout: 10_000 },
   );
 
@@ -194,6 +194,11 @@ test("PR476 regression: 404 without url= shows inline failure card, not root Err
 
   const staleJobId = crypto.randomUUID();
 
+  // No route mock: a page.route returning HTTP 404 for SolidStart server function
+  // calls does not surface as a typed VibecheckApiError (statusCode:404) due to
+  // SolidStart's server→client serialization. Consecutive transport errors (backend
+  // absent on port 8000 in CI) cause polling to accumulate errors and render
+  // JobFailureCard, which is the behavior this test verifies.
   await page.goto(`/analyze?job=${encodeURIComponent(staleJobId)}&c=1`);
 
   expect(new URL(page.url()).pathname).toBe("/analyze");
