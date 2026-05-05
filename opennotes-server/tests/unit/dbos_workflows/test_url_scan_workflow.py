@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
@@ -603,6 +604,199 @@ class TestUrlScanParentWorkflow:
         mock_sleep.assert_called_once()
         assert mock_finalize.call_args.kwargs["slot_results"]["done_count"] == 10
 
+    def test_parent_stops_when_join_heartbeat_cas_misses(self) -> None:
+        from src.dbos_workflows.url_scan_workflow import (
+            UrlScanWorkflowInputs,
+            url_scan_orchestration_workflow,
+        )
+
+        job_id = str(uuid4())
+        attempt_id = str(uuid4())
+
+        with (
+            patch("src.dbos_workflows.url_scan_workflow.TokenGate") as mock_gate_cls,
+            patch(
+                "src.dbos_workflows.url_scan_workflow._validate_url",
+                return_value={"normalized_url": "https://example.com/post", "host": "example.com"},
+            ),
+            patch(
+                "src.dbos_workflows.url_scan_workflow._scrape",
+                return_value={"scraped_at": "2026-05-04T12:00:00+00:00"},
+            ),
+            patch(
+                "src.dbos_workflows.url_scan_workflow._extract_utterances",
+                return_value={
+                    "page_title": "Example",
+                    "page_kind": PageKind.FORUM_THREAD.value,
+                    "utterances": [],
+                    "section_inputs": UrlScanWorkflowInputs(),
+                    "scraped_at": "2026-05-04T12:00:00+00:00",
+                },
+            ),
+            patch("src.dbos_workflows.url_scan_workflow._fan_out_slots"),
+            patch(
+                "src.dbos_workflows.url_scan_workflow.load_url_scan_slot_results_step",
+                return_value={
+                    "all_terminal": False,
+                    "slots": {},
+                    "done_count": 0,
+                    "failed_count": 0,
+                },
+            ),
+            patch(
+                "src.dbos_workflows.url_scan_workflow.touch_url_scan_heartbeat_step",
+                return_value=False,
+            ),
+            patch("src.dbos_workflows.url_scan_workflow._finalize") as mock_finalize,
+        ):
+            mock_gate_cls.return_value = MagicMock()
+
+            result = url_scan_orchestration_workflow.__wrapped__(  # type: ignore[attr-defined]
+                job_id=job_id,
+                source_url="https://example.com/post",
+                normalized_url="https://example.com/post",
+                attempt_id=attempt_id,
+            )
+
+        assert result == {"status": "superseded", "job_id": job_id}
+        mock_finalize.assert_not_called()
+
+    def test_timeout_marks_nonterminal_slots_failed_before_finalize(self) -> None:
+        from src.dbos_workflows import url_scan_workflow as module
+
+        job_id = str(uuid4())
+        attempt_id = str(uuid4())
+
+        with (
+            patch.object(module, "_MAX_SLOT_JOIN_POLLS", 1),
+            patch("src.dbos_workflows.url_scan_workflow.TokenGate") as mock_gate_cls,
+            patch(
+                "src.dbos_workflows.url_scan_workflow._validate_url",
+                return_value={"normalized_url": "https://example.com/post", "host": "example.com"},
+            ),
+            patch(
+                "src.dbos_workflows.url_scan_workflow._scrape",
+                return_value={"scraped_at": "2026-05-04T12:00:00+00:00"},
+            ),
+            patch(
+                "src.dbos_workflows.url_scan_workflow._extract_utterances",
+                return_value={
+                    "page_title": "Example",
+                    "page_kind": PageKind.FORUM_THREAD.value,
+                    "utterances": [],
+                    "section_inputs": module.UrlScanWorkflowInputs(),
+                    "scraped_at": "2026-05-04T12:00:00+00:00",
+                },
+            ),
+            patch("src.dbos_workflows.url_scan_workflow._fan_out_slots"),
+            patch(
+                "src.dbos_workflows.url_scan_workflow.load_url_scan_slot_results_step",
+                side_effect=[
+                    {"all_terminal": False, "slots": {}, "done_count": 0, "failed_count": 0},
+                    {"all_terminal": True, "slots": {}, "done_count": 0, "failed_count": 10},
+                ],
+            ),
+            patch(
+                "src.dbos_workflows.url_scan_workflow.touch_url_scan_heartbeat_step",
+                return_value=True,
+            ),
+            patch("src.dbos_workflows.url_scan_workflow.DBOS.sleep"),
+            patch(
+                "src.dbos_workflows.url_scan_workflow.fail_nonterminal_url_scan_slots_step",
+            ) as mock_fail_nonterminal,
+            patch(
+                "src.dbos_workflows.url_scan_workflow._run_safety_recommendation",
+                return_value={"recommendation": None},
+            ),
+            patch(
+                "src.dbos_workflows.url_scan_workflow._maybe_run_headline_summary",
+                return_value={"headline": None},
+            ),
+            patch(
+                "src.dbos_workflows.url_scan_workflow._finalize",
+                return_value={"status": "failed", "job_id": job_id},
+            ) as mock_finalize,
+        ):
+            mock_gate_cls.return_value = MagicMock()
+
+            result = module.url_scan_orchestration_workflow.__wrapped__(  # type: ignore[attr-defined]
+                job_id=job_id,
+                source_url="https://example.com/post",
+                normalized_url="https://example.com/post",
+                attempt_id=attempt_id,
+            )
+
+        assert result == {"status": "failed", "job_id": job_id}
+        mock_fail_nonterminal.assert_called_once_with(
+            job_id,
+            attempt_id,
+            "timed out waiting for URL scan section slots",
+        )
+        assert mock_finalize.call_args.kwargs["fatal_error_code"] == "timeout"
+
+    def test_extract_utterances_uses_redirect_effective_source_url(self) -> None:
+        from src.dbos_workflows.url_scan_workflow import _extract_utterances
+        from src.url_content_scan.utterances.schema import UtterancesPayload
+
+        job_id = str(uuid4())
+        attempt_id = str(uuid4())
+        payload = UtterancesPayload(
+            source_url="https://final.example/page",
+            scraped_at=datetime(2026, 5, 4, tzinfo=UTC),
+            page_kind=PageKind.ARTICLE,
+            page_title="Final",
+            utterances=[],
+        )
+
+        with (
+            patch(
+                "src.dbos_workflows.url_scan_workflow.touch_url_scan_heartbeat_step",
+                return_value=True,
+            ),
+            patch(
+                "src.dbos_workflows.url_scan_workflow.extract_utterances",
+                return_value=payload,
+            ) as mock_extract,
+            patch(
+                "src.dbos_workflows.url_scan_workflow._upsert_utterances_async",
+                new=AsyncMock(return_value=True),
+            ),
+            patch(
+                "src.dbos_workflows.url_scan_workflow._load_batch_job_context_async",
+                new=AsyncMock(return_value={}),
+            ),
+            patch(
+                "src.dbos_workflows.url_scan_workflow._transition_batch_job_async",
+                new=AsyncMock(return_value=True),
+            ),
+        ):
+            result = _extract_utterances(
+                job_id,
+                "https://submitted.example/post",
+                attempt_id,
+                {
+                    "scraped_at": "2026-05-04T12:00:00+00:00",
+                    "effective_source_url": "https://final.example/page",
+                    "scrape": {"markdown": "body", "html": "<p>body</p>"},
+                },
+            )
+
+        assert result["page_title"] == "Final"
+        assert result["section_inputs"].page_url == "https://final.example/page"
+        assert mock_extract.call_args.kwargs["source_url"] == "https://final.example/page"
+
+    def test_rejected_redirect_reports_redirect_host(self) -> None:
+        from src.dbos_workflows.url_scan_workflow import (
+            UrlScanWorkflowError,
+            _validate_scrape_source_url,
+        )
+
+        with pytest.raises(UrlScanWorkflowError) as exc_info:
+            _validate_scrape_source_url("http://127.0.0.1/private", fallback_host="example.com")
+
+        assert exc_info.value.error_code == "unsafe_url"
+        assert exc_info.value.error_host == "127.0.0.1"
+
 
 class TestDispatchUrlScanWorkflow:
     @pytest.mark.asyncio
@@ -622,6 +816,10 @@ class TestDispatchUrlScanWorkflow:
             patch(
                 "src.dbos_workflows.url_scan_workflow.set_url_scan_workflow_id_step",
             ) as mock_set_workflow_id,
+            patch(
+                "src.dbos_workflows.url_scan_workflow.validate_url_scan_rows_step",
+                return_value=True,
+            ),
         ):
             result = await dispatch_url_scan_workflow(
                 job_id=job_id,
@@ -651,6 +849,10 @@ class TestDispatchUrlScanWorkflow:
             patch(
                 "src.dbos_workflows.url_scan_workflow.set_url_scan_workflow_id_step",
             ),
+            patch(
+                "src.dbos_workflows.url_scan_workflow.validate_url_scan_rows_step",
+                return_value=True,
+            ) as mock_validate_rows,
         ):
             mock_set_workflow_id.return_value.__enter__ = MagicMock(return_value=None)
             mock_set_workflow_id.return_value.__exit__ = MagicMock(return_value=False)
@@ -671,5 +873,31 @@ class TestDispatchUrlScanWorkflow:
                 assert enqueue_fn() is mock_handle
 
         assert result == "url-scan-wf-safe"
+        mock_validate_rows.assert_called_once_with(str(job_id), str(attempt_id))
         mock_safe_enqueue.assert_called_once()
         mock_set_workflow_id.assert_called_once_with(f"url-scan-{job_id}-attempt-{attempt_id}")
+
+    @pytest.mark.asyncio
+    async def test_dispatch_returns_none_without_required_scan_rows(self) -> None:
+        from src.dbos_workflows.url_scan_workflow import dispatch_url_scan_workflow
+
+        job_id = uuid4()
+        attempt_id = uuid4()
+
+        with (
+            patch(
+                "src.dbos_workflows.url_scan_workflow.validate_url_scan_rows_step",
+                return_value=False,
+            ) as mock_validate_rows,
+            patch("src.dbos_workflows.url_scan_workflow.safe_enqueue") as mock_safe_enqueue,
+        ):
+            result = await dispatch_url_scan_workflow(
+                job_id=job_id,
+                source_url="https://example.com/post",
+                normalized_url="https://example.com/post",
+                attempt_id=attempt_id,
+            )
+
+        assert result is None
+        mock_validate_rows.assert_called_once_with(str(job_id), str(attempt_id))
+        mock_safe_enqueue.assert_not_called()
