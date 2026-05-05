@@ -30,15 +30,23 @@ class TokenGate:
         weight: int = 1,
         poll_interval: float = DEFAULT_POLL_INTERVAL,
         max_wait_seconds: float = DEFAULT_MAX_WAIT,
+        parent_holds_token: bool = False,
     ):
         self.pool = pool
         self.weight = weight
         self.poll_interval = poll_interval
         self.max_wait_seconds = max_wait_seconds
+        self.parent_holds_token = parent_holds_token
         self._workflow_id: str | None = None
 
     def acquire(self) -> None:
         """Block until tokens are acquired. Must be called inside a DBOS workflow."""
+        if self.parent_holds_token:
+            logger.info(
+                "TokenGate acquire skipped because parent workflow holds token",
+                extra={"pool": self.pool, "weight": self.weight},
+            )
+            return
         wf_id = DBOS.workflow_id
         if wf_id is None:
             raise RuntimeError("TokenGate.acquire() must be called inside a DBOS workflow")
@@ -75,5 +83,7 @@ class TokenGate:
 
     def release(self) -> None:
         """Release held tokens. Safe to call even if acquire was never called."""
+        if self.parent_holds_token:
+            return
         if self._workflow_id:
             release_tokens(self.pool, self._workflow_id)
