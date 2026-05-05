@@ -199,7 +199,10 @@ async def test_frame_compat_falls_back_to_get_and_uses_interact_archive() -> Non
         ("HEAD", "https://example.com/article"),
         ("GET", "https://example.com/article"),
     ]
-    assert cache.get_calls == [("https://example.com/article", "interact")]
+    assert cache.get_calls == [
+        ("https://example.com/article", "browser_html"),
+        ("https://example.com/article", "interact"),
+    ]
 
 
 @pytest.mark.asyncio
@@ -213,7 +216,10 @@ async def test_archive_preview_prefers_cached_interact_html() -> None:
     result = await archive_preview("https://example.com/article", scrape_cache=cache)
 
     assert result == "<main><p>keep</p></main>"
-    assert cache.get_calls == [("https://example.com/article", "interact")]
+    assert cache.get_calls == [
+        ("https://example.com/article", "browser_html"),
+        ("https://example.com/article", "interact"),
+    ]
     assert cache.put_calls == []
 
 
@@ -266,7 +272,10 @@ async def test_lookup_screenshot_returns_signed_url_with_fifteen_minute_ttl() ->
     )
 
     assert result == {"screenshot_url": "https://signed.example/shots/example.png"}
-    assert cache.get_calls == [("https://example.com/article", "interact")]
+    assert cache.get_calls == [
+        ("https://example.com/article", "browser_html"),
+        ("https://example.com/article", "interact"),
+    ]
     assert screenshot_store.calls == [("shots/example.png", timedelta(minutes=15))]
 
 
@@ -284,6 +293,7 @@ async def test_lookup_screenshot_returns_none_when_storage_key_missing() -> None
 
     assert result is None
     assert cache.get_calls == [
+        ("https://example.com/article", "browser_html"),
         ("https://example.com/article", "interact"),
         ("https://example.com/article", "scrape"),
     ]
