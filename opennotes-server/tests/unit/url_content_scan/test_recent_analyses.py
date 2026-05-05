@@ -258,7 +258,7 @@ async def test_list_recent_uses_sanitized_source_url_for_preview_fallback() -> N
                 normalized_url="https://example.com/page",
                 source_url="https://example.com/page#access_token=abc",
                 page_title="",
-                preview_description="",
+                preview_description="https://example.com/page#access_token=abc",
             )
         ]
     )
