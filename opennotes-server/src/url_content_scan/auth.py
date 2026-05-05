@@ -14,6 +14,20 @@ API_KEY_PREFIX = "opk_"
 http_bearer = HTTPBearer(auto_error=False)
 
 
+class UrlScanAuthError(HTTPException):
+    def __init__(
+        self,
+        status_code: int,
+        error_code: str,
+        message: str,
+        *,
+        headers: dict[str, str] | None = None,
+    ) -> None:
+        super().__init__(status_code=status_code, detail=message, headers=headers)
+        self.error_code = error_code
+        self.message = message
+
+
 def get_url_scan_x_api_key(
     x_api_key: str | None = Header(None, alias="X-API-Key"),
 ) -> str | None:
@@ -28,31 +42,35 @@ async def get_url_scan_api_key(
 ) -> APIKey:
     raw_api_key = x_api_key or (credentials.credentials if credentials is not None else None)
     if not raw_api_key:
-        raise HTTPException(
+        raise UrlScanAuthError(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Missing API key credentials",
+            error_code="unauthorized",
+            message="Missing API key credentials",
             headers={"WWW-Authenticate": "Bearer"},
         )
     if not raw_api_key.startswith(API_KEY_PREFIX):
-        raise HTTPException(
+        raise UrlScanAuthError(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid API key credentials",
+            error_code="unauthorized",
+            message="Invalid API key credentials",
             headers={"WWW-Authenticate": "Bearer"},
         )
 
     api_key_result = await verify_api_key(db, raw_api_key)
     if api_key_result is None:
-        raise HTTPException(
+        raise UrlScanAuthError(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid API key credentials",
+            error_code="unauthorized",
+            message="Invalid API key credentials",
             headers={"WWW-Authenticate": "Bearer"},
         )
 
     api_key, _user = api_key_result
     if not api_key.has_scope(VIBECHECK_SUBMIT_SCOPE):
-        raise HTTPException(
+        raise UrlScanAuthError(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="API key lacks required scope",
+            error_code="forbidden",
+            message="API key lacks required scope",
         )
 
     request.state.api_key = api_key
