@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from collections.abc import Mapping
 from datetime import datetime
+from inspect import isawaitable
 from typing import Any, Protocol
 from urllib.parse import parse_qs, urlsplit
 from uuid import UUID
@@ -206,7 +207,8 @@ async def list_recent(
             continue
         if not _passes_partial_threshold(row.get("sections"), str(row["status"])):
             continue
-        signed = signer.sign_screenshot_key(row.get("screenshot_storage_key"))
+        signed_result = signer.sign_screenshot_key(row.get("screenshot_storage_key"))
+        signed = await signed_result if isawaitable(signed_result) else signed_result
         if signed is None:
             continue
         raw_preview_description = row.get("preview_description") or row.get("page_title")

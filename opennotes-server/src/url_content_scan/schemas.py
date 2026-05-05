@@ -71,6 +71,33 @@ class ErrorCode(StrEnum):
     INTERNAL = "internal"
 
 
+class AnalyzeRequest(BaseModel):
+    url: str = Field(..., description="HTTP(S) URL of the page to analyze.")
+
+
+class AnalyzeResponse(BaseModel):
+    job_id: UUID
+    status: JobStatus
+    cached: bool = False
+
+
+class RetryResponse(BaseModel):
+    job_id: UUID
+    slug: SectionSlug
+    attempt_id: UUID
+
+
+class FrameCompatResponse(BaseModel):
+    can_iframe: bool
+    blocking_header: str | None = None
+    csp_frame_ancestors: str | None = None
+    has_archive: bool = False
+
+
+class ScreenshotResponse(BaseModel):
+    screenshot_url: str
+
+
 class SectionSlot(BaseModel):
     state: SectionState
     attempt_id: UUID
@@ -166,16 +193,21 @@ class JobState(BaseModel):
 
 
 __all__ = [
+    "AnalyzeRequest",
+    "AnalyzeResponse",
     "ErrorCode",
     "FactsClaimsSection",
+    "FrameCompatResponse",
     "HeadlineSummary",
     "ImageModerationSection",
     "JobState",
     "JobStatus",
     "OpinionsSection",
     "PageKind",
+    "RetryResponse",
     "SafetyRecommendation",
     "SafetySection",
+    "ScreenshotResponse",
     "SectionSlot",
     "SectionSlug",
     "SectionState",

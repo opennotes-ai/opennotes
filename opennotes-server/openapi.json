@@ -13085,13 +13085,544 @@
         }
       }
     },
+    "/api/v1/url_scan/analyze": {
+      "post": {
+        "tags": [
+          "url_scan"
+        ],
+        "summary": "Analyze",
+        "operationId": "analyze_api_v1_url_scan_analyze_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AnalyzeRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnalyzeResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/url_scan/embed/v1/start": {
+      "post": {
+        "tags": [
+          "url_scan"
+        ],
+        "summary": "Embed Start",
+        "operationId": "embed_start_api_v1_url_scan_embed_v1_start_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AnalyzeRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnalyzeResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/url_scan/jobs/{job_id}": {
+      "get": {
+        "tags": [
+          "url_scan"
+        ],
+        "summary": "Poll Job",
+        "operationId": "poll_job_api_v1_url_scan_jobs__job_id__get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Job Id"
+            }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobState"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/url_scan/jobs/{job_id}/retry/{slug}": {
+      "post": {
+        "tags": [
+          "url_scan"
+        ],
+        "summary": "Retry Section",
+        "operationId": "retry_section_api_v1_url_scan_jobs__job_id__retry__slug__post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Job Id"
+            }
+          },
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/SectionSlug"
+            }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RetryResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/url_scan/analyses/recent": {
+      "get": {
+        "tags": [
+          "url_scan"
+        ],
+        "summary": "Recent Analyses",
+        "operationId": "recent_analyses_api_v1_url_scan_analyses_recent_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 50,
+              "minimum": 1,
+              "default": 12,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/RecentAnalysis"
+                  },
+                  "title": "Response Recent Analyses Api V1 Url Scan Analyses Recent Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/url_scan/frame-compat": {
+      "get": {
+        "tags": [
+          "url_scan"
+        ],
+        "summary": "Frame Compat Route",
+        "operationId": "frame_compat_route_api_v1_url_scan_frame_compat_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "url",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Url"
+            }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FrameCompatResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/url_scan/screenshot": {
+      "get": {
+        "tags": [
+          "url_scan"
+        ],
+        "summary": "Screenshot Route",
+        "operationId": "screenshot_route_api_v1_url_scan_screenshot_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "url",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Url"
+            }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScreenshotResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/url_scan/archive-preview": {
+      "get": {
+        "tags": [
+          "url_scan"
+        ],
+        "summary": "Archive Preview Route",
+        "operationId": "archive_preview_route_api_v1_url_scan_archive_preview_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "url",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Url"
+            }
+          },
+          {
+            "name": "generate",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Generate"
+            }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/url_scan/_schema_anchor": {
       "get": {
         "tags": [
           "url_scan"
         ],
         "summary": "URL scan schema anchor",
-        "description": "Forces URL scan polling/sidebar schemas into OpenAPI until the real polling endpoint is implemented. Always returns 410 Gone.",
+        "description": "Always returns 410 Gone.",
         "operationId": "schema_anchor_api_v1_url_scan__schema_anchor_get",
         "responses": {
           "200": {
@@ -13116,7 +13647,7 @@
           "url_scan"
         ],
         "summary": "URL scan sidebar schema anchor",
-        "description": "Forces SidebarPayload into OpenAPI until the real analyze/poll endpoints are implemented. Always returns 410 Gone.",
+        "description": "Always returns 410 Gone.",
         "operationId": "sidebar_schema_anchor_api_v1_url_scan__sidebar_schema_anchor_get",
         "responses": {
           "200": {
@@ -15526,6 +16057,43 @@
           "data"
         ],
         "title": "AnalysisResponse"
+      },
+      "AnalyzeRequest": {
+        "properties": {
+          "url": {
+            "type": "string",
+            "title": "Url",
+            "description": "HTTP(S) URL of the page to analyze."
+          }
+        },
+        "type": "object",
+        "required": [
+          "url"
+        ],
+        "title": "AnalyzeRequest"
+      },
+      "AnalyzeResponse": {
+        "properties": {
+          "job_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Job Id"
+          },
+          "status": {
+            "$ref": "#/components/schemas/JobStatus"
+          },
+          "cached": {
+            "type": "boolean",
+            "title": "Cached",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "job_id",
+          "status"
+        ],
+        "title": "AnalyzeResponse"
       },
       "AuditLogResponse": {
         "properties": {
@@ -19061,6 +19629,46 @@
           "context_messages"
         ],
         "title": "FlashpointMatch"
+      },
+      "FrameCompatResponse": {
+        "properties": {
+          "can_iframe": {
+            "type": "boolean",
+            "title": "Can Iframe"
+          },
+          "blocking_header": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Blocking Header"
+          },
+          "csp_frame_ancestors": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Csp Frame Ancestors"
+          },
+          "has_archive": {
+            "type": "boolean",
+            "title": "Has Archive",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "can_iframe"
+        ],
+        "title": "FrameCompatResponse"
       },
       "FrameFinding": {
         "properties": {
@@ -25393,6 +26001,55 @@
         "title": "RatingUpdateRequest",
         "description": "JSON:API request body for updating a rating."
       },
+      "RecentAnalysis": {
+        "properties": {
+          "job_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Job Id",
+            "description": "batch_jobs.id for the analysis job."
+          },
+          "source_url": {
+            "type": "string",
+            "title": "Source Url"
+          },
+          "page_title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Page Title"
+          },
+          "screenshot_url": {
+            "type": "string",
+            "title": "Screenshot Url",
+            "description": "Signed screenshot URL for the gallery card."
+          },
+          "preview_description": {
+            "type": "string",
+            "title": "Preview Description",
+            "description": "Short non-null gallery blurb."
+          },
+          "completed_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Completed At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "job_id",
+          "source_url",
+          "screenshot_url",
+          "preview_description",
+          "completed_at"
+        ],
+        "title": "RecentAnalysis"
+      },
       "RecentScanAttributes": {
         "properties": {
           "has_recent_scan": {
@@ -26223,6 +26880,30 @@
           "data"
         ],
         "title": "ResumeRequest"
+      },
+      "RetryResponse": {
+        "properties": {
+          "job_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Job Id"
+          },
+          "slug": {
+            "$ref": "#/components/schemas/SectionSlug"
+          },
+          "attempt_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Attempt Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "job_id",
+          "slug",
+          "attempt_id"
+        ],
+        "title": "RetryResponse"
       },
       "ReviewGroup": {
         "type": "string",
@@ -27090,6 +27771,19 @@
         "type": "object",
         "title": "ScrapeProcessingRequest",
         "description": "Request parameters for scraping operations with rate limiting support."
+      },
+      "ScreenshotResponse": {
+        "properties": {
+          "screenshot_url": {
+            "type": "string",
+            "title": "Screenshot Url"
+          }
+        },
+        "type": "object",
+        "required": [
+          "screenshot_url"
+        ],
+        "title": "ScreenshotResponse"
       },
       "SectionSlot": {
         "properties": {

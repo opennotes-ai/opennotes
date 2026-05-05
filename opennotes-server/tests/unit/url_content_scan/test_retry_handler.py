@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import importlib.util
-import sys
 import types
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -60,38 +58,7 @@ class UrlScanWorkflowInputs:
 
 @lru_cache(maxsize=1)
 def _load_retry_handler():
-    fake_schemas = types.ModuleType("src.url_content_scan.schemas")
-    fake_schemas.SectionSlug = SectionSlug
-    fake_schemas.PageKind = PageKind
-    fake_schemas.RetryResponse = RetryResponse
-    sys.modules["src.url_content_scan.schemas"] = fake_schemas
-
-    models_spec = importlib.util.spec_from_file_location(
-        "task1487_retry_models_runtime", MODELS_PATH
-    )
-    assert models_spec is not None
-    assert models_spec.loader is not None
-    models_module = importlib.util.module_from_spec(models_spec)
-    sys.modules["task1487_retry_models_runtime"] = models_module
-    models_spec.loader.exec_module(models_module)
-    sys.modules["src.url_content_scan.models"] = models_module
-
-    fake_utterance_schema = types.ModuleType("src.url_content_scan.utterances.schema")
-    fake_utterance_schema.Utterance = Utterance
-    sys.modules["src.url_content_scan.utterances.schema"] = fake_utterance_schema
-
-    fake_workflow = types.ModuleType("src.dbos_workflows.url_scan_workflow")
-    fake_workflow.UrlScanWorkflowInputs = UrlScanWorkflowInputs
-    sys.modules["src.dbos_workflows.url_scan_workflow"] = fake_workflow
-
-    module_name = "task1487_test_retry_handler_runtime"
-    spec = importlib.util.spec_from_file_location(module_name, HANDLER_PATH)
-    assert spec is not None
-    assert spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[module_name] = module
-    spec.loader.exec_module(module)
-    return module
+    return __import__("src.url_content_scan.retry_handler", fromlist=["prepare_section_retry"])
 
 
 @pytest.fixture(autouse=True)
@@ -229,7 +196,7 @@ async def test_prepare_section_retry_accepts_analyzing_and_dispatches_inputs() -
     )
 
     assert response.job_id == job_id
-    assert response.slug is SectionSlug.SAFETY_MODERATION
+    assert response.slug.value == SectionSlug.SAFETY_MODERATION.value
     assert len(calls) == 1
     dispatched_job_id, dispatched_slug, dispatched_attempt_id, section_inputs = calls[0]
     assert dispatched_job_id == job_id

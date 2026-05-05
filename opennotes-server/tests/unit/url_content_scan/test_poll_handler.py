@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import importlib.util
-import sys
 import types
 from datetime import UTC, datetime
 from enum import StrEnum
@@ -84,34 +82,7 @@ class JobState(BaseModel):
 
 @lru_cache(maxsize=1)
 def _load_poll_handler():
-    fake_schemas = types.ModuleType("src.url_content_scan.schemas")
-    fake_schemas.SectionSlug = SectionSlug
-    fake_schemas.SectionState = SectionState
-    fake_schemas.JobStatus = JobStatus
-    fake_schemas.PageKind = PageKind
-    fake_schemas.SectionSlot = SectionSlot
-    fake_schemas.SidebarPayload = SidebarPayload
-    fake_schemas.JobState = JobState
-    sys.modules["src.url_content_scan.schemas"] = fake_schemas
-
-    models_spec = importlib.util.spec_from_file_location(
-        "task1487_poll_models_runtime", MODELS_PATH
-    )
-    assert models_spec is not None
-    assert models_spec.loader is not None
-    models_module = importlib.util.module_from_spec(models_spec)
-    sys.modules["task1487_poll_models_runtime"] = models_module
-    models_spec.loader.exec_module(models_module)
-    sys.modules["src.url_content_scan.models"] = models_module
-
-    module_name = "task1487_test_poll_handler_runtime"
-    spec = importlib.util.spec_from_file_location(module_name, HANDLER_PATH)
-    assert spec is not None
-    assert spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[module_name] = module
-    spec.loader.exec_module(module)
-    return module
+    return __import__("src.url_content_scan.poll_handler", fromlist=["load_job_state"])
 
 
 @pytest.fixture(autouse=True)
