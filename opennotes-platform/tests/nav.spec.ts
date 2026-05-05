@@ -53,32 +53,33 @@ test.describe("NavBar marketing items", () => {
     ).toBeVisible();
   });
 
-  test("nav links use text-foreground color in light mode (desktop)", async ({
+  test("nav links carry text-foreground class (not muted-foreground)", async ({
     page,
   }) => {
-    await page.emulateMedia({ colorScheme: "light" });
-    await page.goto("/");
     const link = page.getByRole("link", { name: "Pricing" });
-    const color = await link.evaluate(
-      (el) => window.getComputedStyle(el).color,
-    );
-    // text-foreground in light mode is oklch(0.25 0.015 160) — not the dimmer
-    // muted-foreground value. We verify the alpha channel is 1 (fully opaque)
-    // and the color is not the muted gray.
-    expect(color).not.toBe("rgba(0, 0, 0, 0)");
+    const className = await link.getAttribute("class");
+    expect(className).toContain("text-foreground");
+    expect(className).not.toContain("text-muted-foreground");
   });
 
-  test("nav links use text-foreground color in dark mode (desktop)", async ({
+  test("nav links carry hover:text-primary class (not hover:text-foreground)", async ({
     page,
   }) => {
-    await page.emulateMedia({ colorScheme: "dark" });
-    await page.goto("/");
     const link = page.getByRole("link", { name: "Pricing" });
-    await expect(link).toBeVisible();
-    const color = await link.evaluate(
-      (el) => window.getComputedStyle(el).color,
-    );
-    expect(color).not.toBe("rgba(0, 0, 0, 0)");
+    const className = await link.getAttribute("class");
+    expect(className).toContain("hover:text-primary");
+    expect(className).not.toContain("hover:text-foreground");
+  });
+
+  test("nav items are right-aligned (flex-1 spacer pushes them beside actions)", async ({
+    page,
+  }) => {
+    const homeLink = page.getByRole("link", { name: "Home" });
+    const signIn = page.locator("nav").getByRole("link", { name: /Sign In/i });
+    const homeBox = await homeLink.boundingBox();
+    const signInBox = await signIn.boundingBox();
+    expect(homeBox!.x).toBeGreaterThan(700);
+    expect(homeBox!.x).toBeLessThan(signInBox!.x);
   });
 });
 
