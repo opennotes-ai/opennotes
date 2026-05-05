@@ -122,7 +122,7 @@ def _sanitize_html(html: str | None) -> str | None:
     return strip_noise(html)
 
 
-def _storage_key_for(url: str) -> str:
+def screenshot_storage_key_for(url: str) -> str:
     """Deterministic-per-url prefix + uuid suffix.
 
     The sha256-of-url prefix groups per-URL screenshots together in the
@@ -560,7 +560,7 @@ class SupabaseScrapeCache:
             bytes_to_upload = await _fetch_bytes(scrape.screenshot)
         if not bytes_to_upload:
             return None
-        storage_key = _storage_key_for(url)
+        storage_key = screenshot_storage_key_for(url)
         if not self._store.upload(storage_key, bytes_to_upload, content_type="image/png"):
             return None
         return storage_key

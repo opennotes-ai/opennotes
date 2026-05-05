@@ -11,6 +11,8 @@ const statusEl = document.querySelector("#status");
 const resultSection = document.querySelector("#result");
 const resultContent = document.querySelector("#result-content");
 
+const MAX_SCREENSHOT_BASE64_LENGTH = 20 * 1024 * 1024;
+
 let activeTab = null;
 
 document.addEventListener("DOMContentLoaded", async () => {
@@ -101,19 +103,22 @@ async function submitCurrentPage() {
 
   try {
     const page = await capturePage(activeTab.id);
+    const screenshotBase64 = await captureScreenshotForSubmission(activeTab.id);
+    const body = compactPayload({
+      url: activeTab.url,
+      source_url: activeTab.url,
+      html: page.html,
+      title: page.title,
+      description: page.description,
+      screenshot_base64: screenshotBase64,
+    });
     const response = await fetch(scrapeUrl, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${apiKey}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify(compactPayload({
-        url: activeTab.url,
-        source_url: activeTab.url,
-        html: page.html,
-        title: page.title,
-        description: page.description,
-      })),
+      body: JSON.stringify(body),
     });
 
     const responseBody = await readResponseBody(response);
@@ -128,6 +133,46 @@ async function submitCurrentPage() {
     showError("Network error", error instanceof Error ? error.message : String(error));
   } finally {
     setSubmitting(false);
+  }
+}
+
+async function captureScreenshotForSubmission(tabId) {
+  try {
+    const screenshotBase64 = await captureFullPageScreenshot(tabId);
+    if (!screenshotBase64) {
+      return null;
+    }
+    if (screenshotBase64.length > MAX_SCREENSHOT_BASE64_LENGTH) {
+      console.warn("[vibecheck] screenshot dropped because it exceeds 20MB");
+      return null;
+    }
+    return screenshotBase64;
+  } catch (error) {
+    console.warn("[vibecheck] screenshot capture failed", error);
+    return null;
+  }
+}
+
+async function captureFullPageScreenshot(tabId) {
+  const debuggee = { tabId };
+  let attached = false;
+  await chrome.debugger.attach(debuggee, "1.3");
+  attached = true;
+  try {
+    const result = await chrome.debugger.sendCommand(
+      debuggee,
+      "Page.captureScreenshot",
+      { format: "png", captureBeyondViewport: true }
+    );
+    return typeof result?.data === "string" ? result.data : null;
+  } finally {
+    if (attached) {
+      try {
+        await chrome.debugger.detach(debuggee);
+      } catch (error) {
+        console.warn("[vibecheck] debugger detach failed", error);
+      }
+    }
   }
 }
 

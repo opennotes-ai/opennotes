@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import base64
+import binascii
 import json
 from datetime import datetime
 from typing import Any
@@ -13,7 +15,12 @@ from pydantic import BaseModel, Field
 
 from src.analyses.safety.web_risk import WebRiskTransientError, check_urls
 from src.auth.scrape_token import require_scrape_token
-from src.cache.scrape_cache import canonical_cache_key
+from src.cache.scrape_cache import canonical_cache_key, screenshot_storage_key_for
+from src.cache.screenshot_store import (
+    GCSScreenshotStore,
+    InMemoryScreenshotStore,
+    ScreenshotStore,
+)
 from src.config import Settings, get_settings
 from src.jobs import submit as submit_job
 from src.jobs.enqueue import enqueue_job
@@ -33,6 +40,7 @@ router = APIRouter(prefix="/api", tags=["scrape"])
 
 _MAX_HTML_BYTES = 25 * 1024 * 1024
 _MAX_MARKDOWN_BYTES = 2 * 1024 * 1024
+_MAX_SCREENSHOT_BYTES = 20 * 1024 * 1024
 _BROWSER_HTML_TIER = "browser_html"
 
 
@@ -42,6 +50,10 @@ class ScrapeSubmitRequest(BaseModel):
     markdown: str | None = Field(default=None)
     title: str | None = Field(default=None)
     description: str | None = Field(default=None)
+    screenshot_base64: str | None = Field(
+        default=None,
+        description="Base64-encoded PNG screenshot without a data: prefix",
+    )
 
 
 class ScrapeSubmitResponse(BaseModel):
@@ -68,6 +80,43 @@ def _markdown_from_html(html: str) -> str:
 def _analyze_url(settings: Settings, job_id: UUID) -> str:
     base = settings.VIBECHECK_WEB_URL.rstrip("/")
     return f"{base}/analyze?job={job_id}" if base else f"/analyze?job={job_id}"
+
+
+def _get_screenshot_store(request: Request, settings: Settings) -> ScreenshotStore:
+    injected = getattr(request.app.state, "screenshot_store", None)
+    if injected is not None:
+        return injected
+    if settings.VIBECHECK_GCS_SCREENSHOT_BUCKET:
+        return GCSScreenshotStore(settings.VIBECHECK_GCS_SCREENSHOT_BUCKET)
+    return InMemoryScreenshotStore()
+
+
+def _decode_screenshot_base64(value: str | None) -> bytes | None:
+    if not value:
+        return None
+    try:
+        screenshot_bytes = base64.b64decode(value, validate=True)
+    except (binascii.Error, ValueError) as exc:
+        raise ValueError("screenshot_base64 must be valid base64") from exc
+    if len(screenshot_bytes) > _MAX_SCREENSHOT_BYTES:
+        raise OverflowError("screenshot_base64 exceeds 20MB decoded limit")
+    return screenshot_bytes or None
+
+
+def _upload_screenshot_bytes(
+    *,
+    normalized_url: str,
+    screenshot_bytes: bytes | None,
+    screenshot_store: ScreenshotStore,
+) -> str | None:
+    if not screenshot_bytes:
+        return None
+    storage_key = screenshot_storage_key_for(normalized_url)
+    if not screenshot_store.upload(
+        storage_key, screenshot_bytes, content_type="image/png"
+    ):
+        return None
+    return storage_key
 
 
 async def _insert_failed_unsafe_job(
@@ -113,49 +162,59 @@ async def _insert_browser_scrape_and_job(
     html: str,
     markdown: str,
     title: str | None,
+    screenshot_bytes: bytes | None,
+    screenshot_store: ScreenshotStore,
 ) -> tuple[UUID, UUID, datetime]:
     job_id = uuid4()
     attempt_id = uuid4()
+    screenshot_storage_key = _upload_screenshot_bytes(
+        normalized_url=normalized_url,
+        screenshot_bytes=screenshot_bytes,
+        screenshot_store=screenshot_store,
+    )
 
-    # This intentionally does not use SupabaseScrapeCache.put()'s evict fence:
-    # browser_html writes have no screenshot upload window, so the TASK-1488.18
-    # race that _upsert_if_not_evicted protects is not present.
-    await conn.execute(
-        """
-        INSERT INTO vibecheck_scrapes (
-            normalized_url, tier, url, final_url, host, page_kind,
-            page_title, markdown, html, job_id, attempt_id,
-            scraped_at, expires_at, evicted_at
+    try:
+        await conn.execute(
+            """
+            INSERT INTO vibecheck_scrapes (
+                normalized_url, tier, url, final_url, host, page_kind,
+                page_title, markdown, html, screenshot_storage_key,
+                job_id, attempt_id, scraped_at, expires_at, evicted_at
+            )
+            VALUES (
+                $1, 'browser_html', $2, $2, $3, 'other',
+                $4, $5, $6, $7, $8, $9,
+                now(), now() + INTERVAL '72 hours', NULL
+            )
+            """,
+            normalized_url,
+            url,
+            host,
+            title,
+            markdown,
+            html,
+            screenshot_storage_key,
+            job_id,
+            attempt_id,
         )
-        VALUES (
-            $1, 'browser_html', $2, $2, $3, 'other',
-            $4, $5, $6, $7, $8,
-            now(), now() + INTERVAL '72 hours', NULL
+        row = await conn.fetchrow(
+            """
+            INSERT INTO vibecheck_jobs (
+                job_id, url, normalized_url, host, status, attempt_id, source_type
+            )
+            VALUES ($1, $2, $3, $4, 'pending', $5, 'browser_html')
+            RETURNING job_id, created_at
+            """,
+            job_id,
+            url,
+            normalized_url,
+            host,
+            attempt_id,
         )
-        """,
-        normalized_url,
-        url,
-        host,
-        title,
-        markdown,
-        html,
-        job_id,
-        attempt_id,
-    )
-    row = await conn.fetchrow(
-        """
-        INSERT INTO vibecheck_jobs (
-            job_id, url, normalized_url, host, status, attempt_id, source_type
-        )
-        VALUES ($1, $2, $3, $4, 'pending', $5, 'browser_html')
-        RETURNING job_id, created_at
-        """,
-        job_id,
-        url,
-        normalized_url,
-        host,
-        attempt_id,
-    )
+    except Exception:
+        if screenshot_storage_key:
+            screenshot_store.delete(screenshot_storage_key)
+        raise
     assert row is not None
     return row["job_id"], attempt_id, row["created_at"]
 
@@ -180,6 +239,14 @@ async def submit_scrape(  # noqa: PLR0911
         return _error_response(413, "payload_too_large", "html exceeds 25MB limit")
     if body.markdown is not None and _byte_len(body.markdown) > _MAX_MARKDOWN_BYTES:
         return _error_response(413, "payload_too_large", "markdown exceeds 2MB limit")
+    try:
+        screenshot_bytes = _decode_screenshot_base64(body.screenshot_base64)
+    except ValueError:
+        return _error_response(400, "invalid_screenshot", "screenshot_base64 is invalid")
+    except OverflowError:
+        return _error_response(
+            413, "payload_too_large", "screenshot exceeds 20MB limit"
+        )
 
     try:
         normalized_url = canonical_cache_key(body.url)
@@ -189,6 +256,7 @@ async def submit_scrape(  # noqa: PLR0911
 
     host = _host_of(normalized_url)
     pool = _get_db_pool(request)
+    screenshot_store = _get_screenshot_store(request, settings)
 
     async with httpx.AsyncClient(timeout=10.0) as hx:
         try:
@@ -234,6 +302,8 @@ async def submit_scrape(  # noqa: PLR0911
             html=sanitized_html,
             markdown=markdown,
             title=body.title,
+            screenshot_bytes=screenshot_bytes,
+            screenshot_store=screenshot_store,
         )
 
     try:

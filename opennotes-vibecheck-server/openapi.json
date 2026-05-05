@@ -1800,6 +1800,18 @@
               }
             ],
             "title": "Description"
+          },
+          "screenshot_base64": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Screenshot Base64",
+            "description": "Base64-encoded PNG screenshot without a data: prefix"
           }
         },
         "type": "object",

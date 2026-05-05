@@ -991,6 +991,11 @@ export interface components {
             title?: string | null;
             /** Description */
             description?: string | null;
+            /**
+             * Screenshot Base64
+             * @description Base64-encoded PNG screenshot without a data: prefix
+             */
+            screenshot_base64?: string | null;
         };
         /** ScrapeSubmitResponse */
         ScrapeSubmitResponse: {

@@ -5,6 +5,7 @@
   "description": "Submit the current page to a Vibecheck /api/scrape endpoint.",
   "permissions": [
     "activeTab",
+    "debugger",
     "storage",
     "scripting"
   ],

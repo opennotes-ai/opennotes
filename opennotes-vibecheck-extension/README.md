@@ -35,8 +35,25 @@ The extension captures `document.documentElement.outerHTML`, `document.title`, a
   "source_url": "https://example.com/article",
   "html": "<html>...</html>",
   "title": "Article title",
-  "description": "Article summary"
+  "description": "Article summary",
+  "screenshot_base64": "iVBORw0KGgo..."
 }
 ```
 
+The screenshot is a full-page PNG captured through Chrome debugger protocol. The field is omitted when capture fails or when the base64 PNG is larger than 20MB, so restricted pages such as `chrome://` URLs still submit without a screenshot. Chrome shows a temporary DevTools debugging banner while capture is active.
+
 Successful responses display the returned `analyze_url` as a link.
+
+## Screenshot Verification
+
+1. Load this directory as an unpacked extension.
+2. Configure the endpoint URL and API key.
+3. Open a long HTTP(S) page.
+4. Click Submit and confirm Chrome briefly shows the debugger banner.
+5. Open the returned analyze URL.
+6. Click Archived and confirm the archived pageframe shows the submitted page screenshot.
+
+Known caveats:
+
+- `chrome://`, Chrome Web Store, and other restricted browser pages reject debugger attachment; submission continues without `screenshot_base64`.
+- Very large screenshots are dropped client-side at 20MB base64 size to avoid failing the submission.

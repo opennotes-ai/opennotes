@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import socket
 from collections.abc import AsyncIterator, Iterator
 from typing import Any
@@ -12,6 +13,7 @@ import pytest
 from testcontainers.postgres import PostgresContainer
 
 from src.analyses.safety._schemas import WebRiskFinding
+from src.cache.screenshot_store import InMemoryScreenshotStore
 from src.main import app
 from src.routes import scrape as scrape_route
 from tests.conftest import VIBECHECK_JOBS_DDL
@@ -97,6 +99,7 @@ async def client(
 ) -> AsyncIterator[httpx.AsyncClient]:
     app.state.cache = None
     app.state.db_pool = db_pool
+    app.state.screenshot_store = InMemoryScreenshotStore()
     app.state.limiter = scrape_route.limiter
     scrape_route.limiter.reset()
     monkeypatch.setenv("VIBECHECK_SCRAPE_API_TOKEN", "secret")
@@ -106,6 +109,7 @@ async def client(
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as c:
         yield c
     app.state.db_pool = None
+    app.state.screenshot_store = None
     scrape_route.limiter.reset()
     scrape_route.get_settings.cache_clear()
 
@@ -191,6 +195,92 @@ async def test_valid_payload_inserts_browser_scrape_job_and_enqueues(
     assert scrape["page_title"] == "Title"
     assert "<h1>Title</h1>" in scrape["html"]
     assert "Browser body" in scrape["markdown"]
+    assert scrape["screenshot_storage_key"] is None
+
+
+async def test_screenshot_payload_persists_storage_key_and_mints_signed_url(
+    client: httpx.AsyncClient, db_pool: Any
+) -> None:
+    url = "https://example.com/with-screenshot"
+    png_bytes = b"\x89PNG\r\n\x1a\nvibecheck"
+    screenshot_base64 = base64.b64encode(png_bytes).decode("ascii")
+
+    with patch.object(
+        scrape_route,
+        "check_urls",
+        new=AsyncMock(return_value={url: WebRiskFinding(url=url, threat_types=[])}),
+    ):
+        resp = await client.post(
+            "/api/scrape",
+            headers=_headers(),
+            json={
+                "url": url,
+                "html": "<html><body><p>extension submission</p></body></html>",
+                "screenshot_base64": screenshot_base64,
+            },
+        )
+
+    assert resp.status_code == 201
+    job_id = UUID(resp.json()["job_id"])
+    scrape = await _fetch_scrape_for_job(db_pool, job_id)
+    assert scrape["screenshot_storage_key"]
+    store = app.state.screenshot_store
+    assert store.uploads[scrape["screenshot_storage_key"]] == png_bytes
+    assert store.signed_url(scrape["screenshot_storage_key"], ttl_seconds=900)
+
+
+async def test_submission_without_screenshot_keeps_storage_key_null(
+    client: httpx.AsyncClient, db_pool: Any
+) -> None:
+    url = "https://example.com/no-screenshot"
+
+    with patch.object(
+        scrape_route,
+        "check_urls",
+        new=AsyncMock(return_value={url: WebRiskFinding(url=url, threat_types=[])}),
+    ):
+        resp = await client.post(
+            "/api/scrape",
+            headers=_headers(),
+            json={"url": url, "html": "<html><body><p>no shot</p></body></html>"},
+        )
+
+    assert resp.status_code == 201
+    scrape = await _fetch_scrape_for_job(db_pool, UUID(resp.json()["job_id"]))
+    assert scrape["screenshot_storage_key"] is None
+
+
+async def test_invalid_screenshot_base64_returns_400(client: httpx.AsyncClient) -> None:
+    resp = await client.post(
+        "/api/scrape",
+        headers=_headers(),
+        json={
+            "url": "https://example.com/bad-shot",
+            "html": "<html></html>",
+            "screenshot_base64": "not base64!",
+        },
+    )
+
+    assert resp.status_code == 400
+    assert resp.json()["error_code"] == "invalid_screenshot"
+
+
+async def test_oversized_screenshot_returns_413(client: httpx.AsyncClient) -> None:
+    screenshot_base64 = base64.b64encode(b"x" * (20 * 1024 * 1024 + 1)).decode(
+        "ascii"
+    )
+    resp = await client.post(
+        "/api/scrape",
+        headers=_headers(),
+        json={
+            "url": "https://example.com/large-shot",
+            "html": "<html></html>",
+            "screenshot_base64": screenshot_base64,
+        },
+    )
+
+    assert resp.status_code == 413
+    assert resp.json()["error_code"] == "payload_too_large"
 
 
 async def test_oversized_html_returns_413(client: httpx.AsyncClient) -> None:
