@@ -19,8 +19,8 @@ function formatScore(score: number): string {
 }
 
 const SOURCE_LABELS: Record<HarmfulContentSource, string> = {
-  openai: "Moderator A",
-  gcp: "Moderator B",
+  openai: "OpenAI Moderation",
+  gcp: "Google Natural Language Moderation",
 };
 
 export default function SafetyModerationReport(

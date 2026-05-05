@@ -405,7 +405,7 @@ test("1474 moderation sections fill progressively and render provider/source det
 
   await expect(
     page.locator('[data-testid="safety-provider-label"]'),
-  ).toContainText(["Moderator A", "Moderator B"]);
+  ).toContainText(["OpenAI Moderation", "Google Natural Language Moderation"]);
   await expect(
     page.locator('[data-testid="slot-safety__video_moderation"]'),
   ).toHaveAttribute("data-slot-state", "done", { timeout: 60_000 });

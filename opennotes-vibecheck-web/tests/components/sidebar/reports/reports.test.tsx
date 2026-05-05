@@ -144,7 +144,7 @@ describe("<SafetyModerationReport />", () => {
     const labels = screen
       .getAllByTestId("safety-provider-label")
       .map((node) => node.textContent);
-    expect(labels).toEqual(["Moderator A", "Moderator B"]);
+    expect(labels).toEqual(["OpenAI Moderation", "Google Natural Language Moderation"]);
     expect(screen.getByText("OpenAI provider sentence.")).toBeDefined();
     expect(screen.getByText("GCP provider sentence.")).toBeDefined();
     expect(screen.getByText("82%")).toBeDefined();
