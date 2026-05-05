@@ -192,7 +192,7 @@ def _tone_labels(stats: _ConversationStats, speaker_shares: dict[str, float]) ->
     return labels
 
 
-def run_scd(utterances: list[Utterance]) -> SCDReport:
+async def run_scd(utterances: list[Utterance]) -> SCDReport:
     """Compute statistical conversation-dynamics output without using an LM."""
     if not utterances:
         return SCDReport(
