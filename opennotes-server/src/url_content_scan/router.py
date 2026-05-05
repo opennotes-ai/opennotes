@@ -6,8 +6,10 @@ from uuid import UUID
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from fastapi.responses import HTMLResponse, JSONResponse
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.batch_jobs.models import BatchJob
 from src.cache.redis_client import redis_client
 from src.config import settings
 from src.database import get_db, get_session_maker
@@ -15,6 +17,7 @@ from src.services.firecrawl_client import FirecrawlClient, FirecrawlError
 from src.url_content_scan.analyze_handler import AnalyzeSubmissionError, submit_url_scan
 from src.url_content_scan.auth import get_url_scan_api_key
 from src.url_content_scan.frame import archive_preview, frame_compat, lookup_screenshot
+from src.url_content_scan.models import UrlScanState
 from src.url_content_scan.normalize import canonical_cache_key
 from src.url_content_scan.poll_handler import load_job_state
 from src.url_content_scan.rate_limiter import RateLimitStatus, UrlScanRateLimiter
@@ -59,6 +62,27 @@ def _rate_limit_response(result: RateLimitStatus) -> JSONResponse:
         "rate limit exceeded",
         headers={"Retry-After": str(max(1, result.retry_after_seconds))},
     )
+
+
+def _http_exception_response(exc: HTTPException) -> JSONResponse:
+    error_code = "internal"
+    message = str(exc.detail)
+    if exc.status_code == status.HTTP_404_NOT_FOUND:
+        error_code = "not_found"
+    elif exc.status_code == status.HTTP_400_BAD_REQUEST:
+        error_code = "invalid_url"
+    elif exc.status_code == status.HTTP_503_SERVICE_UNAVAILABLE:
+        error_code = "upstream_error"
+    return _error_response(exc.status_code, error_code, message, headers=exc.headers)
+
+
+def _parse_job_id(job_id: str | None) -> UUID | None:
+    if not job_id:
+        return None
+    try:
+        return UUID(job_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Invalid job_id") from exc
 
 
 def _get_rate_limiter(request: Request) -> UrlScanRateLimiter:
@@ -137,6 +161,25 @@ class _RecentScreenshotSigner:
         if not storage_key:
             return None
         return await self._screenshot_store.sign_url(storage_key, ttl=timedelta(minutes=15))
+
+
+async def _resolve_archive_url(
+    db: AsyncSession,
+    *,
+    url: str | None,
+    job_id: UUID | None,
+) -> str | None:
+    if url:
+        return url
+    if job_id is None:
+        return None
+    result = await db.execute(select(UrlScanState.source_url).where(UrlScanState.job_id == job_id))
+    return result.scalar_one_or_none()
+
+
+async def _job_exists(db: AsyncSession, job_id: UUID) -> bool:
+    result = await db.execute(select(BatchJob.id).where(BatchJob.id == job_id))
+    return result.scalar_one_or_none() is not None
 
 
 @router.post(
@@ -228,9 +271,11 @@ async def recent_analyses(
 async def frame_compat_route(
     request: Request,
     url: str = Query(...),
+    job_id: str | None = Query(None),
     _api_key: APIKey = Depends(get_url_scan_api_key),
 ) -> FrameCompatResponse | JSONResponse:
     try:
+        _parse_job_id(job_id)
         async with httpx.AsyncClient(timeout=10.0, follow_redirects=False) as client:
             result = await frame_compat(
                 url,
@@ -239,7 +284,11 @@ async def frame_compat_route(
             )
     except InvalidURL as exc:
         return _error_response(status.HTTP_400_BAD_REQUEST, "invalid_url", exc.reason)
+    except HTTPException as exc:
+        return _http_exception_response(exc)
     except httpx.HTTPError as exc:
+        return _error_response(status.HTTP_502_BAD_GATEWAY, "upstream_error", str(exc))
+    except Exception as exc:
         return _error_response(status.HTTP_502_BAD_GATEWAY, "upstream_error", str(exc))
     return FrameCompatResponse.model_validate(result.model_dump())
 
@@ -258,6 +307,10 @@ async def screenshot_route(
         )
     except InvalidURL as exc:
         return _error_response(status.HTTP_400_BAD_REQUEST, "invalid_url", exc.reason)
+    except HTTPException as exc:
+        return _http_exception_response(exc)
+    except Exception as exc:
+        return _error_response(status.HTTP_502_BAD_GATEWAY, "upstream_error", str(exc))
     if result is None:
         return _error_response(status.HTTP_404_NOT_FOUND, "not_found", "Screenshot unavailable")
     return ScreenshotResponse.model_validate(result)
@@ -274,22 +327,55 @@ async def screenshot_route(
         }
     },
 )
-async def archive_preview_route(
+async def archive_preview_route(  # noqa: PLR0911
     request: Request,
-    url: str = Query(...),
+    url: str | None = Query(None),
+    job_id: str | None = Query(None),
     generate: bool = Query(False),
+    source_type: str = Query("url"),
+    db: AsyncSession = Depends(get_db),
     _api_key: APIKey = Depends(get_url_scan_api_key),
 ) -> Response | JSONResponse:
     try:
+        parsed_job_id = _parse_job_id(job_id)
+        if source_type == "pdf":
+            if parsed_job_id is None:
+                return _error_response(
+                    status.HTTP_400_BAD_REQUEST,
+                    "invalid_url",
+                    "job_id is required",
+                )
+            if not await _job_exists(db, parsed_job_id):
+                return _error_response(
+                    status.HTTP_404_NOT_FOUND,
+                    "not_found",
+                    "job not found",
+                )
+            return _error_response(
+                status.HTTP_404_NOT_FOUND,
+                "not_found",
+                "Archive unavailable",
+            )
+        resolved_url = await _resolve_archive_url(db, url=url, job_id=parsed_job_id)
+        if resolved_url is None:
+            return _error_response(
+                status.HTTP_400_BAD_REQUEST,
+                "invalid_url",
+                "URL must be an http(s) URL",
+            )
         html = await archive_preview(
-            url,
+            resolved_url,
             scrape_cache=get_scrape_cache(request),
             scraper=get_firecrawl_client(request) if generate else None,
             generate=generate,
         )
     except InvalidURL as exc:
         return _error_response(status.HTTP_400_BAD_REQUEST, "invalid_url", exc.reason)
+    except HTTPException as exc:
+        return _http_exception_response(exc)
     except FirecrawlError as exc:
+        return _error_response(status.HTTP_502_BAD_GATEWAY, "upstream_error", str(exc))
+    except Exception as exc:
         return _error_response(status.HTTP_502_BAD_GATEWAY, "upstream_error", str(exc))
     if html is None:
         return _error_response(status.HTTP_404_NOT_FOUND, "not_found", "Archive unavailable")

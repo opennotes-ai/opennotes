@@ -13442,6 +13442,22 @@
             }
           },
           {
+            "name": "job_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Job Id"
+            }
+          },
+          {
             "name": "X-API-Key",
             "in": "header",
             "required": false,
@@ -13561,10 +13577,33 @@
           {
             "name": "url",
             "in": "query",
-            "required": true,
+            "required": false,
             "schema": {
-              "type": "string",
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
               "title": "Url"
+            }
+          },
+          {
+            "name": "job_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Job Id"
             }
           },
           {
@@ -13575,6 +13614,16 @@
               "type": "boolean",
               "default": false,
               "title": "Generate"
+            }
+          },
+          {
+            "name": "source_type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "url",
+              "title": "Source Type"
             }
           },
           {

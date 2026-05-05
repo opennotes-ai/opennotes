@@ -16,7 +16,7 @@ _REDIRECT_STATUSES = frozenset({301, 302, 303, 307, 308})
 _BLOCKING_XFO_VALUES = frozenset({"deny", "sameorigin"})
 _PERMISSIVE_FRAME_ANCESTOR_TOKENS = frozenset({"*", "https:", "http:", "data:"})
 _SCREENSHOT_URL_TTL = timedelta(minutes=15)
-_ARCHIVE_CACHE_TIERS: tuple[str, ...] = ("interact", "scrape")
+_ARCHIVE_CACHE_TIERS: tuple[str, ...] = ("browser_html", "interact", "scrape")
 
 
 class ResponseLike(Protocol):
