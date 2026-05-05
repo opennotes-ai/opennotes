@@ -4,12 +4,21 @@ import re
 from collections.abc import Iterable
 from datetime import UTC, datetime
 from hashlib import sha1
+from html import unescape
 
 from lxml import html as lxml_html
 from lxml.html import HtmlElement
 
 from src.services.firecrawl_client import ScrapeResult
+from src.url_content_scan.coral import (
+    CoralFetchError,
+    CoralUnsupportedError,
+    detect_coral,
+    fetch_coral_comments,
+    merge_coral_into_scrape,
+)
 from src.url_content_scan.schemas import PageKind
+from src.utils.async_compat import run_sync
 
 from .media_extraction import extract_image_urls, extract_video_urls, normalize_public_url
 from .schema import Utterance, UtterancesPayload
@@ -17,15 +26,21 @@ from .schema import Utterance, UtterancesPayload
 _UTTERANCE_CONTAINER_XPATH = ".//*[@data-comment-id or @data-reply-id or @data-node-id or @data-entry-id or @data-role='post']"
 _WHITESPACE_RE = re.compile(r"\s+")
 _URL_TAG_RE = re.compile(r"<a\b[^>]*\bhref=[\"'](?P<url>[^\"']+)[\"']", re.IGNORECASE)
+_CORAL_HEADER_RE = re.compile(
+    r"^(?P<indent>\s*)- \[(?P<id>[^\]]+)\] author=(?P<author>\S+) "
+    r"created_at=(?P<created_at>\S+) parent=(?P<parent>\S+)\s*$"
+)
 
 
 def extract_utterances(scrape: ScrapeResult, source_url: str) -> UtterancesPayload:
+    scrape = _merge_coral_comments_if_available(scrape)
     root = _parse_html(scrape.html)
     page_kind = _classify_page_kind(scrape, root)
     page_title = _page_title(scrape, root)
 
-    # Coral merge/detection is tracked separately in TASK-1487.20.
     utterances = _extract_for_page_kind(page_kind, root, scrape, source_url)
+    post_id = utterances[0].utterance_id if utterances and utterances[0].kind == "post" else None
+    utterances.extend(_extract_coral_utterances(scrape, source_url, post_id=post_id))
     if not utterances:
         utterances = [_fallback_utterance(scrape, source_url)]
 
@@ -127,6 +142,163 @@ def _extract_for_page_kind(
     return extractor(root, scrape, source_url)
 
 
+def _merge_coral_comments_if_available(scrape: ScrapeResult) -> ScrapeResult:
+    html_text = scrape.html
+    if not html_text or not html_text.strip():
+        return scrape
+    signal = detect_coral(html_text)
+    if signal is None or not signal.supports_graphql:
+        return scrape
+    try:
+        comments = run_sync(fetch_coral_comments(signal.graphql_origin, signal.story_url))
+    except (CoralFetchError, CoralUnsupportedError):
+        return scrape
+    return merge_coral_into_scrape(scrape, comments.comments_markdown)
+
+
+def _extract_coral_utterances(
+    scrape: ScrapeResult,
+    source_url: str,
+    *,
+    post_id: str | None,
+) -> list[Utterance]:
+    root = _parse_html(scrape.html)
+    if root is not None:
+        marker_utterances = _extract_coral_marker_utterances(root, source_url, post_id=post_id)
+        if marker_utterances:
+            return marker_utterances
+    return _extract_coral_markdown_utterances(scrape.markdown, source_url, post_id=post_id)
+
+
+def _extract_coral_marker_utterances(
+    root: HtmlElement,
+    source_url: str,
+    *,
+    post_id: str | None,
+) -> list[Utterance]:
+    markers = root.xpath("//*[@data-coral-comments]")
+    if not markers:
+        return []
+    utterances: list[Utterance] = []
+    for marker in markers:
+        if not isinstance(marker, HtmlElement):
+            continue
+        top_level_comments = [
+            article
+            for article in marker.xpath(
+                './/article[contains(concat(" ", normalize-space(@class), " "), " comment ")]'
+            )
+            if isinstance(article, HtmlElement)
+            and not article.xpath(
+                'ancestor::article[contains(concat(" ", normalize-space(@class), " "), " comment ")]'
+            )
+        ]
+        for comment in top_level_comments:
+            utterances.extend(_flatten_coral_marker_comment_tree(comment, post_id, source_url))
+    return utterances
+
+
+def _flatten_coral_marker_comment_tree(
+    comment: HtmlElement,
+    post_id: str | None,
+    source_url: str,
+) -> list[Utterance]:
+    kind = "reply" if comment.get("data-parent-id") else "comment"
+    utterance_id = _stable_utterance_id(comment, kind)
+    parent_id = comment.get("data-parent-id") or post_id
+    fragment = _element_fragment(comment, nested_container_xpaths=("./article",))
+    utterances = [
+        Utterance(
+            utterance_id=utterance_id,
+            kind=kind,  # pyright: ignore[reportArgumentType]
+            text=_coral_marker_body_text(comment),
+            author=_coral_marker_author(comment),
+            parent_id=parent_id,
+            mentioned_urls=_extract_urls(fragment, source_url),
+            mentioned_images=extract_image_urls(fragment, source_url),
+            mentioned_videos=extract_video_urls(fragment, source_url),
+        )
+    ]
+    for nested in comment.xpath("./article"):
+        if isinstance(nested, HtmlElement):
+            utterances.extend(_flatten_coral_marker_comment_tree(nested, utterance_id, source_url))
+    return utterances
+
+
+def _coral_marker_author(comment: HtmlElement) -> str | None:
+    author = _clean_text(comment.xpath("string(./header[1])"))
+    return author or None
+
+
+def _coral_marker_body_text(comment: HtmlElement) -> str:
+    texts = _collect_texts(comment, ("./p", "./div/p"))
+    if texts:
+        return "\n".join(texts)
+    clone = _pruned_clone(comment, nested_container_xpaths=("./article",))
+    for header in clone.xpath("./header"):
+        parent = header.getparent()
+        if parent is not None:
+            parent.remove(header)
+    return _clean_text(clone.text_content())
+
+
+def _extract_coral_markdown_utterances(
+    markdown: str | None,
+    source_url: str,
+    *,
+    post_id: str | None,
+) -> list[Utterance]:
+    if not markdown or "## Comments" not in markdown:
+        return []
+    comment_lines: list[str] = []
+    in_comments = False
+    for line in markdown.splitlines():
+        if not in_comments:
+            if line.strip() == "## Comments":
+                in_comments = True
+            continue
+        if line.startswith("## ") and line.strip() != "## Comments":
+            break
+        comment_lines.append(unescape(line.rstrip("\n")))
+    if not comment_lines:
+        return []
+
+    utterances: list[Utterance] = []
+    i = 0
+    while i < len(comment_lines):
+        match = _CORAL_HEADER_RE.match(comment_lines[i])
+        if match is None:
+            i += 1
+            continue
+        indent = match.group("indent")
+        body_lines: list[str] = []
+        i += 1
+        while i < len(comment_lines):
+            next_line = comment_lines[i]
+            if _CORAL_HEADER_RE.match(next_line):
+                break
+            if next_line.startswith(f"{indent}  "):
+                body_lines.append(next_line[len(indent) + 2 :])
+            elif next_line.strip():
+                body_lines.append(next_line.strip())
+            i += 1
+        author = match.group("author")
+        raw_parent = match.group("parent")
+        utterances.append(
+            Utterance(
+                utterance_id=match.group("id"),
+                kind="reply" if raw_parent != "null" else "comment",
+                text=_clean_text("\n".join(body_lines)),
+                author=None if author == "anonymous" else author,
+                parent_id=post_id if raw_parent == "null" else raw_parent,
+                mentioned_urls=_extract_urls("\n".join(body_lines), source_url),
+                mentioned_images=[],
+                mentioned_videos=[],
+            )
+        )
+    return utterances
+
+
 def _extract_blog_post(
     root: HtmlElement,
     scrape: ScrapeResult,
@@ -211,6 +383,7 @@ def _extract_forum_thread(
                 for candidate in post_parent.xpath("./*")
                 if isinstance(candidate, HtmlElement)
                 and candidate is not post
+                and not _is_coral_scaffold_element(candidate)
                 and _clean_text(candidate.text_content())
             ]
     for reply in replies:
@@ -463,6 +636,18 @@ def _collect_texts(element: HtmlElement, xpaths: Iterable[str]) -> list[str]:
                 seen.add(text)
                 texts.append(text)
     return texts
+
+
+def _is_coral_scaffold_element(element: HtmlElement) -> bool:
+    if element.tag.lower() == "ps-comments":
+        return True
+    if element.get("data-coral-comments") is not None:
+        return True
+    element_id = (element.get("id") or "").lower()
+    if element_id in {"coral_talk_stream", "coral_thread", "coral-thread"}:
+        return True
+    class_value = (element.get("class") or "").lower()
+    return "coral" in class_value
 
 
 def _extract_urls(content: str, source_url: str) -> list[str]:

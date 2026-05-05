@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime
 from pathlib import Path
+from unittest.mock import AsyncMock
 
 import pytest
 
 from src.services.firecrawl_client import ScrapeResult
+from src.url_content_scan.coral.graphql import CoralComments, CoralFetchError
 from src.url_content_scan.schemas import PageKind
 from src.url_content_scan.utterances.extractor import extract_utterances
 
@@ -162,7 +165,11 @@ def test_extract_utterances_backfills_deterministic_ids_and_parent_links() -> No
 
     forum_payload = extract_utterances(forum_scrape, "https://example.com/launch-thread")
 
-    assert [item.utterance_id is not None for item in forum_payload.utterances] == [True, True, True]
+    assert [item.utterance_id is not None for item in forum_payload.utterances] == [
+        True,
+        True,
+        True,
+    ]
     assert forum_payload.utterances[1].parent_id == forum_payload.utterances[0].utterance_id
     assert forum_payload.utterances[2].parent_id == forum_payload.utterances[0].utterance_id
 
@@ -201,7 +208,11 @@ def test_extract_utterances_backfills_deterministic_ids_and_parent_links() -> No
 
     thread_payload = extract_utterances(thread_scrape, "https://example.com/launch-thread")
 
-    assert [item.utterance_id is not None for item in thread_payload.utterances] == [True, True, True]
+    assert [item.utterance_id is not None for item in thread_payload.utterances] == [
+        True,
+        True,
+        True,
+    ]
     assert thread_payload.utterances[1].parent_id == thread_payload.utterances[0].utterance_id
     assert thread_payload.utterances[2].parent_id == thread_payload.utterances[1].utterance_id
 
@@ -257,3 +268,130 @@ def test_extract_utterances_does_not_inherit_descendant_media_or_links() -> None
         [],
         ["https://example.com/reply/video.mp4"],
     ]
+
+
+@pytest.mark.unit
+def test_extract_utterances_merges_graphql_coral_comments(monkeypatch: pytest.MonkeyPatch) -> None:
+    scrape = ScrapeResult.model_validate(
+        {
+            "markdown": "# Article title\n\nArticle body.",
+            "html": """
+            <html><body>
+              <article data-role="post" data-utterance-id="post-1">
+                <h1>Article title</h1>
+                <p>Article body.</p>
+              </article>
+              <iframe
+                class="coral-talk-stream"
+                src="https://coral.npr.org/embed/stream?storyURL=https%3A%2F%2Fexample.com%2Farticle"
+              ></iframe>
+            </body></html>
+            """,
+            "metadata": {
+                "title": "Article title",
+                "sourceURL": "https://example.com/article",
+            },
+        }
+    )
+    fetch_mock = AsyncMock(
+        return_value=CoralComments(
+            comments_markdown=(
+                "## Comments\n"
+                "- [comment-1] author=alice created_at=2026-04-29T12:00:00+00:00 parent=null\n"
+                "  Great discussion.\n"
+                "  https://example.com/ref\n"
+                "  - [comment-2] author=bob created_at=2026-04-29T12:05:00+00:00 parent=comment-1\n"
+                "    Reply text."
+            ),
+            raw_count=2,
+            fetched_at=datetime.now(UTC),
+        )
+    )
+    monkeypatch.setattr(
+        "src.url_content_scan.utterances.extractor.fetch_coral_comments", fetch_mock
+    )
+
+    payload = extract_utterances(scrape, "https://example.com/article")
+
+    assert fetch_mock.await_count == 1
+    assert [item.kind for item in payload.utterances] == ["post", "comment", "reply"]
+    assert payload.utterances[1].parent_id == "post-1"
+    assert payload.utterances[2].parent_id == "comment-1"
+    assert "Great discussion." in payload.utterances[1].text
+
+
+@pytest.mark.unit
+def test_extract_utterances_falls_back_when_coral_fetch_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    scrape = ScrapeResult.model_validate(
+        {
+            "markdown": "# Article title\n\nArticle body.",
+            "html": """
+            <html><body>
+              <article data-role="post" data-utterance-id="post-1">
+                <h1>Article title</h1>
+                <p>Article body.</p>
+              </article>
+              <iframe
+                class="coral-talk-stream"
+                src="https://coral.npr.org/embed/stream?storyURL=https%3A%2F%2Fexample.com%2Farticle"
+              ></iframe>
+            </body></html>
+            """,
+            "metadata": {"title": "Article title", "sourceURL": "https://example.com/article"},
+        }
+    )
+    monkeypatch.setattr(
+        "src.url_content_scan.utterances.extractor.fetch_coral_comments",
+        AsyncMock(side_effect=CoralFetchError("timed out")),
+    )
+
+    payload = extract_utterances(scrape, "https://example.com/article")
+
+    assert [item.kind for item in payload.utterances] == ["post"]
+
+
+@pytest.mark.unit
+def test_extract_utterances_reads_latimes_style_copied_coral_comments() -> None:
+    scrape = ScrapeResult.model_validate(
+        {
+            "markdown": "# LA Times article\n\nArticle body.",
+            "html": """
+            <html><body>
+              <article data-role="post" data-utterance-id="post-1">
+                <h1>LA Times article</h1>
+                <p>Article body.</p>
+              </article>
+              <ps-comments
+                id="coral_talk_stream"
+                data-embed-url="https://latimes.coral.coralproject.net/assets/js/embed.js"
+                data-env-url="https://latimes.coral.coralproject.net"
+                data-story-id="story-123"
+              >Show Comments</ps-comments>
+              <section data-coral-comments="true" data-coral-status="copied">
+                <article class="comment" id="comment-1">
+                  <header>Alice</header>
+                  <p>First LA Times comment.</p>
+                  <article class="comment" id="comment-2" data-parent-id="comment-1">
+                    <header>Bob</header>
+                    <p>Nested reply.</p>
+                  </article>
+                </article>
+              </section>
+            </body></html>
+            """,
+            "metadata": {
+                "title": "LA Times article",
+                "sourceURL": "https://www.latimes.com/example",
+            },
+        }
+    )
+
+    payload = extract_utterances(scrape, "https://www.latimes.com/example")
+
+    assert [item.kind for item in payload.utterances] == ["post", "comment", "reply"]
+    assert payload.utterances[1].author == "Alice"
+    assert payload.utterances[1].parent_id == "post-1"
+    assert payload.utterances[2].author == "Bob"
+    assert payload.utterances[2].parent_id == "comment-1"
