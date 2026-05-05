@@ -575,6 +575,14 @@ describe("getFrameCompat", () => {
           "/api/archive-preview?url=https%3A%2F%2Fnews.example.com%2Fa%3Fx%3D1&job_id=11111111-1111-1111-1111-111111111111",
       },
     });
+    expect(clientGetMock).toHaveBeenCalledWith("/api/screenshot", {
+      params: {
+        query: {
+          url: "https://news.example.com/a?x=1",
+          job_id: "11111111-1111-1111-1111-111111111111",
+        },
+      },
+    });
   });
 
   it("builds an archivedPreviewUrl without job_id when no job id is supplied", async () => {
@@ -795,6 +803,68 @@ describe("getArchiveProbe and getScreenshot split queries", () => {
 
     clientGetMock.mockResolvedValueOnce({ data: null, error: "down" });
     expect(await getScreenshot("https://news.example.com/b")).toBeNull();
+  });
+
+  it("getScreenshot forwards job_id when supplied", async () => {
+    clientGetMock.mockResolvedValueOnce({
+      data: { screenshot_url: "https://cdn.example.com/job-shot.png" },
+      error: null,
+    });
+
+    const { getScreenshot } = await import("./analyze.data");
+
+    expect(
+      await getScreenshot(
+        "https://news.example.com/a",
+        "11111111-1111-1111-1111-111111111111",
+      ),
+    ).toBe("https://cdn.example.com/job-shot.png");
+    expect(clientGetMock).toHaveBeenCalledWith("/api/screenshot", {
+      params: {
+        query: {
+          url: "https://news.example.com/a",
+          job_id: "11111111-1111-1111-1111-111111111111",
+        },
+      },
+    });
+  });
+
+  it("getScreenshot treats typed 404 responses as null without warning", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    clientGetMock.mockResolvedValueOnce({
+      data: null,
+      error: {
+        status: 404,
+        detail: "Site not supported",
+        reason: "unsupported_site",
+      },
+    });
+
+    try {
+      const { getScreenshot } = await import("./analyze.data");
+
+      expect(await getScreenshot("https://news.example.com/a")).toBeNull();
+      expect(warnSpy).not.toHaveBeenCalled();
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
+  it("getScreenshot warns for transient screenshot failures", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    clientGetMock.mockResolvedValueOnce({
+      data: null,
+      error: { status: 502, detail: "Screenshot service failed" },
+    });
+
+    try {
+      const { getScreenshot } = await import("./analyze.data");
+
+      expect(await getScreenshot("https://news.example.com/a")).toBeNull();
+      expect(warnSpy).toHaveBeenCalledTimes(1);
+    } finally {
+      warnSpy.mockRestore();
+    }
   });
 });
 

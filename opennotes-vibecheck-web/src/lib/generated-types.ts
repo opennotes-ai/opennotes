@@ -1012,6 +1012,18 @@ export interface components {
              */
             created_at: string;
         };
+        /** ScreenshotErrorResponse */
+        ScreenshotErrorResponse: {
+            /** Detail */
+            detail: string;
+            /** Reason */
+            reason: string;
+        };
+        /** ScreenshotResponse */
+        ScreenshotResponse: {
+            /** Screenshot Url */
+            screenshot_url: string;
+        };
         /**
          * SectionSlot
          * @description One sidebar slot's state inside a JobState.
@@ -1353,6 +1365,7 @@ export interface operations {
         parameters: {
             query: {
                 url: string;
+                job_id?: string | null;
             };
             header?: never;
             path?: never;
@@ -1366,9 +1379,16 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: string;
-                    };
+                    "application/json": components["schemas"]["ScreenshotResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScreenshotErrorResponse"];
                 };
             };
             /** @description Validation Error */

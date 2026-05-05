@@ -8,14 +8,20 @@ from uuid import UUID
 
 import httpx
 from fastapi import APIRouter, HTTPException, Query, Request, Response
-from fastapi.responses import RedirectResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 from pydantic import BaseModel
 from supabase import create_client
 
 from src.cache.scrape_cache import CachedScrape, SupabaseScrapeCache, canonical_cache_key
 from src.cache.screenshot_store import GCSScreenshotStore, InMemoryScreenshotStore, ScreenshotStore
 from src.config import get_settings
-from src.firecrawl_client import FirecrawlClient, ScrapeMetadata, ScrapeResult
+from src.firecrawl_client import (
+    FirecrawlBlocked,
+    FirecrawlClient,
+    FirecrawlError,
+    ScrapeMetadata,
+    ScrapeResult,
+)
 from src.jobs.pdf_storage import get_pdf_upload_store
 from src.jobs.scrape_quality import ScrapeQuality, classify_scrape
 from src.monitoring import get_logger
@@ -96,6 +102,33 @@ WHERE j.job_id = $1
   AND s.evicted_at IS NULL
 """
 
+_SELECT_BROWSER_HTML_SCREENSHOT_SQL = """
+SELECT s.screenshot_storage_key
+FROM vibecheck_jobs j
+JOIN vibecheck_scrapes s ON s.job_id = j.job_id
+WHERE j.job_id = $1
+  AND j.source_type = 'browser_html'
+  AND j.normalized_url = $2
+  AND s.tier = 'browser_html'
+  AND s.normalized_url = $2
+  AND s.screenshot_storage_key IS NOT NULL
+  AND s.expires_at > now()
+  AND s.evicted_at IS NULL
+LIMIT 1
+"""
+
+_SELECT_TIER_SCREENSHOT_SQL = """
+SELECT screenshot_storage_key
+FROM vibecheck_scrapes
+WHERE normalized_url = $1
+  AND tier = $2
+  AND screenshot_storage_key IS NOT NULL
+  AND expires_at > now()
+  AND evicted_at IS NULL
+ORDER BY scraped_at DESC
+LIMIT 1
+"""
+
 # Map machine-readable `InvalidURL.reason` slugs back to the human-readable
 # 400-detail strings the frame routes returned before the SSRF refactor
 # (TASK-1473.11). Frontend clients assert on these exact strings; changing
@@ -119,6 +152,15 @@ class FrameCompatResponse(BaseModel):
     blocking_header: str | None
     csp_frame_ancestors: str | None = None
     has_archive: bool = False
+
+
+class ScreenshotResponse(BaseModel):
+    screenshot_url: str
+
+
+class ScreenshotErrorResponse(BaseModel):
+    detail: str
+    reason: str
 
 
 def _validate_http_url(url: str) -> None:
@@ -334,6 +376,38 @@ async def _get_browser_html_archive(
         warning=None,
         storage_key=row["screenshot_storage_key"],
     )
+
+
+async def _lookup_stored_screenshot_key(
+    request: Request,
+    *,
+    url: str,
+    job_id: UUID | None,
+) -> str | None:
+    pool = getattr(request.app.state, "db_pool", None)
+    if pool is None:
+        logger.info("stored screenshot lookup skipped for %s: database unavailable", url)
+        return None
+
+    normalized_url = canonical_cache_key(url)
+    try:
+        async with pool.acquire() as conn:
+            if job_id is not None:
+                key = await conn.fetchval(
+                    _SELECT_BROWSER_HTML_SCREENSHOT_SQL, job_id, normalized_url
+                )
+                if isinstance(key, str) and key:
+                    return key
+            for tier in _ARCHIVE_CACHE_TIERS:
+                key = await conn.fetchval(
+                    _SELECT_TIER_SCREENSHOT_SQL, normalized_url, tier
+                )
+                if isinstance(key, str) and key:
+                    return key
+    except Exception as exc:
+        logger.info("stored screenshot lookup failed for %s: %s", url, exc)
+        return None
+    return None
 
 
 async def _revalidate_archive_final_url(
@@ -567,19 +641,49 @@ def _extract_screenshot_url(result: ScrapeResult | Any) -> str | None:
     return None
 
 
-@router.get("/screenshot")
-async def screenshot(url: str = Query(...)) -> dict[str, str]:
+def _screenshot_404(detail: str, reason: str) -> JSONResponse:
+    return JSONResponse(status_code=404, content={"detail": detail, "reason": reason})
+
+
+@router.get(
+    "/screenshot",
+    response_model=ScreenshotResponse,
+    responses={404: {"model": ScreenshotErrorResponse}},
+)
+async def screenshot(
+    request: Request,
+    url: str = Query(...),
+    job_id: str | None = Query(None),
+) -> dict[str, str] | JSONResponse:
     _validate_http_url(url)
+    parsed_job_id = _parse_archive_job_id(job_id)
+    stored_key = await _lookup_stored_screenshot_key(
+        request,
+        url=url,
+        job_id=parsed_job_id,
+    )
+    if stored_key:
+        try:
+            signed_url = get_scrape_cache().sign_screenshot_key(stored_key)
+        except Exception as exc:
+            logger.info("stored screenshot signing failed for %s: %s", url, exc)
+        else:
+            if signed_url:
+                return {"screenshot_url": signed_url}
+
     fc = get_firecrawl_client()
     try:
         result = await asyncio.wait_for(
             fc.scrape(url, formats=["screenshot"]),
             timeout=_SCREENSHOT_REQUEST_BUDGET_SECONDS,
         )
-    except Exception as exc:
+    except FirecrawlBlocked as exc:
+        logger.info("firecrawl refused screenshot for %s: %s", url, exc)
+        return _screenshot_404("Site not supported", "unsupported_site")
+    except (FirecrawlError, httpx.TransportError, TimeoutError) as exc:
         logger.warning("firecrawl scrape failed for %s: %s", url, exc)
         raise HTTPException(status_code=502, detail="Screenshot service failed") from exc
     shot_url = _extract_screenshot_url(result)
     if not shot_url:
-        raise HTTPException(status_code=502, detail="No screenshot produced")
+        return _screenshot_404("No screenshot available", "no_screenshot")
     return {"screenshot_url": shot_url}

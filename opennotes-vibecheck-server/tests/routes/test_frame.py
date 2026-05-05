@@ -5,6 +5,7 @@ from typing import Any, cast
 from unittest.mock import patch
 from uuid import UUID
 
+import httpx
 import pytest
 from fastapi.testclient import TestClient
 from pytest_httpx import HTTPXMock
@@ -38,6 +39,10 @@ class _FakePool:
 
     def acquire(self) -> _FakeAcquire:
         return _FakeAcquire(self.conn)
+
+
+def _fake_request_with_pool(pool: Any) -> Any:
+    return SimpleNamespace(app=SimpleNamespace(state=SimpleNamespace(db_pool=pool)))
 
 
 class TestFrameCompat:
@@ -393,6 +398,92 @@ class TestFrameCompat:
 
 
 class TestScreenshot:
+    @pytest.mark.asyncio
+    async def test_stored_screenshot_lookup_uses_browser_html_job_first(self) -> None:
+        from src.routes.frame import _lookup_stored_screenshot_key
+
+        calls: list[tuple[object, ...]] = []
+
+        class StubConn:
+            async def fetchval(self, query: str, *args: object) -> str | None:
+                assert "screenshot_storage_key IS NOT NULL" in query
+                calls.append(args)
+                return "screenshots/browser-html.png"
+
+        key = await _lookup_stored_screenshot_key(
+            _fake_request_with_pool(_FakePool(StubConn())),
+            url="https://example.com/article",
+            job_id=UUID("11111111-1111-1111-1111-111111111111"),
+        )
+
+        assert key == "screenshots/browser-html.png"
+        assert calls == [
+            (
+                UUID("11111111-1111-1111-1111-111111111111"),
+                "https://example.com/article",
+            )
+        ]
+
+    @pytest.mark.asyncio
+    async def test_stored_screenshot_lookup_falls_back_to_firecrawl_tiers(self) -> None:
+        from src.routes.frame import _lookup_stored_screenshot_key
+
+        calls: list[tuple[object, ...]] = []
+
+        class StubConn:
+            async def fetchval(self, query: str, *args: object) -> str | None:
+                assert "evicted_at IS NULL" in query
+                assert "expires_at > now()" in query
+                calls.append(args)
+                if args[-1] == "interact":
+                    return "screenshots/interact.png"
+                return None
+
+        key = await _lookup_stored_screenshot_key(
+            _fake_request_with_pool(_FakePool(StubConn())),
+            url="https://example.com/article",
+            job_id=None,
+        )
+
+        assert key == "screenshots/interact.png"
+        assert calls == [("https://example.com/article", "interact")]
+
+    @pytest.mark.asyncio
+    async def test_stored_screenshot_lookup_returns_none_when_no_tier_matches(self) -> None:
+        from src.routes.frame import _lookup_stored_screenshot_key
+
+        calls: list[tuple[object, ...]] = []
+
+        class StubConn:
+            async def fetchval(self, query: str, *args: object) -> None:
+                calls.append(args)
+
+        key = await _lookup_stored_screenshot_key(
+            _fake_request_with_pool(_FakePool(StubConn())),
+            url="https://example.com/article",
+            job_id=None,
+        )
+
+        assert key is None
+        assert calls == [
+            ("https://example.com/article", "interact"),
+            ("https://example.com/article", "scrape"),
+        ]
+
+    @pytest.mark.asyncio
+    async def test_stored_screenshot_lookup_returns_none_when_database_unavailable(
+        self,
+    ) -> None:
+        from src.routes.frame import _lookup_stored_screenshot_key
+
+        key = await _lookup_stored_screenshot_key(
+            _fake_request_with_pool(None),
+            url="https://example.com/article",
+            job_id=UUID("11111111-1111-1111-1111-111111111111"),
+        )
+
+        assert key is None
+
     def test_returns_screenshot_url(self, client: TestClient) -> None:
         from src.firecrawl_client import ScrapeResult
 
@@ -433,7 +524,130 @@ class TestScreenshot:
         assert resp.status_code == 200
         assert resp.json() == {"screenshot_url": "https://cdn.firecrawl.dev/shots/xyz.png"}
 
-    def test_missing_screenshot_returns_502(self, client: TestClient) -> None:
+    def test_returns_signed_stored_screenshot_without_firecrawl(
+        self, client: TestClient
+    ) -> None:
+        async def lookup(*_args: object, **_kwargs: object) -> str:
+            return "screenshots/browser-html.png"
+
+        class StubCache:
+            def sign_screenshot_key(self, storage_key: str | None) -> str | None:
+                assert storage_key == "screenshots/browser-html.png"
+                return "https://signed.example.com/browser-html.png"
+
+        class StubClient:
+            async def scrape(self, url: str, formats: list[str]) -> object:
+                raise AssertionError("cache hits must not call Firecrawl")
+
+        with (
+            patch("src.routes.frame._lookup_stored_screenshot_key", side_effect=lookup),
+            patch("src.routes.frame.get_scrape_cache", return_value=StubCache()),
+            patch("src.routes.frame.get_firecrawl_client", return_value=StubClient()),
+        ):
+            resp = client.get(
+                "/api/screenshot",
+                params={
+                    "url": "https://example.com/article",
+                    "job_id": "11111111-1111-1111-1111-111111111111",
+                },
+            )
+
+        assert resp.status_code == 200
+        assert resp.json() == {
+            "screenshot_url": "https://signed.example.com/browser-html.png"
+        }
+
+    def test_cache_miss_falls_back_to_firecrawl(self, client: TestClient) -> None:
+        from src.firecrawl_client import ScrapeResult
+
+        async def lookup(*_args: object, **_kwargs: object) -> None:
+            return None
+
+        calls: list[str] = []
+        stub_result = ScrapeResult(screenshot="https://cdn.firecrawl.dev/shots/miss.png")
+
+        class StubClient:
+            async def scrape(self, url: str, formats: list[str]) -> ScrapeResult:
+                calls.append(url)
+                return stub_result
+
+        with (
+            patch("src.routes.frame._lookup_stored_screenshot_key", side_effect=lookup),
+            patch("src.routes.frame.get_firecrawl_client", return_value=StubClient()),
+        ):
+            resp = client.get(
+                "/api/screenshot", params={"url": "https://example.com/article"}
+            )
+
+        assert resp.status_code == 200
+        assert resp.json() == {"screenshot_url": "https://cdn.firecrawl.dev/shots/miss.png"}
+        assert calls == ["https://example.com/article"]
+
+    def test_signing_failure_falls_back_to_firecrawl(self, client: TestClient) -> None:
+        from src.firecrawl_client import ScrapeResult
+
+        async def lookup(*_args: object, **_kwargs: object) -> str:
+            return "screenshots/stale.png"
+
+        calls: list[str] = []
+        stub_result = ScrapeResult(screenshot="https://cdn.firecrawl.dev/shots/fallback.png")
+
+        class StubCache:
+            def sign_screenshot_key(self, storage_key: str | None) -> None:
+                assert storage_key == "screenshots/stale.png"
+
+        class StubClient:
+            async def scrape(self, url: str, formats: list[str]) -> ScrapeResult:
+                calls.append(url)
+                return stub_result
+
+        with (
+            patch("src.routes.frame._lookup_stored_screenshot_key", side_effect=lookup),
+            patch("src.routes.frame.get_scrape_cache", return_value=StubCache()),
+            patch("src.routes.frame.get_firecrawl_client", return_value=StubClient()),
+        ):
+            resp = client.get(
+                "/api/screenshot", params={"url": "https://example.com/article"}
+            )
+
+        assert resp.status_code == 200
+        assert resp.json() == {
+            "screenshot_url": "https://cdn.firecrawl.dev/shots/fallback.png"
+        }
+        assert calls == ["https://example.com/article"]
+
+    def test_invalid_job_id_returns_400(self, client: TestClient) -> None:
+        resp = client.get(
+            "/api/screenshot",
+            params={"url": "https://example.com/article", "job_id": "not-a-uuid"},
+        )
+
+        assert resp.status_code == 400
+        assert resp.json() == {"detail": "Invalid job_id"}
+
+    def test_firecrawl_blocked_returns_404_unsupported_site(
+        self, client: TestClient
+    ) -> None:
+        from src.firecrawl_client import FirecrawlBlocked
+
+        class StubClient:
+            async def scrape(self, url: str, formats: list[str]) -> object:
+                raise FirecrawlBlocked("firecrawl /v2/scrape refused: unsupported site")
+
+        with patch("src.routes.frame.get_firecrawl_client", return_value=StubClient()):
+            resp = client.get(
+                "/api/screenshot", params={"url": "https://reddit.com/r/example"}
+            )
+
+        assert resp.status_code == 404
+        assert resp.json() == {
+            "detail": "Site not supported",
+            "reason": "unsupported_site",
+        }
+
+    def test_missing_screenshot_returns_404_no_screenshot(
+        self, client: TestClient
+    ) -> None:
         from src.firecrawl_client import ScrapeResult
 
         stub_result = ScrapeResult(screenshot=None, metadata=None)
@@ -446,7 +660,24 @@ class TestScreenshot:
             resp = client.get(
                 "/api/screenshot", params={"url": "https://example.com/article"}
             )
+        assert resp.status_code == 404
+        assert resp.json() == {
+            "detail": "No screenshot available",
+            "reason": "no_screenshot",
+        }
+
+    def test_transport_error_still_returns_502(self, client: TestClient) -> None:
+        class StubClient:
+            async def scrape(self, url: str, formats: list[str]) -> object:
+                raise httpx.ConnectError("connection failed")
+
+        with patch("src.routes.frame.get_firecrawl_client", return_value=StubClient()):
+            resp = client.get(
+                "/api/screenshot", params={"url": "https://example.com/article"}
+            )
+
         assert resp.status_code == 502
+        assert resp.json() == {"detail": "Screenshot service failed"}
 
     def test_screenshot_request_budget_bounds_slow_firecrawl(
         self, client: TestClient, monkeypatch: pytest.MonkeyPatch
@@ -564,7 +795,7 @@ class TestArchivePreview:
     ) -> None:
         first_job_id = UUID("33333333-3333-3333-3333-333333333333")
         second_job_id = UUID("44444444-4444-4444-4444-444444444444")
-        rows = {
+        rows: dict[UUID, dict[str, Any]] = {
             first_job_id: {
                 "url": "https://example.com/repeated",
                 "final_url": "https://example.com/repeated",
@@ -587,7 +818,7 @@ class TestArchivePreview:
             async def fetchrow(self, query: str, *args: object) -> dict[str, object] | None:
                 assert "vibecheck_scrapes" in query
                 assert args[1] == "https://example.com/repeated"
-                return rows.get(args[0])
+                return rows.get(cast(UUID, args[0]))
 
         class StubCache:
             async def get(self, url: str, *, tier: str = "scrape") -> None:

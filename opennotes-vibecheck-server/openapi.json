@@ -202,6 +202,22 @@
               "type": "string",
               "title": "Url"
             }
+          },
+          {
+            "name": "job_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Job Id"
+            }
           }
         ],
         "responses": {
@@ -210,14 +226,20 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": {
-                    "type": "string"
-                  },
-                  "title": "Response Screenshot Api Screenshot Get"
+                  "$ref": "#/components/schemas/ScreenshotResponse"
                 }
               }
             }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScreenshotErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
           },
           "422": {
             "description": "Validation Error",
@@ -1845,6 +1867,37 @@
           "created_at"
         ],
         "title": "ScrapeSubmitResponse"
+      },
+      "ScreenshotErrorResponse": {
+        "properties": {
+          "detail": {
+            "type": "string",
+            "title": "Detail"
+          },
+          "reason": {
+            "type": "string",
+            "title": "Reason"
+          }
+        },
+        "type": "object",
+        "required": [
+          "detail",
+          "reason"
+        ],
+        "title": "ScreenshotErrorResponse"
+      },
+      "ScreenshotResponse": {
+        "properties": {
+          "screenshot_url": {
+            "type": "string",
+            "title": "Screenshot Url"
+          }
+        },
+        "type": "object",
+        "required": [
+          "screenshot_url"
+        ],
+        "title": "ScreenshotResponse"
       },
       "SectionSlot": {
         "properties": {
