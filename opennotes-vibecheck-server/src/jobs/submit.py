@@ -60,13 +60,21 @@ async def _find_inflight_job(
 
 
 async def _find_unsafe_url_job(conn: Any, normalized_url: str) -> UUID | None:
-    """Return an existing unsafe_url failure for this URL, if present."""
+    """Return an existing unsafe_url failure for this URL, if present.
+
+    Excludes soft-deleted rows (`expired_at IS NOT NULL`) — once the
+    purge worker (TASK-1541) clears job data and stamps `expired_at`,
+    the surviving stub must not block re-submission of the same URL.
+    A fresh Web Risk check on the next submit decides whether the URL
+    is still unsafe.
+    """
     job_id = await conn.fetchval(
         """
         SELECT job_id FROM vibecheck_jobs
         WHERE normalized_url = $1
           AND status = 'failed'
           AND error_code = 'unsafe_url'
+          AND expired_at IS NULL
         ORDER BY created_at DESC
         LIMIT 1
         """,
