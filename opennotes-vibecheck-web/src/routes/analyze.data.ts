@@ -104,13 +104,21 @@ async function fetchArchiveProbe(
 async function fetchScreenshot(
   client: VibecheckClient,
   targetUrl: string,
+  jobId?: string,
 ): Promise<string | null> {
   try {
+    const query = jobId ? { url: targetUrl, job_id: jobId } : { url: targetUrl };
     const { data, error } = await client.GET("/api/screenshot", {
-      params: { query: { url: targetUrl } },
+      params: { query },
     });
     if (!error && data) {
       return (data as unknown as ScreenshotResponse).screenshot_url ?? null;
+    }
+    const status = typeof error === "object" && error && "status" in error
+      ? Number((error as { status?: unknown }).status)
+      : null;
+    if (status !== 404) {
+      console.warn("vibecheck screenshot fetch failed:", error);
     }
     return null;
   } catch (err: unknown) {
@@ -135,14 +143,14 @@ const getArchiveProbeQuery = query(
 export const getArchiveProbe = getArchiveProbeQuery;
 
 const getScreenshotQuery = query(
-  async (targetUrl: string): Promise<string | null> => {
+  async (targetUrl: string, jobId?: string): Promise<string | null> => {
     "use server";
     if (!targetUrl || !isHttpUrl(targetUrl)) {
       return null;
     }
     const { getClient } = await import("~/lib/api-client.server");
     const client = getClient();
-    return fetchScreenshot(client, targetUrl);
+    return fetchScreenshot(client, targetUrl, jobId);
   },
   "vibecheck-screenshot",
 );
@@ -159,7 +167,7 @@ const getFrameCompatQuery = query(
     const client = getClient();
     const [archiveProbe, screenshotUrl] = await Promise.all([
       fetchArchiveProbe(client, targetUrl, jobId),
-      fetchScreenshot(client, targetUrl),
+      fetchScreenshot(client, targetUrl, jobId),
     ]);
     if (!archiveProbe.ok && archiveProbe.kind === "invalid_url") {
       return { ok: false, message: "invalid url" };
