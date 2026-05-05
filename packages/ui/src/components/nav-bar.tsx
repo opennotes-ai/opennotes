@@ -29,6 +29,7 @@ export function NavBar(props: NavBarProps): JSX.Element {
       <a href={local.logoHref ?? "/"} class="flex items-center">
         {local.logo}
       </a>
+      <div class="flex-1" />
       <ul class="hidden sm:flex items-center gap-5">
         <For each={local.items ?? []}>
           {(item) => (
@@ -45,7 +46,7 @@ export function NavBar(props: NavBarProps): JSX.Element {
           )}
         </For>
       </ul>
-      <div class="ml-auto flex items-center gap-3">{local.actions}</div>
+      <div class="flex items-center gap-3">{local.actions}</div>
     </nav>
   );
 }
