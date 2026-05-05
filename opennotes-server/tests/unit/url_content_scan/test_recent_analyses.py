@@ -234,6 +234,23 @@ async def test_list_recent_blocks_explicit_non_80_port_url() -> None:
 
 
 @pytest.mark.asyncio
+async def test_list_recent_strips_url_fragment_before_returning_source_url() -> None:
+    pool = _FakePool(
+        [
+            _row(
+                normalized_url="https://example.com/page",
+                source_url="https://example.com/page#access_token=abc",
+            )
+        ]
+    )
+
+    result = await list_recent(pool, limit=5, signer=_StubSigner())
+
+    assert len(result) == 1
+    assert result[0].source_url == "https://example.com/page"
+
+
+@pytest.mark.asyncio
 async def test_list_recent_overfetches_limit_times_eight() -> None:
     pool = _FakePool([_row(normalized_url="https://example.com/page")])
 

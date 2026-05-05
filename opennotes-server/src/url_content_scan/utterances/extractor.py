@@ -5,6 +5,7 @@ from collections.abc import Iterable
 from datetime import UTC, datetime
 from hashlib import sha1
 from html import unescape
+from urllib.parse import unquote
 
 from lxml import html as lxml_html
 from lxml.html import HtmlElement
@@ -282,7 +283,7 @@ def _extract_coral_markdown_utterances(
             elif next_line.strip():
                 body_lines.append(next_line.strip())
             i += 1
-        author = match.group("author")
+        author = unquote(match.group("author"))
         raw_parent = match.group("parent")
         utterances.append(
             Utterance(

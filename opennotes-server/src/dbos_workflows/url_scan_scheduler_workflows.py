@@ -32,8 +32,9 @@ _PURGE_EXPIRED_DATA_WORKFLOW_CRON = "0 4 * * *"
 _PURGE_ORPHAN_SCREENSHOTS_WORKFLOW_CRON = "30 4 * * *"
 
 _ACTIVE_URL_SCAN_STATUSES = ("pending", "in_progress", "extracting", "analyzing")
-_ORPHAN_HEARTBEAT_MAX_AGE = timedelta(minutes=5)
+_ORPHAN_HEARTBEAT_MAX_AGE = timedelta(minutes=15)
 _TERMINAL_JOB_RETENTION = timedelta(days=30)
+_ORPHAN_SCREENSHOT_MIN_AGE = timedelta(hours=24)
 _MAX_ORPHAN_SCREENSHOT_DELETES = 10_000
 
 
@@ -175,6 +176,7 @@ def _purge_expired_url_scan_data_sync(
 @DBOS.step()
 def _purge_orphan_url_scan_screenshots_sync(
     *,
+    min_blob_age: timedelta = _ORPHAN_SCREENSHOT_MIN_AGE,
     max_deletes: int = _MAX_ORPHAN_SCREENSHOT_DELETES,
 ) -> dict[str, Any]:
     """Delete screenshot blobs no longer referenced by url_scan_scrapes."""
@@ -200,14 +202,23 @@ def _purge_orphan_url_scan_screenshots_sync(
             "deleted_count": 0,
             "candidate_count": 0,
             "max_deletes": max_deletes,
+            "min_blob_age_seconds": int(min_blob_age.total_seconds()),
             "executed_at": datetime.now(UTC).isoformat(),
         }
 
     client = storage.Client()
     bucket = client.bucket(bucket_name)
-    orphan_blob_names = [
-        blob.name for blob in bucket.list_blobs() if blob.name and blob.name not in referenced_keys
-    ]
+    blob_cutoff = datetime.now(UTC) - min_blob_age
+    orphan_blob_names: list[str] = []
+    skipped_young_count = 0
+    for blob in bucket.list_blobs():
+        if not blob.name or blob.name in referenced_keys:
+            continue
+        created_at = getattr(blob, "time_created", None) or getattr(blob, "updated", None)
+        if created_at is None or created_at > blob_cutoff:
+            skipped_young_count += 1
+            continue
+        orphan_blob_names.append(blob.name)
     delete_names = orphan_blob_names[:max_deletes]
     for blob_name in delete_names:
         bucket.blob(blob_name).delete()
@@ -217,7 +228,9 @@ def _purge_orphan_url_scan_screenshots_sync(
         "deleted_count": len(delete_names),
         "candidate_count": len(orphan_blob_names),
         "remaining_count": max(0, len(orphan_blob_names) - len(delete_names)),
+        "skipped_young_count": skipped_young_count,
         "max_deletes": max_deletes,
+        "min_blob_age_seconds": int(min_blob_age.total_seconds()),
         "deleted_keys": delete_names,
         "executed_at": datetime.now(UTC).isoformat(),
     }

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import importlib
 import re
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from unittest.mock import patch
 
 import pytest
@@ -55,21 +55,35 @@ def _close_coroutine_and_return(awaitable: object, result: object) -> object:
 
 
 class _FakeBlob:
-    def __init__(self, name: str, deleted: list[str]) -> None:
+    def __init__(
+        self,
+        name: str,
+        deleted: list[str],
+        *,
+        time_created: datetime | None = None,
+    ) -> None:
         self.name = name
         self._deleted = deleted
+        self.time_created = time_created
 
     def delete(self) -> None:
         self._deleted.append(self.name)
 
 
 class _FakeBucket:
-    def __init__(self, names: list[str]) -> None:
-        self._names = names
+    def __init__(self, names: list[str] | dict[str, datetime]) -> None:
+        self._blob_times = (
+            {name: datetime(2026, 1, 1, tzinfo=UTC) for name in names}
+            if isinstance(names, list)
+            else names
+        )
         self.deleted: list[str] = []
 
     def list_blobs(self):
-        return [_FakeBlob(name, self.deleted) for name in self._names]
+        return [
+            _FakeBlob(name, self.deleted, time_created=time_created)
+            for name, time_created in self._blob_times.items()
+        ]
 
     def blob(self, name: str) -> _FakeBlob:
         return _FakeBlob(name, self.deleted)
@@ -95,7 +109,7 @@ class TestUrlScanOrphanJobsWorkflow:
                 "status": "completed",
                 "swept_count": 1,
                 "job_ids": ["job-1"],
-                "heartbeat_max_age_seconds": 300,
+                "heartbeat_max_age_seconds": 900,
                 "executed_at": now.isoformat(),
             }
 
@@ -186,7 +200,7 @@ class TestStepHelpers:
                     "status": "completed",
                     "swept_count": 0,
                     "job_ids": [],
-                    "heartbeat_max_age_seconds": 300,
+                    "heartbeat_max_age_seconds": 900,
                     "executed_at": "2026-01-01T00:00:00+00:00",
                 },
             )
@@ -265,7 +279,45 @@ class TestStepHelpers:
         assert sorted(bucket.deleted) == ["orphan-a.png", "orphan-b.png"]
         assert result["deleted_count"] == 2
         assert result["remaining_count"] == 0
+        assert result["skipped_young_count"] == 0
         mock_run_sync.assert_called_once()
+
+    def test_orphan_screenshot_helper_skips_young_unreferenced_keys(self) -> None:
+        from src.dbos_workflows.url_scan_scheduler_workflows import (
+            _purge_orphan_url_scan_screenshots_sync,
+        )
+
+        now = datetime.now(UTC)
+        bucket = _FakeBucket(
+            {
+                "old-orphan.png": now - timedelta(days=2),
+                "new-upload.png": now - timedelta(minutes=5),
+                "keep.png": now - timedelta(days=2),
+            }
+        )
+        with (
+            patch(
+                "src.dbos_workflows.url_scan_scheduler_workflows.run_sync",
+                side_effect=lambda awaitable: _close_coroutine_and_return(awaitable, {"keep.png"}),
+            ),
+            patch(
+                "src.dbos_workflows.url_scan_scheduler_workflows.storage.Client",
+                return_value=_FakeStorageClient(bucket),
+            ),
+            patch(
+                "src.dbos_workflows.url_scan_scheduler_workflows.settings.URL_SCAN_SCREENSHOT_BUCKET",
+                "test-bucket",
+            ),
+        ):
+            result = _purge_orphan_url_scan_screenshots_sync(
+                min_blob_age=timedelta(hours=1),
+                max_deletes=10,
+            )
+
+        assert bucket.deleted == ["old-orphan.png"]
+        assert result["deleted_count"] == 1
+        assert result["candidate_count"] == 1
+        assert result["skipped_young_count"] == 1
 
     def test_orphan_screenshot_helper_respects_delete_cap(self) -> None:
         from src.dbos_workflows.url_scan_scheduler_workflows import (

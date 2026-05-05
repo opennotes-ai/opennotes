@@ -321,6 +321,53 @@ def test_extract_utterances_merges_graphql_coral_comments(monkeypatch: pytest.Mo
 
 
 @pytest.mark.unit
+def test_extract_utterances_parses_encoded_coral_author_with_space(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    scrape = ScrapeResult.model_validate(
+        {
+            "markdown": "# Article title\n\nArticle body.",
+            "html": """
+            <html><body>
+              <article data-role="post" data-utterance-id="post-1">
+                <h1>Article title</h1>
+                <p>Article body.</p>
+              </article>
+              <iframe
+                class="coral-talk-stream"
+                src="https://coral.npr.org/embed/stream?storyURL=https%3A%2F%2Fexample.com%2Farticle"
+              ></iframe>
+            </body></html>
+            """,
+            "metadata": {
+                "title": "Article title",
+                "sourceURL": "https://example.com/article",
+            },
+        }
+    )
+    fetch_mock = AsyncMock(
+        return_value=CoralComments(
+            comments_markdown=(
+                "## Comments\n"
+                "- [comment-1] author=Alice%20Smith created_at=2026-04-29T12:00:00+00:00 parent=null\n"
+                "  Great discussion."
+            ),
+            raw_count=1,
+            fetched_at=datetime.now(UTC),
+        )
+    )
+    monkeypatch.setattr(
+        "src.url_content_scan.utterances.extractor.fetch_coral_comments", fetch_mock
+    )
+
+    payload = extract_utterances(scrape, "https://example.com/article")
+
+    assert [item.kind for item in payload.utterances] == ["post", "comment"]
+    assert payload.utterances[1].author == "Alice Smith"
+    assert payload.utterances[1].parent_id == "post-1"
+
+
+@pytest.mark.unit
 def test_extract_utterances_falls_back_when_coral_fetch_fails(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

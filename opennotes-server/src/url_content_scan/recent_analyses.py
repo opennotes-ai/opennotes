@@ -118,11 +118,11 @@ def _has_secret_query_param(query: str) -> bool:
     return any(key.lower() in _SECRET_QUERY_PARAM_KEYS for key in parsed)
 
 
-def _is_blocked_url(raw_url: str) -> bool:
+def _sanitize_recent_source_url(raw_url: str) -> str | None:
     try:
         parts = urlsplit(raw_url)
     except ValueError:
-        return True
+        return None
     blocked = not parts.scheme or not parts.netloc or _has_secret_query_param(parts.query)
     netloc_host_part = parts.netloc.split("/", 1)[0]
     blocked = blocked or "@" in netloc_host_part
@@ -134,12 +134,15 @@ def _is_blocked_url(raw_url: str) -> bool:
         explicit_port = None
     blocked = blocked or (explicit_port is not None and explicit_port not in _SAFE_PORTS)
     if blocked:
-        return True
+        return None
     try:
-        validate_public_http_url(raw_url)
+        return validate_public_http_url(raw_url)
     except InvalidURL:
-        return True
-    return False
+        return None
+
+
+def _is_blocked_url(raw_url: str) -> bool:
+    return _sanitize_recent_source_url(raw_url) is None
 
 
 def _passes_partial_threshold(sections_raw: Any, status: str) -> bool:
@@ -199,7 +202,8 @@ async def list_recent(
         if normalized in seen_normalized:
             continue
         source_url = str(row["source_url"])
-        if _is_blocked_url(source_url):
+        sanitized_source_url = _sanitize_recent_source_url(source_url)
+        if sanitized_source_url is None:
             continue
         if not _passes_partial_threshold(row.get("sections"), str(row["status"])):
             continue
@@ -212,7 +216,7 @@ async def list_recent(
         out.append(
             RecentAnalysis(
                 job_id=row["job_id"],
-                source_url=source_url,
+                source_url=sanitized_source_url,
                 page_title=row.get("page_title"),
                 screenshot_url=signed,
                 preview_description=preview_description,
