@@ -1,5 +1,6 @@
 import { For, Show, createMemo } from "solid-js";
 import type { components } from "~/lib/generated-types";
+import { categoryColor, categoryColorClasses } from "~/lib/category-colors";
 import ExpandableText from "../ExpandableText";
 import UtteranceRef from "../UtteranceRef";
 
@@ -83,23 +84,38 @@ export default function SafetyModerationReport(
                             <Show
                               when={flaggedCategories(match).length > 0}
                               fallback={
-                                <span
-                                  data-testid="safety-category"
-                                  class="inline-flex items-center rounded-full bg-destructive/10 px-2 py-0.5 text-[11px] font-medium text-destructive"
-                                >
-                                  flagged
-                                </span>
+                                (() => {
+                                  const color = categoryColor(
+                                    "flagged",
+                                    undefined,
+                                  );
+                                  return (
+                                    <span
+                                      data-testid="safety-category"
+                                      data-color={color}
+                                      class={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium ${categoryColorClasses(color)}`}
+                                    >
+                                      flagged
+                                    </span>
+                                  );
+                                })()
                               }
                             >
                               <For each={flaggedCategories(match)}>
-                                {(category) => (
-                                  <span
-                                    data-testid="safety-category"
-                                    class="inline-flex items-center rounded-full bg-destructive/10 px-2 py-0.5 text-[11px] font-medium text-destructive"
-                                  >
-                                    {category}
-                                  </span>
-                                )}
+                                {(category) => {
+                                  const score =
+                                    match.scores?.[category] ?? 1;
+                                  const color = categoryColor(category, score);
+                                  return (
+                                    <span
+                                      data-testid="safety-category"
+                                      data-color={color}
+                                      class={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium ${categoryColorClasses(color)}`}
+                                    >
+                                      {category}
+                                    </span>
+                                  );
+                                }}
                               </For>
                             </Show>
                           </div>

@@ -59,6 +59,64 @@ describe("<SafetyModerationReport />", () => {
     expect(screen.getByText("This is the exact harmful sentence.")).toBeDefined();
   });
 
+  it("colors harmful categories red only when confidence is high", () => {
+    const matches: HarmfulContentMatch[] = [
+      {
+        utterance_id: "utt-1",
+        utterance_text: "High-confidence harmful sentence.",
+        max_score: 0.91,
+        flagged_categories: ["violence"],
+        categories: { violence: true },
+        scores: { violence: 0.91 },
+        source: "openai",
+      },
+      {
+        utterance_id: "utt-2",
+        utterance_text: "Low-confidence harmful sentence.",
+        max_score: 0.42,
+        flagged_categories: ["violence"],
+        categories: { violence: true },
+        scores: { violence: 0.42 },
+        source: "openai",
+      },
+    ];
+
+    render(() => <SafetyModerationReport matches={matches} />);
+
+    const categories = screen.getAllByTestId("safety-category");
+    expect(categories[0]?.getAttribute("data-color")).toBe("red");
+    expect(categories[1]?.getAttribute("data-color")).toBe("yellow");
+  });
+
+  it("colors sensitive and unknown categories without using red", () => {
+    const matches: HarmfulContentMatch[] = [
+      {
+        utterance_id: "utt-1",
+        utterance_text: "Sensitive finance sentence.",
+        max_score: 0.91,
+        flagged_categories: ["Finance"],
+        categories: { Finance: true },
+        scores: { Finance: 0.91 },
+        source: "gcp",
+      },
+      {
+        utterance_id: "utt-2",
+        utterance_text: "Future category sentence.",
+        max_score: 0.91,
+        flagged_categories: ["novelty/future"],
+        categories: { "novelty/future": true },
+        scores: { "novelty/future": 0.91 },
+        source: "gcp",
+      },
+    ];
+
+    render(() => <SafetyModerationReport matches={matches} />);
+
+    const categories = screen.getAllByTestId("safety-category");
+    expect(categories[0]?.getAttribute("data-color")).toBe("gray");
+    expect(categories[1]?.getAttribute("data-color")).toBe("yellow");
+  });
+
   it("groups matches by neutral moderator labels", () => {
     const matches: HarmfulContentMatch[] = [
       {
@@ -186,6 +244,45 @@ describe("<ImageModerationReport />", () => {
       "80%",
     );
   });
+
+  it("colors image SafeSearch categories by harm and sensitive rules", () => {
+    const matches: ImageModerationMatch[] = [
+      {
+        utterance_id: "utt-1",
+        image_url: "https://cdn.example.test/image.jpg",
+        adult: 0.91,
+        violence: 0.6,
+        racy: 0,
+        medical: 0,
+        spoof: 0.82,
+        flagged: true,
+        max_likelihood: 0.91,
+      },
+      {
+        utterance_id: "utt-2",
+        image_url: "https://cdn.example.test/medical.jpg",
+        adult: 0,
+        violence: 0,
+        racy: 0,
+        medical: 0.88,
+        spoof: 0,
+        flagged: true,
+        max_likelihood: 0.88,
+      },
+    ];
+
+    render(() => <ImageModerationReport matches={matches} />);
+
+    const categories = screen.getAllByTestId("image-moderation-category");
+    expect(categories[0]?.textContent).toBe("adult");
+    expect(categories[0]?.getAttribute("data-color")).toBe("red");
+    expect(categories[1]?.textContent).toBe("violence");
+    expect(categories[1]?.getAttribute("data-color")).toBe("yellow");
+    expect(categories[2]?.textContent).toBe("spoof");
+    expect(categories[2]?.getAttribute("data-color")).toBe("yellow");
+    expect(categories[3]?.textContent).toBe("medical");
+    expect(categories[3]?.getAttribute("data-color")).toBe("gray");
+  });
 });
 
 describe("<VideoModerationReport />", () => {
@@ -241,6 +338,51 @@ describe("<VideoModerationReport />", () => {
     expect(screen.getByTestId("video-frame-category").textContent).toBe(
       "violence",
     );
+  });
+
+  it("colors video frame SafeSearch categories by harm and sensitive rules", () => {
+    const matches: VideoModerationMatch[] = [
+      {
+        utterance_id: "utt-1",
+        video_url: "https://video.example.test/watch.mp4",
+        flagged: true,
+        max_likelihood: 0.91,
+        frame_findings: [
+          {
+            frame_offset_ms: 0,
+            adult: 0.91,
+            violence: 0.6,
+            racy: 0,
+            medical: 0,
+            spoof: 0.82,
+            flagged: true,
+            max_likelihood: 0.91,
+          },
+          {
+            frame_offset_ms: 1250,
+            adult: 0,
+            violence: 0,
+            racy: 0,
+            medical: 0.88,
+            spoof: 0,
+            flagged: true,
+            max_likelihood: 0.88,
+          },
+        ],
+      },
+    ];
+
+    render(() => <VideoModerationReport matches={matches} />);
+
+    const categories = screen.getAllByTestId("video-frame-category");
+    expect(categories[0]?.textContent).toBe("adult");
+    expect(categories[0]?.getAttribute("data-color")).toBe("red");
+    expect(categories[1]?.textContent).toBe("violence");
+    expect(categories[1]?.getAttribute("data-color")).toBe("yellow");
+    expect(categories[2]?.textContent).toBe("spoof");
+    expect(categories[2]?.getAttribute("data-color")).toBe("yellow");
+    expect(categories[3]?.textContent).toBe("medical");
+    expect(categories[3]?.getAttribute("data-color")).toBe("gray");
   });
 });
 

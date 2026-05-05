@@ -1,5 +1,6 @@
 import { For, Show, type JSX } from "solid-js";
 import type { components } from "~/lib/generated-types";
+import { categoryColor, categoryColorClasses } from "~/lib/category-colors";
 
 type FrameFinding = components["schemas"]["FrameFinding"];
 type VideoModerationMatch = components["schemas"]["VideoModerationMatch"];
@@ -11,6 +12,8 @@ const SAFESEARCH_FIELDS = [
   "medical",
   "spoof",
 ] as const;
+type SafeSearchField = (typeof SAFESEARCH_FIELDS)[number];
+const FLAGGED_CATEGORY_DISPLAY_THRESHOLD = 0.5;
 
 export interface VideoModerationReportProps {
   matches: VideoModerationMatch[];
@@ -21,7 +24,12 @@ function formatOffset(ms: number): string {
   return `${(ms / 1000).toFixed(1)}s`;
 }
 
-function flaggedCategories(frame: FrameFinding): string[] {
+function flaggedCategories(frame: FrameFinding): SafeSearchField[] {
+  if (frame.flagged) {
+    return SAFESEARCH_FIELDS.filter(
+      (field) => frame[field] > FLAGGED_CATEGORY_DISPLAY_THRESHOLD,
+    );
+  }
   return SAFESEARCH_FIELDS.filter((field) => frame[field] >= 0.75);
 }
 
@@ -94,14 +102,21 @@ export default function VideoModerationReport(
                           <Show when={flaggedCategories(frame).length > 0}>
                             <div class="mt-1.5 flex flex-wrap gap-1">
                               <For each={flaggedCategories(frame)}>
-                                {(category) => (
-                                  <span
-                                    data-testid="video-frame-category"
-                                    class="inline-flex items-center rounded-full bg-destructive/10 px-2 py-0.5 text-[11px] font-medium text-destructive"
-                                  >
-                                    {category}
-                                  </span>
-                                )}
+                                {(category) => {
+                                  const color = categoryColor(
+                                    category,
+                                    frame[category],
+                                  );
+                                  return (
+                                    <span
+                                      data-testid="video-frame-category"
+                                      data-color={color}
+                                      class={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium ${categoryColorClasses(color)}`}
+                                    >
+                                      {category}
+                                    </span>
+                                  );
+                                }}
                               </For>
                             </div>
                           </Show>
