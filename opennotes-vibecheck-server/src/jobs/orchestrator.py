@@ -1153,7 +1153,6 @@ class _Tier1Outcome:
 
 
 _SUCCESSFUL_CACHE_REUSE_TIERS: Final[tuple[ScrapeTier, ...]] = (
-    "browser_html",
     "interact",
     "scrape",
 )
@@ -1408,11 +1407,11 @@ async def _find_successful_cached_scrape(
     url: str,
     scrape_cache: SupabaseScrapeCache,
 ) -> tuple[ScrapeTier, _Tier1Outcome] | None:
-    """Find a successful cached scrape across all persisted scrape tiers.
+    """Find a successful cached scrape across URL-scoped Firecrawl tiers.
 
     A timed-out job can already have good page content cached under a richer
     tier. Retrying should reuse that content instead of re-hitting the source.
-    Non-OK richer-tier rows are ignored; a non-OK `scrape` row is returned so
+    Non-OK interact rows are ignored; a non-OK `scrape` row is returned so
     `_scrape_step` preserves the existing Tier 1 terminal/escalation behavior.
     """
     for tier in _SUCCESSFUL_CACHE_REUSE_TIERS:
@@ -1615,9 +1614,9 @@ async def _scrape_step(
                     detail={"error_host": urlparse(url).hostname},
                 )
 
-            # Cache hit: scan every successful scrape tier before probing
-            # Firecrawl. Retries of timed-out jobs may have already fetched
-            # good content via /interact or browser HTML submission.
+            # Cache hit: scan URL-scoped Firecrawl tiers before probing
+            # Firecrawl. Browser HTML submissions are job-scoped and are loaded
+            # by `_load_browser_html_scrape`, not by normalized URL.
             cached_hit = await _find_successful_cached_scrape(url, scrape_cache)
             if cached_hit is not None:
                 cached_tier, cached_t1 = cached_hit

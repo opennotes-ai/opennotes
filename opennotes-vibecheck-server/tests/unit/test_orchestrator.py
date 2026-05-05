@@ -3295,12 +3295,11 @@ async def test_scrape_step_force_tier_interact_honors_tier2_cache_hit() -> None:
 @pytest.mark.parametrize(
     ("cached_tier", "expected_storage_key", "expected_cache_reads"),
     [
-        ("browser_html", "cached-browser-html", ["browser_html"]),
-        ("interact", "cached-interact", ["browser_html", "interact"]),
-        ("scrape", "cached-scrape", ["browser_html", "interact", "scrape"]),
+        ("interact", "cached-interact", ["interact"]),
+        ("scrape", "cached-scrape", ["interact", "scrape"]),
     ],
 )
-async def test_scrape_step_default_reuses_successful_cached_scrape_from_any_tier(
+async def test_scrape_step_default_reuses_successful_cached_scrape_from_firecrawl_tiers(
     cached_tier: str,
     expected_storage_key: str,
     expected_cache_reads: list[str],
@@ -3336,6 +3335,37 @@ async def test_scrape_step_default_reuses_successful_cached_scrape_from_any_tier
     assert [entry[1] for entry in cache.gets] == expected_cache_reads
     assert cache.evicts == []
     assert len(scrape_client.scrape_calls) == 0
+    assert len(interact_client.interact_calls) == 0
+
+
+async def test_scrape_step_default_ignores_url_scoped_browser_html_cache() -> None:
+    """Browser-submitted HTML is job-scoped, not reusable by normalized URL."""
+    from src.jobs import orchestrator
+
+    url = "https://example.com/retry-cached-page"
+    cache = _FakeScrapeCache()
+    cache.store[(url, "browser_html")] = CachedScrape(
+        markdown="operator captured browser html " * 10,
+        html="<article><h1>Operator Capture</h1><p>private page state</p></article>",
+        metadata=ScrapeMetadata(status_code=200, source_url=url),
+        storage_key="cached-browser-html",
+    )
+
+    fresh_scrape = _ok_scrape_result(body="fresh firecrawl article body " * 10)
+    scrape_client = _FakeFirecrawlClient(scrape_result=fresh_scrape)
+    interact_client = _FakeFirecrawlClient(interact_result=_ok_scrape_result())
+
+    result = await orchestrator._scrape_step(
+        url,
+        cast(FirecrawlClient, cast(object, scrape_client)),
+        cast(FirecrawlClient, cast(object, interact_client)),
+        cast(SupabaseScrapeCache, cast(object, cache)),
+    )
+
+    assert result.storage_key == "scrape-key-1"
+    assert [entry[1] for entry in cache.gets] == ["interact", "scrape"]
+    assert cache.puts == [(url, "scrape")]
+    assert len(scrape_client.scrape_calls) == 1
     assert len(interact_client.interact_calls) == 0
 
 
