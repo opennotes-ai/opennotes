@@ -30,8 +30,13 @@ const { pollingHandles } = vi.hoisted(() => ({
 }));
 
 vi.mock("~/lib/polling", () => ({
-  createPollingResource: () => {
-    const [state, setState] = createSignal<JobState | null>(null);
+  createPollingResource: (
+    _jobId: () => string,
+    options?: { initialState?: JobState | null },
+  ) => {
+    const [state, setState] = createSignal<JobState | null>(
+      options?.initialState ?? null,
+    );
     const [error] = createSignal<Error | null>(null);
     const handle: PollingHandle = {
       state,
@@ -62,6 +67,10 @@ vi.mock("~/routes/analyze.data", () => {
     keyFor: (url: string) => `vibecheck-screenshot:${url}`,
     key: "vibecheck-screenshot",
   });
+  const getJobStateStub = Object.assign(vi.fn(async () => null), {
+    keyFor: (jobId: string) => `vibecheck-job-state:${jobId}`,
+    key: "vibecheck-job-state",
+  });
   const analyzeActionStub = Object.assign(vi.fn(), {
     base: "/__mock_analyze_action",
     url: "/__mock_analyze_action",
@@ -75,6 +84,7 @@ vi.mock("~/routes/analyze.data", () => {
   const pollStub = vi.fn();
   return {
     getArchiveProbe: getArchiveProbeStub,
+    getJobState: getJobStateStub,
     getScreenshot: getScreenshotStub,
     retrySectionAction: retryStub,
     analyzeAction: analyzeActionStub,

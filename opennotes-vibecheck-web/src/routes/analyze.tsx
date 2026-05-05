@@ -8,10 +8,18 @@ import {
   onMount,
   untrack,
 } from "solid-js";
-import { useSearchParams, A, useNavigate, revalidate } from "@solidjs/router";
+import {
+  useSearchParams,
+  A,
+  useNavigate,
+  revalidate,
+  createAsync,
+  type RouteDefinition,
+} from "@solidjs/router";
 import { Title } from "@solidjs/meta";
 import CachedBadge from "~/components/CachedBadge";
 import JobFailureCard from "~/components/JobFailureCard";
+import LoadingSavedAnalysis from "~/components/LoadingSavedAnalysis";
 import PageFrame from "~/components/PageFrame";
 import type {
   PreviewMode,
@@ -19,7 +27,11 @@ import type {
 } from "~/components/PageFrame";
 import Sidebar from "~/components/sidebar/Sidebar";
 import { HeadlineSummaryReport } from "~/components/sidebar/reports";
-import type { PublicErrorCode, SectionSlug } from "~/lib/api-client.server";
+import type {
+  JobState,
+  PublicErrorCode,
+  SectionSlug,
+} from "~/lib/api-client.server";
 import { createPollingResource } from "~/lib/polling";
 import { resolveHeadline } from "~/lib/headline-fallback";
 import {
@@ -28,6 +40,7 @@ import {
 } from "~/lib/utterance-scroll";
 import {
   getArchiveProbe,
+  getJobState,
   getScreenshot,
   type ArchiveProbeResult,
   type FrameCompatResult,
@@ -102,7 +115,34 @@ function isHttpUrl(candidate: string): boolean {
   }
 }
 
+export const route = {
+  preload: ({ location }) => {
+    const params = new URLSearchParams(location.search);
+    const job = params.get("job");
+    if (job) void getJobState(job);
+  },
+} satisfies RouteDefinition;
+
 export default function AnalyzePage() {
+  const [searchParams] = useSearchParams();
+  const jobParam = () =>
+    typeof searchParams.job === "string" ? searchParams.job : "";
+  const initialJobState = createAsync(async () => {
+    const id = jobParam();
+    return id ? getJobState(id) : null;
+  });
+
+  return (
+    <Show
+      when={initialJobState() !== undefined}
+      fallback={<LoadingSavedAnalysis />}
+    >
+      <AnalyzePageContent initialJobState={initialJobState() ?? null} />
+    </Show>
+  );
+}
+
+function AnalyzePageContent(props: { initialJobState: JobState | null }) {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const jobId = () =>
@@ -159,7 +199,9 @@ export default function AnalyzePage() {
     }
   });
 
-  const polling = createPollingResource(jobId);
+  const polling = createPollingResource(jobId, {
+    initialState: props.initialJobState,
+  });
 
   const jobState = () => polling.state();
   const jobStatus = () => jobState()?.status;
@@ -176,7 +218,6 @@ export default function AnalyzePage() {
     !isPdf() && Boolean(jobUrl()) && isHttpUrl(jobUrl()) && !pendingError();
   const [frameCompat, setFrameCompat] =
     createSignal<FrameCompatResult>(DEFAULT_FRAME_COMPAT);
-  const [frameCompatPending, setFrameCompatPending] = createSignal(false);
   const [frameCompatUrl, setFrameCompatUrl] = createSignal("");
   const [frameCompatError, setFrameCompatError] = createSignal<string | null>(
     null,
@@ -210,7 +251,6 @@ export default function AnalyzePage() {
     result: ArchiveProbeResult,
     url: string,
   ) => {
-    setFrameCompatPending(false);
     setFrameCompatUrl(url);
     if (result.ok) {
       setFrameCompat((current) => ({
@@ -264,7 +304,6 @@ export default function AnalyzePage() {
       setPreviewMode("archived");
       setSelectedPreviewMode("archived");
     }
-    setFrameCompatPending(!pdf && shouldProbe);
     setResolvedPreviewMode(url ? "unavailable" : "original");
     if (pdf) {
       const currentMode = untrack(previewMode);
@@ -272,13 +311,11 @@ export default function AnalyzePage() {
         setPreviewMode("original");
         setSelectedPreviewMode(null);
       }
-      setFrameCompatPending(false);
       setFrameCompatUrl(url);
       setResolvedPreviewMode(url ? "original" : "unavailable");
       return;
     }
     if (!url || !shouldProbe) {
-      setFrameCompatPending(false);
       return;
     }
 
@@ -310,7 +347,6 @@ export default function AnalyzePage() {
     const stopUnavailableIfExpired = () => {
       if (hasTimedOut() || terminalGraceElapsed()) {
         setArchiveProbeState("unavailable");
-        setFrameCompatPending(false);
         if (frameCompatUrl() !== url) {
           setFrameCompat((current) => ({ ...current, canIframe: false }));
         }
@@ -529,22 +565,7 @@ export default function AnalyzePage() {
     !isPreviewLoading() &&
     resolvedPreviewMode() !== "unavailable" &&
     (selectedPreviewMode() ?? resolvedPreviewMode()) === mode;
-  const isArchiveFallbackPending = () => {
-    const compat = frameCompat();
-    return (
-      archiveProbeState() === "pending" &&
-      (!compat.canIframe ||
-        Boolean(compat.blockingHeader) ||
-        Boolean(compat.cspFrameAncestors)) &&
-      !compat.archivedPreviewUrl &&
-      !compat.screenshotUrl
-    );
-  };
-  const isPreviewLoading = () =>
-    !jobUrl() ||
-    frameCompatPending() ||
-    frameCompatUrl() !== jobUrl() ||
-    isArchiveFallbackPending();
+  const isPreviewLoading = () => !jobUrl() || (isPdf() && !pdfReadUrl());
   const showOriginalBlockedTip = () =>
     !frameCompat().canIframe &&
     (isOriginalBlockedTipHovered() || isOriginalBlockedTipFocused());

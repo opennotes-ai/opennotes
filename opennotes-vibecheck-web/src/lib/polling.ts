@@ -4,13 +4,18 @@ import {
   onCleanup,
   type Accessor,
 } from "solid-js";
+import { revalidate } from "@solidjs/router";
 import type { JobState } from "~/lib/api-client.server";
-import { pollJobState } from "~/routes/analyze.data";
+import { getJobState } from "~/routes/analyze.data";
 
 export interface PollingResource {
   state: Accessor<JobState | null>;
   error: Accessor<Error | null>;
   refetch: () => void;
+}
+
+export interface PollingResourceOptions {
+  initialState?: JobState | null;
 }
 
 const MIN_INTERVAL_MS = 500;
@@ -80,6 +85,7 @@ export function parseRetryAfter(
 
 export function createPollingResource(
   jobId: Accessor<string>,
+  options: PollingResourceOptions = {},
 ): PollingResource {
   const [state, setState] = createSignal<JobState | null>(null);
   const [error, setError] = createSignal<Error | null>(null);
@@ -89,6 +95,7 @@ export function createPollingResource(
   let consecutiveErrors = 0;
   let stopped = false;
   let currentJobId: string | null = null;
+  let seedConsumedForJobId: string | null = null;
 
   const clearTimer = () => {
     if (timerId !== null) {
@@ -101,7 +108,8 @@ export function createPollingResource(
     if (gen !== generation || stopped || currentJobId === null) return;
     const idAtStart = currentJobId;
     try {
-      const result = await pollJobState(idAtStart);
+      await revalidate(getJobState.keyFor(idAtStart));
+      const result = await getJobState(idAtStart);
       if (gen !== generation || stopped) return;
       consecutiveErrors = 0;
       setError(null);
@@ -160,6 +168,14 @@ export function createPollingResource(
     }
   };
 
+  const scheduleTick = (gen: number, interval: number) => {
+    clearTimer();
+    timerId = setTimeout(() => {
+      timerId = null;
+      void tick(gen);
+    }, interval);
+  };
+
   const start = (id: string) => {
     generation += 1;
     consecutiveErrors = 0;
@@ -167,8 +183,20 @@ export function createPollingResource(
     currentJobId = id;
     clearTimer();
     setError(null);
-    setState(null);
     const gen = generation;
+    const seed =
+      seedConsumedForJobId === id ? null : (options.initialState ?? null);
+    seedConsumedForJobId = id;
+    if (seed) {
+      setState(seed);
+      if (isTerminalStatus(seed.status)) {
+        stopped = true;
+        return;
+      }
+      scheduleTick(gen, clampInterval(seed.next_poll_ms));
+      return;
+    }
+    setState(null);
     void tick(gen);
   };
 
@@ -178,6 +206,7 @@ export function createPollingResource(
       generation += 1;
       stopped = true;
       currentJobId = null;
+      seedConsumedForJobId = null;
       clearTimer();
       setState(null);
       setError(null);
@@ -190,6 +219,7 @@ export function createPollingResource(
     generation += 1;
     stopped = true;
     currentJobId = null;
+    seedConsumedForJobId = null;
     clearTimer();
   });
 

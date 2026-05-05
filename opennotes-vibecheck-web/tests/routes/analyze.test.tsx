@@ -55,6 +55,7 @@ type GetArchiveProbeMock = (
 ) => Promise<MockArchiveProbeResult>;
 
 type GetScreenshotMock = (url: string) => Promise<string | null>;
+type GetJobStateMock = (jobId: string) => Promise<JobState | null>;
 
 const LONG_SERVER_HEADLINE_TEXT =
   "The terminal payload now ships a full editorial synthesis with policy context, uncertainty bounds, and a complete timeline of causality across the major actors, which would previously have been cut short when fixed-length clipping was applied to preserve card stability under strict sidebar width constraints.";
@@ -74,8 +75,13 @@ const { pollingHandles, refetchSpy } = vi.hoisted(() => ({
 
 vi.mock("~/lib/polling", () => {
   return {
-    createPollingResource: () => {
-      const [state, setState] = createSignal<JobState | null>(null);
+    createPollingResource: (
+      _jobId: () => string,
+      options?: { initialState?: JobState | null },
+    ) => {
+      const [state, setState] = createSignal<JobState | null>(
+        options?.initialState ?? null,
+      );
       const [error, setError] = createSignal<Error | null>(null);
       const handle: PollingHandle = {
         state,
@@ -91,6 +97,7 @@ vi.mock("~/lib/polling", () => {
 const {
   getArchiveProbeMock,
   getScreenshotMock,
+  getJobStateMock,
   revalidateMock,
   retrySectionActionMock,
 } = vi.hoisted(() => ({
@@ -103,6 +110,7 @@ const {
     csp_frame_ancestors: null,
   })),
   getScreenshotMock: vi.fn<GetScreenshotMock>(async () => null),
+  getJobStateMock: vi.fn<GetJobStateMock>(async () => null),
   revalidateMock: vi.fn(async () => undefined),
   retrySectionActionMock: vi.fn(),
 }));
@@ -131,6 +139,10 @@ vi.mock("~/routes/analyze.data", () => {
     keyFor: (url: string) => `vibecheck-screenshot:${url}`,
     key: "vibecheck-screenshot",
   });
+  const getJobStateStub = Object.assign(getJobStateMock, {
+    keyFor: (jobId: string) => `vibecheck-job-state:${jobId}`,
+    key: "vibecheck-job-state",
+  });
   const analyzeActionStub = Object.assign(vi.fn(), {
     base: "/__mock_analyze_action",
     url: "/__mock_analyze_action",
@@ -144,6 +156,7 @@ vi.mock("~/routes/analyze.data", () => {
   const pollStub = vi.fn();
   return {
     getArchiveProbe: getArchiveProbeStub,
+    getJobState: getJobStateStub,
     getScreenshot: getScreenshotStub,
     retrySectionAction: retryStub,
     analyzeAction: analyzeActionStub,
@@ -194,6 +207,8 @@ function resetTestEnv() {
   }));
   getScreenshotMock.mockReset();
   getScreenshotMock.mockImplementation(async () => null);
+  getJobStateMock.mockReset();
+  getJobStateMock.mockImplementation(async () => null);
   revalidateMock.mockReset();
   revalidateMock.mockImplementation(async () => undefined);
   window.localStorage.clear();
@@ -264,8 +279,9 @@ function frameCompatResult(
 }
 
 async function flushMicrotasks() {
-  await Promise.resolve();
-  await Promise.resolve();
+  for (let i = 0; i < 8; i++) {
+    await Promise.resolve();
+  }
 }
 
 function deferred<T>() {
@@ -340,6 +356,61 @@ function makeSidebarPayload(
 }
 
 describe("AnalyzePage route", () => {
+  it("renders a cached terminal seed immediately without extracting or page-frame loading indicators", async () => {
+    getJobStateMock.mockResolvedValueOnce(
+      makeJobState({
+        status: "done",
+        cached: true,
+        sidebar_payload_complete: true,
+        sidebar_payload: makeSidebarPayload({
+          headline: {
+            text: "A cached result loads immediately",
+            kind: "synthesized",
+            unavailable_inputs: [],
+          },
+        }),
+      }),
+    );
+    const pendingProbe = deferred<MockArchiveProbeResult>();
+    getArchiveProbeMock.mockReturnValueOnce(pendingProbe.promise);
+
+    renderAt("/analyze?job=job-cached-direct");
+
+    expect(await screen.findByTestId("analyze-layout")).not.toBeNull();
+    expect(screen.getByTestId("headline-summary-text").textContent).toBe(
+      "A cached result loads immediately",
+    );
+    expect(screen.queryByTestId("extracting-indicator")).toBeNull();
+    expect(screen.queryByTestId("page-frame-loading")).toBeNull();
+    expect(screen.getByTestId("page-frame-iframe")).not.toBeNull();
+  });
+
+  it("renders a cached partial seed with the partial banner and no extracting indicator", async () => {
+    getJobStateMock.mockResolvedValueOnce(
+      makeJobState({
+        status: "partial" as JobState["status"],
+        error_code: "section_failure",
+        error_message: "Sections failed: safety__web_risk",
+        sidebar_payload_complete: true,
+        sidebar_payload: makeSidebarPayload(),
+        sections: {
+          safety__web_risk: {
+            state: "failed",
+            attempt_id: "failed-attempt",
+            error: "Google Web Risk rejected URI mailto:hn@ycombinator.com",
+          },
+        } as unknown as JobState["sections"],
+      }),
+    );
+
+    renderAt("/analyze?job=job-cached-partial");
+
+    expect(await screen.findByTestId("analyze-layout")).not.toBeNull();
+    expect(screen.getByTestId("partial-failure-banner")).not.toBeNull();
+    expect(screen.queryByTestId("extracting-indicator")).toBeNull();
+    expect(screen.queryByTestId("page-frame-loading")).toBeNull();
+  });
+
   it("ignores ?pending_error when ?job is present and job is still polling (renders layout, no failure card)", async () => {
     renderAt(
       "/analyze?job=job-xyz&pending_error=unsupported_site&url=https://example.com",
@@ -832,15 +903,13 @@ describe("AnalyzePage route", () => {
       }),
     );
 
-    const previewButtons = [
-      originalButton,
-      screen.getByTestId("preview-mode-archived"),
-      screen.getByTestId("preview-mode-screenshot"),
-    ];
-    for (const button of previewButtons) {
-      expect(button.getAttribute("aria-pressed")).not.toBe("true");
-    }
-    expect(originalButton.getAttribute("aria-pressed")).not.toBe("true");
+    expect(originalButton.getAttribute("aria-pressed")).toBe("true");
+    expect(
+      screen.getByTestId("preview-mode-archived").getAttribute("aria-pressed"),
+    ).toBe("false");
+    expect(
+      screen.getByTestId("preview-mode-screenshot").getAttribute("aria-pressed"),
+    ).toBe("false");
 
     unblockedCompat.resolve(
       frameCompatResult({
@@ -1314,8 +1383,8 @@ describe("AnalyzePage archiveProbeState re-probe loop (TASK-1483.15.01)", () => 
     await flushMicrotasks();
 
     expect(probeState()).toBe("pending");
-    expect(screen.queryByTestId("page-frame-unavailable")).toBeNull();
-    expect(screen.getByTestId("page-frame-loading")).not.toBeNull();
+    expect(screen.queryByTestId("page-frame-loading")).toBeNull();
+    expect(screen.getByTestId("page-frame-unavailable")).not.toBeNull();
 
     await vi.advanceTimersByTimeAsync(300_000);
 
@@ -1708,7 +1777,7 @@ describe("AnalyzePage Archived tab availability (TASK-1483.15.02)", () => {
       await flushMicrotasks();
 
       const archived = getPreviewModeButton("archived");
-      expect(screen.getByTestId("page-frame-loading")).not.toBeNull();
+      expect(screen.queryByTestId("page-frame-loading")).toBeNull();
       expect(
         screen
           .getByTestId("analyze-main")
@@ -1848,6 +1917,9 @@ describe("AnalyzePage utterance refs", () => {
     renderAt(
       `/analyze?job=job-utterance-scroll&url=${encodeURIComponent(url)}`,
     );
+    await waitFor(() => {
+      expect(pollingHandles.length).toBeGreaterThan(0);
+    });
     setPolledJobState(jobWithFlashpoint());
     await flushMicrotasks();
 
@@ -1885,7 +1957,10 @@ describe("AnalyzePage utterance refs", () => {
         archivedPreviewUrl: null,
       }),
     );
-    renderAt("/analyze?job=job-no-archive");
+    renderAt(`/analyze?job=job-no-archive&url=${encodeURIComponent(url)}`);
+    await waitFor(() => {
+      expect(pollingHandles.length).toBeGreaterThan(0);
+    });
     setPolledJobState(jobWithFlashpoint());
     await flushMicrotasks();
 
@@ -1906,6 +1981,9 @@ describe("AnalyzePage utterance refs", () => {
     renderAt(
       `/analyze?job=job-utterance-scroll&url=${encodeURIComponent(url)}`,
     );
+    await waitFor(() => {
+      expect(pollingHandles.length).toBeGreaterThan(0);
+    });
     setPolledJobState(jobWithFlashpoint({ utterances: [] }));
     await flushMicrotasks();
 
@@ -2047,8 +2125,9 @@ describe("AnalyzePage Original tab — soft-disabled when canIframe=false (TASK-
     renderAt("/analyze?job=job-pending-compat&url=https://nypost.com/article");
 
     const original = await screen.findByTestId("preview-mode-original");
-    expect(original.getAttribute("aria-pressed")).toBe("false");
-    expect(screen.getByTestId("page-frame-loading")).not.toBeNull();
+    expect(original.getAttribute("aria-pressed")).toBe("true");
+    expect(screen.queryByTestId("page-frame-loading")).toBeNull();
+    expect(screen.getByTestId("page-frame-iframe")).not.toBeNull();
 
     pendingCompat.resolve(
       frameCompatResult({

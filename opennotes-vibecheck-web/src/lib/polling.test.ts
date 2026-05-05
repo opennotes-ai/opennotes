@@ -12,6 +12,10 @@ import type { JobState } from "~/lib/api-client.server";
 const mockPollJob = vi.fn();
 const mockPollJobSignals: Array<AbortSignal | undefined> = [];
 
+vi.mock("@solidjs/router", () => ({
+  revalidate: vi.fn(async () => undefined),
+}));
+
 class MockVibecheckApiError extends Error {
   public errorBody: unknown;
   public headers: Headers;
@@ -33,6 +37,12 @@ class MockVibecheckApiError extends Error {
 }
 
 vi.mock("~/routes/analyze.data", () => ({
+  getJobState: Object.assign((jobId: string, signal?: AbortSignal) => {
+    mockPollJobSignals.push(signal);
+    return mockPollJob(jobId);
+  }, {
+    keyFor: (jobId: string) => `vibecheck-job-state:${jobId}`,
+  }),
   pollJobState: (jobId: string, signal?: AbortSignal) => {
     mockPollJobSignals.push(signal);
     return mockPollJob(jobId);
@@ -495,6 +505,7 @@ describe("createPollingResource", () => {
       expect(mockPollJob).toHaveBeenCalledTimes(1);
 
       refetch();
+      await flushMicrotasks();
       expect(mockPollJob).toHaveBeenCalledTimes(2);
       expect(state()?.status).toBe("done");
 
@@ -503,6 +514,93 @@ describe("createPollingResource", () => {
       await flushMicrotasks();
       expect(state()?.status).toBe("analyzing");
 
+      dispose();
+    });
+  });
+
+  it("uses a terminal done seed without firing an immediate poll", async () => {
+    const seed = makeJobState({ status: "done", next_poll_ms: 500 });
+
+    const { createPollingResource } = await import("./polling");
+
+    await createRoot(async (dispose) => {
+      const { state, error } = createPollingResource(() => "job-seeded-done", {
+        initialState: seed,
+      });
+      await flushMicrotasks();
+
+      expect(state()).toEqual(seed);
+      expect(error()).toBeNull();
+      expect(mockPollJob).not.toHaveBeenCalled();
+      dispose();
+    });
+  });
+
+  it("uses a terminal partial seed without firing an immediate poll", async () => {
+    const seed = makeJobState({ status: "partial", next_poll_ms: 500 });
+
+    const { createPollingResource } = await import("./polling");
+
+    await createRoot(async (dispose) => {
+      const { state } = createPollingResource(() => "job-seeded-partial", {
+        initialState: seed,
+      });
+      await flushMicrotasks();
+
+      expect(state()).toEqual(seed);
+      expect(mockPollJob).not.toHaveBeenCalled();
+      dispose();
+    });
+  });
+
+  it("schedules the first poll from a non-terminal seed cadence", async () => {
+    const seed = makeJobState({ status: "analyzing", next_poll_ms: 500 });
+    const next = makeJobState({ status: "done", next_poll_ms: 500 });
+    mockPollJob.mockResolvedValueOnce(next);
+
+    const { createPollingResource } = await import("./polling");
+
+    await createRoot(async (dispose) => {
+      const { state } = createPollingResource(() => "job-seeded-running", {
+        initialState: seed,
+      });
+      await flushMicrotasks();
+
+      expect(state()).toEqual(seed);
+      expect(mockPollJob).not.toHaveBeenCalled();
+
+      await vi.advanceTimersByTimeAsync(499);
+      expect(mockPollJob).not.toHaveBeenCalled();
+
+      await vi.advanceTimersByTimeAsync(1);
+      await flushMicrotasks();
+      expect(mockPollJob).toHaveBeenCalledWith("job-seeded-running");
+      expect(state()).toEqual(next);
+      dispose();
+    });
+  });
+
+  it("refetch ignores a seed and forces a fresh poll", async () => {
+    const seed = makeJobState({ status: "done", next_poll_ms: 500 });
+    const refreshed = makeJobState({ status: "analyzing", next_poll_ms: 500 });
+    mockPollJob.mockResolvedValueOnce(refreshed);
+
+    const { createPollingResource } = await import("./polling");
+
+    await createRoot(async (dispose) => {
+      const { state, refetch } = createPollingResource(
+        () => "job-seeded-refetch",
+        { initialState: seed },
+      );
+      await flushMicrotasks();
+      expect(state()).toEqual(seed);
+      expect(mockPollJob).not.toHaveBeenCalled();
+
+      refetch();
+      await flushMicrotasks();
+
+      expect(mockPollJob).toHaveBeenCalledTimes(1);
+      expect(state()).toEqual(refreshed);
       dispose();
     });
   });
