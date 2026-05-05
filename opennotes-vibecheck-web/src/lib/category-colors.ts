@@ -5,6 +5,7 @@ export const HARM_CONFIDENCE_THRESHOLD = 0.66;
 export const HARM_CATEGORIES: ReadonlySet<string> = new Set([
   "adult",
   "death",
+  "death, harm & tragedy",
   "firearms & weapons",
   "harm & tragedy",
   "harassment",

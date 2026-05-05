@@ -34,6 +34,10 @@ describe("categoryColor", () => {
     expect(categoryColor("Harm & Tragedy", 0.9)).toBe("red");
   });
 
+  it("recognizes exact GCP Natural Language comma-composite harm categories", () => {
+    expect(categoryColor("Death, Harm & Tragedy", 0.9)).toBe("red");
+  });
+
   it("treats missing confidence as high confidence for bool-only harm flags", () => {
     expect(categoryColor("harassment", undefined)).toBe("red");
   });
