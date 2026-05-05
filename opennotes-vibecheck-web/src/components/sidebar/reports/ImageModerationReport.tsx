@@ -1,5 +1,6 @@
 import { For, Show, type JSX } from "solid-js";
 import type { components } from "~/lib/generated-types";
+import { categoryColor, categoryColorClasses } from "~/lib/category-colors";
 
 type ImageModerationMatch = components["schemas"]["ImageModerationMatch"];
 
@@ -10,12 +11,19 @@ const SAFESEARCH_FIELDS = [
   "medical",
   "spoof",
 ] as const;
+type SafeSearchField = (typeof SAFESEARCH_FIELDS)[number];
+const FLAGGED_CATEGORY_DISPLAY_THRESHOLD = 0.5;
 
 export interface ImageModerationReportProps {
   matches: ImageModerationMatch[];
 }
 
-function flaggedCategories(match: ImageModerationMatch): string[] {
+function flaggedCategories(match: ImageModerationMatch): SafeSearchField[] {
+  if (match.flagged) {
+    return SAFESEARCH_FIELDS.filter(
+      (field) => match[field] > FLAGGED_CATEGORY_DISPLAY_THRESHOLD,
+    );
+  }
   return SAFESEARCH_FIELDS.filter((field) => match[field] >= 0.75);
 }
 
@@ -55,14 +63,18 @@ function ImageMatchCard(props: { match: ImageModerationMatch }): JSX.Element {
         <Show when={categories().length > 0}>
           <div class="flex flex-wrap gap-1">
             <For each={categories()}>
-              {(category) => (
-                <span
-                  data-testid="image-moderation-category"
-                  class="inline-flex items-center rounded-full bg-destructive/10 px-2 py-0.5 text-[11px] font-medium text-destructive"
-                >
-                  {category}
-                </span>
-              )}
+              {(category) => {
+                const color = categoryColor(category, props.match[category]);
+                return (
+                  <span
+                    data-testid="image-moderation-category"
+                    data-color={color}
+                    class={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium ${categoryColorClasses(color)}`}
+                  >
+                    {category}
+                  </span>
+                );
+              }}
             </For>
           </div>
         </Show>
