@@ -508,6 +508,16 @@ export async function pollJobState(jobId: string): Promise<JobState> {
   return pollJob(jobId);
 }
 
+const getJobStateQuery = query(
+  async (jobId: string): Promise<JobState> => {
+    "use server";
+    return pollJobState(jobId);
+  },
+  "vibecheck-job-state",
+);
+
+export const getJobState = getJobStateQuery;
+
 export const retrySectionAction = action(
   async (formData: FormData) => {
     "use server";

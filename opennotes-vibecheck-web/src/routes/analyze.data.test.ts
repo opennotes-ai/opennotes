@@ -3,12 +3,14 @@ import { MAX_PDF_BYTES } from "~/lib/pdf-constraints";
 
 const {
   analyzeUrlMock,
+  pollJobMock,
   retrySectionMock,
   clientGetMock,
   requestPdfUploadUrlMock,
   requestPdfAnalysisMock,
 } = vi.hoisted(() => ({
   analyzeUrlMock: vi.fn(),
+  pollJobMock: vi.fn(),
   retrySectionMock: vi.fn(),
   clientGetMock: vi.fn(),
   requestPdfUploadUrlMock: vi.fn(),
@@ -22,6 +24,7 @@ vi.mock("~/lib/api-client.server", async () => {
   return {
     ...actual,
     analyzeUrl: analyzeUrlMock,
+    pollJob: pollJobMock,
     retrySection: retrySectionMock,
     requestPdfUploadUrl: requestPdfUploadUrlMock,
     requestPdfAnalysis: requestPdfAnalysisMock,
@@ -65,6 +68,7 @@ async function callPdfActionAsFile(name = "notes.pdf"): Promise<Response> {
 describe("analyzeAction", () => {
   beforeEach(() => {
     analyzeUrlMock.mockReset();
+    pollJobMock.mockReset();
     retrySectionMock.mockReset();
     clientGetMock.mockReset();
     requestPdfUploadUrlMock.mockReset();
@@ -426,6 +430,7 @@ describe("resolveAnalyzeRedirect web-tier rate limiter (TASK-1483.09)", () => {
 
   beforeEach(async () => {
     analyzeUrlMock.mockReset();
+    pollJobMock.mockReset();
     retrySectionMock.mockReset();
     clientGetMock.mockReset();
     currentRequest = null;
@@ -790,5 +795,31 @@ describe("getArchiveProbe and getScreenshot split queries", () => {
 
     clientGetMock.mockResolvedValueOnce({ data: null, error: "down" });
     expect(await getScreenshot("https://news.example.com/b")).toBeNull();
+  });
+});
+
+describe("getJobState query", () => {
+  beforeEach(() => {
+    pollJobMock.mockReset();
+    vi.resetModules();
+  });
+
+  it("uses a stable key and returns the same JobState shape as pollJob", async () => {
+    const state = {
+      job_id: "job-abc",
+      status: "done",
+      url: "https://news.example.com/a",
+      cached: true,
+      next_poll_ms: 1500,
+    };
+    pollJobMock.mockResolvedValueOnce(state);
+
+    const { getJobState } = await import("./analyze.data");
+
+    expect(getJobState.keyFor("job-abc")).toEqual(
+      getJobState.keyFor("job-abc"),
+    );
+    await expect(getJobState("job-abc")).resolves.toEqual(state);
+    expect(pollJobMock).toHaveBeenCalledWith("job-abc");
   });
 });
