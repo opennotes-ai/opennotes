@@ -65,7 +65,7 @@ from src.jobs.sidebar_payload import assemble_sidebar_payload
 from src.jobs.slots import retry_claim_slot
 from src.jobs.submit_schemas import SubmitResult
 from src.monitoring import get_logger
-from src.monitoring_metrics import CACHE_HITS, SINGLE_FLIGHT_LOCK_WAITS
+from src.monitoring_metrics import SINGLE_FLIGHT_LOCK_WAITS
 from src.utils.url_security import InvalidURL
 
 logger = get_logger(__name__)
@@ -294,15 +294,16 @@ async def analyze(request: Request, body: AnalyzeRequest) -> Any:  # noqa: PLR09
                 # `vibecheck_analyses` is the source of truth within TTL.
                 cached_payload = await submit_job._lookup_cache(conn, normalized_url)
                 if cached_payload is not None:
-                    cached_job_id = await submit_job._insert_cached_done_job(
+                    cache_hit_result = await submit_job._materialize_cache_hit(
                         conn,
                         url=body.url,
                         normalized_url=normalized_url,
                         host=host,
-                        sidebar_payload=cached_payload,
+                        cached_payload=cached_payload,
                     )
-                    CACHE_HITS.labels(tier="analysis").inc()
-                    return SubmitResult(job_id=cached_job_id, status=JobStatus.DONE, cached=True), None, True
+                    if cache_hit_result is not None:
+                        return cache_hit_result, None, True
+                    # cache evicted; fall through to inflight lookup
                 existing = await submit_job._find_inflight_job(conn, normalized_url)
                 if existing is not None:
                     existing_job_id, existing_status = existing

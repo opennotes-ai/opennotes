@@ -145,6 +145,24 @@ async def _insert_utterances(pool: Any, job_id: UUID, *, count: int = 2) -> None
             )
 
 
+async def _insert_non_comment_utterances(
+    pool: Any, job_id: UUID, *, count: int = 2
+) -> None:
+    async with pool.acquire() as conn:
+        for i in range(count):
+            await conn.execute(
+                """
+                INSERT INTO vibecheck_job_utterances
+                    (job_id, utterance_id, kind, text, position)
+                VALUES ($1, $2, 'article', $3, $4)
+                """,
+                job_id,
+                f"article-{i}-abc",
+                f"Article text {i}",
+                i,
+            )
+
+
 async def _seed_cache(pool: Any, normalized_url: str, payload_json: str) -> None:
     async with pool.acquire() as conn:
         await conn.execute(
@@ -296,6 +314,28 @@ class TestCacheHitUtteranceMaterialization:
         url = "https://latimes.example.com/coral-evict"
         await _seed_cache(pool, url, _SIDEBAR_WITH_COMMENT_REFS.replace(
             "latimes.example.com/coral-article", "latimes.example.com/coral-evict"
+        ))
+        assert await _cache_exists(pool, url)
+
+        result, attempt = await _call_handle_locked_submit(
+            pool, url=url, normalized_url=url, host="latimes.example.com"
+        )
+
+        assert result.cached is False
+        assert result.status.value == "pending"
+        assert attempt is not None
+
+        assert not await _cache_exists(pool, url)
+
+    async def test_cache_hit_with_comment_refs_but_only_non_comment_utterances_evicts_cache(
+        self, pool: Any
+    ) -> None:
+        url = "https://latimes.example.com/coral-non-comment-evict"
+        source_job_id = await _insert_fresh_done_job(pool, url)
+        await _insert_non_comment_utterances(pool, source_job_id, count=2)
+        await _seed_cache(pool, url, _SIDEBAR_WITH_COMMENT_REFS.replace(
+            "latimes.example.com/coral-article",
+            "latimes.example.com/coral-non-comment-evict",
         ))
         assert await _cache_exists(pool, url)
 

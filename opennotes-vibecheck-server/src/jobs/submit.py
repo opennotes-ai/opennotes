@@ -338,7 +338,9 @@ async def _find_source_job_with_utterances(
           AND j.status = 'done'
           AND j.cached = false
           AND EXISTS (
-              SELECT 1 FROM vibecheck_job_utterances u WHERE u.job_id = j.job_id
+              SELECT 1 FROM vibecheck_job_utterances u
+              WHERE u.job_id = j.job_id
+                AND u.utterance_id LIKE 'comment-%'
           )
         ORDER BY j.finished_at DESC NULLS LAST
         LIMIT 1
@@ -384,6 +386,50 @@ async def _evict_url_cache(conn: Any, normalized_url: str) -> None:
     )
 
 
+async def _materialize_cache_hit(
+    conn: Any,
+    *,
+    url: str,
+    normalized_url: str,
+    host: str,
+    cached_payload: dict[str, Any],
+) -> SubmitResult | None:
+    """Handle a cache-hit submit.
+
+    Returns a done SubmitResult on success.
+    Returns None when the cache was evicted because it references comment-*
+    utterances but no source job with matching rows exists — the caller should
+    fall through to the pending-job path.
+    """
+    if _payload_has_comment_refs(cached_payload):
+        source_job_id = await _find_source_job_with_utterances(conn, normalized_url)
+        if source_job_id is None:
+            await _evict_url_cache(conn, normalized_url)
+            logger.info(
+                "evicted stale analysis cache for %s: comment refs with no source utterances",
+                normalized_url,
+            )
+            return None
+        job_id = await _insert_cached_done_job(
+            conn,
+            url=url,
+            normalized_url=normalized_url,
+            host=host,
+            sidebar_payload=cached_payload,
+        )
+        await _copy_utterances_to_job(conn, source_job_id, job_id)
+    else:
+        job_id = await _insert_cached_done_job(
+            conn,
+            url=url,
+            normalized_url=normalized_url,
+            host=host,
+            sidebar_payload=cached_payload,
+        )
+    CACHE_HITS.labels(tier="analysis").inc()
+    return SubmitResult(job_id=job_id, status=JobStatus.DONE, cached=True)
+
+
 async def handle_locked_submit(
     conn: Any,
     *,
@@ -422,35 +468,16 @@ async def handle_locked_submit(
     if source_type == "url":
         cached_payload = await _lookup_cache(conn, normalized_url)
         if cached_payload is not None:
-            if _payload_has_comment_refs(cached_payload):
-                source_job_id = await _find_source_job_with_utterances(conn, normalized_url)
-                if source_job_id is None:
-                    await _evict_url_cache(conn, normalized_url)
-                    logger.info(
-                        "evicted stale analysis cache for %s: comment refs with no source utterances",
-                        normalized_url,
-                    )
-                else:
-                    job_id = await _insert_cached_done_job(
-                        conn,
-                        url=url,
-                        normalized_url=normalized_url,
-                        host=host,
-                        sidebar_payload=cached_payload,
-                    )
-                    await _copy_utterances_to_job(conn, source_job_id, job_id)
-                    CACHE_HITS.labels(tier="analysis").inc()
-                    return SubmitResult(job_id=job_id, status=JobStatus.DONE, cached=True), None
-            else:
-                job_id = await _insert_cached_done_job(
-                    conn,
-                    url=url,
-                    normalized_url=normalized_url,
-                    host=host,
-                    sidebar_payload=cached_payload,
-                )
-                CACHE_HITS.labels(tier="analysis").inc()
-                return SubmitResult(job_id=job_id, status=JobStatus.DONE, cached=True), None
+            result = await _materialize_cache_hit(
+                conn,
+                url=url,
+                normalized_url=normalized_url,
+                host=host,
+                cached_payload=cached_payload,
+            )
+            if result is not None:
+                return result, None
+            # cache was evicted; fall through to pending
 
     existing = await _find_inflight_job(conn, normalized_url)
     if existing is not None:
