@@ -105,6 +105,7 @@ CREATE TABLE IF NOT EXISTS vibecheck_jobs (
     preview_description TEXT,
     extract_transient_attempts INT NOT NULL DEFAULT 0,
     expired_at TIMESTAMPTZ,
+    protected BOOLEAN NOT NULL DEFAULT false,
     CONSTRAINT vibecheck_jobs_status_check
         CHECK (status IN ('pending', 'extracting', 'analyzing', 'done', 'partial', 'failed')),
     CONSTRAINT vibecheck_jobs_error_code_check
@@ -269,6 +270,7 @@ BEGIN
           AND finished_at IS NOT NULL
           AND finished_at < (now() - INTERVAL '7 days')
           AND expired_at IS NULL
+          AND protected = false
         RETURNING job_id
     ),
     del_utterances AS (
@@ -278,7 +280,13 @@ BEGIN
     )
     SELECT COUNT(*) INTO purged FROM expired;
 
-    DELETE FROM vibecheck_analyses WHERE expires_at < now();
+    DELETE FROM vibecheck_analyses
+    WHERE expires_at < now()
+      AND NOT EXISTS (
+          SELECT 1 FROM vibecheck_jobs j
+          WHERE j.normalized_url = vibecheck_analyses.url
+            AND j.protected = true
+      );
 
     RETURN purged;
 END;

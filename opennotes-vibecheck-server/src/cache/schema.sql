@@ -642,6 +642,19 @@ CREATE INDEX IF NOT EXISTS vibecheck_jobs_expired_at_idx
   ON public.vibecheck_jobs (expired_at)
   WHERE expired_at IS NOT NULL;
 
+-- protected: operator-controlled flag that exempts a job from TTL reaping
+-- (TASK-1540). No API surface — operators flip this in the Supabase table
+-- editor. When true, the job and its `vibecheck_analyses` cache row are
+-- never soft-deleted by `vibecheck_purge_terminal_jobs()`.
+--
+-- Other caches (vibecheck_scrapes, vibecheck_pdf_archives,
+-- vibecheck_web_risk_lookups) are explicitly NOT propagated — they are
+-- regeneration caches keyed by URL and do not need protection: the next
+-- read will simply re-populate them. Only the job row + its analyses
+-- sidebar payload contain user-visible state worth protecting from TTL.
+ALTER TABLE public.vibecheck_jobs
+  ADD COLUMN IF NOT EXISTS protected BOOLEAN NOT NULL DEFAULT false;
+
 CREATE OR REPLACE FUNCTION public.vibecheck_purge_terminal_jobs()
 RETURNS INT
 LANGUAGE plpgsql
@@ -665,6 +678,7 @@ BEGIN
           AND finished_at IS NOT NULL
           AND finished_at < (pg_catalog.now() - INTERVAL '7 days')
           AND expired_at IS NULL
+          AND protected = false  -- TASK-1540: skip operator-flagged jobs
         RETURNING job_id
     ),
     del_utterances AS (
@@ -674,14 +688,28 @@ BEGIN
     )
     SELECT COUNT(*) INTO purged FROM expired;
 
+    -- Other caches (vibecheck_scrapes, vibecheck_pdf_archives,
+    -- vibecheck_web_risk_lookups) intentionally do NOT honor the protected
+    -- flag — they are regeneration caches keyed by URL/host and a future
+    -- read trivially re-populates them (TASK-1540). Only `vibecheck_analyses`
+    -- carries the user-visible sidebar payload that pairs 1:1 with a job row.
     DELETE FROM public.vibecheck_scrapes
     WHERE expires_at < pg_catalog.now();
 
     DELETE FROM public.vibecheck_pdf_archives
     WHERE expires_at < pg_catalog.now();
 
+    -- TASK-1540: protect the analyses cache row for any protected job that
+    -- shares the same normalized_url, otherwise the sidebar payload would
+    -- vanish from the cache 72h after the job ran while the (protected)
+    -- job row continued to exist.
     DELETE FROM public.vibecheck_analyses
-    WHERE expires_at < pg_catalog.now();
+    WHERE expires_at < pg_catalog.now()
+      AND NOT EXISTS (
+          SELECT 1 FROM public.vibecheck_jobs j
+          WHERE j.normalized_url = public.vibecheck_analyses.url
+            AND j.protected = true
+      );
 
     DELETE FROM public.vibecheck_web_risk_lookups WHERE expires_at < pg_catalog.now();
 
