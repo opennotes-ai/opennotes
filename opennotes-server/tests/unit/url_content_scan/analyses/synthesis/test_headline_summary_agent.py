@@ -197,6 +197,33 @@ async def test_run_headline_summary_uses_agent_for_real_signal_and_forces_output
     assert payload["safety_recommendation"]["level"] == "unsafe"
 
 
+@pytest.mark.asyncio
+async def test_run_headline_summary_degrades_when_agent_model_fails(monkeypatch):
+    from src.url_content_scan.analyses.synthesis import headline_summary_agent as module
+
+    monkeypatch.setattr(
+        module,
+        "_default_headline_model",
+        lambda settings: (_ for _ in ()).throw(RuntimeError("missing vertex config")),
+    )
+
+    inputs = replace(
+        _empty_inputs(),
+        safety_recommendation=_unsafe_signal(),
+        unavailable_inputs=["web_risk"],
+    )
+
+    result = await module.run_headline_summary(
+        inputs,
+        settings=object(),
+        job_id=UUID("44444444-4444-4444-4444-444444444444"),
+    )
+
+    assert result.kind == "stock"
+    assert result.text in module._SIGNAL_FALLBACK_PHRASES
+    assert result.unavailable_inputs == ["web_risk"]
+
+
 def test_all_inputs_clear_treats_coverage_only_caution_as_clear():
     from src.url_content_scan.analyses.synthesis.headline_summary_agent import all_inputs_clear
 

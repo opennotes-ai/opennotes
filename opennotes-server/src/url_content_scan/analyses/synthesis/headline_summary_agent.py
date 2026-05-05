@@ -68,6 +68,15 @@ _DEGRADED_STOCK_PHRASES: tuple[str, ...] = (
     "Analysis was partial; what completed had nothing to flag.",
 )
 
+_SIGNAL_FALLBACK_PHRASES: tuple[str, ...] = (
+    "The available checks surfaced signals worth reviewing.",
+    "This page has signals that merit a closer look.",
+    "The analysis found activity that should be reviewed.",
+    "Available signals suggest this page needs human attention.",
+    "This page is not an all-clear; review the completed sections.",
+    "The completed checks found enough to warrant review.",
+)
+
 
 @dataclass(frozen=True)
 class HeadlineSummaryInputs:
@@ -146,6 +155,11 @@ def pick_degraded_stock_phrase(job_id: UUID) -> str:
     return _DEGRADED_STOCK_PHRASES[index]
 
 
+def pick_signal_fallback_phrase(job_id: UUID) -> str:
+    index = int(job_id.hex, 16) % len(_SIGNAL_FALLBACK_PHRASES)
+    return _SIGNAL_FALLBACK_PHRASES[index]
+
+
 def _serialize_inputs(inputs: HeadlineSummaryInputs) -> str:
     payload = {
         "safety_recommendation": _model_dump(inputs.safety_recommendation)
@@ -211,10 +225,17 @@ async def run_headline_summary(
             unavailable_inputs=list(inputs.unavailable_inputs),
         )
 
-    model_output = await _run_default_headline_summary_agent(
-        inputs,
-        model=_default_headline_model(settings),
-    )
+    try:
+        model_output = await _run_default_headline_summary_agent(
+            inputs,
+            model=_default_headline_model(settings),
+        )
+    except Exception:
+        return HeadlineSummary(
+            text=pick_signal_fallback_phrase(job_id),
+            kind="stock",
+            unavailable_inputs=list(inputs.unavailable_inputs),
+        )
     return HeadlineSummary(
         text=model_output.text,
         kind="synthesized",
@@ -229,6 +250,7 @@ __all__ = [
     "all_inputs_clear",
     "headline_summary_agent",
     "pick_degraded_stock_phrase",
+    "pick_signal_fallback_phrase",
     "pick_stock_phrase",
     "run_headline_summary",
 ]

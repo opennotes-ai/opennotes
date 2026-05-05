@@ -36,7 +36,7 @@ from src.url_content_scan.analyses.safety import (
     run_web_risk,
 )
 from src.url_content_scan.analyses.tone import run_flashpoint, run_scd
-from src.url_content_scan.claims_schemas import ClaimsReport
+from src.url_content_scan.claims_schemas import ClaimsReport, FactCheckMatch
 from src.url_content_scan.models import (
     UrlScanSectionSlot,
     UrlScanSidebarCache,
@@ -44,7 +44,7 @@ from src.url_content_scan.models import (
     UrlScanUtterance,
 )
 from src.url_content_scan.normalize import canonical_cache_key
-from src.url_content_scan.opinions_schemas import SentimentStatsReport
+from src.url_content_scan.opinions_schemas import SentimentStatsReport, SubjectiveClaim
 from src.url_content_scan.safety_schemas import (
     HarmfulContentMatch,
     ImageModerationMatch,
@@ -72,7 +72,7 @@ from src.url_content_scan.tone_schemas import FlashpointMatch, SCDReport
 from src.url_content_scan.utterances.extractor import extract_utterances
 from src.url_content_scan.utterances.schema import Utterance, UtterancesPayload
 from src.utils.async_compat import run_sync
-from src.utils.url_security import validate_public_http_url
+from src.utils.url_security import InvalidURL, validate_public_http_url
 
 from .batch_job_helpers import start_batch_job_sync
 
@@ -624,6 +624,38 @@ async def _load_slot_results_async(job_id: UUID) -> dict[str, Any]:
         }
 
 
+async def _validate_url_scan_rows_async(job_id: UUID, attempt_id: UUID) -> bool:
+    async with get_session_maker()() as session:
+        state = await session.get(UrlScanState, job_id)
+        if state is None or state.attempt_id != attempt_id or state.finished_at is not None:
+            return False
+        result = await session.execute(
+            select(UrlScanSectionSlot.slug).where(UrlScanSectionSlot.job_id == job_id)
+        )
+        existing_slugs = {slug for (slug,) in result.all()}
+        return existing_slugs == {slug.value for slug in SectionSlug}
+
+
+async def _fail_nonterminal_slots_async(job_id: UUID, attempt_id: UUID, error_message: str) -> int:
+    async with get_session_maker()() as session:
+        result = await session.execute(
+            update(UrlScanSectionSlot)
+            .where(
+                UrlScanSectionSlot.job_id == job_id,
+                UrlScanSectionSlot.attempt_id == attempt_id,
+                UrlScanSectionSlot.state.not_in(("DONE", "FAILED")),
+            )
+            .values(
+                state="FAILED",
+                error_code=ErrorCode.TIMEOUT.value,
+                error_message=error_message,
+                finished_at=func.now(),
+            )
+        )
+        await session.commit()
+        return int(result.rowcount or 0)
+
+
 async def _load_state_async(job_id: UUID) -> UrlScanState | None:
     async with get_session_maker()() as session:
         return await session.get(UrlScanState, job_id)
@@ -750,6 +782,58 @@ def _terminal_batch_status_for_results(
     return BatchJobStatus.FAILED.value
 
 
+def _needs_error_summary(
+    *,
+    failed_slots: dict[str, Any],
+    fatal_error_code: str | None,
+    safety_result: dict[str, Any] | None,
+    headline_result: dict[str, Any] | None,
+) -> bool:
+    return bool(
+        failed_slots
+        or fatal_error_code
+        or (safety_result or {}).get("error")
+        or (headline_result or {}).get("error")
+    )
+
+
+def _build_error_summary(
+    *,
+    slot_results: dict[str, Any],
+    fatal_error_code: str | None,
+    fatal_error_message: str | None,
+    safety_result: dict[str, Any] | None,
+    headline_result: dict[str, Any] | None,
+) -> dict[str, Any] | None:
+    failed_slots = {
+        slug: {
+            "error_code": slot.get("error_code"),
+            "error_message": slot.get("error_message"),
+        }
+        for slug, slot in slot_results.get("slots", {}).items()
+        if slot.get("state") == "FAILED"
+    }
+    if not _needs_error_summary(
+        failed_slots=failed_slots,
+        fatal_error_code=fatal_error_code,
+        safety_result=safety_result,
+        headline_result=headline_result,
+    ):
+        return None
+
+    error_summary: dict[str, Any] = {}
+    if fatal_error_code:
+        error_summary["error_code"] = fatal_error_code
+        error_summary["error_message"] = fatal_error_message or fatal_error_code
+    if failed_slots:
+        error_summary["failed_slots"] = failed_slots
+    if (safety_result or {}).get("error"):
+        error_summary["safety_recommendation_error"] = safety_result["error"]  # type: ignore[index]
+    if (headline_result or {}).get("error"):
+        error_summary["headline_error"] = headline_result["error"]  # type: ignore[index]
+    return error_summary
+
+
 async def _finalize_async(
     *,
     job_id: UUID,
@@ -768,6 +852,14 @@ async def _finalize_async(
         state = await session.get(UrlScanState, job_id)
         if state is None:
             raise ValueError(f"url scan state not found: {job_id}")
+        if state.attempt_id != attempt_id:
+            return {
+                "status": "superseded",
+                "job_id": str(job_id),
+                "sidebar_payload_complete": False,
+                "done_count": slot_results.get("done_count", 0),
+                "failed_count": slot_results.get("failed_count", 0),
+            }
 
         utterances = [
             Utterance.model_validate(item)
@@ -801,26 +893,13 @@ async def _finalize_async(
             fatal_error_code=fatal_or_slot_error,
         )
 
-        error_summary: dict[str, Any] | None = None
-        failed_slots = {
-            slug: {
-                "error_code": slot.get("error_code"),
-                "error_message": slot.get("error_message"),
-            }
-            for slug, slot in slot_results.get("slots", {}).items()
-            if slot.get("state") == "FAILED"
-        }
-        if failed_slots or fatal_error_code or (safety_result or {}).get("error"):
-            error_summary = {}
-            if fatal_error_code:
-                error_summary["error_code"] = fatal_error_code
-                error_summary["error_message"] = fatal_error_message or fatal_error_code
-            if failed_slots:
-                error_summary["failed_slots"] = failed_slots
-            if (safety_result or {}).get("error"):
-                error_summary["safety_recommendation_error"] = safety_result["error"]
-            if (headline_result or {}).get("error"):
-                error_summary["headline_error"] = headline_result["error"]
+        error_summary = _build_error_summary(
+            slot_results=slot_results,
+            fatal_error_code=fatal_error_code,
+            fatal_error_message=fatal_error_message,
+            safety_result=safety_result,
+            headline_result=headline_result,
+        )
 
         if sidebar_payload is not None:
             encoded_payload = jsonable_encoder(sidebar_payload)
@@ -844,11 +923,14 @@ async def _finalize_async(
 
         service = BatchJobService(session)
         if status == BatchJobStatus.COMPLETED.value:
-            await service.complete_job(
+            job = await service.complete_job(
                 job_id,
                 completed_tasks=slot_results.get("done_count", 0),
                 failed_tasks=slot_results.get("failed_count", 0),
             )
+            if job is not None and error_summary is not None:
+                job.error_summary = error_summary
+                await session.commit()
         elif status == BatchJobStatus.PARTIAL.value:
             await service.partial_job(
                 job_id,
@@ -937,6 +1019,27 @@ def load_url_scan_slot_results_step(job_id: str) -> dict[str, Any]:
 
 
 @DBOS.step()
+def validate_url_scan_rows_step(job_id: str, attempt_id: str) -> bool:
+    return run_sync(_validate_url_scan_rows_async(UUID(job_id), UUID(attempt_id)))
+
+
+@DBOS.step()
+def fail_nonterminal_url_scan_slots_step(job_id: str, attempt_id: str, error_message: str) -> int:
+    return run_sync(_fail_nonterminal_slots_async(UUID(job_id), UUID(attempt_id), error_message))
+
+
+def _validate_scrape_source_url(raw: str, *, fallback_host: str) -> str:
+    try:
+        return validate_public_http_url(raw)
+    except InvalidURL as exc:
+        raise UrlScanWorkflowError(
+            ErrorCode.UNSAFE_URL,
+            str(exc),
+            error_host=urlparse(raw).netloc or fallback_host,
+        ) from exc
+
+
+@DBOS.step()
 def _validate_url(
     job_id: str, source_url: str, normalized_url: str, attempt_id: str
 ) -> dict[str, Any]:
@@ -975,13 +1078,24 @@ def _scrape(job_id: str, source_url: str, normalized_url: str, attempt_id: str) 
         )
         cached = await cache.get(normalized_url)
         if cached is not None:
+            final_source_url = cached.metadata.source_url if cached.metadata else None
+            effective_source_url = _validate_scrape_source_url(
+                final_source_url or source_url,
+                fallback_host=urlparse(normalized_url).netloc,
+            )
             return {
                 "cached": True,
                 "scraped_at": datetime.now(UTC).isoformat(),
                 "scrape": cached.model_dump(mode="json"),
+                "effective_source_url": effective_source_url,
             }
         client = FirecrawlClient(settings.FIRECRAWL_API_KEY)
         scrape = await client.scrape(source_url, _SCRAPE_FORMATS)
+        final_source_url = scrape.metadata.source_url if scrape.metadata else None
+        effective_source_url = _validate_scrape_source_url(
+            final_source_url or source_url,
+            fallback_host=urlparse(normalized_url).netloc,
+        )
         stored = await cache.put(
             normalized_url,
             scrape,
@@ -992,6 +1106,7 @@ def _scrape(job_id: str, source_url: str, normalized_url: str, attempt_id: str) 
             "cached": False,
             "scraped_at": datetime.now(UTC).isoformat(),
             "scrape": stored.model_dump(mode="json"),
+            "effective_source_url": effective_source_url,
         }
 
     if not touch_url_scan_heartbeat_step(job_id, attempt_id):
@@ -1020,9 +1135,10 @@ def _extract_utterances(
 
     try:
         scrape_payload = scrape_result["scrape"]
+        effective_source_url = scrape_result.get("effective_source_url") or source_url
         utterances_payload = extract_utterances(
             scrape=ScrapeResult.model_validate(scrape_payload),
-            source_url=source_url,
+            source_url=effective_source_url,
         )
     except Exception as exc:
         raise UrlScanWorkflowError(ErrorCode.EXTRACTION_FAILED, str(exc)) from exc
@@ -1043,7 +1159,7 @@ def _extract_utterances(
 
     section_inputs = UrlScanWorkflowInputs(
         utterances=utterances,
-        page_url=source_url,
+        page_url=effective_source_url,
         mentioned_urls=mentioned_urls,
         media_urls=sorted(set(mentioned_images + mentioned_videos)),
         mentioned_images=mentioned_images,
@@ -1065,6 +1181,12 @@ def _extract_utterances(
 @DBOS.step()
 def _fan_out_slots(job_id: str, section_inputs: UrlScanWorkflowInputs) -> dict[str, Any]:
     attempt_ids = load_url_scan_slot_attempts_step(job_id)
+    missing_slugs = [slug.value for slug in SectionSlug if slug.value not in attempt_ids]
+    if missing_slugs:
+        raise UrlScanWorkflowError(
+            ErrorCode.INTERNAL,
+            f"url scan section slots missing: {', '.join(missing_slugs)}",
+        )
     dispatched: dict[str, str] = {}
     for slug in SectionSlug:
         attempt_id = attempt_ids[slug.value]
@@ -1160,13 +1282,13 @@ def _maybe_run_headline_summary(
 ) -> dict[str, Any]:
     try:
         synthesis_module = import_module("src.url_content_scan.analyses.synthesis")
-    except Exception:
-        return {"headline": None}
+    except Exception as exc:
+        return {"headline": None, "error": str(exc)}
 
     run_headline_summary = getattr(synthesis_module, "run_headline_summary", None)
     headline_inputs_type = getattr(synthesis_module, "HeadlineSummaryInputs", None)
     if run_headline_summary is None or headline_inputs_type is None:
-        return {"headline": None}
+        return {"headline": None, "error": "headline synthesis entrypoint missing"}
 
     slots = slot_results.get("slots", {})
     unavailable_inputs = _slot_unavailable_inputs(slot_results, list(SectionSlug))
@@ -1225,9 +1347,12 @@ def _maybe_run_headline_summary(
                         is not None
                         else None
                     ),
-                    known_misinformation=slots.get(
-                        SectionSlug.FACTS_CLAIMS_KNOWN_MISINFO.value, {}
-                    ).get("data", []),
+                    known_misinformation=[
+                        FactCheckMatch.model_validate(item)
+                        for item in slots.get(SectionSlug.FACTS_CLAIMS_KNOWN_MISINFO.value, {}).get(
+                            "data", []
+                        )
+                    ],
                     sentiment_stats=(
                         SentimentStatsReport.model_validate(
                             slots[SectionSlug.OPINIONS_SENTIMENTS_SENTIMENT.value]["data"]
@@ -1238,9 +1363,12 @@ def _maybe_run_headline_summary(
                         is not None
                         else None
                     ),
-                    subjective_claims=slots.get(
-                        SectionSlug.OPINIONS_SENTIMENTS_SUBJECTIVE.value, {}
-                    ).get("data", []),
+                    subjective_claims=[
+                        SubjectiveClaim.model_validate(item)
+                        for item in slots.get(
+                            SectionSlug.OPINIONS_SENTIMENTS_SUBJECTIVE.value, {}
+                        ).get("data", [])
+                    ],
                     page_title=extracted_payload.get("page_title"),
                     page_kind=PageKind(extracted_payload.get("page_kind", PageKind.OTHER.value)),
                     unavailable_inputs=unavailable_inputs,
@@ -1325,11 +1453,16 @@ def url_scan_orchestration_workflow(
             slot_results = load_url_scan_slot_results_step(job_id)
             if slot_results.get("all_terminal"):
                 break
-            touch_url_scan_heartbeat_step(job_id, attempt_id)
+            if not touch_url_scan_heartbeat_step(job_id, attempt_id):
+                return {"status": "superseded", "job_id": job_id}
             DBOS.sleep(_SLOT_JOIN_POLL_SECONDS)
         else:
             fatal_error_code = ErrorCode.TIMEOUT.value
             fatal_error_message = "timed out waiting for URL scan section slots"
+            if not touch_url_scan_heartbeat_step(job_id, attempt_id):
+                return {"status": "superseded", "job_id": job_id}
+            fail_nonterminal_url_scan_slots_step(job_id, attempt_id, fatal_error_message)
+            slot_results = load_url_scan_slot_results_step(job_id)
 
         safety_result = _run_safety_recommendation(job_id, slot_results)
         headline_result = _maybe_run_headline_summary(
@@ -1374,6 +1507,8 @@ async def dispatch_url_scan_workflow(
         raise ValueError("normalized_url did not match canonical URL")
 
     workflow_id = f"url-scan-{job_id}-attempt-{attempt_id}"
+    if not validate_url_scan_rows_step(str(job_id), str(attempt_id)):
+        return None
 
     def _enqueue() -> Any:
         with SetWorkflowID(workflow_id), SetEnqueueOptions(deduplication_id=workflow_id):
