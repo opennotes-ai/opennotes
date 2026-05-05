@@ -71,9 +71,14 @@ async def run_subjective(
                 )
         return claims
 
-    subjective_claim_batches = await asyncio.gather(
-        *[_extract_one(index, utterance) for index, utterance in enumerate(utterances)]
-    )
+    subjective_claim_batches: list[list[SubjectiveClaim]] = [[] for _utterance in utterances]
+
+    async def _store_one(index: int, utterance: Utterance) -> None:
+        subjective_claim_batches[index] = await _extract_one(index, utterance)
+
+    async with asyncio.TaskGroup() as task_group:
+        for index, utterance in enumerate(utterances):
+            task_group.create_task(_store_one(index, utterance))
     subjective_claims = [
         claim
         for claim_batch in subjective_claim_batches

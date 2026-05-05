@@ -65,6 +65,8 @@ async def fetch_image_bytes(
                     return None
                 chunks.append(chunk)
         return b"".join(chunks)
+    except httpx.HTTPError:
+        return None
     finally:
         if owns_client:
             await client.aclose()

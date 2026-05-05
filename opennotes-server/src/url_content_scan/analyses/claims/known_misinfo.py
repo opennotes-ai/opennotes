@@ -5,10 +5,12 @@ from datetime import date, datetime
 from typing import Any, Protocol
 from uuid import UUID
 
+from src.config import settings
 from src.fact_checking.embedding_schemas import FactCheckMatch as IndexedFactCheckMatch
 from src.url_content_scan.claims_schemas import ClaimsReport, FactCheckMatch
 
 DEFAULT_KNOWN_MISINFO_LIMIT = 5
+FACT_CHECK_EMBEDDING_DIMENSIONS = 1536
 
 
 class KnownMisinfoLookup(Protocol):
@@ -33,8 +35,15 @@ class EmbeddingServiceKnownMisinfoAdapter:
     similarity_threshold: float | None = None
     score_threshold: float = 0.1
     limit: int = DEFAULT_KNOWN_MISINFO_LIMIT
+    expected_embedding_model: str = field(
+        default_factory=lambda: settings.EMBEDDING_MODEL.to_pydantic_ai()
+    )
+    expected_embedding_dimensions: int = field(
+        default_factory=lambda: settings.EMBEDDING_DIMENSIONS
+    )
 
     async def lookup(self, claim_text: str) -> list[FactCheckMatch]:
+        self._validate_embedding_context()
         response = await self.embedding_service.similarity_search(
             db=self.db,
             query_text=claim_text,
@@ -57,9 +66,51 @@ class EmbeddingServiceKnownMisinfoAdapter:
             for match in response.matches
         ]
 
+    def _validate_embedding_context(self) -> None:
+        if self.community_server_uuid is None and not self.community_server_id.strip():
+            raise ValueError("community_server_id is required for known-misinfo lookup")
+        if self.expected_embedding_dimensions != FACT_CHECK_EMBEDDING_DIMENSIONS:
+            raise ValueError(
+                "known-misinfo lookup requires the fact-check index dimension "
+                f"{FACT_CHECK_EMBEDDING_DIMENSIONS}, got {self.expected_embedding_dimensions}"
+            )
+
+        actual_model = _configured_embedding_model(self.embedding_service)
+        if actual_model is not None and actual_model != self.expected_embedding_model:
+            raise ValueError(
+                "known-misinfo lookup requires the fact-check embedding model "
+                f"{self.expected_embedding_model}, got {actual_model}"
+            )
+
+        actual_dimensions = _configured_embedding_dimensions(self.embedding_service)
+        if (
+            actual_dimensions is not None
+            and actual_dimensions != self.expected_embedding_dimensions
+        ):
+            raise ValueError(
+                "known-misinfo lookup requires "
+                f"{self.expected_embedding_dimensions} dimensions, got {actual_dimensions}"
+            )
+
 
 def _to_review_date(value: datetime | None) -> date | None:
     return value.date() if value is not None else None
+
+
+def _configured_embedding_model(embedding_service: Any) -> str | None:
+    llm_service = getattr(embedding_service, "llm_service", None)
+    embedder = getattr(llm_service, "_embedder", None)
+    model = getattr(embedder, "_model", None)
+    return model if isinstance(model, str) else None
+
+
+def _configured_embedding_dimensions(embedding_service: Any) -> int | None:
+    configured = getattr(embedding_service, "embedding_dimensions", None)
+    if isinstance(configured, int):
+        return configured
+    llm_service = getattr(embedding_service, "llm_service", None)
+    configured = getattr(llm_service, "embedding_dimensions", None)
+    return configured if isinstance(configured, int) else None
 
 
 def _dedupe_key(match: FactCheckMatch) -> tuple[str, str, str, str]:

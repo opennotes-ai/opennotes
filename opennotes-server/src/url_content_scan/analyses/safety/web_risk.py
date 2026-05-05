@@ -19,7 +19,7 @@ THREAT_TYPES = (
     "UNWANTED_SOFTWARE",
     "POTENTIALLY_HARMFUL_APPLICATION",
 )
-_LOOKUP_TTL = timedelta(hours=6)
+_LOOKUP_TTL = timedelta(hours=24)
 
 
 class WebRiskClient(Protocol):
