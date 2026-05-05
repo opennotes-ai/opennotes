@@ -35,7 +35,7 @@ export function RecentlyVibeCheckedSkeleton() {
 export default function RecentlyVibeChecked(props: RecentlyVibeCheckedProps) {
   return (
     <Show when={props.analyses.length > 0}>
-      <section class="w-full space-y-4">
+      <section data-testid="recently-vibe-checked" class="w-full space-y-4">
         <h2 class="text-sm font-semibold text-muted-foreground">
           Recently vibe checked
         </h2>
@@ -43,6 +43,7 @@ export default function RecentlyVibeChecked(props: RecentlyVibeCheckedProps) {
           <For each={props.analyses}>
             {(item) => (
               <a
+                data-testid="recent-analysis-card"
                 href={`/analyze?job=${item.job_id}`}
                 class="group overflow-hidden rounded-lg border border-border transition-colors hover:border-foreground/30"
               >
@@ -56,7 +57,7 @@ export default function RecentlyVibeChecked(props: RecentlyVibeCheckedProps) {
                   }}
                 />
                 <div class="space-y-1 p-3">
-                  <p class="overflow-hidden text-ellipsis whitespace-nowrap text-sm font-medium">
+                  <p class="line-clamp-2 text-sm font-medium leading-snug">
                     {item.page_title ?? item.source_url}
                   </p>
                   <p class="line-clamp-2 text-xs text-muted-foreground">
