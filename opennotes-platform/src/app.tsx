@@ -29,7 +29,12 @@ export function RootLayout(props: { children?: JSX.Element }): JSX.Element {
           />
         }
         logoHref="/"
-        items={[{ label: "Docs", href: "https://docs.opennotes.ai" }]}
+        items={[
+          { label: "Home", href: "https://opennotes.ai" },
+          { label: "Pricing", href: "https://opennotes.ai/pricing" },
+          { label: "Open Tools", href: "https://opennotes.ai/open-tools" },
+          { label: "Blog", href: "https://opennotes.ai/#blog" },
+        ]}
         actions={
           <>
             <ModeToggle />

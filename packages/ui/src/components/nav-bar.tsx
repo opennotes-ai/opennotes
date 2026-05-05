@@ -37,7 +37,7 @@ export function NavBar(props: NavBarProps): JSX.Element {
                 href={item.href}
                 target={item.external ? "_blank" : undefined}
                 rel={item.external ? "noopener noreferrer" : undefined}
-                class="text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
+                class="text-sm font-medium text-foreground whitespace-nowrap transition-all duration-300 cursor-pointer hover:text-primary"
               >
                 {item.label}
               </a>

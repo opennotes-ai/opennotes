@@ -16,8 +16,20 @@ describe("<NavBar /> source contract", () => {
   it("uses border-border + bg-background tokens, not raw colors", () => {
     expect(navBarSource).toContain("border-border");
     expect(navBarSource).toContain("bg-background");
-    expect(navBarSource).toContain("text-muted-foreground");
-    expect(navBarSource).toContain("hover:text-foreground");
+  });
+
+  it("nav links use text-foreground (marketing-site match)", () => {
+    expect(navBarSource).toContain("text-foreground");
+    expect(navBarSource).not.toContain("text-muted-foreground");
+  });
+
+  it("nav links use hover:text-primary (marketing-site match)", () => {
+    expect(navBarSource).toContain("hover:text-primary");
+    expect(navBarSource).not.toContain("hover:text-foreground");
+  });
+
+  it("nav links use whitespace-nowrap (marketing-site match)", () => {
+    expect(navBarSource).toContain("whitespace-nowrap");
   });
 
   it("renders external links with target=_blank and rel=noopener noreferrer", () => {
