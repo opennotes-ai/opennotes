@@ -174,8 +174,8 @@ async def test_run_flashpoint_limits_concurrency_to_eight() -> None:
     assert peak <= 8
 
 
-@pytest.mark.unit
-def test_run_scd_reports_non_zero_multi_speaker_stats() -> None:
+@pytest.mark.asyncio
+async def test_run_scd_reports_non_zero_multi_speaker_stats() -> None:
     from src.url_content_scan.analyses.tone import run_scd
 
     utterances = [
@@ -205,7 +205,7 @@ def test_run_scd_reports_non_zero_multi_speaker_stats() -> None:
         ),
     ]
 
-    report = run_scd(utterances)
+    report = await run_scd(utterances)
 
     assert report.insufficient_conversation is False
     assert "speaker_count=3" in report.summary
@@ -217,19 +217,19 @@ def test_run_scd_reports_non_zero_multi_speaker_stats() -> None:
     assert "multi_speaker" in report.tone_labels
 
 
-@pytest.mark.unit
-def test_run_scd_tolerates_empty_input() -> None:
+@pytest.mark.asyncio
+async def test_run_scd_tolerates_empty_input() -> None:
     from src.url_content_scan.analyses.tone import run_scd
 
-    report = run_scd([])
+    report = await run_scd([])
 
     assert report.insufficient_conversation is True
     assert "speaker_count=0" in report.summary
     assert report.speaker_arcs == []
 
 
-@pytest.mark.unit
-def test_run_scd_tolerates_missing_timestamps() -> None:
+@pytest.mark.asyncio
+async def test_run_scd_tolerates_missing_timestamps() -> None:
     from src.url_content_scan.analyses.tone import run_scd
 
     utterances = [
@@ -238,15 +238,15 @@ def test_run_scd_tolerates_missing_timestamps() -> None:
         _utterance("utt-3", "New point", author="alice", timestamp=None),
     ]
 
-    report = run_scd(utterances)
+    report = await run_scd(utterances)
 
     assert report.insufficient_conversation is False
     assert "timing_coverage=0.00" in report.summary
     assert "repeat_ratio=" in report.summary
 
 
-@pytest.mark.unit
-def test_run_scd_marks_single_speaker_thread_insufficient() -> None:
+@pytest.mark.asyncio
+async def test_run_scd_marks_single_speaker_thread_insufficient() -> None:
     from src.url_content_scan.analyses.tone import run_scd
 
     utterances = [
@@ -254,7 +254,7 @@ def test_run_scd_marks_single_speaker_thread_insufficient() -> None:
         _utterance("utt-2", "Follow-up point", author="alice", parent_id="utt-1"),
     ]
 
-    report = run_scd(utterances)
+    report = await run_scd(utterances)
 
     assert report.insufficient_conversation is True
     assert "single_speaker" in report.tone_labels
