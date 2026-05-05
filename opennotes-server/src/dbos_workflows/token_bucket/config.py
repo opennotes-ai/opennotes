@@ -10,14 +10,19 @@ from src.utils.async_compat import run_sync
 logger = logging.getLogger(__name__)
 
 DEFAULT_POOL_NAME = "default"
-DEFAULT_POOL_CAPACITY = 12
-DEFAULT_WORKER_CAPACITY = 12
+# Raised from 12 to 16 to reserve headroom for URL_SCAN parent workflows.
+# Before prod deploy, update this comment with the observed p95 from Grafana
+# panel "DBOS Token Bucket - Wait Latency p95 by pool" and capture the baseline
+# in the PR description.
+DEFAULT_POOL_CAPACITY = 16
+DEFAULT_WORKER_CAPACITY = DEFAULT_POOL_CAPACITY
 WORKER_HEARTBEAT_INTERVAL = 30
 WORKER_HEARTBEAT_TTL = 90
 
 
 class WorkflowWeight(IntEnum):
     RECHUNK = 5
+    URL_SCAN = 4
     CONTENT_SCAN = 3
     IMPORT_PIPELINE = 3
     SIMULATION_TURN = 2
