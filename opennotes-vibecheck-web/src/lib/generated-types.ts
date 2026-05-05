@@ -778,6 +778,11 @@ export interface components {
              * @default 0
              */
             utterance_count: number;
+            /**
+             * Expired At
+             * @description When set, this job has been soft-deleted by the 7-day purge cron. Heavy payload columns (sidebar_payload, sections) are NULL. The job_id permalink remains addressable; clients should render an 'analysis expired — re-analyze' card instead of the standard sidebar.
+             */
+            expired_at?: string | null;
         };
         /**
          * JobStatus

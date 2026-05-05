@@ -546,6 +546,7 @@ SELECT
     j.headline_summary,
     j.last_stage,
     j.heartbeat_at,
+    j.expired_at,
     meta.page_title,
     meta.page_kind,
     (
@@ -663,6 +664,7 @@ def _row_to_job_state(row: Any) -> JobState:
         page_title=row.get("page_title", None),
         page_kind=page_kind,
         utterance_count=int(utterance_count_raw or 0),
+        expired_at=row.get("expired_at", None),
     )
 
 

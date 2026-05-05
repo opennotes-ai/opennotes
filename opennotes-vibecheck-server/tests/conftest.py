@@ -81,6 +81,7 @@ CREATE TABLE vibecheck_jobs (
     last_stage TEXT,
     preview_description TEXT,
     extract_transient_attempts INT NOT NULL DEFAULT 0,
+    expired_at TIMESTAMPTZ,
     CONSTRAINT vibecheck_jobs_status_check
         CHECK (status IN ('pending', 'extracting', 'analyzing', 'done', 'partial', 'failed')),
     CONSTRAINT vibecheck_jobs_error_code_check
