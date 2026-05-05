@@ -1,9 +1,13 @@
-import { Show } from "solid-js";
-import { useSearchParams, useSubmission } from "@solidjs/router";
+import { Show, Suspense } from "solid-js";
+import { useSearchParams, useSubmission, createAsync } from "@solidjs/router";
 import { Title } from "@solidjs/meta";
 import PdfUpload from "~/components/PdfUpload";
 import UrlInput from "~/components/UrlInput";
+import RecentlyVibeChecked, {
+  RecentlyVibeCheckedSkeleton,
+} from "~/components/RecentlyVibeChecked";
 import { analyzeAction, submitPdfAnalysisAction } from "./analyze.data";
+import { getRecentAnalyses } from "./index.data";
 
 function errorLabelFor(
   code: string | undefined,
@@ -37,6 +41,7 @@ export default function HomePage() {
   const [searchParams] = useSearchParams();
   const urlSubmission = useSubmission(analyzeAction);
   const pdfSubmission = useSubmission(submitPdfAnalysisAction);
+  const recentAnalyses = createAsync(() => getRecentAnalyses());
 
   const errorMessage = () =>
     errorLabelFor(
@@ -80,6 +85,10 @@ export default function HomePage() {
           Results appear instantly for recently analyzed URLs. New URLs take a
           bit longer.
         </p>
+
+        <Suspense fallback={<RecentlyVibeCheckedSkeleton />}>
+          <RecentlyVibeChecked analyses={recentAnalyses() ?? []} />
+        </Suspense>
       </main>
     </>
   );
