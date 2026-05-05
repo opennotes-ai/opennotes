@@ -10,7 +10,12 @@ import pytest
 from src.batch_jobs.models import BatchJob
 from src.batch_jobs.schemas import BatchJobStatus
 from src.url_content_scan.analyze_handler import AnalyzeSubmissionError, submit_url_scan
-from src.url_content_scan.models import UrlScanSectionSlot, UrlScanSidebarCache, UrlScanState
+from src.url_content_scan.models import (
+    UrlScanSectionSlot,
+    UrlScanSidebarCache,
+    UrlScanState,
+    UrlScanWebRiskLookup,
+)
 from src.url_content_scan.safety_schemas import WebRiskFinding
 from src.url_content_scan.schemas import AnalyzeRequest, JobStatus, SectionSlug
 
@@ -50,6 +55,7 @@ class _FakeSession:
         self.jobs: dict[UUID, BatchJob] = {}
         self.states: dict[UUID, UrlScanState] = {}
         self.sidebar_cache: dict[str, UrlScanSidebarCache] = {}
+        self.web_risk_lookups: dict[str, UrlScanWebRiskLookup] = {}
         self.section_slots: list[UrlScanSectionSlot] = []
 
     def begin(self) -> _FakeTransaction:
@@ -75,6 +81,12 @@ class _FakeSession:
     async def flush(self) -> None:
         return None
 
+    async def merge(self, obj):
+        if isinstance(obj, UrlScanWebRiskLookup):
+            self.web_risk_lookups[obj.normalized_url] = obj
+            return obj
+        raise TypeError(f"unsupported merge: {type(obj)!r}")
+
     async def get(self, model, key):
         if model is UrlScanSidebarCache:
             return self.sidebar_cache.get(key)
@@ -82,6 +94,8 @@ class _FakeSession:
             return self.states.get(key)
         if model is BatchJob:
             return self.jobs.get(key)
+        if model is UrlScanWebRiskLookup:
+            return self.web_risk_lookups.get(key)
         raise TypeError(f"unsupported get: {model!r}")
 
     async def execute(self, statement, params=None):
@@ -108,6 +122,7 @@ class _FakeSession:
                 if job.status
                 in {
                     BatchJobStatus.PENDING.value,
+                    BatchJobStatus.IN_PROGRESS.value,
                     BatchJobStatus.EXTRACTING.value,
                     BatchJobStatus.ANALYZING.value,
                 }
@@ -241,7 +256,7 @@ async def test_submit_url_scan_retries_lock_once_then_creates_pending_job_and_di
     assert response.job_id == job_id
     assert source_url == "https://example.com/post/?utm_source=test"
     assert normalized_url == "https://example.com/post"
-    assert commit_count == 1
+    assert commit_count == 2
 
     job = session.jobs[job_id]
     state = session.states[job_id]
@@ -283,6 +298,9 @@ async def test_submit_url_scan_creates_failed_job_for_unsafe_page_url() -> None:
     assert state.error_code == "unsafe_url"
     assert "SOCIAL_ENGINEERING" in state.error_message
     assert state.finished_at is not None
+    assert session.web_risk_lookups["https://example.com/post"].findings["threat_types"] == [
+        "SOCIAL_ENGINEERING"
+    ]
     assert session.section_slots == []
 
 

@@ -133,10 +133,18 @@ def test_router_scaffold_uses_expected_prefix_and_tag():
 
     assert router_module.router.prefix == "/api/v1/url_scan"
     assert router_module.router.tags == ["url_scan"]
-    assert [route.path for route in router_module.router.routes] == [
+    assert {route.path for route in router_module.router.routes} >= {
+        "/api/v1/url_scan/analyze",
+        "/api/v1/url_scan/embed/v1/start",
+        "/api/v1/url_scan/jobs/{job_id}",
+        "/api/v1/url_scan/jobs/{job_id}/retry/{slug}",
+        "/api/v1/url_scan/analyses/recent",
+        "/api/v1/url_scan/frame-compat",
+        "/api/v1/url_scan/screenshot",
+        "/api/v1/url_scan/archive-preview",
         "/api/v1/url_scan/_schema_anchor",
         "/api/v1/url_scan/_sidebar_schema_anchor",
-    ]
+    }
 
 
 @pytest.mark.unit

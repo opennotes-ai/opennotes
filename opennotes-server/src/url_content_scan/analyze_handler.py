@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
+from inspect import isawaitable
 from typing import Any, Protocol
 from urllib.parse import urlparse
 from uuid import UUID, uuid4
@@ -15,7 +16,12 @@ from src.batch_jobs.models import BatchJob
 from src.batch_jobs.schemas import BatchJobStatus
 from src.dbos_workflows.url_scan_workflow import dispatch_url_scan_workflow
 from src.url_content_scan.analyses.safety.web_risk import run_pre_enqueue_web_risk
-from src.url_content_scan.models import UrlScanSectionSlot, UrlScanSidebarCache, UrlScanState
+from src.url_content_scan.models import (
+    UrlScanSectionSlot,
+    UrlScanSidebarCache,
+    UrlScanState,
+    UrlScanWebRiskLookup,
+)
 from src.url_content_scan.normalize import canonical_cache_key
 from src.url_content_scan.safety_schemas import WebRiskFinding
 from src.url_content_scan.schemas import (
@@ -39,9 +45,11 @@ _URL_SCAN_JOB_TYPE = "url_scan"
 _LOCK_SQL = text("SELECT pg_try_advisory_xact_lock(hashtext(:normalized_url))")
 _NONTERMINAL_BATCH_STATUSES = (
     BatchJobStatus.PENDING.value,
+    BatchJobStatus.IN_PROGRESS.value,
     BatchJobStatus.EXTRACTING.value,
     BatchJobStatus.ANALYZING.value,
 )
+_WEB_RISK_LOOKUP_TTL = timedelta(hours=24)
 
 
 class AnalyzeSubmissionError(Exception):
@@ -75,7 +83,7 @@ class _DispatchFn(Protocol):
 
 
 class _WebRiskFn(Protocol):
-    async def __call__(self, url: str) -> WebRiskFinding | None: ...
+    def __call__(self, url: str) -> Any: ...
 
 
 @dataclass(slots=True)
@@ -95,7 +103,6 @@ async def submit_url_scan(
     sleep: _SleepFn = asyncio.sleep,
 ) -> AnalyzeResponse:
     safe_url, normalized_url, host = _canonicalize_submission_url(payload.url)
-    unsafe_finding = await web_risk(safe_url)
 
     locked_result: _LockedSubmitResult | None = None
     got_lock = False
@@ -109,7 +116,7 @@ async def submit_url_scan(
                     source_url=safe_url,
                     normalized_url=normalized_url,
                     host=host,
-                    unsafe_finding=unsafe_finding,
+                    web_risk=web_risk,
                 )
         if got_lock:
             break
@@ -174,8 +181,9 @@ async def _handle_locked_submit(
     source_url: str,
     normalized_url: str,
     host: str,
-    unsafe_finding: WebRiskFinding | None,
+    web_risk: _WebRiskFn,
 ) -> _LockedSubmitResult:
+    unsafe_finding = await _run_web_risk_lookup(web_risk, source_url, session)
     if unsafe_finding is not None and unsafe_finding.threat_types:
         existing_job_id = await _find_existing_unsafe_job(session, normalized_url)
         if existing_job_id is not None:
@@ -199,7 +207,7 @@ async def _handle_locked_submit(
         )
 
     cached = await session.get(UrlScanSidebarCache, normalized_url)
-    if cached is not None:
+    if cached is not None and cached.expires_at > datetime.now(UTC):
         job_id = await _insert_cached_job(
             session,
             source_url=source_url,
@@ -234,6 +242,24 @@ async def _handle_locked_submit(
         dispatch_job_id=job_id,
         dispatch_attempt_id=attempt_id,
     )
+
+
+async def _run_web_risk_lookup(
+    web_risk: _WebRiskFn,
+    source_url: str,
+    session: AsyncSession,
+) -> WebRiskFinding | None:
+    normalized_url = canonical_cache_key(source_url)
+    now = datetime.now(UTC)
+    cached = await session.get(UrlScanWebRiskLookup, normalized_url)
+    if cached is not None and cached.expires_at > now:
+        cached_finding = WebRiskFinding.model_validate(cached.findings)
+        return cached_finding if cached_finding.threat_types else None
+
+    maybe_result = web_risk(source_url)
+    if isawaitable(maybe_result):
+        return await maybe_result
+    return maybe_result
 
 
 def _request_api_key_id(request: Request) -> str | None:
@@ -289,6 +315,13 @@ async def _insert_unsafe_job(
     api_key_id: str | None,
 ) -> UUID:
     now = datetime.now(UTC)
+    await session.merge(
+        UrlScanWebRiskLookup(
+            normalized_url=normalized_url,
+            findings=finding.model_dump(mode="json"),
+            expires_at=now + _WEB_RISK_LOOKUP_TTL,
+        )
+    )
     sidebar_payload = _build_unsafe_sidebar_payload(source_url, finding, now)
     job = BatchJob(
         job_type=_URL_SCAN_JOB_TYPE,
