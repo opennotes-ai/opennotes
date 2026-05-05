@@ -48,9 +48,11 @@ export default function RecentlyVibeChecked(props: RecentlyVibeCheckedProps) {
                 class="group overflow-hidden rounded-lg border border-border transition-colors hover:border-foreground/30"
               >
                 <div
+                  role="img"
+                  aria-label={item.page_title ?? item.source_url}
                   class="h-28 w-full"
                   style={{
-                    "background-image": `url(${item.screenshot_url})`,
+                    "background-image": `url("${item.screenshot_url}")`,
                     "background-size": "200%",
                     "background-position": "top center",
                     "background-repeat": "no-repeat",
