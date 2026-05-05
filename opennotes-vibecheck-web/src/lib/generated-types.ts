@@ -1251,6 +1251,7 @@ export interface operations {
         parameters: {
             query: {
                 url: string;
+                job_id?: string | null;
             };
             header?: never;
             path?: never;
@@ -1561,7 +1562,7 @@ export interface operations {
         };
         responses: {
             /** @description Successful Response */
-            200: {
+            202: {
                 headers: {
                     [name: string]: unknown;
                 };
