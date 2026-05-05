@@ -21,7 +21,7 @@ import {
   Route,
   createMemoryHistory,
 } from "@solidjs/router";
-import { createSignal } from "solid-js";
+import { createSignal, ErrorBoundary } from "solid-js";
 import type { JobState, SidebarPayload } from "~/lib/api-client.server";
 
 type PollingHandle = {
@@ -2307,5 +2307,36 @@ describe("AnalyzePage Original tab — soft-disabled when canIframe=false (TASK-
     const original = await screen.findByTestId("preview-mode-original");
     expect(original.getAttribute("aria-describedby")).toBeNull();
     expect(screen.queryByTestId("preview-mode-original-tip")).toBeNull();
+  });
+
+  it("createAsync 404: getJobState rejection does not bubble to root ErrorBoundary", async () => {
+    getJobStateMock.mockRejectedValueOnce(
+      new Error("vibecheck GET /api/analyze/stale-job-id failed: 404"),
+    );
+
+    const history = createMemoryHistory();
+    history.set({
+      value: "/analyze?job=stale-job-id&c=1",
+      scroll: false,
+      replace: true,
+    });
+    render(() => (
+      <MetaProvider>
+        <ErrorBoundary
+          fallback={(err) => (
+            <div data-testid="root-error-boundary">
+              Something went wrong: {err.message}
+            </div>
+          )}
+        >
+          <MemoryRouter history={history}>
+            <Route path="/analyze" component={AnalyzePage} />
+          </MemoryRouter>
+        </ErrorBoundary>
+      </MetaProvider>
+    ));
+
+    expect(await screen.findByTestId("analyze-layout")).not.toBeNull();
+    expect(screen.queryByTestId("root-error-boundary")).toBeNull();
   });
 });
