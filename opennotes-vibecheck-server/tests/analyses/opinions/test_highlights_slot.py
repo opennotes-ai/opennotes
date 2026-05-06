@@ -13,9 +13,41 @@ from src.analyses.opinions._highlights_schemas import (
     HighlightsThresholdInfo,
     OpinionsHighlightsReport,
 )
+from src.analyses.opinions.trends_oppositions_slot import FIRST_RUN_DEPENDENCY_PAYLOAD
 from src.analyses.schemas import SectionSlug
 from src.config import Settings
 from src.utterances.schema import Utterance
+
+
+class _Acquire:
+    def __init__(self, conn: "_Conn") -> None:
+        self._conn = conn
+
+    async def __aenter__(self) -> "_Conn":
+        return self._conn
+
+    async def __aexit__(self, *args: object) -> None:
+        return None
+
+
+class _Conn:
+    def __init__(self, sections_row: dict[str, Any], utterance_rows: list[dict[str, Any]]) -> None:
+        self._sections_row = sections_row
+        self._utterance_rows = utterance_rows
+
+    async def fetchval(self, *_args: object) -> dict[str, Any]:
+        return self._sections_row
+
+    async def fetch(self, *_args: object) -> list[dict[str, Any]]:
+        return self._utterance_rows
+
+
+class _Pool:
+    def __init__(self, sections_row: dict[str, Any], utterance_rows: list[dict[str, Any]]) -> None:
+        self._conn = _Conn(sections_row, utterance_rows)
+
+    def acquire(self) -> _Acquire:
+        return _Acquire(self._conn)
 
 
 def _settings() -> Settings:
@@ -219,4 +251,91 @@ async def test_highlights_subjective_clusters_compute_with_utterance_totals(
     }
     assert captured["total_authors"] == 2
     assert captured["total_utterances"] == 4
+    assert isinstance(captured["settings"], Settings)
+
+
+@pytest.mark.asyncio
+async def test_highlights_first_run_sentinel_reads_done_facts_slot_from_db(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, Any] = {}
+    expected_report = OpinionsHighlightsReport(
+        highlights=[],
+        threshold=HighlightsThresholdInfo(
+            total_authors=2,
+            total_utterances=3,
+            min_authors_required=2,
+            min_occurrences_required=3,
+        ),
+        fallback_engaged=False,
+        floor_eligible_count=0,
+        total_input_count=1,
+    )
+
+    def fake_compute(
+        clusters: list[DedupedClaim],
+        *,
+        total_authors: int,
+        total_utterances: int,
+        settings: Settings,
+    ) -> OpinionsHighlightsReport:
+        captured["clusters"] = clusters
+        captured["total_authors"] = total_authors
+        captured["total_utterances"] = total_utterances
+        captured["settings"] = settings
+        return expected_report
+
+    monkeypatch.setattr(highlights_slot, "compute_highlights", fake_compute)
+    pool = _Pool(
+        sections_row={
+            SectionSlug.FACTS_CLAIMS_DEDUP.value: {
+                **_slot_payload(),
+                "data": {
+                    "claims_report": _claims_report(
+                        _cluster("Subjective from persisted facts", ClaimCategory.SUBJECTIVE),
+                    )
+                },
+            }
+        },
+        utterance_rows=[
+            {
+                "utterance_id": "u-1",
+                "kind": "comment",
+                "text": "a",
+                "author": "alice",
+                "timestamp_at": None,
+                "parent_id": None,
+            },
+            {
+                "utterance_id": "u-2",
+                "kind": "comment",
+                "text": "b",
+                "author": "alice",
+                "timestamp_at": None,
+                "parent_id": None,
+            },
+            {
+                "utterance_id": "u-3",
+                "kind": "comment",
+                "text": "c",
+                "author": "bob",
+                "timestamp_at": None,
+                "parent_id": None,
+            },
+        ],
+    )
+
+    result = await highlights_slot.run_highlights(
+        pool=pool,
+        job_id=uuid4(),
+        task_attempt=uuid4(),
+        payload=FIRST_RUN_DEPENDENCY_PAYLOAD,
+        settings=_settings(),
+    )
+
+    assert result == {"highlights_report": expected_report.model_dump(mode="json")}
+    assert len(captured["clusters"]) == 1
+    assert captured["clusters"][0].category == ClaimCategory.SUBJECTIVE
+    assert captured["total_authors"] == 2
+    assert captured["total_utterances"] == 3
     assert isinstance(captured["settings"], Settings)

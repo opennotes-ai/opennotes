@@ -13,6 +13,7 @@ from src.analyses.opinions._highlights_schemas import (
     OpinionsHighlightsReport,
 )
 from src.analyses.opinions.highlights import compute_highlights
+from src.analyses.opinions.trends_oppositions_slot import FIRST_RUN_DEPENDENCY_PAYLOAD
 from src.analyses.schemas import SectionSlot, SectionSlug, SectionState
 from src.analyses.slot_utterances import load_job_utterances
 from src.config import Settings
@@ -103,6 +104,10 @@ def _load_facts_slot_from_payload(payload: Any, slug: str) -> tuple[dict[str, An
     return _extract_section_payload(_coerce_sections(payload), slug)
 
 
+def _is_initial_run_mode(payload: Any) -> bool:
+    return payload is FIRST_RUN_DEPENDENCY_PAYLOAD
+
+
 async def run_highlights(
     pool: Any,
     job_id: Any,
@@ -111,11 +116,15 @@ async def run_highlights(
     settings: Settings,
 ) -> dict[str, Any]:
     del task_attempt
+    is_initial_run_mode = _is_initial_run_mode(payload)
+    if is_initial_run_mode:
+        payload = {}
+
     facts_slot_payload, facts_slot_state = _load_facts_slot_from_payload(
         payload, SectionSlug.FACTS_CLAIMS_DEDUP.value
     )
 
-    if payload is None and not facts_slot_payload:
+    if (payload is None or is_initial_run_mode) and not facts_slot_payload:
         db_sections = await _load_sections_from_db(pool, job_id)
         facts_slot_payload, facts_slot_state = _load_facts_slot_from_payload(
             db_sections, SectionSlug.FACTS_CLAIMS_DEDUP.value
