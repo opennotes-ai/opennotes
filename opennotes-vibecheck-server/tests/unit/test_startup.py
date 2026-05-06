@@ -321,14 +321,21 @@ async def test_lifespan_uses_default_pooler_host_when_env_unset(
     monkeypatch.setattr(startup, "_create_db_pool", _fake_create_pool)
 
     app = FastAPI(lifespan=startup.lifespan)
-    with caplog.at_level(logging.WARNING), TestClient(app):
+    with caplog.at_level(logging.INFO), TestClient(app):
         pass
 
     assert captured_host == [startup._DEFAULT_POOLER_HOST]  # pyright: ignore[reportPrivateUsage]
-    assert any(
+    assert not any(
         "VIBECHECK_DATABASE_HOST unset" in r.getMessage()
+        or "falling back to default pooler host" in r.getMessage()
         for r in caplog.records
         if r.levelno == logging.WARNING
+    )
+    assert any(
+        "vibecheck db pool initialized (host=aws-1-us-east-1.pooler.supabase.com port=6543)"
+        in r.getMessage()
+        for r in caplog.records
+        if r.levelno == logging.INFO
     )
 
     get_settings.cache_clear()
