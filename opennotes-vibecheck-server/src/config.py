@@ -104,7 +104,7 @@ class Settings(BaseSettings):
     # TASK-1485.03: "Recently vibe checked" gallery sizing + cache TTL.
     # The endpoint over-fetches and post-filters in Python (90% rule,
     # privacy filters, dedup), then truncates to LIMIT. Default 6 matches
-    # the 3-column gallery layout (2 rows × 3) while leaving headroom to
+    # the 3-column gallery layout (2 rows x 3) while leaving headroom to
     # dial up via env var without a deploy.
     VIBECHECK_RECENT_ANALYSES_LIMIT: int = 6
     # Cache TTL must be < 900s (signed screenshot URLs are valid for 15min;
