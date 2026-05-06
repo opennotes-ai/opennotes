@@ -1,5 +1,6 @@
 import { For, Show } from "solid-js";
 import type { components } from "~/lib/generated-types";
+import ExpandableText from "../ExpandableText";
 
 type ClaimTrend = components["schemas"]["ClaimTrend"];
 type ClaimOpposition = components["schemas"]["ClaimOpposition"];
@@ -15,6 +16,7 @@ function hasNoContent(report: TrendsOppositionsReport | null): boolean {
 }
 
 function TrendListItem(props: { trend: ClaimTrend }) {
+  const clusterCount = props.trend.cluster_ids.length;
   return (
     <li data-testid="trends-opposition-trend" class="rounded-md border border-border/50 p-2">
       <div class="mb-1 flex items-start justify-between gap-2 text-xs">
@@ -24,7 +26,7 @@ function TrendListItem(props: { trend: ClaimTrend }) {
           class="rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium tabular-nums text-muted-foreground"
           title="Number of clusters"
         >
-          {props.trend.cluster_ids.length} clusters
+          {clusterCount} cluster{clusterCount === 1 ? "" : "s"}
         </span>
       </div>
       <p class="text-xs leading-relaxed text-muted-foreground">
@@ -37,33 +39,49 @@ function TrendListItem(props: { trend: ClaimTrend }) {
 function OppositionRow(props: { opposition: ClaimOpposition }) {
   return (
     <li class="rounded-md border border-border/50 p-2">
-      <p class="mb-2 text-xs font-semibold text-foreground">
-        {props.opposition.topic}
-      </p>
+      <div class="min-w-0">
+        <ExpandableText
+          text={props.opposition.topic}
+          lines={2}
+          testId="trends-opposition-topic"
+          class="mb-2 break-words text-xs font-semibold text-foreground"
+        />
+      </div>
       {props.opposition.note ? (
-        <p class="mb-2 text-[11px] text-muted-foreground">{props.opposition.note}</p>
+        <div class="min-w-0">
+          <ExpandableText
+            text={props.opposition.note}
+            lines={3}
+            testId="trends-opposition-note"
+            class="mb-2 break-words text-[11px] text-muted-foreground"
+          />
+        </div>
       ) : null}
       <div class="grid grid-cols-2 gap-3 text-[11px]">
-        <div>
+        <div class="min-w-0">
           <h4 class="mb-1 font-semibold uppercase tracking-wide text-muted-foreground">
             In favor
           </h4>
           <ul class="space-y-1">
             <For each={props.opposition.supporting_cluster_ids}>
               {(clusterId) => (
-                <li class="rounded-sm bg-muted/50 px-2 py-1 text-foreground">{clusterId}</li>
+                <li class="rounded-sm bg-muted/50 px-2 py-1 text-foreground break-words">
+                  {clusterId}
+                </li>
               )}
             </For>
           </ul>
         </div>
-        <div>
+        <div class="min-w-0">
           <h4 class="mb-1 font-semibold uppercase tracking-wide text-muted-foreground">
             Against
           </h4>
           <ul class="space-y-1">
             <For each={props.opposition.opposing_cluster_ids}>
               {(clusterId) => (
-                <li class="rounded-sm bg-muted/50 px-2 py-1 text-foreground">{clusterId}</li>
+                <li class="rounded-sm bg-muted/50 px-2 py-1 text-foreground break-words">
+                  {clusterId}
+                </li>
               )}
             </For>
           </ul>

@@ -73,6 +73,20 @@ describe("TrendsOppositionsReport", () => {
     expect(screen.getByText("2 clusters")).toBeDefined();
   });
 
+  it("renders singular cluster label correctly", () => {
+    render(() => (
+      <TrendsOppositionsReport
+        report={makeReport({
+          trends: [makeTrend({ cluster_ids: ["cluster-a"] })],
+          oppositions: [],
+        })}
+      />
+    ));
+
+    expect(screen.getByText("1 cluster")).toBeDefined();
+    expect(screen.queryByText("1 clusters")).toBeNull();
+  });
+
   it("renders counter-positions section with side-by-side favor/against clusters", () => {
     render(() => (
       <TrendsOppositionsReport

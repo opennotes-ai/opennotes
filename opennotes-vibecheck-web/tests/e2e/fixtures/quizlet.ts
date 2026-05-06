@@ -30,6 +30,7 @@ export const ALL_SECTION_SLUGS = [
   "facts_claims__known_misinfo",
   "opinions_sentiments__sentiment",
   "opinions_sentiments__subjective",
+  "opinions_sentiments__trends_oppositions",
 ] as const;
 
 export type SectionSlug = (typeof ALL_SECTION_SLUGS)[number];
