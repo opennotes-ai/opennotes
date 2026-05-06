@@ -15,7 +15,7 @@ from uuid import uuid4
 
 import pytest
 
-from src.analyses.schemas import SectionSlug
+from src.analyses.schemas import SectionSlug, SectionState
 from src.config import Settings
 
 
@@ -152,3 +152,44 @@ async def test_run_section_invokes_new_tone_handler_instead_of_empty_stub(
 
     assert captured["slug"] == SectionSlug.TONE_DYNAMICS_FLASHPOINT
     assert captured["data"] == {"flashpoint_matches": [{"utterance_id": "u-2"}]}
+
+
+@pytest.mark.asyncio
+async def test_run_all_sections_runs_claim_evidence_after_dedup(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.jobs import orchestrator
+
+    call_order: list[SectionSlug] = []
+
+    async def fake_run_section(
+        pool: object,
+        job_id: object,
+        task_attempt: object,
+        slug: SectionSlug,
+        payload: object,
+        settings: object,
+        *,
+        test_fail_slug: str | None = None,
+    ) -> SectionState:
+        del pool, job_id, task_attempt, payload, settings, test_fail_slug
+        call_order.append(slug)
+        return SectionState.DONE
+
+    monkeypatch.setattr(orchestrator, "_run_section", fake_run_section)
+
+    await orchestrator._run_all_sections(
+        pool=object(),
+        job_id=uuid4(),
+        task_attempt=uuid4(),
+        payload=object(),
+        settings=_settings(),
+    )
+
+    dedup_index = call_order.index(SectionSlug.FACTS_CLAIMS_DEDUP)
+    evidence_index = call_order.index(SectionSlug.FACTS_CLAIMS_EVIDENCE)
+    premises_index = call_order.index(SectionSlug.FACTS_CLAIMS_PREMISES)
+    known_misinfo_index = call_order.index(SectionSlug.FACTS_CLAIMS_KNOWN_MISINFO)
+    assert dedup_index < evidence_index
+    assert dedup_index < premises_index
+    assert dedup_index < known_misinfo_index

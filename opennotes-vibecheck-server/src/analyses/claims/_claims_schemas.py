@@ -7,8 +7,44 @@ stays self-contained and parallel agents can land sibling modules
 from __future__ import annotations
 
 from enum import StrEnum
+from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
+
+
+class SourceKind(StrEnum):
+    """Origin of a supporting fact used by the evidence slot."""
+
+    UTTERANCE = "utterance"
+    EXTERNAL = "external"
+
+
+class SupportingFact(BaseModel):
+    """A single supporting statement for a deduped claim."""
+
+    statement: str
+    source_kind: SourceKind
+    source_ref: str
+
+
+class Premise(BaseModel):
+    """A premise statement attached to one or more claims."""
+
+    premise_id: str
+    statement: str
+
+
+class PremisesRegistry(BaseModel):
+    """Global registry of unique premises discovered across all claims."""
+
+    premises: dict[str, Premise] = Field(default_factory=dict)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _accept_flat_registry(cls, value: Any) -> Any:
+        if isinstance(value, dict) and "premises" not in value:
+            return {"premises": value}
+        return value
 
 
 class ClaimCategory(StrEnum):
@@ -73,6 +109,8 @@ class DedupedClaim(BaseModel):
     author_count: int = Field(ge=0)
     utterance_ids: list[str]
     representative_authors: list[str]
+    supporting_facts: list[SupportingFact] = Field(default_factory=list)
+    premise_ids: list[str] = Field(default_factory=list)
 
 
 class ClaimsReport(BaseModel):
@@ -81,3 +119,4 @@ class ClaimsReport(BaseModel):
     deduped_claims: list[DedupedClaim]
     total_claims: int
     total_unique: int
+    premises: PremisesRegistry | None = None

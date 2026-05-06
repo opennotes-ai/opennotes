@@ -31,6 +31,20 @@ _EMPTY_SECTION_DATA: dict[SectionSlug, dict[str, Any]] = {
             "total_unique": 0,
         }
     },
+    SectionSlug.FACTS_CLAIMS_EVIDENCE: {
+        "claims_report": {
+            "deduped_claims": [],
+            "total_claims": 0,
+            "total_unique": 0,
+        }
+    },
+    SectionSlug.FACTS_CLAIMS_PREMISES: {
+        "claims_report": {
+            "deduped_claims": [],
+            "total_claims": 0,
+            "total_unique": 0,
+        }
+    },
     SectionSlug.FACTS_CLAIMS_KNOWN_MISINFO: {"known_misinformation": []},
     SectionSlug.OPINIONS_SENTIMENTS_SENTIMENT: {
         "sentiment_stats": {

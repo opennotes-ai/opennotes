@@ -133,7 +133,11 @@ function sectionData(slug: string): Record<string, unknown> {
       },
     };
   }
-  if (slug === "facts_claims__dedup") {
+  if (
+    slug === "facts_claims__dedup" ||
+    slug === "facts_claims__evidence" ||
+    slug === "facts_claims__premises"
+  ) {
     return {
       claims_report: {
         deduped_claims: [],

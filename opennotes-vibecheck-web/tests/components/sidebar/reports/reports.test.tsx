@@ -1033,6 +1033,105 @@ describe("<ClaimsDedupReport />", () => {
 
     expect(screen.queryByTestId("deduped-claim-utterance-refs")).toBeNull();
   });
+
+  it("renders supporting facts attached to factual claims", () => {
+    const onUtteranceClick = vi.fn();
+    const claimsReport: ClaimsReport = {
+      deduped_claims: [
+        {
+          canonical_text: "the grant costs $5 million",
+          category: "potentially_factual",
+          occurrence_count: 2,
+          author_count: 2,
+          utterance_ids: ["u-1"],
+          representative_authors: ["@a"],
+          supporting_facts: [
+            {
+              statement: "The proposal names a $5 million grant.",
+              source_kind: "utterance",
+              source_ref: "u-1",
+            },
+          ],
+        },
+      ],
+      total_claims: 2,
+      total_unique: 1,
+    };
+
+    render(() => (
+      <ClaimsDedupReport
+        claimsReport={claimsReport}
+        onUtteranceClick={onUtteranceClick}
+        canJumpToUtterance
+      />
+    ));
+
+    expect(screen.getByTestId("deduped-claim-supporting-facts")).toBeDefined();
+    expect(screen.getByTestId("deduped-claim-supporting-fact").textContent).toContain(
+      "The proposal names a $5 million grant.",
+    );
+    fireEvent.click(screen.getByTestId("deduped-claim-supporting-fact-ref"));
+    expect(onUtteranceClick).toHaveBeenCalledWith("u-1");
+  });
+
+  it("renders a no-sources state for factual claims without supporting facts", () => {
+    const claimsReport: ClaimsReport = {
+      deduped_claims: [
+        {
+          canonical_text: "source missing",
+          category: "potentially_factual",
+          occurrence_count: 1,
+          author_count: 1,
+          utterance_ids: ["u-1"],
+          representative_authors: ["@a"],
+        },
+      ],
+      total_claims: 1,
+      total_unique: 1,
+    };
+
+    render(() => <ClaimsDedupReport claimsReport={claimsReport} />);
+
+    expect(screen.getByTestId("deduped-claim-no-sources").textContent).toContain(
+      "No sources extracted",
+    );
+  });
+
+  it("renders premises attached to non-factual claims", () => {
+    const claimsReport: ClaimsReport = {
+      deduped_claims: [
+        {
+          canonical_text: "this will make rents worse",
+          category: "predictions",
+          occurrence_count: 3,
+          author_count: 2,
+          utterance_ids: ["u-2"],
+          representative_authors: ["@b"],
+          premise_ids: ["premise-1"],
+        },
+      ],
+      total_claims: 3,
+      total_unique: 1,
+      premises: {
+        premises: {
+          "premise-1": {
+            premise_id: "premise-1",
+            statement: "New units would not offset demand quickly enough.",
+          },
+        },
+      },
+    };
+
+    render(() => <ClaimsDedupReport claimsReport={claimsReport} />);
+
+    expect(screen.getByTestId("deduped-claim-premises")).toBeDefined();
+    expect(screen.getByTestId("deduped-claim-premise").textContent).toContain(
+      "New units would not offset demand quickly enough.",
+    );
+    expect(screen.getByTestId("deduped-claim-premise-followup").textContent).toContain(
+      "1 more claim to follow up on",
+    );
+  });
 });
 
 describe("<KnownMisinfoReport />", () => {

@@ -852,6 +852,16 @@
           "total_unique": {
             "type": "integer",
             "title": "Total Unique"
+          },
+          "premises": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PremisesRegistry"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "type": "object",
@@ -896,6 +906,20 @@
             },
             "type": "array",
             "title": "Representative Authors"
+          },
+          "supporting_facts": {
+            "items": {
+              "$ref": "#/components/schemas/SupportingFact"
+            },
+            "type": "array",
+            "title": "Supporting Facts"
+          },
+          "premise_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Premise Ids"
           }
         },
         "type": "object",
@@ -1569,6 +1593,39 @@
         "title": "PageKind",
         "description": "Shape of the source page the extractor handled.\n\nThe extractor in TASK-1473.10 picks one of these; downstream rendering\nand analysis logic branches on the value (e.g., hierarchical_thread\nenables tree-aware flashpoint context)."
       },
+      "Premise": {
+        "properties": {
+          "premise_id": {
+            "type": "string",
+            "title": "Premise Id"
+          },
+          "statement": {
+            "type": "string",
+            "title": "Statement"
+          }
+        },
+        "type": "object",
+        "required": [
+          "premise_id",
+          "statement"
+        ],
+        "title": "Premise",
+        "description": "A premise statement attached to one or more claims."
+      },
+      "PremisesRegistry": {
+        "properties": {
+          "premises": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/Premise"
+            },
+            "type": "object",
+            "title": "Premises"
+          }
+        },
+        "type": "object",
+        "title": "PremisesRegistry",
+        "description": "Global registry of unique premises discovered across all claims."
+      },
       "RecentAnalysis": {
         "properties": {
           "job_id": {
@@ -2038,6 +2095,8 @@
           "tone_dynamics__flashpoint",
           "tone_dynamics__scd",
           "facts_claims__dedup",
+          "facts_claims__evidence",
+          "facts_claims__premises",
           "facts_claims__known_misinfo",
           "opinions_sentiments__sentiment",
           "opinions_sentiments__subjective"
@@ -2229,6 +2288,15 @@
         "title": "SidebarPayload",
         "description": "Top-level response for `POST /api/analyze`.\n\nAggregates all four sidebar sections plus identity/metadata fields the\nfrontend needs to render the result. `cached=True` indicates the payload\nwas served from the Supabase cache (72h TTL) instead of a freshly run\npipeline."
       },
+      "SourceKind": {
+        "type": "string",
+        "enum": [
+          "utterance",
+          "external"
+        ],
+        "title": "SourceKind",
+        "description": "Origin of a supporting fact used by the evidence slot."
+      },
       "SpeakerArc": {
         "properties": {
           "speaker": {
@@ -2295,6 +2363,29 @@
           "stance"
         ],
         "title": "SubjectiveClaim"
+      },
+      "SupportingFact": {
+        "properties": {
+          "statement": {
+            "type": "string",
+            "title": "Statement"
+          },
+          "source_kind": {
+            "$ref": "#/components/schemas/SourceKind"
+          },
+          "source_ref": {
+            "type": "string",
+            "title": "Source Ref"
+          }
+        },
+        "type": "object",
+        "required": [
+          "statement",
+          "source_kind",
+          "source_ref"
+        ],
+        "title": "SupportingFact",
+        "description": "A single supporting statement for a deduped claim."
       },
       "ToneDynamicsSection": {
         "properties": {

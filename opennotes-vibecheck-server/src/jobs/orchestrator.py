@@ -70,7 +70,9 @@ import logfire
 from src.analyses.claims._claims_schemas import ClaimsReport
 from src.analyses.claims._factcheck_schemas import FactCheckMatch
 from src.analyses.claims.dedupe_slot import run_claims_dedup
+from src.analyses.claims.evidence_slot import run_claims_evidence
 from src.analyses.claims.facts_agent import run_facts_claims_known_misinfo
+from src.analyses.claims.premises_slot import run_claims_premises
 from src.analyses.opinions._schemas import SentimentStatsReport, SubjectiveClaim
 from src.analyses.opinions.sentiment_slot import run_sentiment
 from src.analyses.opinions.subjective_slot import run_subjective
@@ -1748,7 +1750,7 @@ async def _run_section(
     settings: Settings,
     *,
     test_fail_slug: str | None = None,
-) -> None:
+) -> SectionState:
     """Run a single analysis slot and persist its output.
 
     Slugs registered in `_SECTION_HANDLERS` invoke the real analyzer and
@@ -1838,6 +1840,7 @@ async def _run_section(
             )
     finally:
         clear_contextvars(section_tokens)
+    return slot_state
 
 
 _SECTION_HANDLERS: dict[SectionSlug, Any] = {
@@ -1848,6 +1851,8 @@ _SECTION_HANDLERS: dict[SectionSlug, Any] = {
     SectionSlug.TONE_DYNAMICS_FLASHPOINT: run_flashpoint,
     SectionSlug.TONE_DYNAMICS_SCD: run_scd,
     SectionSlug.FACTS_CLAIMS_DEDUP: run_claims_dedup,
+    SectionSlug.FACTS_CLAIMS_EVIDENCE: run_claims_evidence,
+    SectionSlug.FACTS_CLAIMS_PREMISES: run_claims_premises,
     SectionSlug.FACTS_CLAIMS_KNOWN_MISINFO: run_facts_claims_known_misinfo,
     SectionSlug.OPINIONS_SENTIMENTS_SENTIMENT: run_sentiment,
     SectionSlug.OPINIONS_SENTIMENTS_SUBJECTIVE: run_subjective,
@@ -1863,7 +1868,7 @@ async def _run_all_sections(
     *,
     test_fail_slug: str | None = None,
 ) -> None:
-    """Fan out every section in parallel; aggregate via `asyncio.gather`.
+    """Fan out every section in parallel; enforce claim-evidence dependencies.
 
     Per-section handler failures are caught inside `_run_section` and
     persisted as a failed slot, so handler exceptions don't surface here.
@@ -1874,15 +1879,54 @@ async def _run_all_sections(
     that 200'd back to Cloud Tasks while leaving slots unwritten
     (TASK-1473.41).
     """
-    await asyncio.gather(
-        *[
+    claim_enrichment_slugs: tuple[SectionSlug, ...] = (
+        SectionSlug.FACTS_CLAIMS_EVIDENCE,
+        SectionSlug.FACTS_CLAIMS_PREMISES,
+        SectionSlug.FACTS_CLAIMS_KNOWN_MISINFO,
+    )
+    claim_enrichment_set = set(claim_enrichment_slugs)
+    non_claim_enrichment_slugs: list[SectionSlug] = [
+        slug
+        for slug in SectionSlug
+        if slug not in claim_enrichment_set
+    ]
+
+    initial_tasks = {
+        slug: asyncio.create_task(
             _run_section(
-                pool, job_id, task_attempt, slug, payload, settings,
+                pool,
+                job_id,
+                task_attempt,
+                slug,
+                payload,
+                settings,
                 test_fail_slug=test_fail_slug,
             )
-            for slug in SectionSlug
-        ],
-    )
+        )
+        for slug in non_claim_enrichment_slugs
+    }
+    dedup_state = await initial_tasks[SectionSlug.FACTS_CLAIMS_DEDUP]
+    if dedup_state != SectionState.DONE:
+        await asyncio.gather(*initial_tasks.values())
+        return
+
+    enrichment_tasks = [
+        asyncio.create_task(
+            _run_section(
+                pool,
+                job_id,
+                task_attempt,
+                slug,
+                payload,
+                settings,
+                test_fail_slug=test_fail_slug,
+            )
+        )
+        for slug in claim_enrichment_slugs
+        if slug in _SECTION_HANDLERS
+    ]
+
+    await asyncio.gather(*initial_tasks.values(), *enrichment_tasks)
 
 
 def _parse_sections(raw: Any) -> dict[str, Any]:
@@ -2683,7 +2727,7 @@ async def _load_job_attempt_and_slot(
     return row["attempt_id"], slot
 
 
-async def run_section_retry(
+async def run_section_retry(  # noqa: PLR0912
     pool: Any,
     job_id: UUID,
     slug: SectionSlug,
@@ -2775,6 +2819,21 @@ async def run_section_retry(
                         slug.value,
                     )
                     return RunResult(status_code=200)
+
+                if slug == SectionSlug.FACTS_CLAIMS_DEDUP:
+                    for dependent_slug in (
+                        SectionSlug.FACTS_CLAIMS_EVIDENCE,
+                        SectionSlug.FACTS_CLAIMS_PREMISES,
+                        SectionSlug.FACTS_CLAIMS_KNOWN_MISINFO,
+                    ):
+                        await _run_section(
+                            pool,
+                            job_id,
+                            task_attempt,
+                            dependent_slug,
+                            None,
+                            settings,
+                        )
 
                 with logfire.span(
                     "vibecheck.section_retry.safety_recommendation",

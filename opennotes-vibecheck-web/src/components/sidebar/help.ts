@@ -53,6 +53,14 @@ const SLOT_HELP: Record<SectionSlugLiteral, SidebarHelpCopy> = {
     looksFor: "Similar factual claims repeated across the discussion.",
     means: "Grouped claims help reviewers evaluate one representative statement at a time.",
   },
+  facts_claims__evidence: {
+    looksFor: "Source utterances and supporting facts attached to repeated factual claims.",
+    means: "Evidence gives reviewers quick context for why a claim was grouped.",
+  },
+  facts_claims__premises: {
+    looksFor: "Assumptions that non-factual claims depend on.",
+    means: "Premises identify follow-up questions behind predictions, values, and subjective claims.",
+  },
   facts_claims__known_misinfo: {
     looksFor: "Claims that resemble entries from known fact-check databases.",
     means: "Matches are leads for review and should be checked against the cited source.",

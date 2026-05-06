@@ -466,6 +466,7 @@ export interface components {
             total_claims: number;
             /** Total Unique */
             total_unique: number;
+            premises?: components["schemas"]["PremisesRegistry"] | null;
         };
         /**
          * DedupedClaim
@@ -484,6 +485,10 @@ export interface components {
             utterance_ids: string[];
             /** Representative Authors */
             representative_authors: string[];
+            /** Supporting Facts */
+            supporting_facts?: components["schemas"]["SupportingFact"][];
+            /** Premise Ids */
+            premise_ids?: string[];
         };
         /**
          * ErrorCode
@@ -823,6 +828,26 @@ export interface components {
          */
         PageKind: "blog_post" | "forum_thread" | "hierarchical_thread" | "blog_index" | "article" | "other";
         /**
+         * Premise
+         * @description A premise statement attached to one or more claims.
+         */
+        Premise: {
+            /** Premise Id */
+            premise_id: string;
+            /** Statement */
+            statement: string;
+        };
+        /**
+         * PremisesRegistry
+         * @description Global registry of unique premises discovered across all claims.
+         */
+        PremisesRegistry: {
+            /** Premises */
+            premises?: {
+                [key: string]: components["schemas"]["Premise"];
+            };
+        };
+        /**
          * RecentAnalysis
          * @description One card in the "Recently vibe checked" gallery (TASK-1485).
          *
@@ -1091,7 +1116,7 @@ export interface components {
          * @description The sidebar slots the async pipeline fills independently.
          * @enum {string}
          */
-        SectionSlug: "safety__moderation" | "safety__web_risk" | "safety__image_moderation" | "safety__video_moderation" | "tone_dynamics__flashpoint" | "tone_dynamics__scd" | "facts_claims__dedup" | "facts_claims__known_misinfo" | "opinions_sentiments__sentiment" | "opinions_sentiments__subjective";
+        SectionSlug: "safety__moderation" | "safety__web_risk" | "safety__image_moderation" | "safety__video_moderation" | "tone_dynamics__flashpoint" | "tone_dynamics__scd" | "facts_claims__dedup" | "facts_claims__evidence" | "facts_claims__premises" | "facts_claims__known_misinfo" | "opinions_sentiments__sentiment" | "opinions_sentiments__subjective";
         /**
          * SectionState
          * @description Lifecycle of a single sidebar slot during a job.
@@ -1168,6 +1193,12 @@ export interface components {
             utterances?: components["schemas"]["UtteranceAnchor"][];
         };
         /**
+         * SourceKind
+         * @description Origin of a supporting fact used by the evidence slot.
+         * @enum {string}
+         */
+        SourceKind: "utterance" | "external";
+        /**
          * SpeakerArc
          * @description Per-speaker arc within a conversation, intended for timeline visualization.
          *
@@ -1205,6 +1236,17 @@ export interface components {
              * @enum {string}
              */
             stance: "supports" | "opposes" | "evaluates";
+        };
+        /**
+         * SupportingFact
+         * @description A single supporting statement for a deduped claim.
+         */
+        SupportingFact: {
+            /** Statement */
+            statement: string;
+            source_kind: components["schemas"]["SourceKind"];
+            /** Source Ref */
+            source_ref: string;
         };
         /**
          * ToneDynamicsSection

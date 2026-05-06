@@ -63,6 +63,8 @@ class SectionSlug(StrEnum):
     TONE_DYNAMICS_FLASHPOINT = "tone_dynamics__flashpoint"
     TONE_DYNAMICS_SCD = "tone_dynamics__scd"
     FACTS_CLAIMS_DEDUP = "facts_claims__dedup"
+    FACTS_CLAIMS_EVIDENCE = "facts_claims__evidence"
+    FACTS_CLAIMS_PREMISES = "facts_claims__premises"
     FACTS_CLAIMS_KNOWN_MISINFO = "facts_claims__known_misinfo"
     OPINIONS_SENTIMENTS_SENTIMENT = "opinions_sentiments__sentiment"
     OPINIONS_SENTIMENTS_SUBJECTIVE = "opinions_sentiments__subjective"

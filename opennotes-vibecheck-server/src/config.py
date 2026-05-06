@@ -62,6 +62,7 @@ class Settings(BaseSettings):
     MAX_IMAGES_MODERATED: int = 30
     MAX_VIDEOS_MODERATED: int = 5
     WEB_RISK_CACHE_TTL_HOURS: int = 6
+    EVIDENCE_MAX_EXTERNAL_RETRIEVALS: int = 5
 
     # --- Cloud Tasks + internal worker endpoint (TASK-1473.12) ---
     # Defaults map the dev/test shape: empty strings so enqueue_job short-

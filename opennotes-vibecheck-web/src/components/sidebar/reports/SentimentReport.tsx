@@ -36,12 +36,12 @@ export default function SentimentReport(props: SentimentReportProps) {
         class="flex h-2 w-full overflow-hidden rounded-full bg-muted"
       >
         <div
-          class="h-full bg-chart-1"
+          class="h-full bg-positive"
           style={{ width: `${positive()}%` }}
           data-testid="sentiment-positive"
         />
         <div
-          class="h-full bg-chart-4"
+          class="h-full bg-negative"
           style={{ width: `${negative()}%` }}
           data-testid="sentiment-negative"
         />
@@ -51,17 +51,26 @@ export default function SentimentReport(props: SentimentReportProps) {
           data-testid="sentiment-neutral"
         />
       </div>
-      <dl class="grid grid-cols-3 gap-2 text-[11px] text-muted-foreground">
+      <dl
+        data-testid="sentiment-legend"
+        class="grid grid-cols-3 gap-2 text-center text-[11px] text-muted-foreground justify-items-center"
+      >
         <div>
-          <dt class="font-semibold text-foreground">+ {positive()}%</dt>
+          <dt class="font-semibold text-positive" data-testid="sentiment-positive-label">
+            {positive()}%
+          </dt>
           <dd>positive</dd>
         </div>
         <div>
-          <dt class="font-semibold text-foreground">- {negative()}%</dt>
+          <dt class="font-semibold text-negative" data-testid="sentiment-negative-label">
+            {negative()}%
+          </dt>
           <dd>negative</dd>
         </div>
         <div>
-          <dt class="font-semibold text-foreground">{neutral()}%</dt>
+          <dt class="font-semibold text-foreground" data-testid="sentiment-neutral-label">
+            {neutral()}%
+          </dt>
           <dd>neutral</dd>
         </div>
       </dl>

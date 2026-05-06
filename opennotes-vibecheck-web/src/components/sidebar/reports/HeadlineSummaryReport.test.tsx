@@ -95,6 +95,17 @@ describe("HeadlineSummaryReport", () => {
     expect(textCls).not.toMatch(/line-clamp-|text-ellipsis|whitespace-nowrap|overflow-hidden/);
   });
 
+  it("spans the analyze page width while keeping text at a readable line length", () => {
+    render(() => <HeadlineSummaryReport headline={makeHeadline()} />);
+    const sectionCls =
+      screen.getByTestId("headline-summary").getAttribute("class") ?? "";
+    const textCls =
+      screen.getByTestId("headline-summary-text").getAttribute("class") ?? "";
+    expect(sectionCls).toMatch(/\bw-full\b/);
+    expect(sectionCls).not.toMatch(/max-w-prose/);
+    expect(textCls).toContain("max-w-[78ch]");
+  });
+
   it("renders identical text for kind='stock' and kind='synthesized'", () => {
     const { unmount } = render(() => (
       <HeadlineSummaryReport headline={makeHeadline({ kind: "stock" })} />

@@ -69,6 +69,8 @@ const TONE_SLUGS: SectionSlugLiteral[] = [
 ];
 const FACTS_SLUGS: SectionSlugLiteral[] = [
   "facts_claims__dedup",
+  "facts_claims__evidence",
+  "facts_claims__premises",
   "facts_claims__known_misinfo",
 ];
 const OPINIONS_SLUGS: SectionSlugLiteral[] = [
@@ -125,6 +127,14 @@ function synthesizeSectionsFromPayload(
     claims_report:
       payload.facts_claims?.claims_report ?? EMPTY_CLAIMS_REPORT,
   };
+  const claimsEvidenceData = {
+    claims_report:
+      payload.facts_claims?.claims_report ?? EMPTY_CLAIMS_REPORT,
+  };
+  const claimsPremisesData = {
+    claims_report:
+      payload.facts_claims?.claims_report ?? EMPTY_CLAIMS_REPORT,
+  };
   const knownMisinfoData = {
     known_misinformation:
       payload.facts_claims?.known_misinformation ?? [],
@@ -146,6 +156,8 @@ function synthesizeSectionsFromPayload(
     tone_dynamics__flashpoint: doneSlot(attemptId, flashpointData),
     tone_dynamics__scd: doneSlot(attemptId, scdData),
     facts_claims__dedup: doneSlot(attemptId, claimsDedupData),
+    facts_claims__evidence: doneSlot(attemptId, claimsEvidenceData),
+    facts_claims__premises: doneSlot(attemptId, claimsPremisesData),
     facts_claims__known_misinfo: doneSlot(attemptId, knownMisinfoData),
     opinions_sentiments__sentiment: doneSlot(attemptId, sentimentData),
     opinions_sentiments__subjective: doneSlot(attemptId, subjectiveData),
@@ -182,6 +194,40 @@ function extractScd(data: unknown): SCDReport {
 
 function extractClaimsReport(data: unknown): ClaimsReport {
   return (asRecord(data).claims_report ?? EMPTY_CLAIMS_REPORT) as ClaimsReport;
+}
+
+function mergeClaimsReportEnrichments(
+  base: ClaimsReport,
+  evidence: ClaimsReport,
+  premises: ClaimsReport,
+): ClaimsReport {
+  const evidenceByText = new Map(
+    (evidence.deduped_claims ?? []).map((claim) => [
+      claim.canonical_text,
+      claim,
+    ]),
+  );
+  const premisesByText = new Map(
+    (premises.deduped_claims ?? []).map((claim) => [
+      claim.canonical_text,
+      claim,
+    ]),
+  );
+  return {
+    ...base,
+    deduped_claims: (base.deduped_claims ?? []).map((claim) => ({
+      ...claim,
+      supporting_facts:
+        evidenceByText.get(claim.canonical_text)?.supporting_facts ??
+        claim.supporting_facts ??
+        [],
+      premise_ids:
+        premisesByText.get(claim.canonical_text)?.premise_ids ??
+        claim.premise_ids ??
+        [],
+    })),
+    premises: premises.premises ?? base.premises,
+  };
 }
 
 function extractKnownMisinfo(data: unknown): FactCheckMatch[] {
@@ -277,6 +323,16 @@ const FACTS_RENDER: Partial<
   facts_claims__dedup: (data) => (
     <ClaimsDedupReport claimsReport={extractClaimsReport(data)} />
   ),
+  facts_claims__evidence: () => (
+    <p data-testid="report-facts_claims__evidence" class="text-xs text-muted-foreground">
+      Evidence is merged into deduped claims.
+    </p>
+  ),
+  facts_claims__premises: () => (
+    <p data-testid="report-facts_claims__premises" class="text-xs text-muted-foreground">
+      Premises are merged into deduped claims.
+    </p>
+  ),
   facts_claims__known_misinfo: (data) => (
     <KnownMisinfoReport matches={extractKnownMisinfo(data)} />
   ),
@@ -286,6 +342,14 @@ const FACTS_EMPTINESS: Partial<
   Record<SectionSlugLiteral, (data: unknown) => boolean>
 > = {
   facts_claims__dedup: (data) => extractClaimsReport(data).deduped_claims.length === 0,
+  facts_claims__evidence: (data) =>
+    extractClaimsReport(data).deduped_claims.every(
+      (claim) => (claim.supporting_facts ?? []).length === 0,
+    ),
+  facts_claims__premises: (data) =>
+    extractClaimsReport(data).deduped_claims.every(
+      (claim) => (claim.premise_ids ?? []).length === 0,
+    ),
   facts_claims__known_misinfo: (data) => extractKnownMisinfo(data).length === 0,
 };
 
@@ -293,6 +357,16 @@ const FACTS_COUNTS: Partial<
   Record<SectionSlugLiteral, (data: unknown) => number>
 > = {
   facts_claims__dedup: (data) => extractClaimsReport(data).deduped_claims.length,
+  facts_claims__evidence: (data) =>
+    extractClaimsReport(data).deduped_claims.reduce(
+      (count, claim) => count + (claim.supporting_facts ?? []).length,
+      0,
+    ),
+  facts_claims__premises: (data) =>
+    extractClaimsReport(data).deduped_claims.reduce(
+      (count, claim) => count + (claim.premise_ids ?? []).length,
+      0,
+    ),
   facts_claims__known_misinfo: (data) => extractKnownMisinfo(data).length,
 };
 
@@ -389,10 +463,32 @@ export default function Sidebar(props: SidebarProps) {
   >(() => ({
     facts_claims__dedup: (data) => (
       <ClaimsDedupReport
-        claimsReport={extractClaimsReport(data)}
+        claimsReport={mergeClaimsReportEnrichments(
+          extractClaimsReport(data),
+          extractClaimsReport(
+            effectiveSections().facts_claims__evidence?.data,
+          ),
+          extractClaimsReport(
+            effectiveSections().facts_claims__premises?.data,
+          ),
+        )}
         onUtteranceClick={props.onUtteranceClick}
         canJumpToUtterance={canJump()}
+        evidenceComplete={
+          effectiveSections().facts_claims__evidence?.state === "done" ||
+          props.payloadComplete === true
+        }
       />
+    ),
+    facts_claims__evidence: () => (
+      <p data-testid="report-facts_claims__evidence" class="text-xs text-muted-foreground">
+        Evidence is merged into deduped claims.
+      </p>
+    ),
+    facts_claims__premises: () => (
+      <p data-testid="report-facts_claims__premises" class="text-xs text-muted-foreground">
+        Premises are merged into deduped claims.
+      </p>
     ),
     facts_claims__known_misinfo: (data) => (
       <KnownMisinfoReport matches={extractKnownMisinfo(data)} />
@@ -512,7 +608,15 @@ export default function Sidebar(props: SidebarProps) {
         jobId={props.jobId}
         onRetry={props.onRetry}
         cachedHint={props.cachedHint}
-        renderRevision={canJump()}
+        renderRevision={`${canJump()}:${
+          effectiveSections().facts_claims__evidence?.attempt_id ?? ""
+        }:${
+          effectiveSections().facts_claims__evidence?.state ?? ""
+        }:${
+          effectiveSections().facts_claims__premises?.attempt_id ?? ""
+        }:${
+          effectiveSections().facts_claims__premises?.state ?? ""
+        }`}
       />
       <SectionGroup
         label="Opinions/sentiments"
