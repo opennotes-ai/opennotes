@@ -656,20 +656,6 @@ function AnalyzePageContent(props: { initialJobState: JobState | null }) {
           </Show>
         </nav>
 
-        <Show when={sidebarPayloadComplete()}>
-          <HeadlineSummaryReport
-            headline={resolveHeadline(
-              sidebarPayload()?.headline ?? null,
-              {
-                url: jobUrl(),
-                pageTitle: jobState()?.page_title,
-                recommendation:
-                  sidebarPayload()?.safety?.recommendation ?? null,
-              },
-            )}
-          />
-        </Show>
-
         <Show
           when={jobId() || pendingError()}
           fallback={
@@ -689,7 +675,21 @@ function AnalyzePageContent(props: { initialJobState: JobState | null }) {
               <Show
                 when={showFailure()}
                 fallback={
-                  <div
+                  <>
+                    <Show when={sidebarPayloadComplete()}>
+                      <HeadlineSummaryReport
+                        headline={resolveHeadline(
+                          sidebarPayload()?.headline ?? null,
+                          {
+                            url: jobUrl(),
+                            pageTitle: jobState()?.page_title,
+                            recommendation:
+                              sidebarPayload()?.safety?.recommendation ?? null,
+                          },
+                        )}
+                      />
+                    </Show>
+                    <div
                     data-testid="analyze-layout"
                     data-preview-size={previewSize()}
                     class={layoutClass()}
@@ -878,6 +878,7 @@ function AnalyzePageContent(props: { initialJobState: JobState | null }) {
                         class="order-1 lg:order-2"
                       />
                   </div>
+                  </>
                 }
               >
                 {(_ready) => {
