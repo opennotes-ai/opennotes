@@ -1620,7 +1620,7 @@ describe("AnalyzePage headline summary mount (TASK-1483.13.10)", () => {
     );
   });
 
-  it("places headline-summary before preview-mode-selector inside analyze-left-column", async () => {
+  it("places headline-summary above the layout grid, before preview-mode-selector", async () => {
     renderAt("/analyze?job=job-headline-order&url=https://news.example.com/a");
 
     await waitFor(() => {
@@ -1641,20 +1641,65 @@ describe("AnalyzePage headline summary mount (TASK-1483.13.10)", () => {
       }),
     );
 
-    const leftColumn = await screen.findByTestId("analyze-left-column");
-    const headline = screen.getByTestId("headline-summary");
-    const previewMode = screen.getByTestId("preview-mode-selector");
+    const headline = await screen.findByTestId("headline-summary");
+    const layout = screen.getByTestId("analyze-layout");
 
-    expect(headline.closest("[data-testid='analyze-left-column']")).toBe(
-      leftColumn,
-    );
-    expect(previewMode.closest("[data-testid='analyze-left-column']")).toBe(
-      leftColumn,
-    );
     expect(
-      headline.compareDocumentPosition(previewMode) &
+      headline.compareDocumentPosition(layout) &
         Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
+  });
+
+  it("does not render headline-summary on an expired job even if sidebar_payload_complete is true", async () => {
+    renderAt("/analyze?job=expired-with-payload&url=https://news.example.com/a");
+
+    await waitFor(() => {
+      expect(pollingHandles.length).toBeGreaterThan(0);
+    });
+
+    setPolledJobState(
+      makeJobState({
+        status: "done",
+        expired_at: "2026-04-28T10:00:00Z",
+        sidebar_payload: makeSidebarPayload({
+          headline: {
+            text: "Should not appear on expired page.",
+            kind: "stock",
+            unavailable_inputs: [],
+          },
+        }),
+        sidebar_payload_complete: true,
+      }),
+    );
+
+    expect(await screen.findByTestId("expired-analysis-card")).not.toBeNull();
+    expect(screen.queryByTestId("headline-summary")).toBeNull();
+  });
+
+  it("does not render headline-summary on a failed job even if sidebar_payload_complete is true", async () => {
+    renderAt("/analyze?job=failed-with-payload&url=https://news.example.com/a");
+
+    await waitFor(() => {
+      expect(pollingHandles.length).toBeGreaterThan(0);
+    });
+
+    setPolledJobState(
+      makeJobState({
+        status: "failed",
+        error_code: "upstream_error",
+        sidebar_payload: makeSidebarPayload({
+          headline: {
+            text: "Should not appear on failure page.",
+            kind: "stock",
+            unavailable_inputs: [],
+          },
+        }),
+        sidebar_payload_complete: true,
+      }),
+    );
+
+    expect(await screen.findByTestId("job-failure-card")).not.toBeNull();
+    expect(screen.queryByTestId("headline-summary")).toBeNull();
   });
 
   it("does not render headline summary when sidebar_payload_complete is false even if payload is present", async () => {
