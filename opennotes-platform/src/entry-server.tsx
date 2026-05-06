@@ -12,6 +12,7 @@ export default createHandler(() => (
           <meta property="og:image" content={getAssetUrl("og-default.svg")} />
           <meta property="og:image:width" content="1200" />
           <meta property="og:image:height" content="630" />
+          <meta name="twitter:card" content="summary_large_image" />
           <meta name="twitter:image" content={getAssetUrl("og-default.svg")} />
           {assets}
         </head>

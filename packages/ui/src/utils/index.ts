@@ -10,4 +10,4 @@ export {
   resolveAnchorId,
   truncateId,
 } from "./ids";
-export { getAssetUrl } from "./asset-url";
+export { getAssetUrl, type AssetName } from "./asset-url";

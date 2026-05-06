@@ -2,13 +2,13 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { Logo } from "./logo";
+import { getAssetUrl } from "../utils/asset-url";
 
 describe("<Logo /> source contract", () => {
   const logoSource = readFileSync(resolve("src/components/logo.tsx"), "utf8");
 
-  it("renders img with canonical GCS logo URL", () => {
-    expect(logoSource).toContain("opennotes-logo.svg");
-    expect(logoSource).toContain("getAssetUrl");
+  it("renders img pointing to the canonical GCS logo via getAssetUrl", () => {
+    expect(logoSource).toContain('getAssetUrl("opennotes-logo.svg")');
   });
 
   it("defaults alt to Open Notes", () => {
@@ -17,6 +17,14 @@ describe("<Logo /> source contract", () => {
 
   it("passes class prop through to img", () => {
     expect(logoSource).toContain("props.class");
+  });
+});
+
+describe("<Logo /> URL contract", () => {
+  it("getAssetUrl produces the correct logo src for Logo", () => {
+    expect(getAssetUrl("opennotes-logo.svg")).toBe(
+      "https://storage.googleapis.com/open-notes-core-public-assets/opennotes-logo.svg"
+    );
   });
 });
 
