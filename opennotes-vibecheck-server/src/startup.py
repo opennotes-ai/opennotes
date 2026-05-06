@@ -165,11 +165,6 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         # right Supabase credentials is loud rather than silently broken.
         if settings.VIBECHECK_SUPABASE_URL and settings.VIBECHECK_SUPABASE_DB_PASSWORD:
             db_host = settings.VIBECHECK_DATABASE_HOST or _DEFAULT_POOLER_HOST
-            if not settings.VIBECHECK_DATABASE_HOST:
-                logger.warning(
-                    "VIBECHECK_DATABASE_HOST unset; falling back to default pooler host %s",
-                    _DEFAULT_POOLER_HOST,
-                )
             try:
                 app.state.db_pool = await _create_db_pool(
                     supabase_url=settings.VIBECHECK_SUPABASE_URL,
