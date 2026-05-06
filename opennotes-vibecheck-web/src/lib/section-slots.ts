@@ -14,6 +14,7 @@ export const SECTION_SLUGS = [
   "opinions_sentiments__sentiment",
   "opinions_sentiments__subjective",
   "opinions_sentiments__trends_oppositions",
+  "opinions_sentiments__highlights",
 ] as const satisfies readonly SectionSlug[];
 
 export type SectionSlugLiteral = (typeof SECTION_SLUGS)[number];

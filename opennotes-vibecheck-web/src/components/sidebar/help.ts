@@ -78,6 +78,11 @@ const SLOT_HELP: Record<SectionSlugLiteral, SidebarHelpCopy> = {
       "Recurring claim patterns and opposing opinion clusters represented by shared evidence patterns.",
     means: "These results show where sentiment clusters repeat and where claims split in direction.",
   },
+  opinions_sentiments__highlights: {
+    looksFor:
+      "High-signal opinion clusters that clear frequency and author thresholds.",
+    means: "Highlights prioritize repeated viewpoints and may label limited evidence on small threads.",
+  },
 };
 
 export function sectionHelp(label: string): SidebarHelpCopy | null {

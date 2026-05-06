@@ -39,9 +39,9 @@ describe("SECTION_SLUGS", () => {
     expect([...SECTION_SLUGS].sort()).toEqual([...generated].sort());
   });
 
-  it("contains exactly thirteen entries", () => {
-    expect(SECTION_SLUGS).toHaveLength(13);
-    expect(new Set(SECTION_SLUGS).size).toBe(13);
+  it("contains exactly fourteen entries", () => {
+    expect(SECTION_SLUGS).toHaveLength(14);
+    expect(new Set(SECTION_SLUGS).size).toBe(14);
   });
 });
 

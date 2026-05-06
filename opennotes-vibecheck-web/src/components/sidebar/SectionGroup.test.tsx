@@ -1442,7 +1442,24 @@ describe("Sidebar", () => {
   });
 
   it("synthesizes a fully-done sections map from payload when sections is absent", () => {
-    const payload = makeTonePayload();
+    const payload: SidebarPayload = {
+      ...makeTonePayload(),
+      opinions_sentiments: {
+        ...makeTonePayload().opinions_sentiments,
+        highlights: {
+          highlights: [],
+          threshold: {
+            total_authors: 0,
+            total_utterances: 0,
+            min_authors_required: 0,
+            min_occurrences_required: 0,
+          },
+          fallback_engaged: false,
+          floor_eligible_count: 0,
+          total_input_count: 0,
+        },
+      },
+    };
     render(() => <Sidebar payload={payload} payloadComplete={true} />);
 
     const byLabel = (label: string) =>
@@ -1452,7 +1469,7 @@ describe("Sidebar", () => {
     expect(byLabel("Safety")?.textContent).toBe("4/4");
     expect(byLabel("Tone/dynamics")?.textContent).toBe("2/2");
     expect(byLabel("Facts/claims")?.textContent).toBe("4/4");
-    expect(byLabel("Opinions/sentiments")?.textContent).toBe("3/3");
+    expect(byLabel("Opinions/sentiments")?.textContent).toBe("4/4");
 
     const ALL_SLUGS = [
       "safety__moderation",
@@ -1466,8 +1483,9 @@ describe("Sidebar", () => {
       "facts_claims__premises",
       "facts_claims__known_misinfo",
       "opinions_sentiments__sentiment",
-      "opinions_sentiments__subjective",
       "opinions_sentiments__trends_oppositions",
+      "opinions_sentiments__highlights",
+      "opinions_sentiments__subjective",
     ] as const;
 
     for (const slug of ALL_SLUGS) {
@@ -1552,6 +1570,10 @@ describe("Sidebar", () => {
             state: "running",
             attempt_id: "a8",
           },
+          opinions_sentiments__highlights: {
+            state: "running",
+            attempt_id: "a9",
+          },
         }}
       />
     ));
@@ -1564,6 +1586,9 @@ describe("Sidebar", () => {
     ).toBe("running");
     expect(
       screen.getByTestId("slot-opinions_sentiments__trends_oppositions").getAttribute("data-slot-state"),
+    ).toBe("running");
+    expect(
+      screen.getByTestId("slot-opinions_sentiments__highlights").getAttribute("data-slot-state"),
     ).toBe("running");
   });
 });
@@ -1924,7 +1949,7 @@ describe("Sidebar (done slots, per-slug reports)", () => {
       />
     ));
 
-    expect(screen.getByText("legacy subjective dump")).toBeDefined();
+    expect(screen.queryByText("legacy subjective dump")).toBeNull();
     expect(screen.getByText("current curated highlight")).toBeDefined();
 
     setPayload(currentPayload);
@@ -1936,6 +1961,32 @@ describe("Sidebar (done slots, per-slug reports)", () => {
       screen.getByTestId("report-opinions_sentiments__highlights"),
     ).toBeDefined();
     expect(screen.getByText("current curated highlight")).toBeDefined();
+  });
+
+  it("keeps legacy subjective fallback for completed payloads without highlights", () => {
+    const payload: SidebarPayload = {
+      ...makeTonePayload(),
+      opinions_sentiments: {
+        ...makeTonePayload().opinions_sentiments,
+        opinions_report: {
+          ...makeTonePayload().opinions_sentiments.opinions_report,
+          subjective_claims: [
+            {
+              claim_text: "legacy subjective dump",
+              stance: "evaluates",
+              utterance_id: "u-legacy",
+            },
+          ],
+        },
+      },
+    };
+
+    render(() => <Sidebar payload={payload} payloadComplete={true} />);
+
+    expect(screen.getByText("legacy subjective dump")).toBeDefined();
+    expect(
+      screen.queryByTestId("report-opinions_sentiments__highlights"),
+    ).toBeNull();
   });
 
   it("shows explicit provider names and hides non-harm confidence numbers", () => {
@@ -2323,8 +2374,9 @@ describe("Sidebar (extracting-phase indicator)", () => {
     "facts_claims__premises",
     "facts_claims__known_misinfo",
     "opinions_sentiments__sentiment",
-    "opinions_sentiments__subjective",
     "opinions_sentiments__trends_oppositions",
+    "opinions_sentiments__highlights",
+    "opinions_sentiments__subjective",
   ] as const;
 
   it("renders the extracting indicator and per-slug skeletons when jobStatus is extracting and sections is empty", () => {

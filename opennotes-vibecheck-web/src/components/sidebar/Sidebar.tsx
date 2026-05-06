@@ -32,6 +32,7 @@ import {
   SubjectiveReport,
   TrendsOppositionsReport,
   EMPTY_TRENDS_OPPOSITIONS_REPORT,
+  HighlightsReport,
 } from "./reports";
 
 type HarmfulContentMatch = components["schemas"]["HarmfulContentMatch"];
@@ -46,6 +47,8 @@ type SentimentStats = components["schemas"]["SentimentStatsReport"];
 type SubjectiveClaim = components["schemas"]["SubjectiveClaim"];
 type TrendsOppositionsReportData =
   components["schemas"]["TrendsOppositionsReport"];
+type OpinionsHighlightsReport =
+  components["schemas"]["OpinionsHighlightsReport"];
 type ClaimsReport = components["schemas"]["ClaimsReport"];
 type UtteranceAnchor = components["schemas"]["UtteranceAnchor"];
 
@@ -82,8 +85,9 @@ const FACTS_SLUGS: SectionSlugLiteral[] = [
 ];
 const OPINIONS_SLUGS: SectionSlugLiteral[] = [
   "opinions_sentiments__sentiment",
-  "opinions_sentiments__subjective",
   "opinions_sentiments__trends_oppositions",
+  "opinions_sentiments__highlights",
+  "opinions_sentiments__subjective",
 ];
 
 function doneSlot(attemptId: string, data: unknown): SectionSlot {
@@ -168,8 +172,9 @@ function synthesizeSectionsFromPayload(
       EMPTY_SENTIMENT_STATS,
   };
   const subjectiveData = {
-    subjective_claims:
-      payload.opinions_sentiments?.opinions_report?.subjective_claims ?? [],
+    subjective_claims: payload.opinions_sentiments?.highlights
+      ? []
+      : (payload.opinions_sentiments?.opinions_report?.subjective_claims ?? []),
   };
   const evidenceStatus = payload.facts_claims?.evidence_status as
     | SlotState
@@ -182,6 +187,14 @@ function synthesizeSectionsFromPayload(
       payload.opinions_sentiments?.trends_oppositions ??
       EMPTY_TRENDS_OPPOSITIONS_REPORT,
   };
+  const highlights = payload.opinions_sentiments?.highlights;
+  const highlightSection = highlights
+    ? {
+        opinions_sentiments__highlights: doneSlot(attemptId, {
+          highlights_report: highlights,
+        }),
+      }
+    : {};
   return {
     safety__moderation: doneSlot(attemptId, safetyData),
     safety__web_risk: doneSlot(attemptId, webRiskData),
@@ -207,6 +220,7 @@ function synthesizeSectionsFromPayload(
       attemptId,
       trendsOppositionsData,
     ),
+    ...highlightSection,
   };
 }
 
@@ -297,6 +311,10 @@ function extractTrendsOppositionsReport(
 ): TrendsOppositionsReportData {
   return (asRecord(data).trends_oppositions_report ??
     EMPTY_TRENDS_OPPOSITIONS_REPORT) as TrendsOppositionsReportData;
+}
+function extractHighlightsReport(data: unknown): OpinionsHighlightsReport | null {
+  return (asRecord(data).highlights_report ??
+    null) as OpinionsHighlightsReport | null;
 }
 
 function highlightsRevisionToken(
@@ -495,6 +513,8 @@ const OPINIONS_EMPTINESS: Partial<
     const report = extractTrendsOppositionsReport(data);
     return report.trends.length === 0 && report.oppositions.length === 0;
   },
+  opinions_sentiments__highlights: (data) =>
+    extractHighlightsReport(data)?.highlights.length === 0,
 };
 
 const OPINIONS_COUNTS: Partial<
@@ -512,6 +532,8 @@ const OPINIONS_COUNTS: Partial<
     const report = extractTrendsOppositionsReport(data);
     return { total: report.trends.length + report.oppositions.length };
   },
+  opinions_sentiments__highlights: (data) =>
+    ({ total: extractHighlightsReport(data)?.highlights.length ?? 0 }),
 };
 
 function fillMissingSlotsAsRunning(base: SlugToSlots): SlugToSlots {
@@ -534,10 +556,42 @@ function fillMissingSlotsAsRunning(base: SlugToSlots): SlugToSlots {
 export default function Sidebar(props: SidebarProps) {
   const canJump = () => props.canJumpToUtterance === true;
   const utterances = (): UtteranceAnchor[] => props.payload?.utterances ?? [];
+  const liveSections = createMemo(() => asStrictSectionSlots(props.sections));
+  const hasLiveSectionSlots = createMemo(
+    () => props.sections !== undefined && Object.keys(props.sections).length > 0,
+  );
+  const hasPayloadHighlights = createMemo(
+    () => props.payload?.opinions_sentiments?.highlights != null,
+  );
+  const liveHighlightsSlot = createMemo(
+    () => liveSections().opinions_sentiments__highlights,
+  );
+  const liveHighlightsReport = createMemo(() =>
+    liveHighlightsSlot()?.state === "done"
+      ? extractHighlightsReport(liveHighlightsSlot()?.data)
+      : null,
+  );
+  const currentHighlightsReport = createMemo(() =>
+    hasPayloadHighlights()
+      ? (props.payload?.opinions_sentiments
+          ?.highlights as OpinionsHighlightsReport)
+      : liveHighlightsReport(),
+  );
+  const currentHighlightsCapable = createMemo(() => {
+    if (hasPayloadHighlights()) return true;
+    if (liveHighlightsSlot()) return true;
+    return (
+      hasLiveSectionSlots() &&
+      (props.jobStatus === "extracting" || props.jobStatus === "analyzing")
+    );
+  });
   const opinionsRenderRevision = createMemo(() =>
-    [canJump(), highlightsRevisionToken(props.payload?.opinions_sentiments?.highlights)].join(
-      "|",
-    ),
+    [
+      canJump(),
+      liveHighlightsSlot()?.attempt_id ?? "",
+      liveHighlightsSlot()?.state ?? "",
+      highlightsRevisionToken(currentHighlightsReport()),
+    ].join("|"),
   );
   const safetyRender = createMemo<
     Partial<Record<SectionSlugLiteral, (data: unknown) => JSX.Element>>
@@ -616,15 +670,28 @@ export default function Sidebar(props: SidebarProps) {
       />
     ),
     opinions_sentiments__subjective: (data) => (
-      <SubjectiveReport
-        claims={extractSubjectiveClaims(data)}
-        onUtteranceClick={props.onUtteranceClick}
-        canJumpToUtterance={canJump()}
-      />
+      currentHighlightsCapable() ? null : (
+        <SubjectiveReport
+          claims={extractSubjectiveClaims(data)}
+          onUtteranceClick={props.onUtteranceClick}
+          canJumpToUtterance={canJump()}
+        />
+      )
     ),
     opinions_sentiments__trends_oppositions: (data) => (
       <TrendsOppositionsReport
         report={extractTrendsOppositionsReport(data)}
+      />
+    ),
+    opinions_sentiments__highlights: (data) => (
+      <HighlightsReport
+        report={currentHighlightsReport() ?? extractHighlightsReport(data)}
+        legacySubjectiveClaims={
+          props.payload?.opinions_sentiments?.opinions_report
+            ?.subjective_claims ?? []
+        }
+        onUtteranceClick={props.onUtteranceClick}
+        canJumpToUtterance={canJump()}
       />
     ),
   }));
@@ -639,14 +706,23 @@ export default function Sidebar(props: SidebarProps) {
       props.payloadComplete === true ||
       (isTerminal && !hasSlots && props.payload != null);
     const baseline = hasSlots
-      ? asStrictSectionSlots(raw)
+      ? liveSections()
       : shouldSynthesize && props.payload
         ? synthesizeSectionsFromPayload(props.payload)
         : {};
+    const payloadHighlights = props.payload?.opinions_sentiments?.highlights;
+    const withPayloadHighlights = payloadHighlights
+      ? {
+          ...baseline,
+          opinions_sentiments__highlights: doneSlot("payload", {
+            highlights_report: payloadHighlights,
+          }),
+        }
+      : baseline;
     if (props.jobStatus === "extracting" || props.jobStatus === "analyzing") {
-      return fillMissingSlotsAsRunning(baseline);
+      return fillMissingSlotsAsRunning(withPayloadHighlights);
     }
-    return baseline;
+    return withPayloadHighlights;
   });
   const partialFailedSlugs = createMemo(() =>
     props.jobStatus === "partial"
