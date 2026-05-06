@@ -11,7 +11,7 @@ import { createSignal } from "solid-js";
 import { readFileSync } from "node:fs";
 import { dirname, resolve as resolvePath } from "node:path";
 import { fileURLToPath } from "node:url";
-import SectionGroup, { type SlugToSlots } from "./SectionGroup";
+import SectionGroup, { type SlugToSlots, type SectionGroupProps } from "./SectionGroup";
 import Sidebar from "./Sidebar";
 import type { SectionSlug, SidebarPayload } from "~/lib/api-client.server";
 import { makeEmptyScd } from "~/lib/sidebar-defaults";
@@ -171,7 +171,7 @@ describe("SectionGroup", () => {
     }
   });
 
-  it("preserves the section label as a visible <h3> heading next to the counter", () => {
+  it("preserves the section label as a visible <h3> heading wrapping the toggle button", () => {
     render(() => (
       <SectionGroup
         label="Tone/dynamics"
@@ -180,11 +180,9 @@ describe("SectionGroup", () => {
         render={{}}
       />
     ));
-    const heading = screen.getByRole("heading", {
-      level: 3,
-      name: "Tone/dynamics",
-    });
-    expect(heading.textContent).toBe("Tone/dynamics");
+    const heading = screen.getByRole("heading", { level: 3 });
+    expect(heading.querySelector('[data-testid="section-toggle-Tone/dynamics"]')).not.toBeNull();
+    expect(heading.textContent).toContain("Tone/dynamics");
   });
 
   it("renders optional summary content as the first subsection before slots", () => {
@@ -219,7 +217,7 @@ describe("SectionGroup", () => {
     ).toBe(true);
   });
 
-  it("collapses and re-expands the section summary while keeping the header visible", async () => {
+  it("collapses and re-expands the section summary while keeping the body in the DOM", async () => {
     render(() => (
       <SectionGroup
         label="Safety"
@@ -245,11 +243,16 @@ describe("SectionGroup", () => {
     const collapseLabel = "Collapse Summary in Safety";
     const expandLabel = "Expand Summary in Safety";
 
-    expect(screen.getByRole("button", { name: collapseLabel })).toBeTruthy();
-    expect(screen.getByTestId("summary-content")).toBeDefined();
+    const summaryToggle = screen.getByRole("button", { name: collapseLabel });
+    expect(summaryToggle).toBeTruthy();
+    const summaryBody = summaryToggle.closest("[data-testid='section-summary-Safety']")!.querySelector("[id]") as HTMLElement;
+    expect(summaryBody).not.toBeNull();
+    expectHasAttribute(summaryBody, "hidden", false);
+    expect(summaryToggle.getAttribute("aria-expanded")).toBe("true");
 
-    await fireEvent.click(screen.getByRole("button", { name: collapseLabel }));
-    expect(screen.queryByTestId("summary-content")).toBeNull();
+    await fireEvent.click(summaryToggle);
+    expectHasAttribute(summaryBody, "hidden", true);
+    expect(summaryBody.getAttribute("aria-hidden")).toBe("true");
     expect(
       screen.getByRole("button", { name: expandLabel }).getAttribute(
         "aria-expanded",
@@ -257,7 +260,8 @@ describe("SectionGroup", () => {
     ).toBe("false");
 
     await fireEvent.click(screen.getByRole("button", { name: expandLabel }));
-    expect(screen.getByTestId("summary-content")).toBeDefined();
+    expectHasAttribute(summaryBody, "hidden", false);
+    expect(summaryBody.getAttribute("aria-hidden")).toBe("false");
   });
 
   it("does not render a summary section when summary props are omitted", () => {
@@ -281,6 +285,45 @@ describe("SectionGroup", () => {
     expect(screen.queryByTestId("section-summary-Safety")).toBeNull();
   });
 
+  it("preserves summary collapse state when summary prop transitions from absent to present", async () => {
+    const [summaryProp, setSummaryProp] = createSignal<SectionGroupProps["summary"]>(undefined);
+    render(() => (
+      <SectionGroup
+        label="Safety"
+        slugs={["safety__moderation"]}
+        sections={{
+          safety__moderation: {
+            state: "done",
+            attempt_id: "a1",
+            data: { harmful_content_matches: [] },
+          },
+        }}
+        summary={summaryProp()}
+        render={{}}
+      />
+    ));
+
+    setSummaryProp({
+      label: "Summary",
+      content: () => <div data-testid="summary-content">summary</div>,
+      defaultOpen: true,
+    });
+
+    const summaryToggle = screen.getByTestId("section-summary-toggle-Safety");
+    expect(summaryToggle.getAttribute("aria-expanded")).toBe("true");
+
+    await fireEvent.click(summaryToggle);
+    expect(summaryToggle.getAttribute("aria-expanded")).toBe("false");
+
+    setSummaryProp({
+      label: "Summary",
+      content: () => <div data-testid="summary-content-v2">updated summary</div>,
+      defaultOpen: true,
+    });
+
+    expect(summaryToggle.getAttribute("aria-expanded")).toBe("false");
+  });
+
   it("defaults each section group to expanded", () => {
     render(() => (
       <SectionGroup
@@ -301,7 +344,7 @@ describe("SectionGroup", () => {
       name: "Collapse Tone/dynamics section",
     });
     expect(toggle.getAttribute("aria-expanded")).toBe("true");
-    const body = screen.getByTestId("section-group-body-Tone/dynamics");
+    const body = screen.getByTestId("section-group-body-tone-dynamics");
     expectHasAttribute(body, "hidden", false);
   });
 
@@ -331,7 +374,7 @@ describe("SectionGroup", () => {
     const sectionToggle = screen.getByRole("button", {
       name: "Collapse Safety section",
     });
-    const sectionBody = screen.getByTestId("section-group-body-Safety");
+    const sectionBody = screen.getByTestId("section-group-body-safety");
 
     expectHasAttribute(sectionBody, "hidden", false);
     await fireEvent.click(sectionToggle);
@@ -357,7 +400,7 @@ describe("SectionGroup", () => {
       />
     ));
 
-    const sectionBody = screen.getByTestId("section-group-body-Safety");
+    const sectionBody = screen.getByTestId("section-group-body-safety");
     const sectionToggle = screen.getByTestId("section-toggle-Safety");
 
     expect(sectionToggle.getAttribute("aria-controls")).toBe(
@@ -385,12 +428,11 @@ describe("SectionGroup", () => {
     const toggle = screen.getByRole("button", {
       name: "Collapse Tone/dynamics section",
     });
-    const body = screen.getByTestId("section-group-body-Tone/dynamics");
+    const body = screen.getByTestId("section-group-body-tone-dynamics");
 
     expectHasAttribute(body, "hidden", false);
     expect(toggle.getAttribute("aria-expanded")).toBe("true");
-    expect(screen.getByRole("heading", { level: 3, name: "Tone/dynamics" }))
-      .toBeTruthy();
+    expect(screen.getByRole("heading", { level: 3 })).toBeTruthy();
 
     await fireEvent.click(toggle);
     expect(toggle.getAttribute("aria-expanded")).toBe("false");
@@ -437,7 +479,7 @@ describe("SectionGroup", () => {
     expect(counter).toBeDefined();
     expect(counter.textContent).toBe("2/2");
     expectHasAttribute(
-      screen.getByTestId("section-group-body-Tone/dynamics"),
+      screen.getByTestId("section-group-body-tone-dynamics"),
       "hidden",
       true,
     );
@@ -487,8 +529,8 @@ describe("SectionGroup", () => {
     const factsToggle = screen.getByRole("button", {
       name: "Collapse Facts/claims section",
     });
-    const safetyBody = screen.getByTestId("section-group-body-Safety");
-    const factsBody = screen.getByTestId("section-group-body-Facts/claims");
+    const safetyBody = screen.getByTestId("section-group-body-safety");
+    const factsBody = screen.getByTestId("section-group-body-facts-claims");
 
     expectHasAttribute(safetyBody, "hidden", false);
     expectHasAttribute(factsBody, "hidden", false);
@@ -1111,9 +1153,57 @@ describe("SectionGroup", () => {
     );
     expect(toggle.getAttribute("aria-expanded")).toBe("false");
 
-    await fireEvent.keyDown(toggle, { key: "Enter" });
+    await fireEvent.click(toggle);
 
     expect(toggle.getAttribute("aria-expanded")).toBe("true");
+  });
+
+  it("slot toggle on Space key toggles state exactly once (no double-toggle)", async () => {
+    render(() => (
+      <SectionGroup
+        label="Tone/dynamics"
+        slugs={TONE_SLUGS}
+        sections={{
+          tone_dynamics__flashpoint: {
+            state: "done",
+            attempt_id: "a1",
+            data: { flashpoint_matches: [{ reasoning: "heated" }] },
+          },
+        }}
+        render={{
+          tone_dynamics__flashpoint: () => <div data-testid="fp-rendered" />,
+        }}
+      />
+    ));
+
+    const toggle = screen.getByTestId("slot-toggle-tone_dynamics__flashpoint");
+    expect(toggle.getAttribute("aria-expanded")).toBe("true");
+
+    await fireEvent.keyDown(toggle, { key: " " });
+    await fireEvent.keyUp(toggle, { key: " " });
+    await fireEvent.click(toggle);
+
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+  });
+
+  it("section toggle on Space key toggles state exactly once (no double-toggle)", async () => {
+    render(() => (
+      <SectionGroup
+        label="Tone/dynamics"
+        slugs={TONE_SLUGS}
+        sections={{}}
+        render={{}}
+      />
+    ));
+
+    const toggle = screen.getByTestId("section-toggle-Tone/dynamics");
+    expect(toggle.getAttribute("aria-expanded")).toBe("true");
+
+    await fireEvent.keyDown(toggle, { key: " " });
+    await fireEvent.keyUp(toggle, { key: " " });
+    await fireEvent.click(toggle);
+
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
   });
 
   it("collapses done slots when their data is empty", () => {
