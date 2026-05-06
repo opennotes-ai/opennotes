@@ -1,11 +1,12 @@
 import "./app.css";
-import { A, createAsync, query, Router } from "@solidjs/router";
+import { A, createAsync, query, revalidate, Router } from "@solidjs/router";
 import { FileRoutes } from "@solidjs/start/router";
-import { ErrorBoundary, Show, Suspense, type JSX } from "solid-js";
+import { ErrorBoundary, onCleanup, onMount, Show, Suspense, type JSX } from "solid-js";
 import { MetaProvider, Title } from "@solidjs/meta";
 import { Button, buttonVariants } from "@opennotes/ui/components/ui/button";
 import { NavBar } from "@opennotes/ui/components/nav-bar";
 import ModeToggle from "@opennotes/ui/components/mode-toggle";
+import { createClient } from "~/lib/supabase-browser";
 import { getUser } from "~/lib/supabase-server";
 
 export const NAV_USER_KEY = "nav-user";
@@ -17,6 +18,13 @@ const getNavUser = query(async () => {
 
 export function RootLayout(props: { children?: JSX.Element }): JSX.Element {
   const user = createAsync(() => getNavUser());
+  onMount(() => {
+    const supabase = createClient();
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(() => {
+      revalidate(NAV_USER_KEY);
+    });
+    onCleanup(() => subscription.unsubscribe());
+  });
   return (
     <MetaProvider>
       <Title>Open Notes Platform</Title>

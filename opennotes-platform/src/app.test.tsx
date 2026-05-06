@@ -6,6 +6,16 @@ vi.mock("~/lib/supabase-server", () => ({
   getUser: () => getUserMock(),
 }));
 
+vi.mock("~/lib/supabase-browser", () => ({
+  createClient: () => ({
+    auth: {
+      onAuthStateChange: vi.fn().mockReturnValue({
+        data: { subscription: { unsubscribe: vi.fn() } },
+      }),
+    },
+  }),
+}));
+
 vi.mock("@solidjs/start/router", () => ({
   FileRoutes: () => null,
 }));
