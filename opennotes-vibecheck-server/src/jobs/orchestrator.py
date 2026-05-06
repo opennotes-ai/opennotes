@@ -1859,6 +1859,29 @@ _SECTION_HANDLERS: dict[SectionSlug, Any] = {
 }
 
 
+async def _persist_empty_claim_enrichment_slots(
+    pool: Any,
+    job_id: UUID,
+    task_attempt: UUID,
+    slugs: tuple[SectionSlug, ...],
+) -> None:
+    for slug in slugs:
+        slot = SectionSlot(
+            state=SectionState.DONE,
+            attempt_id=uuid4(),
+            data=_empty_section_data(slug),
+        )
+        try:
+            await write_slot(pool, job_id, task_attempt, slug, slot)
+        except Exception as exc:
+            logger.exception(
+                "claim-enrichment empty-default write_slot failed for job %s slug %s: %s",
+                job_id,
+                slug.value,
+                exc,
+            )
+
+
 async def _run_all_sections(
     pool: Any,
     job_id: UUID,
@@ -1908,6 +1931,9 @@ async def _run_all_sections(
     dedup_state = await initial_tasks[SectionSlug.FACTS_CLAIMS_DEDUP]
     if dedup_state != SectionState.DONE:
         await asyncio.gather(*initial_tasks.values())
+        await _persist_empty_claim_enrichment_slots(
+            pool, job_id, task_attempt, claim_enrichment_slugs
+        )
         return
 
     enrichment_tasks = [
