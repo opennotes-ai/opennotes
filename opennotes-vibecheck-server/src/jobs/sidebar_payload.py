@@ -15,6 +15,7 @@ from typing import Any, Literal, cast
 from src.analyses.claims._claims_schemas import ClaimsReport
 from src.analyses.claims._factcheck_schemas import FactCheckMatch
 from src.analyses.opinions._schemas import OpinionsReport
+from src.analyses.opinions._trends_schemas import TrendsOppositionsReport
 from src.analyses.safety._schemas import (
     HarmfulContentMatch,
     ImageModerationMatch,
@@ -191,6 +192,19 @@ def assemble_sidebar_payload(
 
     sentiment_data = data_for(SectionSlug.OPINIONS_SENTIMENTS_SENTIMENT)
     subjective_data = data_for(SectionSlug.OPINIONS_SENTIMENTS_SUBJECTIVE)
+    trends_oppositions_slot = sections.get(SectionSlug.OPINIONS_SENTIMENTS_TRENDS_OPPOSITIONS)
+    trends_oppositions_data = data_for(SectionSlug.OPINIONS_SENTIMENTS_TRENDS_OPPOSITIONS)
+    trends_oppositions = None
+    if (
+        trends_oppositions_slot is not None
+        and trends_oppositions_slot.state == SectionState.DONE
+        and isinstance(trends_oppositions_slot.data, dict)
+        and "trends_oppositions_report" in trends_oppositions_slot.data
+    ):
+        trends_oppositions = TrendsOppositionsReport.model_validate(
+            trends_oppositions_data["trends_oppositions_report"]
+        )
+
     opinions = OpinionsSection(
         opinions_report=OpinionsReport(
             sentiment_stats=sentiment_data.get(
@@ -198,7 +212,8 @@ def assemble_sidebar_payload(
                 empty_section_data(SectionSlug.OPINIONS_SENTIMENTS_SENTIMENT)["sentiment_stats"],
             ),
             subjective_claims=subjective_data.get("subjective_claims", []),
-        )
+        ),
+        trends_oppositions=trends_oppositions,
     )
 
     headline = (

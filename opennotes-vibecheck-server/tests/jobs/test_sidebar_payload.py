@@ -93,6 +93,16 @@ def _minimal_done_sections() -> dict[SectionSlug, SectionSlot]:
             }
         ),
         SectionSlug.OPINIONS_SENTIMENTS_SUBJECTIVE: _done_slot({"subjective_claims": []}),
+        SectionSlug.OPINIONS_SENTIMENTS_TRENDS_OPPOSITIONS: _done_slot(
+            {
+                "trends_oppositions_report": {
+                    "trends": [],
+                    "oppositions": [],
+                    "input_cluster_count": 0,
+                    "skipped_for_cap": 0,
+                }
+            }
+        ),
     }
 
 
@@ -114,8 +124,27 @@ class TestAssembleSidebarPayload:
         assert sidebar.tone_dynamics.flashpoint_matches == []
         assert sidebar.facts_claims.claims_report.deduped_claims == []
         assert sidebar.opinions_sentiments.opinions_report.sentiment_stats.per_utterance == []
+        assert sidebar.opinions_sentiments.trends_oppositions is None
         assert sidebar.headline is None
         assert sidebar.utterances == []
+
+    def test_no_trends_oppositions_slot_returns_none(self):
+        sections = _minimal_done_sections()
+        sections.pop(SectionSlug.OPINIONS_SENTIMENTS_TRENDS_OPPOSITIONS)
+
+        sidebar = assemble_sidebar_payload("https://example.com", sections)
+
+        assert sidebar.opinions_sentiments.trends_oppositions is None
+        assert SidebarPayload.model_validate(sidebar.model_dump(mode="json"))
+
+    def test_failed_trends_oppositions_slot_returns_none_and_still_validates(self):
+        sections = _minimal_done_sections()
+        sections[SectionSlug.OPINIONS_SENTIMENTS_TRENDS_OPPOSITIONS] = _failed_slot()
+
+        sidebar = assemble_sidebar_payload("https://example.com", sections)
+
+        assert sidebar.opinions_sentiments.trends_oppositions is None
+        assert SidebarPayload.model_validate(sidebar.model_dump(mode="json"))
 
     def test_pending_slot_gets_empty_defaults(self):
         """Pending slots are not done; should get neutral defaults."""
@@ -383,6 +412,38 @@ class TestAssembleSidebarPayload:
 
         assert len(sidebar.image_moderation.matches) == 1
         assert sidebar.image_moderation.matches[0].flagged is True
+
+    def test_trends_oppositions_slot_done_populates_field(self):
+        sections = _minimal_done_sections()
+        sections[SectionSlug.OPINIONS_SENTIMENTS_TRENDS_OPPOSITIONS] = _done_slot(
+            {
+                "trends_oppositions_report": {
+                    "trends": [
+                        {"label": "trend", "cluster_ids": ["c1"], "summary": "desc"},
+                    ],
+                    "oppositions": [
+                        {
+                            "topic": "topic-1",
+                            "supporting_cluster_ids": ["c1"],
+                            "opposing_cluster_ids": ["c2"],
+                            "note": "note",
+                        }
+                    ],
+                    "input_cluster_count": 2,
+                    "skipped_for_cap": 0,
+                }
+            }
+        )
+
+        sidebar = assemble_sidebar_payload("https://example.com", sections)
+        payload = SidebarPayload.model_validate(sidebar.model_dump(mode="json"))
+
+        assert payload.opinions_sentiments.trends_oppositions is not None
+        assert payload.opinions_sentiments.trends_oppositions.trends[0].label == "trend"
+        assert (
+            payload.opinions_sentiments.trends_oppositions.oppositions[0].topic
+            == "topic-1"
+        )
 
     def test_video_moderation_matches_flow_through(self):
         sections = _minimal_done_sections()
