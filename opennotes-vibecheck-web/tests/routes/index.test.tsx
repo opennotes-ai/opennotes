@@ -98,6 +98,16 @@ describe("HomePage (landing route)", () => {
     expect(alert.textContent).toMatch(/something went wrong/i);
   });
 
+  it("renders the PDF upload anchor section with id and label", async () => {
+    renderAt("/");
+    await screen.findByRole("heading", { name: /vibecheck/i });
+    const anchor = document.getElementById("pdf-upload");
+    expect(anchor).not.toBeNull();
+    expect(
+      await screen.findByText(/blocked site\? private page\?/i),
+    ).toBeDefined();
+  });
+
   it("does not pin a specific duration in the latency hint", async () => {
     renderAt("/");
     await screen.findByRole("heading", { name: /vibecheck/i });
