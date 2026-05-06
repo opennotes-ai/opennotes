@@ -139,7 +139,11 @@ async def test_post_then_internal_run_then_poll_to_done(
             None,
         ]
 
-    async def _stub_scd(utterances: list[Any], settings: Any) -> SCDReport:
+    async def _stub_scd(
+        utterances: list[Any],
+        settings: Any,
+        **_kwargs: Any,
+    ) -> SCDReport:
         return SCDReport(
             narrative="The exchange shifts from report to criticism.",
             speaker_arcs=[
