@@ -80,7 +80,7 @@ describe("<JobFailureCard />", () => {
     expect(link?.getAttribute("href")).toBe("/#pdf-upload");
   });
 
-  it("shows PDF suggestion for extraction_failed", () => {
+  it("shows PDF suggestion for extraction_failed with link to /#pdf-upload", () => {
     render(() => (
       <JobFailureCard
         url="https://example.com/article"
@@ -88,10 +88,12 @@ describe("<JobFailureCard />", () => {
       />
     ));
 
-    expect(screen.getByTestId("job-failure-pdf-suggestion")).toBeTruthy();
+    const suggestion = screen.getByTestId("job-failure-pdf-suggestion");
+    expect(suggestion).toBeTruthy();
+    expect(suggestion.querySelector("a")?.getAttribute("href")).toBe("/#pdf-upload");
   });
 
-  it("shows PDF suggestion for unsupported_site", () => {
+  it("shows PDF suggestion for unsupported_site with link to /#pdf-upload", () => {
     render(() => (
       <JobFailureCard
         url="https://example.com/article"
@@ -99,7 +101,9 @@ describe("<JobFailureCard />", () => {
       />
     ));
 
-    expect(screen.getByTestId("job-failure-pdf-suggestion")).toBeTruthy();
+    const suggestion = screen.getByTestId("job-failure-pdf-suggestion");
+    expect(suggestion).toBeTruthy();
+    expect(suggestion.querySelector("a")?.getAttribute("href")).toBe("/#pdf-upload");
   });
 
   it("does not show PDF suggestion for pdf_too_large", () => {
