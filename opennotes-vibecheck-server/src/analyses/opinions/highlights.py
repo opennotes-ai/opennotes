@@ -127,5 +127,5 @@ def compute_highlights(
         threshold=threshold,
         fallback_engaged=fallback_engaged,
         floor_eligible_count=len(floor_eligible),
-        total_input_count=len(clusters),
+        total_input_count=len(selected_for_analysis),
     )

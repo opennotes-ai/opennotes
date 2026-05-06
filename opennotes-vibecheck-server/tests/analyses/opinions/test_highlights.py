@@ -93,6 +93,7 @@ def test_compute_highlights_fallback_when_no_scaled_survivors() -> None:
         settings=settings,
     )
 
+    assert report.total_input_count == 1
     assert report.threshold.min_authors_required == 2
     assert report.threshold.min_occurrences_required == 6
     assert report.floor_eligible_count == 1
