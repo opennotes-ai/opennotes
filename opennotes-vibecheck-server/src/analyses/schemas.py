@@ -224,6 +224,10 @@ class UtteranceAnchor(BaseModel):
 
     position: int = Field(description="1-indexed utterance position in the extracted thread.")
     utterance_id: str = Field(description="Stable utterance id stored in vibecheck_job_utterances.")
+    timestamp: datetime | None = Field(
+        default=None,
+        description="Wall-clock timestamp for the utterance when the source thread exposed one.",
+    )
 
 
 class SidebarPayload(BaseModel):

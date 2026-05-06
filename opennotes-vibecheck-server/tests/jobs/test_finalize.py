@@ -7,10 +7,170 @@ source to "openai".
 from __future__ import annotations
 
 import json
+import socket
+from datetime import UTC, datetime
 from typing import Any
+from uuid import UUID, uuid4
+
+import asyncpg
+import pytest
+from testcontainers.postgres import PostgresContainer
 
 from src.analyses.safety._schemas import HarmfulContentMatch
-from src.analyses.schemas import SectionSlug
+from src.analyses.schemas import SectionSlug, SectionSlot, SectionState
+from src.jobs.finalize import maybe_finalize_job
+from tests.conftest import VIBECHECK_JOBS_DDL
+
+_REAL_GETADDRINFO = socket.getaddrinfo
+
+_MINIMAL_DDL = (
+    """
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+
+CREATE TABLE vibecheck_analyses (
+    url TEXT PRIMARY KEY,
+    sidebar_payload JSONB NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    expires_at TIMESTAMPTZ NOT NULL
+);
+"""
+    + VIBECHECK_JOBS_DDL
+    + """
+CREATE TABLE vibecheck_job_utterances (
+    utterance_pk UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    job_id UUID NOT NULL REFERENCES vibecheck_jobs(job_id) ON DELETE CASCADE,
+    utterance_id TEXT,
+    kind TEXT NOT NULL,
+    text TEXT NOT NULL,
+    author TEXT,
+    timestamp_at TIMESTAMPTZ,
+    parent_id TEXT,
+    position INT NOT NULL DEFAULT 0,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    page_title TEXT,
+    page_kind TEXT,
+    utterance_stream_type TEXT
+);
+"""
+)
+
+
+@pytest.fixture(autouse=True)
+def _restore_real_dns(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(socket, "getaddrinfo", _REAL_GETADDRINFO)
+
+
+@pytest.fixture(scope="module")
+def _postgres_container():
+    with PostgresContainer("postgres:16-alpine") as pg:
+        yield pg
+
+
+@pytest.fixture
+async def db_pool(_postgres_container) -> Any:
+    dsn = _postgres_container.get_connection_url().replace(
+        "postgresql+psycopg2://", "postgresql://"
+    )
+    pool = await asyncpg.create_pool(dsn, min_size=1, max_size=4)
+
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "DROP TABLE IF EXISTS vibecheck_job_utterances CASCADE; "
+            "DROP TABLE IF EXISTS vibecheck_analyses CASCADE; "
+            "DROP TABLE IF EXISTS vibecheck_jobs CASCADE;"
+        )
+        await conn.execute(_MINIMAL_DDL)
+
+    try:
+        yield pool
+    finally:
+        await pool.close()
+
+
+def _done_slot(data: dict[str, Any]) -> SectionSlot:
+    return SectionSlot(state=SectionState.DONE, attempt_id=uuid4(), data=data)
+
+
+def _minimal_done_sections() -> dict[SectionSlug, SectionSlot]:
+    return {
+        SectionSlug.SAFETY_MODERATION: _done_slot({"harmful_content_matches": []}),
+        SectionSlug.SAFETY_WEB_RISK: _done_slot({"findings": []}),
+        SectionSlug.SAFETY_IMAGE_MODERATION: _done_slot({"matches": []}),
+        SectionSlug.SAFETY_VIDEO_MODERATION: _done_slot({"matches": []}),
+        SectionSlug.TONE_DYNAMICS_FLASHPOINT: _done_slot({"flashpoint_matches": []}),
+        SectionSlug.TONE_DYNAMICS_SCD: _done_slot(
+            {
+                "scd": {
+                    "summary": "",
+                    "tone_labels": [],
+                    "per_speaker_notes": {},
+                    "insufficient_conversation": True,
+                }
+            }
+        ),
+        SectionSlug.FACTS_CLAIMS_DEDUP: _done_slot(
+            {
+                "claims_report": {
+                    "deduped_claims": [],
+                    "total_claims": 0,
+                    "total_unique": 0,
+                }
+            }
+        ),
+        SectionSlug.FACTS_CLAIMS_EVIDENCE: _done_slot(
+            {
+                "claims_report": {
+                    "deduped_claims": [],
+                    "total_claims": 0,
+                    "total_unique": 0,
+                }
+            }
+        ),
+        SectionSlug.FACTS_CLAIMS_PREMISES: _done_slot(
+            {
+                "claims_report": {
+                    "deduped_claims": [],
+                    "total_claims": 0,
+                    "total_unique": 0,
+                }
+            }
+        ),
+        SectionSlug.FACTS_CLAIMS_KNOWN_MISINFO: _done_slot({"known_misinformation": []}),
+        SectionSlug.OPINIONS_SENTIMENTS_SENTIMENT: _done_slot(
+            {
+                "sentiment_stats": {
+                    "per_utterance": [],
+                    "positive_pct": 0.0,
+                    "negative_pct": 0.0,
+                    "neutral_pct": 0.0,
+                    "mean_valence": 0.0,
+                }
+            }
+        ),
+        SectionSlug.OPINIONS_SENTIMENTS_SUBJECTIVE: _done_slot({"subjective_claims": []}),
+    }
+
+
+async def _insert_job(pool: Any, *, attempt_id: UUID, url: str) -> UUID:
+    sections = {
+        slug.value: slot.model_dump(mode="json")
+        for slug, slot in _minimal_done_sections().items()
+    }
+    async with pool.acquire() as conn:
+        job_id = await conn.fetchval(
+            """
+            INSERT INTO vibecheck_jobs (
+                url, normalized_url, host, status, attempt_id, source_type, sections
+            )
+            VALUES ($1, $1, 'example.com', 'analyzing', $2, 'url', $3::jsonb)
+            RETURNING job_id
+            """,
+            url,
+            attempt_id,
+            json.dumps(sections),
+        )
+    assert isinstance(job_id, UUID)
+    return job_id
 
 
 class TestLegacyDictRehydration:
@@ -82,6 +242,61 @@ class TestLegacyDictRehydration:
         sidebar = _assemble_payload("https://test", sections)
 
         assert sidebar.safety.harmful_content_matches[0].source == "openai"
+
+
+@pytest.mark.asyncio
+async def test_maybe_finalize_job_round_trips_utterance_timestamps_to_sidebar_payload(
+    db_pool: Any,
+) -> None:
+    task_attempt = uuid4()
+    timestamp = datetime(2026, 5, 6, 22, 30, tzinfo=UTC)
+    job_id = await _insert_job(
+        db_pool,
+        attempt_id=task_attempt,
+        url="https://example.com/timestamped-thread",
+    )
+
+    async with db_pool.acquire() as conn:
+        await conn.execute(
+            """
+            INSERT INTO vibecheck_job_utterances (
+                job_id,
+                utterance_id,
+                kind,
+                text,
+                timestamp_at,
+                position
+            )
+            VALUES
+                ($1, 'comment-0-aaa', 'post', 'first utterance', $2, 0),
+                ($1, 'comment-1-bbb', 'comment', 'second utterance', NULL, 1)
+            """,
+            job_id,
+            timestamp,
+        )
+
+    finalized = await maybe_finalize_job(
+        db_pool,
+        job_id,
+        expected_task_attempt=task_attempt,
+    )
+
+    assert finalized is True
+    async with db_pool.acquire() as conn:
+        payload = await conn.fetchval(
+            "SELECT sidebar_payload FROM vibecheck_jobs WHERE job_id = $1",
+            job_id,
+        )
+
+    payload_dict = json.loads(payload) if isinstance(payload, str) else dict(payload)
+    assert [anchor["utterance_id"] for anchor in payload_dict["utterances"]] == [
+        "comment-0-aaa",
+        "comment-1-bbb",
+    ]
+    assert datetime.fromisoformat(
+        payload_dict["utterances"][0]["timestamp"].replace("Z", "+00:00")
+    ) == timestamp
+    assert payload_dict["utterances"][1]["timestamp"] is None
 
 
 class TestAssemblePayloadWiresNewSafetySections:
