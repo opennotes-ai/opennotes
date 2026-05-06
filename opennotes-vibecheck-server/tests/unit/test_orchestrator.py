@@ -220,6 +220,7 @@ async def test_run_all_sections_writes_trends_oppositions_after_dedup(
         else:
             fact_payloads.append(_payload)
             run_order.append(slug.value)
+        return SectionState.DONE
 
     monkeypatch.setattr(orchestrator, "_run_section", fake_run_section)
 
