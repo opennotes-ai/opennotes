@@ -86,6 +86,21 @@ function doneSlot(attemptId: string, data: unknown): SectionSlot {
   };
 }
 
+type SlotState = SectionSlot["state"];
+
+function statusSlot(
+  attemptId: string,
+  status: SlotState | undefined,
+  data: unknown,
+): SectionSlot {
+  const state: SlotState = status ?? "done";
+  return {
+    state,
+    attempt_id: attemptId,
+    data: state === "done" ? (data as SectionSlot["data"]) : undefined,
+  };
+}
+
 const EMPTY_CLAIMS_REPORT: ClaimsReport = {
   deduped_claims: [],
   total_claims: 0,
@@ -148,6 +163,12 @@ function synthesizeSectionsFromPayload(
     subjective_claims:
       payload.opinions_sentiments?.opinions_report?.subjective_claims ?? [],
   };
+  const evidenceStatus = payload.facts_claims?.evidence_status as
+    | SlotState
+    | undefined;
+  const premisesStatus = payload.facts_claims?.premises_status as
+    | SlotState
+    | undefined;
   return {
     safety__moderation: doneSlot(attemptId, safetyData),
     safety__web_risk: doneSlot(attemptId, webRiskData),
@@ -156,8 +177,16 @@ function synthesizeSectionsFromPayload(
     tone_dynamics__flashpoint: doneSlot(attemptId, flashpointData),
     tone_dynamics__scd: doneSlot(attemptId, scdData),
     facts_claims__dedup: doneSlot(attemptId, claimsDedupData),
-    facts_claims__evidence: doneSlot(attemptId, claimsEvidenceData),
-    facts_claims__premises: doneSlot(attemptId, claimsPremisesData),
+    facts_claims__evidence: statusSlot(
+      attemptId,
+      evidenceStatus,
+      claimsEvidenceData,
+    ),
+    facts_claims__premises: statusSlot(
+      attemptId,
+      premisesStatus,
+      claimsPremisesData,
+    ),
     facts_claims__known_misinfo: doneSlot(attemptId, knownMisinfoData),
     opinions_sentiments__sentiment: doneSlot(attemptId, sentimentData),
     opinions_sentiments__subjective: doneSlot(attemptId, subjectiveData),
@@ -475,8 +504,7 @@ export default function Sidebar(props: SidebarProps) {
         onUtteranceClick={props.onUtteranceClick}
         canJumpToUtterance={canJump()}
         evidenceComplete={
-          effectiveSections().facts_claims__evidence?.state === "done" ||
-          props.payloadComplete === true
+          effectiveSections().facts_claims__evidence?.state === "done"
         }
       />
     ),

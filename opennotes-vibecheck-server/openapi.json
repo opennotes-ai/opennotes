@@ -1011,6 +1011,42 @@
             },
             "type": "array",
             "title": "Known Misinformation"
+          },
+          "evidence_status": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "pending",
+                  "running",
+                  "done",
+                  "failed"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Evidence Status",
+            "description": "Terminal state of the FACTS_CLAIMS_EVIDENCE slot at the time the sidebar payload was assembled. `done` means the slot ran (rows may still be empty); `failed` means the slot errored and any empty `supporting_facts` should be surfaced as a failure rather than a clean empty result; `pending` / `running` mean the slot has not yet reached a terminal state for this payload snapshot. Null when an older cached payload was assembled before this field existed."
+          },
+          "premises_status": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "pending",
+                  "running",
+                  "done",
+                  "failed"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Premises Status",
+            "description": "Terminal state of the FACTS_CLAIMS_PREMISES slot at the time the sidebar payload was assembled. Same semantics as `evidence_status`."
           }
         },
         "type": "object",
@@ -1018,7 +1054,7 @@
           "claims_report"
         ],
         "title": "FactsClaimsSection",
-        "description": "Deduped verifiable claims and any matching published fact-checks."
+        "description": "Deduped verifiable claims and any matching published fact-checks.\n\n`evidence_status` and `premises_status` expose the terminal lifecycle\nof the two enrichment slots (`FACTS_CLAIMS_EVIDENCE` /\n`FACTS_CLAIMS_PREMISES`) at sidebar-payload assembly time. Frontend\nsurfaces use them to distinguish \"evidence ran and found nothing\" from\n\"evidence failed\" \u2014 without these, both paths render the same empty\n`supporting_facts` and the user sees a misleading \"No sources extracted\"\nplaceholder for sub-slots that actually errored."
       },
       "FlashpointMatch": {
         "properties": {

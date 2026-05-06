@@ -299,6 +299,55 @@ describe("<Sidebar /> payload synthesis fallback", () => {
     );
   });
 
+  it("synthesizes evidence slot as failed when payload.evidence_status is 'failed' and suppresses 'No sources extracted'", () => {
+    render(() => (
+      <Sidebar
+        sections={undefined}
+        payloadComplete={true}
+        payload={makePayload({
+          facts_claims: {
+            claims_report: {
+              deduped_claims: [
+                {
+                  canonical_text: "the project costs $5 million",
+                  category: "potentially_factual",
+                  occurrence_count: 1,
+                  author_count: 1,
+                  utterance_ids: ["u-1"],
+                  representative_authors: ["@a"],
+                  supporting_facts: [],
+                  premise_ids: [],
+                },
+              ],
+              total_claims: 1,
+              total_unique: 1,
+            },
+            known_misinformation: [],
+            evidence_status: "failed",
+            premises_status: "done",
+          },
+        })}
+      />
+    ));
+
+    expect(getSlotState("facts_claims__evidence")).toBe("failed");
+    expect(getSlotState("facts_claims__premises")).toBe("done");
+    expect(screen.queryByTestId("deduped-claim-no-sources")).toBeNull();
+  });
+
+  it("falls back to 'done' synthesis when payload predates evidence_status (backward compat)", () => {
+    render(() => (
+      <Sidebar
+        sections={undefined}
+        payloadComplete={true}
+        payload={makePayload()}
+      />
+    ));
+
+    expect(getSlotState("facts_claims__evidence")).toBe("done");
+    expect(getSlotState("facts_claims__premises")).toBe("done");
+  });
+
   it("surfaces failed section names on partial jobs while keeping retry controls", () => {
     const sections = {
       safety__web_risk: {

@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import json
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, Literal, cast
 
 from src.analyses.claims._claims_schemas import ClaimsReport
 from src.analyses.claims._factcheck_schemas import FactCheckMatch
@@ -171,11 +171,22 @@ def assemble_sidebar_payload(
         }
     ).model_dump(mode="json")
 
+    def _slot_status(
+        slug: SectionSlug,
+    ) -> Literal["pending", "running", "done", "failed"]:
+        slot = sections.get(slug)
+        state = slot.state if slot is not None else SectionState.PENDING
+        return cast(
+            Literal["pending", "running", "done", "failed"], state.value
+        )
+
     facts = FactsClaimsSection(
         claims_report=ClaimsReport.model_validate(merged_claims_payload),
         known_misinformation=[
             FactCheckMatch.model_validate(m) for m in known_data.get("known_misinformation", [])
         ],
+        evidence_status=_slot_status(SectionSlug.FACTS_CLAIMS_EVIDENCE),
+        premises_status=_slot_status(SectionSlug.FACTS_CLAIMS_PREMISES),
     )
 
     sentiment_data = data_for(SectionSlug.OPINIONS_SENTIMENTS_SENTIMENT)

@@ -522,11 +522,29 @@ export interface components {
         /**
          * FactsClaimsSection
          * @description Deduped verifiable claims and any matching published fact-checks.
+         *
+         *     `evidence_status` and `premises_status` expose the terminal lifecycle
+         *     of the two enrichment slots (`FACTS_CLAIMS_EVIDENCE` /
+         *     `FACTS_CLAIMS_PREMISES`) at sidebar-payload assembly time. Frontend
+         *     surfaces use them to distinguish "evidence ran and found nothing" from
+         *     "evidence failed" — without these, both paths render the same empty
+         *     `supporting_facts` and the user sees a misleading "No sources extracted"
+         *     placeholder for sub-slots that actually errored.
          */
         FactsClaimsSection: {
             claims_report: components["schemas"]["ClaimsReport"];
             /** Known Misinformation */
             known_misinformation?: components["schemas"]["FactCheckMatch"][];
+            /**
+             * Evidence Status
+             * @description Terminal state of the FACTS_CLAIMS_EVIDENCE slot at the time the sidebar payload was assembled. `done` means the slot ran (rows may still be empty); `failed` means the slot errored and any empty `supporting_facts` should be surfaced as a failure rather than a clean empty result; `pending` / `running` mean the slot has not yet reached a terminal state for this payload snapshot. Null when an older cached payload was assembled before this field existed.
+             */
+            evidence_status?: ("pending" | "running" | "done" | "failed") | null;
+            /**
+             * Premises Status
+             * @description Terminal state of the FACTS_CLAIMS_PREMISES slot at the time the sidebar payload was assembled. Same semantics as `evidence_status`.
+             */
+            premises_status?: ("pending" | "running" | "done" | "failed") | null;
         };
         /**
          * FlashpointMatch
