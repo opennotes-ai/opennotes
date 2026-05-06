@@ -113,6 +113,29 @@ describe("bucketSentimentByTime", () => {
     expect(result.renderable).toBe(false);
   });
 
+  it("remains non-renderable at 80% coverage when the fixed bucket size yields one bucket", () => {
+    const scores = [
+      makeScore("u-1", "positive"),
+      makeScore("u-2", "negative"),
+      makeScore("u-3", "neutral"),
+      makeScore("u-4", "positive"),
+      makeScore("u-5", "negative"),
+    ];
+    const anchors = [
+      makeAnchor("u-1", BASE_MS),
+      makeAnchor("u-2", BASE_MS + 5 * 60_000),
+      makeAnchor("u-3", BASE_MS + 10 * 60_000),
+      makeAnchor("u-4", BASE_MS + 20 * 60_000),
+      makeAnchor("u-5", null),
+    ];
+
+    const result = bucketSentimentByTime(scores, anchors);
+
+    expect(result.coverage).toBe(0.8);
+    expect(result.buckets).toHaveLength(1);
+    expect(result.renderable).toBe(false);
+  });
+
   it("collapses a total range under 30 minutes into one bucket", () => {
     const result = bucketSentimentByTime(
       [makeScore("u-1", "positive"), makeScore("u-2", "negative")],
@@ -153,6 +176,23 @@ describe("bucketSentimentByTime", () => {
       negative: 0,
       neutral: 0,
     });
+  });
+
+  it("caps the bucket count at 20 even across very large time ranges", () => {
+    const scores = Array.from({ length: 21 }, (_, index) =>
+      makeScore(`u-${index + 1}`, index % 2 === 0 ? "positive" : "negative"),
+    );
+    const anchors = scores.map((score, index) =>
+      makeAnchor(
+        score.utterance_id,
+        BASE_MS + index * 3 * 60 * 60_000,
+      ),
+    );
+
+    const result = bucketSentimentByTime(scores, anchors);
+
+    expect(result.coverage).toBe(1);
+    expect(result.buckets).toHaveLength(20);
   });
 
   it("sets the last running percentages to the global sentiment breakdown", () => {

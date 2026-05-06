@@ -17,20 +17,14 @@ export interface BucketResult {
   renderable: boolean;
 }
 
-export interface BucketOptions {
-  minBucketMs?: number;
-  targetBuckets?: number;
-  coverageThreshold?: number;
-}
-
 interface TimestampedScore {
   label: SentimentLabel;
   timestampMs: number;
 }
 
-const DEFAULT_MIN_BUCKET_MS = 30 * 60 * 1000;
-const DEFAULT_TARGET_BUCKETS = 20;
-const DEFAULT_COVERAGE_THRESHOLD = 0.8;
+const MIN_BUCKET_MS = 30 * 60 * 1000;
+const TARGET_BUCKETS = 20;
+const COVERAGE_THRESHOLD = 0.8;
 const LABELS: SentimentLabel[] = ["positive", "negative", "neutral"];
 
 function createEmptyCounts(): SentimentBucket["counts"] {
@@ -49,13 +43,7 @@ function toTimestampMs(timestamp?: string | null): number | null {
 export function bucketSentimentByTime(
   scores: SentimentScore[],
   anchors: UtteranceAnchor[],
-  options: BucketOptions = {},
 ): BucketResult {
-  const minBucketMs = options.minBucketMs ?? DEFAULT_MIN_BUCKET_MS;
-  const targetBuckets = options.targetBuckets ?? DEFAULT_TARGET_BUCKETS;
-  const coverageThreshold =
-    options.coverageThreshold ?? DEFAULT_COVERAGE_THRESHOLD;
-
   if (scores.length === 0) {
     return { buckets: [], coverage: 0, renderable: false };
   }
@@ -91,12 +79,12 @@ export function bucketSentimentByTime(
   const totalRange = maxMs - minMs;
   const bucketSize =
     totalRange === 0
-      ? minBucketMs
-      : Math.max(minBucketMs, Math.ceil(totalRange / targetBuckets));
+      ? MIN_BUCKET_MS
+      : Math.max(MIN_BUCKET_MS, Math.ceil(totalRange / TARGET_BUCKETS));
   const bucketCount =
     totalRange === 0
       ? 1
-      : Math.min(targetBuckets, Math.max(1, Math.ceil(totalRange / bucketSize)));
+      : Math.min(TARGET_BUCKETS, Math.max(1, Math.ceil(totalRange / bucketSize)));
 
   const buckets: SentimentBucket[] = Array.from({ length: bucketCount }, (_, index) => {
     const startMs = minMs + index * bucketSize;
@@ -138,6 +126,6 @@ export function bucketSentimentByTime(
   return {
     buckets,
     coverage,
-    renderable: coverage >= coverageThreshold && buckets.length >= 2,
+    renderable: coverage >= COVERAGE_THRESHOLD && buckets.length >= 2,
   };
 }
