@@ -560,6 +560,73 @@ async def test_run_section_retry_trends_with_permanent_dependency_states_settles
     assert mark_slot_done_calls
 
 
+@pytest.mark.asyncio
+async def test_run_section_retry_dedup_refreshes_all_dependent_slots(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.jobs import orchestrator
+
+    task_attempt = uuid4()
+    slot_attempt = uuid4()
+    rerun_slugs: list[SectionSlug] = []
+
+    async def _load(*args: Any, **kwargs: Any) -> tuple[UUID, dict[str, Any]]:
+        return task_attempt, {
+            "state": "running",
+            "attempt_id": str(slot_attempt),
+            "data": None,
+        }
+
+    async def dedup_handler(*args: Any, **kwargs: Any) -> dict[str, Any]:
+        return {"claims_report": {"deduped_claims": [], "total_claims": 0, "total_unique": 0}}
+
+    async def fake_mark_slot_done(*args: Any, **kwargs: Any) -> int:
+        return 1
+
+    async def fake_run_section(
+        _pool: Any,
+        _job_id: UUID,
+        _task_attempt: UUID,
+        slug: SectionSlug,
+        _payload: Any,
+        _settings: Any,
+        *,
+        test_fail_slug: str | None = None,
+    ) -> SectionState:
+        del test_fail_slug
+        rerun_slugs.append(slug)
+        return SectionState.DONE
+
+    monkeypatch.setattr(orchestrator, "_load_job_attempt_and_slot", _load)
+    monkeypatch.setitem(
+        orchestrator._SECTION_HANDLERS,
+        SectionSlug.FACTS_CLAIMS_DEDUP,
+        dedup_handler,
+    )
+    monkeypatch.setattr(orchestrator, "mark_slot_done", fake_mark_slot_done)
+    monkeypatch.setattr(orchestrator, "_run_section", fake_run_section)
+    monkeypatch.setattr(orchestrator, "_set_last_stage", AsyncMock())
+    monkeypatch.setattr(orchestrator, "_run_safety_recommendation_step", AsyncMock())
+    monkeypatch.setattr(orchestrator, "_run_headline_summary_step", AsyncMock())
+    monkeypatch.setattr(orchestrator, "maybe_finalize_job", AsyncMock(return_value=False))
+
+    result = await run_section_retry(
+        pool=MagicMock(),
+        job_id=uuid4(),
+        slug=SectionSlug.FACTS_CLAIMS_DEDUP,
+        expected_slot_attempt_id=slot_attempt,
+        settings=MagicMock(),
+    )
+
+    assert result.status_code == 200
+    assert rerun_slugs == [
+        SectionSlug.FACTS_CLAIMS_EVIDENCE,
+        SectionSlug.FACTS_CLAIMS_PREMISES,
+        SectionSlug.FACTS_CLAIMS_KNOWN_MISINFO,
+        SectionSlug.OPINIONS_SENTIMENTS_TRENDS_OPPOSITIONS,
+    ]
+
+
 
 class FakeAcquire:
     def __init__(self, conn):

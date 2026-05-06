@@ -2869,6 +2869,7 @@ async def run_section_retry(  # noqa: PLR0912
                         SectionSlug.FACTS_CLAIMS_EVIDENCE,
                         SectionSlug.FACTS_CLAIMS_PREMISES,
                         SectionSlug.FACTS_CLAIMS_KNOWN_MISINFO,
+                        SectionSlug.OPINIONS_SENTIMENTS_TRENDS_OPPOSITIONS,
                     ):
                         await _run_section(
                             pool,
