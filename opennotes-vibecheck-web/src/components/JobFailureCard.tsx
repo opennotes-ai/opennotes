@@ -105,7 +105,8 @@ function showsPdfSuggestion(code: PublicErrorCode | null): boolean {
   return (
     code === "upstream_error" ||
     code === "extraction_failed" ||
-    code === "unsupported_site"
+    code === "unsupported_site" ||
+    code === "timeout"
   );
 }
 

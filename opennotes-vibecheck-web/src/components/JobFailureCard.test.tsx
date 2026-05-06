@@ -106,6 +106,19 @@ describe("<JobFailureCard />", () => {
     expect(suggestion.querySelector("a")?.getAttribute("href")).toBe("/#pdf-upload");
   });
 
+  it("shows PDF suggestion for timeout with link to /#pdf-upload", () => {
+    render(() => (
+      <JobFailureCard
+        url="https://example.com/article"
+        errorCode="timeout"
+      />
+    ));
+
+    const suggestion = screen.getByTestId("job-failure-pdf-suggestion");
+    expect(suggestion).toBeTruthy();
+    expect(suggestion.querySelector("a")?.getAttribute("href")).toBe("/#pdf-upload");
+  });
+
   it("does not show PDF suggestion for pdf_too_large", () => {
     render(() => (
       <JobFailureCard
