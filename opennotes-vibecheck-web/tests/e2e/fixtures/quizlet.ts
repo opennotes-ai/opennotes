@@ -31,6 +31,7 @@ export const ALL_SECTION_SLUGS = [
   "opinions_sentiments__sentiment",
   "opinions_sentiments__subjective",
   "opinions_sentiments__trends_oppositions",
+  "opinions_sentiments__highlights",
 ] as const;
 
 export type SectionSlug = (typeof ALL_SECTION_SLUGS)[number];
