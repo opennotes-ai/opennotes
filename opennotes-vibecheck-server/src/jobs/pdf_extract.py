@@ -11,7 +11,7 @@ from src.firecrawl_client import FirecrawlClient, ScrapeMetadata
 from src.jobs.pdf_storage import get_pdf_upload_store
 from src.jobs.scrape_quality import ScrapeQuality, classify_scrape
 from src.monitoring import get_logger
-from src.utils.html_sanitize import strip_noise
+from src.utils.html_sanitize import strip_for_llm
 from src.utterances.errors import (
     TransientExtractionError,
     ZeroUtterancesError,
@@ -43,7 +43,7 @@ class PDFExtractionError(Exception):
 
 
 def _clean_pdf_html(html: str | None) -> str:
-    cleaned = strip_noise(html or "")
+    cleaned = strip_for_llm(html or "")
     return cleaned.strip()
 
 

@@ -514,7 +514,7 @@ class TestRoundTrip:
 
 class TestHtmlSanitation:
     @pytest.mark.asyncio
-    async def test_script_style_link_tags_and_html_comments_stripped_on_put(
+    async def test_script_tags_and_html_comments_stripped_on_put(
         self,
     ) -> None:
         fake = _FakeSupabaseClient()
@@ -534,13 +534,13 @@ class TestHtmlSanitation:
         assert got is not None
         assert got.html is not None
         assert "<script" not in got.html
-        assert "<style" not in got.html
-        assert "<link" not in got.html
+        assert "<style>h1 { color: red; }</style>" in got.html
+        assert '<link href="x.css" rel="stylesheet"/>' in got.html
         assert "<!--" not in got.html
         assert "<p>keep</p>" in got.html
 
     @pytest.mark.asyncio
-    async def test_sanitation_is_case_insensitive(self) -> None:
+    async def test_script_sanitation_is_case_insensitive(self) -> None:
         fake = _FakeSupabaseClient()
         cache, _ = _make_cache(fake)
         raw = "<SCRIPT>x</SCRIPT><Style>y</Style><p>ok</p>"
@@ -552,7 +552,7 @@ class TestHtmlSanitation:
         assert got is not None
         assert got.html is not None
         assert "x" not in got.html
-        assert "y" not in got.html
+        assert "<style>y</style>" in got.html
         assert "<p>ok</p>" in got.html
 
     @pytest.mark.asyncio

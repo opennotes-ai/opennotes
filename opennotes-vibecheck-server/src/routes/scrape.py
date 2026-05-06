@@ -31,7 +31,7 @@ from src.routes.analyze import (
     _host_of,
     limiter,
 )
-from src.utils.html_sanitize import strip_noise
+from src.utils.html_sanitize import strip_for_display, strip_for_llm
 from src.utils.url_security import InvalidURL
 
 logger = get_logger(__name__)
@@ -75,6 +75,11 @@ def _markdown_from_html(html: str) -> str:
     converter.body_width = 0
     converter.ignore_links = False
     return converter.handle(html)
+
+
+def _markdown_fallback_from_html(html: str) -> str:
+    cleaned = strip_for_llm(html) or ""
+    return _markdown_from_html(cleaned)
 
 
 def _analyze_url(settings: Settings, job_id: UUID) -> str:
@@ -286,10 +291,10 @@ async def submit_scrape(  # noqa: PLR0911
             )
         return _error_response(400, "unsafe_url", "url flagged by Web Risk")
 
-    sanitized_html = strip_noise(body.html) or ""
+    sanitized_html = strip_for_display(body.html) or ""
     markdown = body.markdown.strip() if body.markdown and body.markdown.strip() else None
     if markdown is None:
-        markdown = _markdown_from_html(sanitized_html)
+        markdown = _markdown_fallback_from_html(body.html)
     if _byte_len(markdown) > _MAX_MARKDOWN_BYTES:
         return _error_response(413, "payload_too_large", "markdown exceeds 2MB limit")
 
