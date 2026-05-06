@@ -184,7 +184,7 @@ class TestEndpointPopulated:
             )
         resp = await client.get("/api/analyses/recent")
         body = resp.json()
-        # Default limit is 5.
+        # Default limit is 6.
         assert len(body) == get_settings().VIBECHECK_RECENT_ANALYSES_LIMIT
 
 
