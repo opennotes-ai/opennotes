@@ -148,6 +148,16 @@ def _minimal_done_sections() -> dict[SectionSlug, SectionSlot]:
             }
         ),
         SectionSlug.OPINIONS_SENTIMENTS_SUBJECTIVE: _done_slot({"subjective_claims": []}),
+        SectionSlug.OPINIONS_SENTIMENTS_TRENDS_OPPOSITIONS: _done_slot(
+            {
+                "trends_oppositions_report": {
+                    "trends": [],
+                    "oppositions": [],
+                    "input_cluster_count": 0,
+                    "skipped_for_cap": 0,
+                }
+            }
+        ),
     }
 
 
