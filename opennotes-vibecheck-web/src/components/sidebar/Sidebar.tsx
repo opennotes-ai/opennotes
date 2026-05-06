@@ -465,7 +465,7 @@ const OPINIONS_RENDER: Partial<
   Record<SectionSlugLiteral, (data: unknown) => JSX.Element>
 > = {
   opinions_sentiments__sentiment: (data) => (
-    <SentimentReport stats={extractSentimentStats(data)} />
+    <SentimentReport stats={extractSentimentStats(data)} anchors={[]} />
   ),
   opinions_sentiments__subjective: (data) => (
     <SubjectiveReport claims={extractSubjectiveClaims(data)} />
@@ -605,7 +605,10 @@ export default function Sidebar(props: SidebarProps) {
     Partial<Record<SectionSlugLiteral, (data: unknown) => JSX.Element>>
   >(() => ({
     opinions_sentiments__sentiment: (data) => (
-      <SentimentReport stats={extractSentimentStats(data)} />
+      <SentimentReport
+        stats={extractSentimentStats(data)}
+        anchors={utterances()}
+      />
     ),
     opinions_sentiments__subjective: (data) => (
       <SubjectiveReport

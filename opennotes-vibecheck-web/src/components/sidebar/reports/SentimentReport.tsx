@@ -1,9 +1,12 @@
 import type { components } from "~/lib/generated-types";
+import SentimentTimelineSection from "./sentiment-timeline/SentimentTimelineSection";
 
 type SentimentStats = components["schemas"]["SentimentStatsReport"];
+type UtteranceAnchor = components["schemas"]["UtteranceAnchor"];
 
 export interface SentimentReportProps {
   stats: SentimentStats;
+  anchors: UtteranceAnchor[];
 }
 
 function clampPct(value: number): number {
@@ -11,13 +14,6 @@ function clampPct(value: number): number {
   if (value <= 0) return 0;
   if (value >= 100) return 100;
   return value;
-}
-
-function formatValence(value: number): string {
-  if (!Number.isFinite(value)) return "—";
-  const rounded = Math.round(value * 100) / 100;
-  const sign = rounded > 0 ? "+" : "";
-  return `${sign}${rounded.toFixed(2)}`;
 }
 
 export default function SentimentReport(props: SentimentReportProps) {
@@ -86,15 +82,10 @@ export default function SentimentReport(props: SentimentReportProps) {
           <dd>neutral</dd>
         </div>
       </dl>
-      <p class="text-[11px] text-muted-foreground">
-        mean valence{" "}
-        <span
-          data-testid="sentiment-mean-valence"
-          class="font-mono text-foreground"
-        >
-          {formatValence(props.stats.mean_valence)}
-        </span>
-      </p>
+      <SentimentTimelineSection
+        scores={props.stats.per_utterance}
+        anchors={props.anchors}
+      />
     </div>
   );
 }

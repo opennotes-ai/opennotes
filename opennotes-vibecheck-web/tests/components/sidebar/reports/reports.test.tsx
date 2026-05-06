@@ -12,6 +12,12 @@ import SentimentReport from "../../../../src/components/sidebar/reports/Sentimen
 import SubjectiveReport from "../../../../src/components/sidebar/reports/SubjectiveReport";
 import type { components } from "../../../../src/lib/generated-types";
 
+vi.mock("@opennotes/ui/components/ui/echart", () => ({
+  EChart: (props: { height?: string }) => (
+    <div data-testid="mock-echart" data-height={props.height ?? ""} />
+  ),
+}));
+
 type HarmfulContentMatch = components["schemas"]["HarmfulContentMatch"];
 type WebRiskFinding = components["schemas"]["WebRiskFinding"];
 type ImageModerationMatch = components["schemas"]["ImageModerationMatch"];
@@ -21,11 +27,40 @@ type SCDReport = components["schemas"]["SCDReport"];
 type ClaimsReport = components["schemas"]["ClaimsReport"];
 type FactCheckMatch = components["schemas"]["FactCheckMatch"];
 type SentimentStats = components["schemas"]["SentimentStatsReport"];
+type SentimentScore = components["schemas"]["SentimentScore"];
 type SubjectiveClaim = components["schemas"]["SubjectiveClaim"];
+type UtteranceAnchor = components["schemas"]["UtteranceAnchor"];
+
+const BASE_MS = Date.UTC(2026, 0, 1, 0, 0, 0);
 
 afterEach(() => {
   cleanup();
 });
+
+function makeSentimentScore(
+  utteranceId: string,
+  label: SentimentScore["label"],
+): SentimentScore {
+  return {
+    utterance_id: utteranceId,
+    label,
+    valence: label === "positive" ? 0.75 : label === "negative" ? -0.75 : 0,
+  };
+}
+
+function makeUtteranceAnchor(
+  utteranceId: string,
+  offsetMinutes?: number | null,
+): UtteranceAnchor {
+  return {
+    position: 1,
+    utterance_id: utteranceId,
+    timestamp:
+      offsetMinutes == null
+        ? offsetMinutes ?? null
+        : new Date(BASE_MS + offsetMinutes * 60_000).toISOString(),
+  };
+}
 
 describe("<SafetyModerationReport />", () => {
   it("renders empty-state copy when no matches are supplied", () => {
@@ -1236,42 +1271,56 @@ describe("<KnownMisinfoReport />", () => {
 });
 
 describe("<SentimentReport />", () => {
-  it("renders positive/negative/neutral proportions and mean valence", () => {
+  it("renders positive/negative/neutral proportions and the timeline when renderable", () => {
     const stats: SentimentStats = {
-      per_utterance: [],
+      per_utterance: [
+        makeSentimentScore("u-1", "positive"),
+        makeSentimentScore("u-2", "negative"),
+        makeSentimentScore("u-3", "neutral"),
+      ],
       positive_pct: 30,
       negative_pct: 20,
       neutral_pct: 50,
       mean_valence: 0.12,
     };
-    render(() => <SentimentReport stats={stats} />);
+    const anchors: UtteranceAnchor[] = [
+      makeUtteranceAnchor("u-1", 0),
+      makeUtteranceAnchor("u-2", 31),
+      makeUtteranceAnchor("u-3", 62),
+    ];
+    render(() => <SentimentReport stats={stats} anchors={anchors} />);
     const positive = screen.getByTestId("sentiment-positive");
     const negative = screen.getByTestId("sentiment-negative");
     const neutral = screen.getByTestId("sentiment-neutral");
     expect(positive.getAttribute("style")).toContain("width: 30%");
     expect(negative.getAttribute("style")).toContain("width: 20%");
     expect(neutral.getAttribute("style")).toContain("width: 50%");
-    expect(screen.getByTestId("sentiment-mean-valence").textContent).toBe(
-      "+0.12",
-    );
+    expect(screen.getByTestId("sentiment-timeline")).toBeDefined();
+    expect(screen.getByTestId("sentiment-rolling-chart")).toBeDefined();
+    expect(screen.getByTestId("sentiment-punch-card-chart")).toBeDefined();
+    expect(screen.queryByTestId("sentiment-mean-valence")).toBeNull();
   });
 
-  it("clamps out-of-range percentages and keeps neutral non-negative", () => {
+  it("clamps out-of-range percentages and omits the timeline when not renderable", () => {
     const stats: SentimentStats = {
-      per_utterance: [],
+      per_utterance: [
+        makeSentimentScore("u-1", "positive"),
+        makeSentimentScore("u-2", "negative"),
+      ],
       positive_pct: 150,
       negative_pct: -5,
       neutral_pct: 0,
       mean_valence: Number.NaN,
     };
-    render(() => <SentimentReport stats={stats} />);
+    render(() => <SentimentReport stats={stats} anchors={[]} />);
     expect(
       screen.getByTestId("sentiment-positive").getAttribute("style"),
     ).toContain("width: 100%");
     expect(
       screen.getByTestId("sentiment-negative").getAttribute("style"),
     ).toContain("width: 0%");
-    expect(screen.getByTestId("sentiment-mean-valence").textContent).toBe("—");
+    expect(screen.queryByTestId("sentiment-timeline")).toBeNull();
+    expect(screen.queryByTestId("sentiment-mean-valence")).toBeNull();
   });
 
   it("honors backend neutral_pct as authoritative (does not derive from positive+negative)", () => {
@@ -1282,7 +1331,7 @@ describe("<SentimentReport />", () => {
       neutral_pct: 10,
       mean_valence: 0,
     };
-    render(() => <SentimentReport stats={stats} />);
+    render(() => <SentimentReport stats={stats} anchors={[]} />);
     expect(
       screen.getByTestId("sentiment-neutral").getAttribute("style"),
     ).toContain("width: 10%");
@@ -1296,7 +1345,7 @@ describe("<SentimentReport />", () => {
       neutral_pct: 250,
       mean_valence: 0,
     };
-    render(() => <SentimentReport stats={stats} />);
+    render(() => <SentimentReport stats={stats} anchors={[]} />);
     expect(
       screen.getByTestId("sentiment-neutral").getAttribute("style"),
     ).toContain("width: 100%");
