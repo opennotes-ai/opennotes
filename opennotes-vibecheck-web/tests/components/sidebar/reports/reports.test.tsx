@@ -1129,7 +1129,7 @@ describe("<ClaimsDedupReport />", () => {
       "New units would not offset demand quickly enough.",
     );
     expect(screen.getByTestId("deduped-claim-premise-followup").textContent).toContain(
-      "1 more claim to follow up on",
+      "1 assumption to verify",
     );
   });
 });

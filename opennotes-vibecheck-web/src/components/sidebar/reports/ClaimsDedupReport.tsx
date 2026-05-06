@@ -269,8 +269,8 @@ export default function ClaimsDedupReport(props: ClaimsDedupReportProps) {
                                 data-testid="deduped-claim-premise-followup"
                                 class="text-[10px] text-muted-foreground"
                               >
-                                {premises().length} more claim
-                                {premises().length === 1 ? "" : "s"} to follow up on
+                                {premises().length} assumption
+                                {premises().length === 1 ? "" : "s"} to verify
                               </p>
                             </div>
                           </Show>
