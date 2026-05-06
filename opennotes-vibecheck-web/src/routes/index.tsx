@@ -70,7 +70,7 @@ export default function HomePage() {
           />
           <div id="pdf-upload" class="flex w-full flex-col gap-2">
             <p class="text-sm text-muted-foreground">
-              Blocked site? Private page? Print to PDF and upload here:
+              Have a PDF, or hit a paywall? Upload it here:
             </p>
             <PdfUpload pending={pdfSubmission.pending} />
           </div>

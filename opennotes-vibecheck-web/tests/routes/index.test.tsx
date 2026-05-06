@@ -104,7 +104,7 @@ describe("HomePage (landing route)", () => {
     const anchor = document.getElementById("pdf-upload");
     expect(anchor).not.toBeNull();
     expect(
-      await screen.findByText(/blocked site\? private page\?/i),
+      await screen.findByText(/have a pdf, or hit a paywall\?/i),
     ).toBeDefined();
   });
 

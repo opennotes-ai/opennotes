@@ -101,6 +101,9 @@ function detailFor(code: PublicErrorCode | null): string {
   }
 }
 
+// Show for codes where the page couldn't be read at all (blocking, extraction
+// failure, timeout). Excludes errors unrelated to page access (PDF size,
+// invalid URL, rate limits, etc.).
 function showsPdfSuggestion(code: PublicErrorCode | null): boolean {
   return (
     code === "upstream_error" ||
