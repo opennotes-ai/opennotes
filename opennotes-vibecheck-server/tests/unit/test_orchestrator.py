@@ -3942,6 +3942,17 @@ def _all_sections_done(**overrides):
         SectionSlug.OPINIONS_SENTIMENTS_SUBJECTIVE.value: _slot(
             SectionState.DONE, {"subjective_claims": []}
         ),
+        SectionSlug.OPINIONS_SENTIMENTS_TRENDS_OPPOSITIONS.value: _slot(
+            SectionState.DONE,
+            {
+                "trends_oppositions_report": {
+                    "trends": [],
+                    "oppositions": [],
+                    "input_cluster_count": 0,
+                    "skipped_for_cap": 0,
+                }
+            },
+        ),
     }
     sections.update(overrides)
     return sections

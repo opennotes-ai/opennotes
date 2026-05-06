@@ -76,6 +76,7 @@ from src.analyses.claims.premises_slot import run_claims_premises
 from src.analyses.opinions._schemas import SentimentStatsReport, SubjectiveClaim
 from src.analyses.opinions.sentiment_slot import run_sentiment
 from src.analyses.opinions.subjective_slot import run_subjective
+from src.analyses.opinions.trends_oppositions_slot import run_trends_oppositions
 from src.analyses.safety._schemas import (
     HarmfulContentMatch,
     ImageModerationMatch,
@@ -1856,6 +1857,7 @@ _SECTION_HANDLERS: dict[SectionSlug, Any] = {
     SectionSlug.FACTS_CLAIMS_KNOWN_MISINFO: run_facts_claims_known_misinfo,
     SectionSlug.OPINIONS_SENTIMENTS_SENTIMENT: run_sentiment,
     SectionSlug.OPINIONS_SENTIMENTS_SUBJECTIVE: run_subjective,
+    SectionSlug.OPINIONS_SENTIMENTS_TRENDS_OPPOSITIONS: run_trends_oppositions,
 }
 
 
@@ -2112,6 +2114,14 @@ def _build_headline_summary_inputs(
         SectionSlug.OPINIONS_SENTIMENTS_SUBJECTIVE,
         unavailable_inputs,
         "subjective",
+    )
+    # Trends/oppositions input is used only for unavailable-input tracking in
+    # this task slice; the headline model does not consume this payload yet.
+    _done_slot_data(
+        sections,
+        SectionSlug.OPINIONS_SENTIMENTS_TRENDS_OPPOSITIONS,
+        unavailable_inputs,
+        "trends_oppositions",
     )
 
     safety_recommendation: SafetyRecommendation | None = None

@@ -748,6 +748,14 @@ def _minimal_slot_payloads() -> dict[SectionSlug, dict[str, Any]]:
                 }
             ]
         },
+        SectionSlug.OPINIONS_SENTIMENTS_TRENDS_OPPOSITIONS: {
+            "trends_oppositions_report": {
+                "trends": [],
+                "oppositions": [],
+                "input_cluster_count": 0,
+                "skipped_for_cap": 0,
+            }
+        },
     }
 
 

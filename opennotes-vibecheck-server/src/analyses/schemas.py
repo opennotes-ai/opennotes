@@ -68,6 +68,7 @@ class SectionSlug(StrEnum):
     FACTS_CLAIMS_KNOWN_MISINFO = "facts_claims__known_misinfo"
     OPINIONS_SENTIMENTS_SENTIMENT = "opinions_sentiments__sentiment"
     OPINIONS_SENTIMENTS_SUBJECTIVE = "opinions_sentiments__subjective"
+    OPINIONS_SENTIMENTS_TRENDS_OPPOSITIONS = "opinions_sentiments__trends_oppositions"
 
 
 class SectionState(StrEnum):
