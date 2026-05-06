@@ -32,7 +32,7 @@ function makePayload(overrides: Partial<SidebarPayload> = {}): SidebarPayload {
     cached: false,
     cached_at: null,
     safety: { harmful_content_matches: [] },
-    web_risk: { findings: [] },
+    web_risk: { findings: [], urls_checked: 0 },
     image_moderation: { matches: [] },
     video_moderation: { matches: [] },
     tone_dynamics: {
@@ -143,6 +143,7 @@ describe("<Sidebar /> payload synthesis fallback", () => {
                 threat_types: ["SOCIAL_ENGINEERING"],
               },
             ],
+            urls_checked: 1,
           },
           image_moderation: {
             matches: [

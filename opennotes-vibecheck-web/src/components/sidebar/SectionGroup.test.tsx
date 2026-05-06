@@ -1409,6 +1409,7 @@ describe("Sidebar (done slots, per-slug reports)", () => {
               threat_types: ["SOCIAL_ENGINEERING"],
             },
           ],
+          urls_checked: 3,
         },
       },
       safety__image_moderation: {
@@ -1638,6 +1639,73 @@ describe("Sidebar (done slots, per-slug reports)", () => {
     expect(container.textContent).not.toContain("72%");
     expect(screen.queryByTestId("image-moderation-max")).toBeNull();
     expect(screen.queryByTestId("video-moderation-max")).toBeNull();
+  });
+
+  it("web_risk badge total reflects urls_checked, not findings count", () => {
+    render(() => (
+      <Sidebar
+        sections={{
+          safety__web_risk: {
+            state: "done",
+            attempt_id: "s-web-risk",
+            data: {
+              findings: [
+                {
+                  url: "https://phishing.example.test",
+                  threat_types: ["SOCIAL_ENGINEERING"],
+                },
+              ],
+              urls_checked: 3,
+            },
+          },
+        }}
+      />
+    ));
+
+    expect(
+      screen.getByTestId("slot-count-safety__web_risk").textContent,
+    ).toBe("1 (of 3) flagged");
+  });
+
+  it("web_risk badge shows 0 (of 1) flagged when page URL was checked and was clean", () => {
+    render(() => (
+      <Sidebar
+        sections={{
+          safety__web_risk: {
+            state: "done",
+            attempt_id: "s-web-risk",
+            data: {
+              findings: [],
+              urls_checked: 1,
+            },
+          },
+        }}
+      />
+    ));
+
+    expect(
+      screen.getByTestId("slot-count-safety__web_risk").textContent,
+    ).toBe("0 (of 1) flagged");
+  });
+
+  it("web_risk badge falls back gracefully when urls_checked is absent (legacy data)", () => {
+    render(() => (
+      <Sidebar
+        sections={{
+          safety__web_risk: {
+            state: "done",
+            attempt_id: "s-web-risk",
+            data: {
+              findings: [],
+            },
+          },
+        }}
+      />
+    ));
+
+    expect(
+      screen.getByTestId("slot-count-safety__web_risk").textContent,
+    ).toBe("0 (of 0) flagged");
   });
 
   it("renders safety recommendation inside the Safety group and before the first Safety slot", () => {

@@ -28,7 +28,7 @@ async def run_web_risk(
         pool_urls.update(media.get(key, []))
     urls = sorted(pool_urls)
     if not urls:
-        return {"findings": []}
+        return {"findings": [], "urls_checked": 0}
     stats: dict[str, float] = {}
     with logfire.span(
         "vibecheck.section.web_risk",
@@ -47,5 +47,6 @@ async def run_web_risk(
     return {
         "findings": [
             f.model_dump() for f in findings.values() if f.threat_types
-        ]
+        ],
+        "urls_checked": len(urls),
     }

@@ -2621,6 +2621,12 @@
             },
             "type": "array",
             "title": "Findings"
+          },
+          "urls_checked": {
+            "type": "integer",
+            "title": "Urls Checked",
+            "description": "Number of distinct URLs submitted to Web Risk for this job (page URL plus any URLs extracted from utterances).",
+            "default": 0
           }
         },
         "type": "object",
