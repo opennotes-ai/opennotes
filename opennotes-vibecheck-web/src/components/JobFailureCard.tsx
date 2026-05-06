@@ -101,6 +101,14 @@ function detailFor(code: PublicErrorCode | null): string {
   }
 }
 
+function showsPdfSuggestion(code: PublicErrorCode | null): boolean {
+  return (
+    code === "upstream_error" ||
+    code === "extraction_failed" ||
+    code === "unsupported_site"
+  );
+}
+
 function threatLabel(threat: WebRiskFinding["threat_types"][number]): string {
   return threat.replaceAll("_", " ").toLowerCase();
 }
@@ -162,6 +170,15 @@ export default function JobFailureCard(props: JobFailureCardProps): JSX.Element 
       <p class="text-xs text-muted-foreground" data-testid="job-failure-detail">
         {detail()}
       </p>
+
+      <Show when={showsPdfSuggestion(props.errorCode)}>
+        <p class="text-xs text-muted-foreground" data-testid="job-failure-pdf-suggestion">
+          Can't access this page?{" "}
+          <a href="/#pdf-upload" class="underline underline-offset-4 hover:text-foreground">
+            Print it as a PDF and upload it for analysis.
+          </a>
+        </p>
+      </Show>
 
       <div class="flex flex-wrap items-center gap-3">
         <Show when={isHttpUrl(props.url)}>
