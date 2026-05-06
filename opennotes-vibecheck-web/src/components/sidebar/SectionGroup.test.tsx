@@ -1650,15 +1650,15 @@ describe("Sidebar (done slots, per-slug reports)", () => {
             trends: [
               {
                 label: "Policy trend",
-                cluster_ids: ["cluster-a", "cluster-b"],
+                cluster_texts: ["cluster-a", "cluster-b"],
                 summary: "Recurring policy debate.",
               },
             ],
             oppositions: [
               {
                 topic: "Biden/Trump approach",
-                supporting_cluster_ids: ["cluster-a"],
-                opposing_cluster_ids: ["cluster-b"],
+                supporting_cluster_texts: ["cluster-a"],
+                opposing_cluster_texts: ["cluster-b"],
                 note: "Different causal stories.",
               },
             ],
@@ -2012,7 +2012,7 @@ describe("Sidebar (done slots, per-slug reports)", () => {
             {
               label: "Policy split",
               summary: "Two sides are emphasizing different causal drivers.",
-              cluster_ids: ["policy-c1", "policy-c2"],
+              cluster_texts: ["policy-c1", "policy-c2"],
             },
           ],
           oppositions: [],

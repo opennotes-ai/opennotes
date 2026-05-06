@@ -9,7 +9,7 @@ type ClaimOpposition = components["schemas"]["ClaimOpposition"];
 
 const makeTrend = (overrides: Partial<ClaimTrend> = {}): ClaimTrend => ({
   label: "Recurring trend",
-  cluster_ids: ["cluster-a", "cluster-b"],
+  cluster_texts: ["cluster-a", "cluster-b"],
   summary: "Pattern appears repeatedly when discussing policy tradeoffs.",
   ...overrides,
 });
@@ -18,8 +18,8 @@ const makeOpposition = (
   overrides: Partial<ClaimOpposition> = {},
 ): ClaimOpposition => ({
   topic: "Policy outcomes",
-  supporting_cluster_ids: ["cluster-pro"],
-  opposing_cluster_ids: ["cluster-con"],
+  supporting_cluster_texts: ["cluster-pro"],
+  opposing_cluster_texts: ["cluster-con"],
   note: "Both sides repeat the same evidence but change interpretation.",
   ...overrides,
 });
@@ -77,7 +77,7 @@ describe("TrendsOppositionsReport", () => {
     render(() => (
       <TrendsOppositionsReport
         report={makeReport({
-          trends: [makeTrend({ cluster_ids: ["cluster-a"] })],
+          trends: [makeTrend({ cluster_texts: ["cluster-a"] })],
           oppositions: [],
         })}
       />

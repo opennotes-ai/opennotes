@@ -31,6 +31,7 @@ import {
   SentimentReport,
   SubjectiveReport,
   TrendsOppositionsReport,
+  EMPTY_TRENDS_OPPOSITIONS_REPORT,
 } from "./reports";
 
 type HarmfulContentMatch = components["schemas"]["HarmfulContentMatch"];
@@ -121,13 +122,6 @@ const EMPTY_SENTIMENT_STATS: SentimentStats = {
   neutral_pct: 0,
   mean_valence: 0,
 };
-const EMPTY_TRENDS_OPPOSITIONS_REPORT: TrendsOppositionsReportData = {
-  trends: [],
-  oppositions: [],
-  input_cluster_count: 0,
-  skipped_for_cap: 0,
-};
-
 function synthesizeSectionsFromPayload(
   payload: SidebarPayload,
 ): SlugToSlots {
