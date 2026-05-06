@@ -7,11 +7,13 @@ import pytest
 
 from src.analyses.claims import extract as extract_mod
 from src.analyses.claims._claims_schemas import (
+    BulkClaimExtractionResponse,
     Claim,
+    ClaimCategory,
     ClaimExtractionResponse,
     ExtractedClaim,
 )
-from src.analyses.claims.extract import extract_claims
+from src.analyses.claims.extract import extract_claims, extract_claims_bulk
 from src.config import Settings
 from src.utterances.schema import Utterance
 
@@ -123,3 +125,58 @@ async def test_extract_claims_skips_utterance_without_id(
 
     utterance = Utterance(utterance_id=None, kind="post", text="Something.", author="dan")
     assert await extract_claims(utterance, settings) == []
+
+
+async def test_extract_claims_bulk_preserves_model_category(
+    settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async def fake_run_vertex_agent_with_retry(_agent, user_prompt: str):
+        assert "[0] this would devastate the economy" in user_prompt
+        return _FakeRunResult(
+            output=BulkClaimExtractionResponse.model_validate(
+                {
+                    "results": [
+                        {
+                            "utterance_index": 0,
+                            "claims": [
+                                {
+                                    "claim_text": "The proposal would devastate the economy.",
+                                    "category": ClaimCategory.PREDICTIONS,
+                                    "confidence": 0.92,
+                                }
+                            ],
+                        }
+                    ]
+                }
+            )
+        )
+
+    monkeypatch.setattr(extract_mod, "build_agent", lambda *_args, **_kwargs: object())
+    monkeypatch.setattr(
+        extract_mod,
+        "run_vertex_agent_with_retry",
+        fake_run_vertex_agent_with_retry,
+    )
+
+    claims_by_utterance = await extract_claims_bulk(
+        [
+            Utterance(
+                utterance_id="u1",
+                kind="comment",
+                text="this would devastate the economy",
+                author="alice",
+            )
+        ],
+        settings,
+    )
+
+    assert claims_by_utterance == [
+        [
+            Claim(
+                claim_text="The proposal would devastate the economy.",
+                utterance_id="u1",
+                category=ClaimCategory.PREDICTIONS,
+                confidence=0.92,
+            )
+        ]
+    ]

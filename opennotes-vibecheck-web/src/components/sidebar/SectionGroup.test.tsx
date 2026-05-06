@@ -54,6 +54,7 @@ function makeTonePayload(): SidebarPayload {
     source_url: "https://example.com/post",
     page_title: "Example",
     page_kind: "other",
+    utterance_stream_type: "unknown",
     scraped_at: "2026-04-22T00:00:00Z",
     cached: false,
     cached_at: null,
@@ -1132,6 +1133,7 @@ describe("Sidebar (done slots, per-slug reports)", () => {
             deduped_claims: [
               {
                 canonical_text: "canonical claim text",
+                category: "potentially_factual",
                 occurrence_count: 3,
                 author_count: 2,
                 utterance_ids: ["u-1"],
@@ -1387,6 +1389,7 @@ describe("Sidebar (done slots, per-slug reports)", () => {
       source_url: "https://example.com/post",
       page_title: "Example",
       page_kind: "other",
+      utterance_stream_type: "unknown",
       scraped_at: "2026-04-22T00:00:00Z",
       cached: false,
       cached_at: null,

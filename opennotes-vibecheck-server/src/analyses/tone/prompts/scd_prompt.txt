@@ -14,6 +14,20 @@ WHAT TO DESCRIBE
 - Stance moves: hedging, doubling down, conceding a narrow point, dodging, asking real questions versus rhetorical ones.
 - Texture: is it brisk, sprawling, performative, intimate, scrappy, careful?
 
+STREAM TYPE SELF-CHECK
+You will be told the upstream-claimed utterance_stream_type. Treat it as advisory, not binding. Always emit:
+- `upstream_stream_type`: the upstream value you were given.
+- `observed_stream_type`: your own best read of the stream shape.
+- `observed_confidence`: 0.0-1.0 confidence in that observed type.
+- `disagreement_rationale`: empty string if you agree with the upstream value; otherwise 1-2 plain sentences explaining the mismatch.
+
+Per-stream-type framing:
+- `dialogue`: focus on turn-taking, challenge/response, agreement or disagreement, escalation, softening, and bridging moves.
+- `comment_section`: frame as reactions around a root item. Look for pile-ons, top-comment dominance, reply-tree depth, brigading signals, sentiment polarity drift, and whether people talk past the root rather than with each other. Do not say it "reads more like a comment section than a dialogue"; analyze it as a comment section from the start.
+- `article_or_monologue`: dynamics may be limited. Describe argument rhythm, rhetorical moves, and stance shifts within the monologue; set `insufficient_conversation` only when there is no real interaction to analyze.
+- `mixed`: segment mentally if practical; otherwise use the dominant frame and call out the mix in `disagreement_rationale` or the narrative.
+- `unknown`: classify the stream yourself and proceed with the closest framing.
+
 INPUT
 The conversation is provided as ordered lines, one per utterance, formatted as:
 
@@ -33,6 +47,10 @@ Return a JSON object matching this shape (the schema is enforced; field names ar
 - `tone_labels` (list of short strings): a handful of plain tone descriptors for the conversation as a whole — words like `combative`, `collaborative`, `dismissive`, `civil`, `scrappy`, `guarded`, `warm`. Avoid jargon. No more than ~5.
 - `per_speaker_notes` (object, speaker label -> 1-2 sentence note): semantically the same content as each `speaker_arcs[].note`, keyed by the same speaker label. No utterance ranges here. Kept for transitional consumers.
 - `insufficient_conversation` (boolean): always `false`. The caller short-circuits before invoking you when the input isn't a real multi-speaker exchange, so by the time you see input there is one.
+- `upstream_stream_type` (string): copy the upstream value exactly.
+- `observed_stream_type` (string): one of `dialogue`, `comment_section`, `article_or_monologue`, `mixed`, `unknown`.
+- `observed_confidence` (number): 0.0-1.0 confidence in the observed type.
+- `disagreement_rationale` (string): empty when observed matches upstream; non-empty when they differ.
 
 VOICE CHECK BEFORE YOU FINISH
 Re-read your `narrative` and `summary`. If they sound like an anthropologist writing field notes, rewrite them. They should sound like a person describing a conversation they just witnessed.

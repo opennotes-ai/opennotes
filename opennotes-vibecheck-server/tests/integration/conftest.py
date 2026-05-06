@@ -149,6 +149,7 @@ CREATE TABLE IF NOT EXISTS vibecheck_scrapes (
     final_url TEXT,
     host TEXT NOT NULL,
     page_kind TEXT NOT NULL DEFAULT 'other',
+    utterance_stream_type TEXT NOT NULL DEFAULT 'unknown',
     page_title TEXT,
     markdown TEXT,
     html TEXT,
@@ -187,6 +188,7 @@ CREATE TABLE IF NOT EXISTS vibecheck_job_utterances (
     position INT NOT NULL DEFAULT 0,
     page_title TEXT,
     page_kind TEXT,
+    utterance_stream_type TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     CONSTRAINT vibecheck_job_utterances_kind_check
         CHECK (kind IN ('post', 'comment', 'reply'))

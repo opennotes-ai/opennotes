@@ -35,6 +35,7 @@ from src.analyses.schemas import (
     SidebarPayload,
     ToneDynamicsSection,
     UtteranceAnchor,
+    UtteranceStreamType,
     VideoModerationSection,
     WebRiskSection,
 )
@@ -49,6 +50,9 @@ def assemble_sidebar_payload(
     safety_recommendation: Any | None = None,
     headline_summary: Any | None = None,
     utterances: list[UtteranceAnchor] | None = None,
+    page_title: str | None = None,
+    page_kind: PageKind = PageKind.OTHER,
+    utterance_stream_type: UtteranceStreamType = UtteranceStreamType.UNKNOWN,
 ) -> SidebarPayload:
     """Compose SidebarPayload from slot fragments.
 
@@ -152,8 +156,9 @@ def assemble_sidebar_payload(
 
     return SidebarPayload(
         source_url=url,
-        page_title=None,
-        page_kind=PageKind.OTHER,
+        page_title=page_title,
+        page_kind=page_kind,
+        utterance_stream_type=utterance_stream_type,
         scraped_at=datetime.now(UTC),
         cached=False,
         safety=safety,

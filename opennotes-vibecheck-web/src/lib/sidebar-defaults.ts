@@ -10,6 +10,10 @@ export function makeEmptyScd(overrides: Partial<SCDReport> = {}): SCDReport {
     tone_labels: [],
     per_speaker_notes: {},
     insufficient_conversation: true,
+    upstream_stream_type: "unknown",
+    observed_stream_type: "unknown",
+    observed_confidence: 0,
+    disagreement_rationale: "",
     ...overrides,
   };
 }

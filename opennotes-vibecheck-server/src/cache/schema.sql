@@ -542,6 +542,8 @@ ALTER TABLE public.vibecheck_job_utterances
     ADD COLUMN IF NOT EXISTS page_title TEXT;
 ALTER TABLE public.vibecheck_job_utterances
     ADD COLUMN IF NOT EXISTS page_kind TEXT NOT NULL DEFAULT 'other';
+ALTER TABLE public.vibecheck_job_utterances
+    ADD COLUMN IF NOT EXISTS utterance_stream_type TEXT NOT NULL DEFAULT 'unknown';
 
 -- TASK-1473.60: the NOT NULL DEFAULT 'other' from 1473.36 made every
 -- backfilled row look "populated" to the IS NOT NULL poll selector.
@@ -554,6 +556,10 @@ ALTER TABLE public.vibecheck_job_utterances
     ALTER COLUMN page_kind DROP DEFAULT;
 ALTER TABLE public.vibecheck_job_utterances
     ALTER COLUMN page_kind DROP NOT NULL;
+ALTER TABLE public.vibecheck_job_utterances
+    ALTER COLUMN utterance_stream_type DROP DEFAULT;
+ALTER TABLE public.vibecheck_job_utterances
+    ALTER COLUMN utterance_stream_type DROP NOT NULL;
 
 ALTER TABLE public.vibecheck_job_utterances ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.vibecheck_job_utterances FORCE ROW LEVEL SECURITY;

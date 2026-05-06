@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any
 from uuid import UUID
 
+from src.analyses.stream_types import UtteranceStreamType
 from src.utterances.schema import Utterance
 
 _LOAD_UTTERANCES_SQL = """
@@ -10,6 +11,14 @@ SELECT utterance_id, kind, text, author, timestamp_at, parent_id
 FROM vibecheck_job_utterances
 WHERE job_id = $1
 ORDER BY position, created_at, utterance_pk
+"""
+
+_LOAD_STREAM_TYPE_SQL = """
+SELECT utterance_stream_type
+FROM vibecheck_job_utterances
+WHERE job_id = $1
+ORDER BY position, created_at, utterance_pk
+LIMIT 1
 """
 
 
@@ -29,4 +38,15 @@ async def load_job_utterances(pool: Any, job_id: UUID) -> list[Utterance]:
     ]
 
 
-__all__ = ["load_job_utterances"]
+async def load_job_utterance_stream_type(pool: Any, job_id: UUID) -> UtteranceStreamType:
+    async with pool.acquire() as conn:
+        raw = await conn.fetchval(_LOAD_STREAM_TYPE_SQL, job_id)
+    if not isinstance(raw, str):
+        return UtteranceStreamType.UNKNOWN
+    try:
+        return UtteranceStreamType(raw)
+    except ValueError:
+        return UtteranceStreamType.UNKNOWN
+
+
+__all__ = ["load_job_utterance_stream_type", "load_job_utterances"]

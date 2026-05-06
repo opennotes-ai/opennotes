@@ -3,7 +3,10 @@ from __future__ import annotations
 from typing import Any
 from uuid import UUID
 
-from src.analyses.slot_utterances import load_job_utterances
+from src.analyses.slot_utterances import (
+    load_job_utterance_stream_type,
+    load_job_utterances,
+)
 from src.analyses.tone.scd import analyze_scd
 from src.config import Settings
 
@@ -17,7 +20,12 @@ async def run_scd(
 ) -> dict[str, Any]:
     del task_attempt, payload
     utterances = await load_job_utterances(pool, job_id)
-    report = await analyze_scd(utterances, settings)
+    utterance_stream_type = await load_job_utterance_stream_type(pool, job_id)
+    report = await analyze_scd(
+        utterances,
+        settings,
+        utterance_stream_type=utterance_stream_type,
+    )
     return {"scd": report.model_dump(mode="json")}
 
 

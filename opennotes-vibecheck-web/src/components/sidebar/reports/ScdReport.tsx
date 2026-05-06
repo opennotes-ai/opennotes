@@ -6,6 +6,7 @@ import UtteranceRef from "../UtteranceRef";
 type SCDReport = components["schemas"]["SCDReport"];
 type SpeakerArc = components["schemas"]["SpeakerArc"];
 type UtteranceAnchor = components["schemas"]["UtteranceAnchor"];
+type UtteranceStreamType = components["schemas"]["UtteranceStreamType"];
 
 const INSUFFICIENT_COPY =
   "Not enough back-and-forth to read the room here.";
@@ -19,6 +20,7 @@ function formatRange(range: number[] | null | undefined): string | null {
 
 export interface ScdReportProps {
   scd: SCDReport;
+  upstreamStreamType?: UtteranceStreamType | null;
   utterances?: UtteranceAnchor[];
   onUtteranceClick?: (id: string) => void;
   canJumpToUtterance?: boolean;
@@ -32,6 +34,13 @@ export default function ScdReport(props: ScdReportProps): JSX.Element {
   };
   const toneLabels = (): string[] => props.scd.tone_labels ?? [];
   const speakerArcs = (): SpeakerArc[] => props.scd.speaker_arcs ?? [];
+  const showStreamDivergence = (): boolean => {
+    const upstream =
+      props.upstreamStreamType ?? props.scd.upstream_stream_type ?? "unknown";
+    const observed = props.scd.observed_stream_type ?? "unknown";
+    const rationale = (props.scd.disagreement_rationale ?? "").trim();
+    return observed !== upstream && rationale.length > 0;
+  };
   const utteranceIdForPosition = (position: number): string | null =>
     props.utterances?.find((anchor) => anchor.position === position)
       ?.utterance_id ?? null;
@@ -56,6 +65,18 @@ export default function ScdReport(props: ScdReportProps): JSX.Element {
             testId="scd-narrative"
             class="text-xs leading-relaxed text-foreground"
           />
+        </Show>
+
+        <Show when={showStreamDivergence()}>
+          <p
+            data-testid="scd-stream-divergence"
+            class="rounded-md border border-border bg-muted/40 px-2 py-1.5 text-[11px] leading-snug text-muted-foreground"
+          >
+            This page was tagged as{" "}
+            {props.upstreamStreamType ?? props.scd.upstream_stream_type ?? "unknown"},
+            but the analyzer reads it as {props.scd.observed_stream_type}:{" "}
+            {props.scd.disagreement_rationale}
+          </p>
         </Show>
 
         <Show when={toneLabels().length > 0}>

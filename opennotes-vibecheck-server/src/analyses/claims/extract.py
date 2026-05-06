@@ -14,6 +14,7 @@ from __future__ import annotations
 from src.analyses.claims._claims_schemas import (
     BulkClaimExtractionResponse,
     Claim,
+    ClaimCategory,
     ClaimExtractionResponse,
 )
 from src.config import Settings
@@ -22,13 +23,22 @@ from src.services.vertex_limiter import vertex_slot
 from src.utterances.schema import Utterance
 
 _SYSTEM_PROMPT = (
-    "You extract verifiable factual claims from short user-generated text "
+    "You extract and categorize claims from short user-generated text "
     "(posts, comments, replies).\n"
     "\n"
     "Rules:\n"
-    "- A claim is a statement that can, in principle, be checked against "
-    "external evidence.\n"
-    "- Opinions, questions, jokes, and purely emotional statements are NOT claims.\n"
+    "- Extract statements that carry factual, predictive, self-report, or "
+    "value-claim content. Skip questions, jokes, and purely emotional fragments "
+    "that make no claim.\n"
+    "- category must be one of these values:\n"
+    f"  - `{ClaimCategory.POTENTIALLY_FACTUAL.value}`: verifiable now or in principle.\n"
+    f"  - `{ClaimCategory.PREDICTIONS.value}`: future-tense, conditional, forecast, or "
+    "'would/will' downstream effects.\n"
+    f"  - `{ClaimCategory.SELF_CLAIMS.value}`: claims about the speaker's own state, "
+    "experience, identity, or preference where the speaker is the natural arbiter.\n"
+    f"  - `{ClaimCategory.SUBJECTIVE.value}`: value, normative, taste, or definitional "
+    "claims that are not directly externally checkable.\n"
+    f"  - `{ClaimCategory.OTHER.value}`: use sparingly for claims that do not fit.\n"
     "- Rewrite each claim as a concise, standalone assertion (no pronouns that "
     "depend on surrounding context).\n"
     "- confidence is your estimate (0.0-1.0) that the text is actually making "
@@ -98,7 +108,12 @@ async def extract_claims_bulk(utterances: list[Utterance], settings: Settings) -
             if not uid:
                 continue
             out[idx] = [
-                Claim(claim_text=c.claim_text, utterance_id=uid, confidence=c.confidence)
+                Claim(
+                    claim_text=c.claim_text,
+                    utterance_id=uid,
+                    category=c.category,
+                    confidence=c.confidence,
+                )
                 for c in entry.claims
             ]
     return out

@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 
 from src.analyses.claims import dedupe as dedupe_mod
-from src.analyses.claims._claims_schemas import Claim, ClaimsReport
+from src.analyses.claims._claims_schemas import Claim, ClaimCategory, ClaimsReport
 from src.analyses.claims.dedupe import dedupe_claims
 from src.config import Settings
 from src.utterances.schema import Utterance
@@ -161,6 +161,72 @@ async def test_threshold_is_configurable(
 
     loose_report = await dedupe_claims(claims, utterances, settings, threshold=0.7)
     assert loose_report.total_unique == 1
+
+
+async def test_similar_claims_do_not_cluster_across_categories(
+    settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    texts = ["this would hurt the economy", "this would hurt the economy"]
+    _patch_embeddings(monkeypatch, {text: [1.0, 0.0] for text in texts})
+
+    claims = [
+        Claim(
+            claim_text=texts[0],
+            utterance_id="u1",
+            category=ClaimCategory.PREDICTIONS,
+            confidence=0.9,
+        ),
+        Claim(
+            claim_text=texts[1],
+            utterance_id="u2",
+            category=ClaimCategory.SUBJECTIVE,
+            confidence=0.8,
+        ),
+    ]
+    utterances = [
+        Utterance(utterance_id="u1", kind="post", text=texts[0], author="a"),
+        Utterance(utterance_id="u2", kind="comment", text=texts[1], author="b"),
+    ]
+
+    report = await dedupe_claims(claims, utterances, settings)
+
+    assert report.total_unique == 2
+    assert {claim.category for claim in report.deduped_claims} == {
+        ClaimCategory.PREDICTIONS,
+        ClaimCategory.SUBJECTIVE,
+    }
+
+
+async def test_other_category_passes_through_without_dedupe(
+    settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    texts = ["unclear assertion", "unclear assertion"]
+    _patch_embeddings(monkeypatch, {text: [1.0, 0.0] for text in texts})
+
+    claims = [
+        Claim(
+            claim_text=texts[0],
+            utterance_id="u1",
+            category=ClaimCategory.OTHER,
+            confidence=0.9,
+        ),
+        Claim(
+            claim_text=texts[1],
+            utterance_id="u2",
+            category=ClaimCategory.OTHER,
+            confidence=0.8,
+        ),
+    ]
+    utterances = [
+        Utterance(utterance_id="u1", kind="post", text=texts[0], author="a"),
+        Utterance(utterance_id="u2", kind="comment", text=texts[1], author="b"),
+    ]
+
+    report = await dedupe_claims(claims, utterances, settings)
+
+    assert report.total_claims == 2
+    assert report.total_unique == 2
+    assert all(claim.category is ClaimCategory.OTHER for claim in report.deduped_claims)
 
 
 async def test_empty_claims_returns_empty_report(

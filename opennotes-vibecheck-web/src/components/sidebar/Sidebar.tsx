@@ -377,6 +377,7 @@ export default function Sidebar(props: SidebarProps) {
     tone_dynamics__scd: (data) => (
       <ScdReport
         scd={extractScd(data)}
+        upstreamStreamType={props.payload?.utterance_stream_type}
         utterances={utterances()}
         onUtteranceClick={props.onUtteranceClick}
         canJumpToUtterance={canJump()}

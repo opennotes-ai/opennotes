@@ -63,6 +63,7 @@ CREATE TABLE vibecheck_job_utterances (
     position INT NOT NULL DEFAULT 0,
     page_title TEXT,
     page_kind TEXT NOT NULL DEFAULT 'other',
+    utterance_stream_type TEXT NOT NULL DEFAULT 'unknown',
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 """

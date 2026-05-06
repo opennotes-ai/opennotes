@@ -3,7 +3,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-from src.analyses.schemas import PageKind
+from src.analyses.schemas import PageKind, UtteranceStreamType
 
 
 class Utterance(BaseModel):
@@ -24,3 +24,4 @@ class UtterancesPayload(BaseModel):
     utterances: list[Utterance]
     page_title: str | None = None
     page_kind: PageKind = PageKind.OTHER
+    utterance_stream_type: UtteranceStreamType = UtteranceStreamType.UNKNOWN

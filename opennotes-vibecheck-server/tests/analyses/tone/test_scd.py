@@ -14,6 +14,7 @@ from typing import Literal
 import pytest
 from pydantic import ValidationError
 
+from src.analyses.schemas import UtteranceStreamType
 from src.analyses.tone import scd as scd_mod
 from src.analyses.tone._scd_schemas import SCDReport, SpeakerArc
 from src.config import Settings
@@ -224,8 +225,33 @@ class TestAnalyzeScdMultiSpeaker:
 
         assert spy.last_agent is not None
         assert spy.last_agent.run_calls == [
+            "Upstream-claimed utterance_stream_type: unknown\n"
+            "Treat this as advisory. Classify the observed stream yourself in the output.\n\n"
             "[1] alice: First line.\n[2] bob: Second line."
         ]
+
+    async def test_forwards_advisory_stream_type_and_records_upstream(
+        self,
+        spy: _BuildAgentSpy,
+        settings: Settings,
+    ):
+        utterances = [
+            _utt("alice", "First line."),
+            _utt("bob", "Second line."),
+        ]
+
+        report = await scd_mod.analyze_scd(
+            utterances,
+            settings,
+            utterance_stream_type=UtteranceStreamType.COMMENT_SECTION,
+        )
+
+        assert report.upstream_stream_type is UtteranceStreamType.COMMENT_SECTION
+        assert spy.last_agent is not None
+        assert (
+            "Upstream-claimed utterance_stream_type: comment_section"
+            in spy.last_agent.run_calls[0]
+        )
 
     async def test_missing_author_gets_stable_speaker_label(
         self,

@@ -42,8 +42,8 @@ DELETE FROM vibecheck_job_utterances WHERE job_id = $1
 _INSERT_UTTERANCE_SQL = """
 INSERT INTO vibecheck_job_utterances
   (job_id, utterance_id, kind, text, author,
-   timestamp_at, parent_id, position, page_title, page_kind)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+   timestamp_at, parent_id, position, page_title, page_kind, utterance_stream_type)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 """
 
 
@@ -91,4 +91,5 @@ async def persist_utterances(
                 idx,
                 payload.page_title,
                 payload.page_kind.value,
+                payload.utterance_stream_type.value,
             )

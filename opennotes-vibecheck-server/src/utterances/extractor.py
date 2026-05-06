@@ -43,7 +43,7 @@ import logfire
 from pydantic_ai import Agent, RunContext
 from pydantic_ai.messages import ImageUrl
 
-from src.analyses.schemas import PageKind
+from src.analyses.schemas import PageKind, UtteranceStreamType
 from src.cache.scrape_cache import CachedScrape, SupabaseScrapeCache
 from src.config import Settings, get_settings
 from src.firecrawl_client import FirecrawlClient
@@ -100,6 +100,19 @@ page_kind values (pick exactly one) and their extraction rules:
 - `{PageKind.OTHER.value}`: anything that doesn't match the above. Do your
   best to emit at least one kind='post' utterance covering the main content
   and leave the rest empty.
+
+utterance_stream_type values (pick exactly one):
+
+- `{UtteranceStreamType.DIALOGUE.value}`: a direct back-and-forth exchange,
+  interview, debate, transcript, or chat-style conversation.
+- `{UtteranceStreamType.COMMENT_SECTION.value}`: one root post/article plus
+  user comments or replies reacting to it.
+- `{UtteranceStreamType.ARTICLE_OR_MONOLOGUE.value}`: one author or source
+  mostly speaking alone, including articles, essays, statements, and speeches.
+- `{UtteranceStreamType.MIXED.value}`: multiple shapes are materially present
+  (for example, an article with an embedded transcript and comments).
+- `{UtteranceStreamType.UNKNOWN.value}`: use only when the scrape is too
+  ambiguous or sparse to infer the stream shape.
 
 Tool usage (markdown-first):
 - You have two tools: `get_html()` and `get_screenshot()`. Prefer markdown.

@@ -6,7 +6,17 @@ stays self-contained and parallel agents can land sibling modules
 """
 from __future__ import annotations
 
+from enum import StrEnum
+
 from pydantic import BaseModel, Field
+
+
+class ClaimCategory(StrEnum):
+    POTENTIALLY_FACTUAL = "potentially_factual"
+    SELF_CLAIMS = "self_claims"
+    PREDICTIONS = "predictions"
+    SUBJECTIVE = "subjective"
+    OTHER = "other"
 
 
 class Claim(BaseModel):
@@ -14,6 +24,7 @@ class Claim(BaseModel):
 
     claim_text: str
     utterance_id: str
+    category: ClaimCategory = ClaimCategory.POTENTIALLY_FACTUAL
     confidence: float = Field(ge=0.0, le=1.0)
 
 
@@ -21,6 +32,7 @@ class ExtractedClaim(BaseModel):
     """LLM-facing claim representation (no utterance_id — caller attaches it)."""
 
     claim_text: str
+    category: ClaimCategory = ClaimCategory.POTENTIALLY_FACTUAL
     confidence: float = Field(ge=0.0, le=1.0)
 
 
@@ -56,6 +68,7 @@ class DedupedClaim(BaseModel):
     """A cluster of semantically-equivalent claims across utterances."""
 
     canonical_text: str
+    category: ClaimCategory = ClaimCategory.POTENTIALLY_FACTUAL
     occurrence_count: int = Field(ge=1)
     author_count: int = Field(ge=0)
     utterance_ids: list[str]

@@ -18,6 +18,10 @@ _EMPTY_SECTION_DATA: dict[SectionSlug, dict[str, Any]] = {
             "tone_labels": [],
             "per_speaker_notes": {},
             "insufficient_conversation": True,
+            "upstream_stream_type": "unknown",
+            "observed_stream_type": "unknown",
+            "observed_confidence": 0.0,
+            "disagreement_rationale": "",
         }
     },
     SectionSlug.FACTS_CLAIMS_DEDUP: {
