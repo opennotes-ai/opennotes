@@ -10,7 +10,7 @@ function clampPct(value: number): number {
   if (!Number.isFinite(value)) return 0;
   if (value <= 0) return 0;
   if (value >= 100) return 100;
-  return Math.round(value);
+  return value;
 }
 
 function formatValence(value: number): string {
@@ -21,9 +21,21 @@ function formatValence(value: number): string {
 }
 
 export default function SentimentReport(props: SentimentReportProps) {
-  const positive = () => clampPct(props.stats.positive_pct);
-  const negative = () => clampPct(props.stats.negative_pct);
-  const neutral = () => clampPct(props.stats.neutral_pct);
+  const normalized = () => {
+    const pos = clampPct(props.stats.positive_pct);
+    const neg = clampPct(props.stats.negative_pct);
+    const neu = clampPct(props.stats.neutral_pct);
+    const total = pos + neg + neu;
+    const scale = total > 100 ? 100 / total : 1;
+    return {
+      positive: Math.round(pos * scale),
+      negative: Math.round(neg * scale),
+      neutral: Math.round(neu * scale),
+    };
+  };
+  const positive = () => normalized().positive;
+  const negative = () => normalized().negative;
+  const neutral = () => normalized().neutral;
 
   return (
     <div
