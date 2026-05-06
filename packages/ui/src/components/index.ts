@@ -29,3 +29,4 @@ export { NavBar, type NavBarItem, type NavBarProps } from "./nav-bar";
 export { MarketingHero, type MarketingHeroProps } from "./marketing-hero";
 export { StepsList, type Step, type StepsListProps } from "./steps-list";
 export { AudienceCard, type AudienceCardProps } from "./audience-card";
+export { Logo, type LogoProps } from "./logo";
