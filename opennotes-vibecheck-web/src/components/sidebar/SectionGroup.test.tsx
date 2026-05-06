@@ -129,6 +129,22 @@ beforeEach(() => {
   retrySectionActionMock.mockReset();
 });
 
+function expectAttribute(
+  node: Element,
+  name: string,
+  value: string | null,
+): void {
+  expect(node.getAttribute(name)).toBe(value);
+}
+
+function expectHasAttribute(
+  node: Element,
+  name: string,
+  expected: boolean,
+): void {
+  expect(node.hasAttribute(name)).toBe(expected);
+}
+
 describe("SectionGroup", () => {
   it("renders a 0/N counter with dim labels when all slots are pending", () => {
     const sections: SlugToSlots = {};
@@ -169,6 +185,329 @@ describe("SectionGroup", () => {
       name: "Tone/dynamics",
     });
     expect(heading.textContent).toBe("Tone/dynamics");
+  });
+
+  it("renders optional summary content as the first subsection before slots", () => {
+    render(() => (
+      <SectionGroup
+        label="Safety"
+        slugs={["safety__moderation"]}
+        sections={{
+          safety__moderation: {
+            state: "done",
+            attempt_id: "a1",
+            data: { harmful_content_matches: [] },
+          },
+        }}
+        summary={{
+          label: "Summary",
+          content: () => <div data-testid="summary-content">summary</div>,
+          defaultOpen: true,
+        }}
+        render={{
+          safety__moderation: () => <div data-testid="slot-content">moderation</div>,
+        }}
+      />
+    ));
+
+    const section = screen.getByTestId("section-group-Safety");
+    const summary = within(section).getByTestId("summary-content");
+    const firstSlot = within(section).getByTestId("slot-safety__moderation");
+    expect(
+      (summary.compareDocumentPosition(firstSlot) & Node.DOCUMENT_POSITION_FOLLOWING) !==
+        0,
+    ).toBe(true);
+  });
+
+  it("collapses and re-expands the section summary while keeping the header visible", async () => {
+    render(() => (
+      <SectionGroup
+        label="Safety"
+        slugs={["safety__moderation"]}
+        sections={{
+          safety__moderation: {
+            state: "done",
+            attempt_id: "a1",
+            data: { harmful_content_matches: [] },
+          },
+        }}
+        summary={{
+          label: "Summary",
+          content: () => <div data-testid="summary-content">summary</div>,
+          defaultOpen: true,
+        }}
+        render={{
+          safety__moderation: () => <div data-testid="slot-content">moderation</div>,
+        }}
+      />
+    ));
+
+    const collapseLabel = "Collapse Summary in Safety";
+    const expandLabel = "Expand Summary in Safety";
+
+    expect(screen.getByRole("button", { name: collapseLabel })).toBeTruthy();
+    expect(screen.getByTestId("summary-content")).toBeDefined();
+
+    await fireEvent.click(screen.getByRole("button", { name: collapseLabel }));
+    expect(screen.queryByTestId("summary-content")).toBeNull();
+    expect(
+      screen.getByRole("button", { name: expandLabel }).getAttribute(
+        "aria-expanded",
+      ),
+    ).toBe("false");
+
+    await fireEvent.click(screen.getByRole("button", { name: expandLabel }));
+    expect(screen.getByTestId("summary-content")).toBeDefined();
+  });
+
+  it("does not render a summary section when summary props are omitted", () => {
+    render(() => (
+      <SectionGroup
+        label="Safety"
+        slugs={["safety__moderation"]}
+        sections={{
+          safety__moderation: {
+            state: "done",
+            attempt_id: "a1",
+            data: { harmful_content_matches: [] },
+          },
+        }}
+        render={{
+          safety__moderation: () => <div data-testid="slot-content">moderation</div>,
+        }}
+      />
+    ));
+
+    expect(screen.queryByTestId("section-summary-Safety")).toBeNull();
+  });
+
+  it("defaults each section group to expanded", () => {
+    render(() => (
+      <SectionGroup
+        label="Tone/dynamics"
+        slugs={TONE_SLUGS}
+        sections={{
+          tone_dynamics__flashpoint: {
+            state: "done",
+            attempt_id: "a1",
+            data: { flashpoint_matches: [{ reasoning: "heated exchange" }] },
+          },
+        }}
+        render={{}}
+      />
+    ));
+
+    const toggle = screen.getByRole("button", {
+      name: "Collapse Tone/dynamics section",
+    });
+    expect(toggle.getAttribute("aria-expanded")).toBe("true");
+    const body = screen.getByTestId("section-group-body-Tone/dynamics");
+    expectHasAttribute(body, "hidden", false);
+  });
+
+  it("keeps section summary inside the section body so section collapse hides it too", async () => {
+    render(() => (
+      <SectionGroup
+        label="Safety"
+        slugs={["safety__moderation"]}
+        sections={{
+          safety__moderation: {
+            state: "done",
+            attempt_id: "a1",
+            data: { harmful_content_matches: [] },
+          },
+        }}
+        summary={{
+          label: "Summary",
+          content: () => <div data-testid="summary-content">summary</div>,
+          defaultOpen: true,
+        }}
+        render={{
+          safety__moderation: () => <div data-testid="slot-content">moderation</div>,
+        }}
+      />
+    ));
+
+    const sectionToggle = screen.getByRole("button", {
+      name: "Collapse Safety section",
+    });
+    const sectionBody = screen.getByTestId("section-group-body-Safety");
+
+    expectHasAttribute(sectionBody, "hidden", false);
+    await fireEvent.click(sectionToggle);
+    expectHasAttribute(sectionBody, "hidden", true);
+    expect(sectionBody.getAttribute("aria-hidden")).toBe("true");
+  });
+
+  it("assigns aria-controls to the section toggle and keeps the body id on the body", () => {
+    render(() => (
+      <SectionGroup
+        label="Safety"
+        slugs={["safety__moderation"]}
+        sections={{
+          safety__moderation: {
+            state: "done",
+            attempt_id: "a1",
+            data: { harmful_content_matches: [] },
+          },
+        }}
+        render={{
+          safety__moderation: () => <div data-testid="slot-content">moderation</div>,
+        }}
+      />
+    ));
+
+    const sectionBody = screen.getByTestId("section-group-body-Safety");
+    const sectionToggle = screen.getByTestId("section-toggle-Safety");
+
+    expect(sectionToggle.getAttribute("aria-controls")).toBe(
+      sectionBody.getAttribute("id"),
+    );
+    expectHasAttribute(sectionBody, "aria-controls", false);
+  });
+
+  it("collapses and re-expands a section group while preserving the heading", async () => {
+    render(() => (
+      <SectionGroup
+        label="Tone/dynamics"
+        slugs={TONE_SLUGS}
+        sections={{
+          tone_dynamics__flashpoint: {
+            state: "done",
+            attempt_id: "a1",
+            data: { flashpoint_matches: [{ reasoning: "heated exchange" }] },
+          },
+        }}
+        render={{}}
+      />
+    ));
+
+    const toggle = screen.getByRole("button", {
+      name: "Collapse Tone/dynamics section",
+    });
+    const body = screen.getByTestId("section-group-body-Tone/dynamics");
+
+    expectHasAttribute(body, "hidden", false);
+    expect(toggle.getAttribute("aria-expanded")).toBe("true");
+    expect(screen.getByRole("heading", { level: 3, name: "Tone/dynamics" }))
+      .toBeTruthy();
+
+    await fireEvent.click(toggle);
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    expect(toggle.getAttribute("aria-label")).toBe("Expand Tone/dynamics section");
+    expectHasAttribute(body, "hidden", true);
+
+    await fireEvent.click(toggle);
+    expect(toggle.getAttribute("aria-expanded")).toBe("true");
+    expect(toggle.getAttribute("aria-label")).toBe("Collapse Tone/dynamics section");
+    expectHasAttribute(body, "hidden", false);
+  });
+
+  it("keeps the section counter visible when the section body is collapsed", async () => {
+    render(() => (
+      <SectionGroup
+        label="Tone/dynamics"
+        slugs={TONE_SLUGS}
+        sections={{
+          tone_dynamics__flashpoint: {
+            state: "done",
+            attempt_id: "a1",
+            data: { flashpoint_matches: [{ reasoning: "heated exchange" }] },
+          },
+          tone_dynamics__scd: {
+            state: "done",
+            attempt_id: "a2",
+            data: { scd: makeEmptyScd() },
+          },
+        }}
+        render={{
+          tone_dynamics__flashpoint: () => <div data-testid="fp-rendered" />,
+          tone_dynamics__scd: () => <div data-testid="scd-rendered" />,
+        }}
+      />
+    ));
+
+    const toggle = screen.getByRole("button", {
+      name: "Collapse Tone/dynamics section",
+    });
+    const counter = screen.getByTestId("section-group-counter");
+
+    expect(counter.textContent).toContain("2/2");
+    await fireEvent.click(toggle);
+    expect(counter).toBeDefined();
+    expect(counter.textContent).toBe("2/2");
+    expectHasAttribute(
+      screen.getByTestId("section-group-body-Tone/dynamics"),
+      "hidden",
+      true,
+    );
+  });
+
+  it("maintains independent open state across section groups", async () => {
+    render(() => (
+      <>
+        <SectionGroup
+          label="Safety"
+          slugs={["safety__image_moderation"]}
+          sections={{
+            safety__image_moderation: {
+              state: "done",
+              attempt_id: "s-image",
+              data: { matches: [clearImageMatch("one")] },
+            },
+          }}
+          render={{
+            safety__image_moderation: () => <div data-testid="safety-rendered" />,
+          }}
+        />
+        <SectionGroup
+          label="Facts/claims"
+          slugs={FACTS_SLUGS}
+          sections={{
+            facts_claims__dedup: {
+              state: "done",
+              attempt_id: "f-dedup",
+              data: {
+                claims_report: {
+                  deduped_claims: [],
+                  total_claims: 0,
+                  total_unique: 0,
+                },
+              },
+            },
+          }}
+          render={{}}
+        />
+      </>
+    ));
+
+    const safetyToggle = screen.getByRole("button", {
+      name: "Collapse Safety section",
+    });
+    const factsToggle = screen.getByRole("button", {
+      name: "Collapse Facts/claims section",
+    });
+    const safetyBody = screen.getByTestId("section-group-body-Safety");
+    const factsBody = screen.getByTestId("section-group-body-Facts/claims");
+
+    expectHasAttribute(safetyBody, "hidden", false);
+    expectHasAttribute(factsBody, "hidden", false);
+
+    await fireEvent.click(safetyToggle);
+    expectHasAttribute(safetyBody, "hidden", true);
+    expectAttribute(safetyBody, "aria-hidden", "true");
+    expectHasAttribute(factsBody, "hidden", false);
+    expectAttribute(factsBody, "aria-hidden", "false");
+
+    await fireEvent.click(factsToggle);
+    expectHasAttribute(factsBody, "hidden", true);
+    expectAttribute(factsBody, "aria-hidden", "true");
+    expectHasAttribute(safetyBody, "hidden", true);
+
+    await fireEvent.click(safetyToggle);
+    expectHasAttribute(safetyBody, "hidden", false);
+    expectAttribute(safetyBody, "aria-hidden", "false");
+    expectHasAttribute(factsBody, "hidden", true);
   });
 
   it("does not render the counter when the group has no slots", () => {
@@ -677,10 +1016,11 @@ describe("SectionGroup", () => {
         }}
         render={{}}
         counts={{
-          tone_dynamics__flashpoint: (data) =>
-            ((data as { flashpoint_matches?: unknown[] })
-              .flashpoint_matches ?? []).length,
-          tone_dynamics__scd: () => 0,
+          tone_dynamics__flashpoint: (data) => ({
+            total: ((data as { flashpoint_matches?: unknown[] }).flashpoint_matches ??
+              []).length,
+          }),
+          tone_dynamics__scd: () => ({ total: 0 }),
         }}
       />
     ));
@@ -694,30 +1034,41 @@ describe("SectionGroup", () => {
     expect(scdBadge.textContent).toBe("no results");
   });
 
-  it("uses singular 'result' when the count is exactly 1", () => {
+  it("shows explicit flagged-of-total badge counts only when requested", () => {
     render(() => (
       <SectionGroup
-        label="Tone/dynamics"
-        slugs={TONE_SLUGS}
+        label="Safety"
+        slugs={["safety__web_risk", "safety__image_moderation"]}
         sections={{
-          tone_dynamics__flashpoint: {
+          safety__web_risk: {
             state: "done",
             attempt_id: "a1",
-            data: { flashpoint_matches: [{}] },
+            data: { findings: [] },
+          },
+          safety__image_moderation: {
+            state: "done",
+            attempt_id: "a2",
+            data: { matches: [] },
           },
         }}
         render={{}}
         counts={{
-          tone_dynamics__flashpoint: (data) =>
-            ((data as { flashpoint_matches?: unknown[] })
-              .flashpoint_matches ?? []).length,
+          safety__web_risk: () => ({ flagged: 0, total: 3, kind: "flagged" }),
+          safety__image_moderation: () => ({
+            flagged: 2,
+            total: 5,
+            kind: "flagged",
+          }),
         }}
       />
     ));
 
-    expect(
-      screen.getByTestId("slot-count-tone_dynamics__flashpoint").textContent,
-    ).toBe("1 result");
+    expect(screen.getByTestId("slot-count-safety__web_risk").textContent).toBe(
+      "0 (of 3) flagged",
+    );
+    expect(screen.getByTestId("slot-count-safety__image_moderation").textContent).toBe(
+      "2 (of 5) flagged",
+    );
   });
 
   it("does not render a count badge while the slot is still pending or running", () => {
@@ -731,8 +1082,8 @@ describe("SectionGroup", () => {
         }}
         render={{}}
         counts={{
-          tone_dynamics__flashpoint: () => 5,
-          tone_dynamics__scd: () => 0,
+          tone_dynamics__flashpoint: () => ({ total: 5 }),
+          tone_dynamics__scd: () => ({ total: 0 }),
         }}
       />
     ));
@@ -959,7 +1310,7 @@ describe("Sidebar", () => {
     expect(screen.queryByTestId("report-safety__image_moderation")).toBeNull();
     expect(
       screen.getByTestId("slot-count-safety__image_moderation").textContent,
-    ).toBe("no results");
+    ).toBe("0 (of 0) flagged");
   });
 
   it("keeps image moderation collapsed by default when every checked image is clear", () => {
@@ -979,7 +1330,7 @@ describe("Sidebar", () => {
     expect(screen.queryByTestId("report-safety__image_moderation")).toBeNull();
     expect(
       screen.getByTestId("slot-count-safety__image_moderation").textContent,
-    ).toBe("2 results");
+    ).toBe("0 (of 2) flagged");
   });
 
   it("opens image moderation by default when at least one checked image is flagged", () => {
@@ -999,7 +1350,7 @@ describe("Sidebar", () => {
     expect(screen.getByTestId("report-safety__image_moderation")).toBeDefined();
     expect(
       screen.getByTestId("slot-count-safety__image_moderation").textContent,
-    ).toBe("2 results");
+    ).toBe("1 (of 2) flagged");
   });
 
   it("renders running sidebar slots for each supplied section", () => {
@@ -1289,7 +1640,7 @@ describe("Sidebar (done slots, per-slug reports)", () => {
     expect(screen.queryByTestId("video-moderation-max")).toBeNull();
   });
 
-  it("renders safety recommendation above safety subsections when present", () => {
+  it("renders safety recommendation inside the Safety group and before the first Safety slot", () => {
     const payload: SidebarPayload = {
       ...makeTonePayload(),
       safety: {
@@ -1303,10 +1654,11 @@ describe("Sidebar (done slots, per-slug reports)", () => {
       },
     };
 
-    const { container } = render(() => <Sidebar payload={payload} payloadComplete={true} />);
+    render(() => <Sidebar payload={payload} payloadComplete={true} />);
 
     const recommendation = screen.getByTestId("safety-recommendation-report");
-    const firstSlot = screen.getByTestId("slot-safety__moderation");
+    const safetySection = screen.getByTestId("section-group-Safety");
+    const firstSlot = within(safetySection).getByTestId("slot-safety__moderation");
     expect(recommendation.textContent).toContain("caution");
     expect(recommendation.textContent).toContain(
       "Some safety analyses were unavailable.",
@@ -1318,7 +1670,20 @@ describe("Sidebar (done slots, per-slug reports)", () => {
         Node.DOCUMENT_POSITION_FOLLOWING) !==
         0,
     ).toBe(true);
-    expect(container.textContent).toContain("caution");
+    expect(safetySection.textContent).toContain("caution");
+  });
+
+  it("does not render summary when no safety recommendation is present", () => {
+    const payload: SidebarPayload = {
+      ...makeTonePayload(),
+      safety: {
+        harmful_content_matches: [],
+      },
+    };
+
+    render(() => <Sidebar payload={payload} payloadComplete={true} />);
+
+    expect(screen.queryByTestId("safety-recommendation-report")).toBeNull();
   });
 
   it("hides safety recommendation when payloadComplete is false", () => {
