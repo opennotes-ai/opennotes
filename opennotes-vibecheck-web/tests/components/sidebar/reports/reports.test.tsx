@@ -1013,6 +1013,66 @@ describe("<ClaimsDedupReport />", () => {
     expect(onUtteranceClick).toHaveBeenCalledWith("u-3");
   });
 
+  it("exposes the +N more popover with dialog semantics and global dismissal", () => {
+    const claimsReport: ClaimsReport = {
+      deduped_claims: [
+        {
+          canonical_text: "claim alpha",
+          category: "potentially_factual",
+          occurrence_count: 4,
+          author_count: 2,
+          utterance_ids: ["a-1", "a-2", "a-3"],
+          representative_authors: ["@a"],
+        },
+        {
+          canonical_text: "claim beta",
+          category: "potentially_factual",
+          occurrence_count: 3,
+          author_count: 2,
+          utterance_ids: ["b-1", "b-2", "b-3", "b-4"],
+          representative_authors: ["@b"],
+        },
+      ],
+      total_claims: 7,
+      total_unique: 2,
+    };
+
+    render(() => <ClaimsDedupReport claimsReport={claimsReport} />);
+
+    const triggers = screen.getAllByTestId("deduped-claim-more-utterances");
+    expect(triggers).toHaveLength(2);
+    triggers.forEach((trigger) => {
+      expect(trigger.getAttribute("aria-haspopup")).toBe("dialog");
+      expect(trigger.getAttribute("aria-controls")).toBeTruthy();
+      expect(trigger.getAttribute("aria-expanded")).toBe("false");
+    });
+
+    fireEvent.click(triggers[0]);
+    expect(triggers[0].getAttribute("aria-expanded")).toBe("true");
+    const popover = screen.getByTestId("deduped-claim-utterance-popover");
+    expect(popover.getAttribute("role")).toBe("dialog");
+    expect(popover.getAttribute("aria-label")).toBe(
+      "2 additional utterance references",
+    );
+    expect(popover.id).toBe(triggers[0].getAttribute("aria-controls"));
+
+    fireEvent.keyDown(document.body, { key: "Escape" });
+    expect(screen.queryByTestId("deduped-claim-utterance-popover")).toBeNull();
+    expect(triggers[0].getAttribute("aria-expanded")).toBe("false");
+
+    fireEvent.click(triggers[0]);
+    expect(screen.getByTestId("deduped-claim-utterance-popover")).toBeDefined();
+    fireEvent.click(document.body);
+    expect(screen.queryByTestId("deduped-claim-utterance-popover")).toBeNull();
+
+    fireEvent.click(triggers[0]);
+    expect(triggers[0].getAttribute("aria-expanded")).toBe("true");
+    fireEvent.click(triggers[1]);
+    expect(triggers[0].getAttribute("aria-expanded")).toBe("false");
+    expect(triggers[1].getAttribute("aria-expanded")).toBe("true");
+    expect(screen.getAllByTestId("deduped-claim-utterance-popover")).toHaveLength(1);
+  });
+
   it("does not render an utterance chip row when a claim has no utterance ids", () => {
     const claimsReport: ClaimsReport = {
       deduped_claims: [

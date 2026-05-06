@@ -1,4 +1,12 @@
-import { For, Show, createMemo, createSignal } from "solid-js";
+import {
+  For,
+  Show,
+  createEffect,
+  createMemo,
+  createSignal,
+  createUniqueId,
+  onCleanup,
+} from "solid-js";
 import type { components } from "~/lib/generated-types";
 import ExpandableText from "../ExpandableText";
 import UtteranceRef from "../UtteranceRef";
@@ -65,6 +73,39 @@ export default function ClaimsDedupReport(props: ClaimsDedupReportProps) {
     })).filter((group) => group.claims.length > 0),
   );
 
+  const [openPopoverId, setOpenPopoverId] = createSignal<string | null>(null);
+
+  createEffect(() => {
+    if (openPopoverId() === null) return;
+    const handleClick = (event: MouseEvent) => {
+      const target = event.target as Node | null;
+      const id = openPopoverId();
+      if (!id || !target) return;
+      const contentEl = document.getElementById(id);
+      const triggerEl = document.querySelector(
+        `[aria-controls="${id}"]`,
+      );
+      if (
+        (triggerEl && triggerEl.contains(target)) ||
+        (contentEl && contentEl.contains(target))
+      ) {
+        return;
+      }
+      setOpenPopoverId(null);
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setOpenPopoverId(null);
+      }
+    };
+    document.addEventListener("click", handleClick);
+    document.addEventListener("keydown", handleKeyDown);
+    onCleanup(() => {
+      document.removeEventListener("click", handleClick);
+      document.removeEventListener("keydown", handleKeyDown);
+    });
+  });
+
   return (
     <div data-testid="report-facts_claims__dedup" class="space-y-2">
       <p class="text-[11px] text-muted-foreground">
@@ -88,7 +129,8 @@ export default function ClaimsDedupReport(props: ClaimsDedupReportProps) {
                 <ul class="space-y-1.5">
                   <For each={group.claims}>
                     {(claim) => {
-                      const [isOpen, setIsOpen] = createSignal(false);
+                      const popoverId = createUniqueId();
+                      const isOpen = () => openPopoverId() === popoverId;
                       const utteranceIds = () => claim.utterance_ids ?? [];
                       const primaryId = () => utteranceIds()[0];
                       const remainingIds = () => utteranceIds().slice(1);
@@ -142,22 +184,25 @@ export default function ClaimsDedupReport(props: ClaimsDedupReportProps) {
                                     data-testid="deduped-claim-more-utterances"
                                     class="inline-flex items-center rounded-full bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground hover:bg-accent hover:text-accent-foreground focus:outline-none focus:ring-2 focus:ring-ring"
                                     aria-expanded={isOpen() ? "true" : "false"}
-                                    onClick={() => setIsOpen((open) => !open)}
-                                    onKeyDown={(event) => {
-                                      if (event.key === "Escape") {
-                                        setIsOpen(false);
-                                      }
-                                    }}
+                                    aria-haspopup="dialog"
+                                    aria-controls={popoverId}
+                                    onClick={() =>
+                                      setOpenPopoverId((current) =>
+                                        current === popoverId ? null : popoverId,
+                                      )
+                                    }
                                   >
                                     +{remainingIds().length} more
                                   </button>
                                   <Show when={isOpen()}>
                                     <div
+                                      id={popoverId}
+                                      role="dialog"
+                                      aria-label={`${remainingIds().length} additional utterance reference${
+                                        remainingIds().length === 1 ? "" : "s"
+                                      }`}
                                       data-testid="deduped-claim-utterance-popover"
                                       class="absolute left-0 top-full z-10 mt-1 flex flex-wrap gap-1 rounded-md border border-border bg-popover p-2 shadow-md"
-                                      onKeyDown={(event) => {
-                                        if (event.key === "Escape") setIsOpen(false);
-                                      }}
                                     >
                                       <For each={remainingIds()}>
                                         {(remainingId) => (
