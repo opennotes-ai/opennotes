@@ -42,6 +42,23 @@ class _Pool:
         return _Acquire(self._sections_row)
 
 
+class _FailingConn:
+    async def fetchval(self, *_args: object) -> object:
+        raise RuntimeError("simulated db failure")
+
+
+class _FailingPool:
+    def acquire(self) -> object:
+        class _FailingAcquire:
+            async def __aenter__(self) -> _FailingConn:
+                return _FailingConn()
+
+            async def __aexit__(self, *args: object) -> None:
+                return None
+
+        return _FailingAcquire()
+
+
 def _settings() -> Settings:
     return Settings()
 
@@ -118,6 +135,50 @@ async def test_trends_oppositions_facts_slot_not_done_returns_empty_report(
 
 
 @pytest.mark.asyncio
+async def test_trends_oppositions_retry_payload_none_facts_slot_not_done_raises() -> None:
+    pool = _Pool(
+        json.dumps(
+            {
+                SectionSlug.FACTS_CLAIMS_DEDUP.value: {
+                    "state": "pending",
+                    "attempt_id": str(uuid4()),
+                    "data": {"claims_report": _claims_report()},
+                }
+            }
+        )
+    )
+
+    with pytest.raises(
+        trends_oppositions_slot.TrendsDependenciesNotReadyError,
+        match="dependencies not ready",
+    ):
+        await trends_oppositions_slot.run_trends_oppositions(
+            pool=pool,
+            job_id=uuid4(),
+            task_attempt=uuid4(),
+            payload=None,
+            settings=_settings(),
+        )
+
+
+@pytest.mark.asyncio
+async def test_trends_oppositions_retry_payload_none_facts_slot_missing_raises() -> None:
+    pool = _Pool(json.dumps({}))
+
+    with pytest.raises(
+        trends_oppositions_slot.TrendsDependenciesNotReadyError,
+        match="dependencies not ready",
+    ):
+        await trends_oppositions_slot.run_trends_oppositions(
+            pool=pool,
+            job_id=uuid4(),
+            task_attempt=uuid4(),
+            payload=None,
+            settings=_settings(),
+        )
+
+
+@pytest.mark.asyncio
 async def test_trends_oppositions_retry_payload_none_reads_done_facts_slot_from_db(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -175,6 +236,20 @@ async def test_trends_oppositions_retry_payload_none_reads_done_facts_slot_from_
         "I prefer this",
     ]
     assert result["trends_oppositions_report"]["trends"][0]["label"] == "Retry-only fact"
+
+
+@pytest.mark.asyncio
+async def test_trends_oppositions_retry_payload_none_db_error_is_not_swallowed() -> None:
+    pool = _FailingPool()
+
+    with pytest.raises(RuntimeError, match="simulated db failure"):
+        await trends_oppositions_slot.run_trends_oppositions(
+            pool=pool,
+            job_id=uuid4(),
+            task_attempt=uuid4(),
+            payload=None,
+            settings=_settings(),
+        )
 
 
 @pytest.mark.asyncio

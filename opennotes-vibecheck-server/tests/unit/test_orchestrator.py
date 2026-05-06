@@ -191,6 +191,7 @@ async def test_run_all_sections_writes_trends_oppositions_after_dedup(
     """FACTS_CLAIMS_DEDUP must complete before trends/oppositions runs."""
     from src.jobs import orchestrator
 
+    dedup_done = asyncio.Event()
     states: dict[str, bool] = {"dedup_done": False}
     run_order: list[str] = []
 
@@ -206,10 +207,11 @@ async def test_run_all_sections_writes_trends_oppositions_after_dedup(
     ) -> None:
         if slug == SectionSlug.FACTS_CLAIMS_DEDUP:
             # Simulate a non-trivial slot write path that must finish first.
-            await asyncio.sleep(0.02)
             run_order.append(slug.value)
             states["dedup_done"] = True
+            dedup_done.set()
         elif slug == SectionSlug.OPINIONS_SENTIMENTS_TRENDS_OPPOSITIONS:
+            await dedup_done.wait()
             assert states["dedup_done"] is True
             run_order.append(slug.value)
         else:
