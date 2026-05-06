@@ -219,7 +219,7 @@ async def test_trends_oppositions_retry_payload_none_reads_done_facts_slot_from_
             trends=[
                 {
                     "label": "Retry-only fact",
-                    "cluster_ids": ["cluster-1"],
+                    "cluster_texts": ["cluster-1"],
                     "summary": "Two subjective/self clusters found.",
                 }
             ],
@@ -388,7 +388,7 @@ async def test_trends_oppositions_filters_to_subjective_and_self_claims_and_call
         trends=[
             {
                 "label": "Climate is debated",
-                "cluster_ids": ["Subj", "Self"],
+                "cluster_texts": ["Subj", "Self"],
                 "summary": "Subjective and self claims repeat.",
             }
         ],
@@ -435,7 +435,7 @@ async def test_trends_oppositions_filters_to_subjective_and_self_claims_and_call
     assert result["trends_oppositions_report"]["trends"] == [
         {
             "label": "Climate is debated",
-            "cluster_ids": ["Subj", "Self"],
+            "cluster_texts": ["Subj", "Self"],
             "summary": "Subjective and self claims repeat.",
         }
     ]

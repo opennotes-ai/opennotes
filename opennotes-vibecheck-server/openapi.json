@@ -842,19 +842,19 @@
             "type": "string",
             "title": "Topic"
           },
-          "supporting_cluster_ids": {
+          "supporting_cluster_texts": {
             "items": {
               "type": "string"
             },
             "type": "array",
-            "title": "Supporting Cluster Ids"
+            "title": "Supporting Cluster Texts"
           },
-          "opposing_cluster_ids": {
+          "opposing_cluster_texts": {
             "items": {
               "type": "string"
             },
             "type": "array",
-            "title": "Opposing Cluster Ids"
+            "title": "Opposing Cluster Texts"
           },
           "note": {
             "anyOf": [
@@ -871,8 +871,8 @@
         "type": "object",
         "required": [
           "topic",
-          "supporting_cluster_ids",
-          "opposing_cluster_ids"
+          "supporting_cluster_texts",
+          "opposing_cluster_texts"
         ],
         "title": "ClaimOpposition"
       },
@@ -882,12 +882,12 @@
             "type": "string",
             "title": "Label"
           },
-          "cluster_ids": {
+          "cluster_texts": {
             "items": {
               "type": "string"
             },
             "type": "array",
-            "title": "Cluster Ids"
+            "title": "Cluster Texts"
           },
           "summary": {
             "type": "string",
@@ -897,7 +897,7 @@
         "type": "object",
         "required": [
           "label",
-          "cluster_ids",
+          "cluster_texts",
           "summary"
         ],
         "title": "ClaimTrend"

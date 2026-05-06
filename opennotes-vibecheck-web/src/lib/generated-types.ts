@@ -459,10 +459,10 @@ export interface components {
         ClaimOpposition: {
             /** Topic */
             topic: string;
-            /** Supporting Cluster Ids */
-            supporting_cluster_ids: string[];
-            /** Opposing Cluster Ids */
-            opposing_cluster_ids: string[];
+            /** Supporting Cluster Texts */
+            supporting_cluster_texts: string[];
+            /** Opposing Cluster Texts */
+            opposing_cluster_texts: string[];
             /** Note */
             note?: string | null;
         };
@@ -470,8 +470,8 @@ export interface components {
         ClaimTrend: {
             /** Label */
             label: string;
-            /** Cluster Ids */
-            cluster_ids: string[];
+            /** Cluster Texts */
+            cluster_texts: string[];
             /** Summary */
             summary: string;
         };

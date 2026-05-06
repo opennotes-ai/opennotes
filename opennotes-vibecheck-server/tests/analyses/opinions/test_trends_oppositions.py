@@ -139,8 +139,8 @@ async def test_extract_trends_oppositions_detects_opposition_pairs(
     assert len(report.oppositions) == 1
     opposition = report.oppositions[0]
     assert opposition.topic == "Wealth-tax policy"
-    assert opposition.supporting_cluster_ids == [clusters[0].canonical_text]
-    assert opposition.opposing_cluster_ids == [clusters[1].canonical_text]
+    assert opposition.supporting_cluster_texts == [clusters[0].canonical_text]
+    assert opposition.opposing_cluster_texts == [clusters[1].canonical_text]
     assert opposition.note == "A direct policy split between raising and not raising taxes"
 
 
@@ -189,7 +189,7 @@ async def test_extract_trends_oppositions_extracts_recurring_trends(
     trend = report.trends[0]
     assert trend.label == "Rising healthcare-cost concerns"
     assert trend.summary == "Multiple clusters repeatedly mention healthcare spending pain points."
-    assert trend.cluster_ids == [clusters[0].canonical_text, clusters[2].canonical_text]
+    assert trend.cluster_texts == [clusters[0].canonical_text, clusters[2].canonical_text]
 
 
 async def test_extract_trends_oppositions_capting_limits_prompt_and_counts(
@@ -305,6 +305,6 @@ async def test_extract_trends_oppositions_ignores_out_of_range_indices(
     report = await trends_oppositions_module.extract_trends_oppositions(clusters)
 
     assert len(report.trends) == 1
-    assert report.trends[0].cluster_ids == [clusters[0].canonical_text]
-    assert report.oppositions[0].supporting_cluster_ids == []
-    assert report.oppositions[0].opposing_cluster_ids == []
+    assert report.trends[0].cluster_texts == [clusters[0].canonical_text]
+    assert report.oppositions[0].supporting_cluster_texts == []
+    assert report.oppositions[0].opposing_cluster_texts == []

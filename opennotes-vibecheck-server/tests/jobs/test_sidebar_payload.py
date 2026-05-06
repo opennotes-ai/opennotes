@@ -419,13 +419,13 @@ class TestAssembleSidebarPayload:
             {
                 "trends_oppositions_report": {
                     "trends": [
-                        {"label": "trend", "cluster_ids": ["c1"], "summary": "desc"},
+                        {"label": "trend", "cluster_texts": ["c1"], "summary": "desc"},
                     ],
                     "oppositions": [
                         {
                             "topic": "topic-1",
-                            "supporting_cluster_ids": ["c1"],
-                            "opposing_cluster_ids": ["c2"],
+                            "supporting_cluster_texts": ["c1"],
+                            "opposing_cluster_texts": ["c2"],
                             "note": "note",
                         }
                     ],

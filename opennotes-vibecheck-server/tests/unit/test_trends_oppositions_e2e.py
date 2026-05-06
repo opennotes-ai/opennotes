@@ -155,15 +155,15 @@ async def test_trends_oppositions_e2e_wealth_tax_fixture_produces_trends_and_opp
     assert report["trends"] == [
         {
             "label": "Tax fairness debate",
-            "cluster_ids": [support, services],
+            "cluster_texts": [support, services],
             "summary": "Speakers repeatedly frame the wealth tax as a fairness and services question.",
         }
     ]
     assert report["oppositions"] == [
         {
             "topic": "Wealth tax economic impact",
-            "supporting_cluster_ids": [support],
-            "opposing_cluster_ids": [oppose],
+            "supporting_cluster_texts": [support],
+            "opposing_cluster_texts": [oppose],
             "note": "One side emphasizes revenue and fairness; the other predicts investment harm.",
         }
     ]

@@ -8,6 +8,7 @@ from src.analyses.opinions._trends_schemas import (
     ClaimOpposition,
     ClaimTrend,
     TrendsOppositionsReport,
+    empty_trends_oppositions_report,
 )
 from src.config import Settings, get_settings
 from src.services.gemini_agent import build_agent, run_vertex_agent_with_retry
@@ -65,11 +66,14 @@ def _resolve_indices(
     indices: list[int], clusters: list[DedupedClaim]
 ) -> list[str]:
     texts = [cluster.canonical_text for cluster in clusters]
-    return [
-        texts[idx]
-        for idx in indices
-        if 0 <= idx < len(texts)
-    ]
+    seen: set[int] = set()
+    resolved: list[str] = []
+    for idx in indices:
+        if idx in seen or not (0 <= idx < len(texts)):
+            continue
+        seen.add(idx)
+        resolved.append(texts[idx])
+    return resolved
 
 
 async def extract_trends_oppositions(
@@ -90,12 +94,9 @@ async def extract_trends_oppositions(
     capped = filtered[:capping_window]
 
     if not capped:
-        return TrendsOppositionsReport(
-            trends=[],
-            oppositions=[],
-            input_cluster_count=0,
-            skipped_for_cap=max(0, len(filtered) - len(capped)),
-        )
+        empty = empty_trends_oppositions_report()
+        empty.skipped_for_cap = max(0, len(filtered) - len(capped))
+        return empty
 
     settings = settings or get_settings()
     prompt = _format_prompt(capped)
@@ -114,7 +115,7 @@ async def extract_trends_oppositions(
         trends=[
             ClaimTrend(
                 label=trend.label,
-                cluster_ids=_resolve_indices(trend.cluster_indices, capped),
+                cluster_texts=_resolve_indices(trend.cluster_indices, capped),
                 summary=trend.summary,
             )
             for trend in parsed.trends
@@ -122,10 +123,10 @@ async def extract_trends_oppositions(
         oppositions=[
             ClaimOpposition(
                 topic=opposition.topic,
-                supporting_cluster_ids=_resolve_indices(
+                supporting_cluster_texts=_resolve_indices(
                     opposition.supporting_cluster_indices, capped
                 ),
-                opposing_cluster_ids=_resolve_indices(
+                opposing_cluster_texts=_resolve_indices(
                     opposition.opposing_cluster_indices, capped
                 ),
                 note=opposition.note,
