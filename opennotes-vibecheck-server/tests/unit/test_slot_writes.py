@@ -667,6 +667,52 @@ def _minimal_slot_payloads() -> dict[SectionSlug, dict[str, Any]]:
                 "total_unique": 1,
             }
         },
+        SectionSlug.FACTS_CLAIMS_EVIDENCE: {
+            "claims_report": {
+                "deduped_claims": [
+                    {
+                        "canonical_text": "sentinel-claim-evidence-canonical",
+                        "occurrence_count": 1,
+                        "author_count": 1,
+                        "utterance_ids": ["utt-claim-evidence-201"],
+                        "representative_authors": ["sentinel-author-evidence"],
+                        "supporting_facts": [
+                            {
+                                "statement": "sentinel-evidence-stmt",
+                                "source_kind": "utterance",
+                                "source_ref": "utt-claim-evidence-201",
+                            }
+                        ],
+                    }
+                ],
+                "total_claims": 1,
+                "total_unique": 1,
+            }
+        },
+        SectionSlug.FACTS_CLAIMS_PREMISES: {
+            "claims_report": {
+                "deduped_claims": [
+                    {
+                        "canonical_text": "sentinel-claim-premises-canonical",
+                        "occurrence_count": 1,
+                        "author_count": 1,
+                        "utterance_ids": ["utt-claim-premises-301"],
+                        "representative_authors": ["sentinel-author-premises"],
+                        "premise_ids": ["sentinel-premise-id-001"],
+                    }
+                ],
+                "total_claims": 1,
+                "total_unique": 1,
+                "premises": {
+                    "premises": {
+                        "sentinel-premise-id-001": {
+                            "premise_id": "sentinel-premise-id-001",
+                            "statement": "sentinel-premise-statement",
+                        }
+                    }
+                },
+            }
+        },
         SectionSlug.FACTS_CLAIMS_KNOWN_MISINFO: {
             "known_misinformation": [
                 {

@@ -26,6 +26,8 @@ export const SKELETONS: Record<SectionSlug, () => JSX.Element> = {
   tone_dynamics__flashpoint: FlashpointSkeleton,
   tone_dynamics__scd: ScdSkeleton,
   facts_claims__dedup: ClaimsDedupSkeleton,
+  facts_claims__evidence: ClaimsDedupSkeleton,
+  facts_claims__premises: ClaimsDedupSkeleton,
   facts_claims__known_misinfo: KnownMisinfoSkeleton,
   opinions_sentiments__sentiment: SentimentSkeleton,
   opinions_sentiments__subjective: SubjectiveSkeleton,

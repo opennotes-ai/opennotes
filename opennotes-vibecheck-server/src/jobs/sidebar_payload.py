@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import json
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, Literal, cast
 
 from src.analyses.claims._claims_schemas import ClaimsReport
 from src.analyses.claims._factcheck_schemas import FactCheckMatch
@@ -122,16 +122,71 @@ def assemble_sidebar_payload(
 
     dedup_data = data_for(SectionSlug.FACTS_CLAIMS_DEDUP)
     known_data = data_for(SectionSlug.FACTS_CLAIMS_KNOWN_MISINFO)
+    evidence_data = data_for(SectionSlug.FACTS_CLAIMS_EVIDENCE)
+    premises_data = data_for(SectionSlug.FACTS_CLAIMS_PREMISES)
+
+    dedup_claims_report = ClaimsReport.model_validate(
+        dedup_data.get(
+            "claims_report",
+            empty_section_data(SectionSlug.FACTS_CLAIMS_DEDUP)["claims_report"],
+        )
+    )
+    evidence_claims_report = ClaimsReport.model_validate(
+        evidence_data.get(
+            "claims_report",
+            empty_section_data(SectionSlug.FACTS_CLAIMS_EVIDENCE)["claims_report"],
+        )
+    )
+    premises_report = ClaimsReport.model_validate(
+        premises_data.get(
+            "claims_report",
+            empty_section_data(SectionSlug.FACTS_CLAIMS_PREMISES)["claims_report"],
+        )
+    )
+
+    enriched_claims_by_canonical = {
+        claim.canonical_text: claim for claim in evidence_claims_report.deduped_claims
+    }
+    premises_claims_by_canonical = {
+        claim.canonical_text: claim for claim in premises_report.deduped_claims
+    }
+
+    merged_claims = []
+    for claim in dedup_claims_report.deduped_claims:
+        by_text = claim.model_copy()
+        if claim.canonical_text in enriched_claims_by_canonical:
+            by_text.supporting_facts = enriched_claims_by_canonical[
+                claim.canonical_text
+            ].supporting_facts
+        if claim.canonical_text in premises_claims_by_canonical:
+            by_text.premise_ids = premises_claims_by_canonical[
+                claim.canonical_text
+            ].premise_ids
+        merged_claims.append(by_text)
+
+    merged_claims_payload = dedup_claims_report.model_copy(
+        update={
+            "deduped_claims": merged_claims,
+            "premises": premises_report.premises if premises_report.premises else None,
+        }
+    ).model_dump(mode="json")
+
+    def _slot_status(
+        slug: SectionSlug,
+    ) -> Literal["pending", "running", "done", "failed"]:
+        slot = sections.get(slug)
+        state = slot.state if slot is not None else SectionState.PENDING
+        return cast(
+            Literal["pending", "running", "done", "failed"], state.value
+        )
+
     facts = FactsClaimsSection(
-        claims_report=ClaimsReport.model_validate(
-            dedup_data.get(
-                "claims_report",
-                empty_section_data(SectionSlug.FACTS_CLAIMS_DEDUP)["claims_report"],
-            )
-        ),
+        claims_report=ClaimsReport.model_validate(merged_claims_payload),
         known_misinformation=[
             FactCheckMatch.model_validate(m) for m in known_data.get("known_misinformation", [])
         ],
+        evidence_status=_slot_status(SectionSlug.FACTS_CLAIMS_EVIDENCE),
+        premises_status=_slot_status(SectionSlug.FACTS_CLAIMS_PREMISES),
     )
 
     sentiment_data = data_for(SectionSlug.OPINIONS_SENTIMENTS_SENTIMENT)

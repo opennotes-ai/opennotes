@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import random
+from collections.abc import Sequence
 from functools import lru_cache
 from typing import Any, Final, Literal, TypeVar, overload
 
@@ -69,6 +70,7 @@ def build_agent(
     system_prompt: str | None = None,
     name: str | None = None,
     tier: GeminiTier = "fast",
+    builtin_tools: Sequence[Any] = (),
 ) -> Agent[None, T]: ...
 
 
@@ -80,6 +82,7 @@ def build_agent(
     system_prompt: str | None = None,
     name: str | None = None,
     tier: GeminiTier = "fast",
+    builtin_tools: Sequence[Any] = (),
 ) -> Agent[None, str]: ...
 
 
@@ -90,6 +93,7 @@ def build_agent(
     system_prompt: str | None = None,
     name: str | None = None,
     tier: GeminiTier = "fast",
+    builtin_tools: Sequence[Any] = (),
 ) -> Agent[None, T] | Agent[None, str]:
     """Construct a pydantic-ai Agent bound to Vertex Gemini.
 
@@ -108,6 +112,8 @@ def build_agent(
         kwargs["system_prompt"] = system_prompt
     if output_type is not None:
         kwargs["output_type"] = output_type
+    if builtin_tools:
+        kwargs["builtin_tools"] = builtin_tools
     if name is not None:
         kwargs["name"] = name
     return Agent(model, **kwargs)

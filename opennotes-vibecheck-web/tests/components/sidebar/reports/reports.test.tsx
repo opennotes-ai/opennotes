@@ -1013,6 +1013,66 @@ describe("<ClaimsDedupReport />", () => {
     expect(onUtteranceClick).toHaveBeenCalledWith("u-3");
   });
 
+  it("exposes the +N more popover with dialog semantics and global dismissal", () => {
+    const claimsReport: ClaimsReport = {
+      deduped_claims: [
+        {
+          canonical_text: "claim alpha",
+          category: "potentially_factual",
+          occurrence_count: 4,
+          author_count: 2,
+          utterance_ids: ["a-1", "a-2", "a-3"],
+          representative_authors: ["@a"],
+        },
+        {
+          canonical_text: "claim beta",
+          category: "potentially_factual",
+          occurrence_count: 3,
+          author_count: 2,
+          utterance_ids: ["b-1", "b-2", "b-3", "b-4"],
+          representative_authors: ["@b"],
+        },
+      ],
+      total_claims: 7,
+      total_unique: 2,
+    };
+
+    render(() => <ClaimsDedupReport claimsReport={claimsReport} />);
+
+    const triggers = screen.getAllByTestId("deduped-claim-more-utterances");
+    expect(triggers).toHaveLength(2);
+    triggers.forEach((trigger) => {
+      expect(trigger.getAttribute("aria-haspopup")).toBe("dialog");
+      expect(trigger.getAttribute("aria-controls")).toBeTruthy();
+      expect(trigger.getAttribute("aria-expanded")).toBe("false");
+    });
+
+    fireEvent.click(triggers[0]);
+    expect(triggers[0].getAttribute("aria-expanded")).toBe("true");
+    const popover = screen.getByTestId("deduped-claim-utterance-popover");
+    expect(popover.getAttribute("role")).toBe("dialog");
+    expect(popover.getAttribute("aria-label")).toBe(
+      "2 additional utterance references",
+    );
+    expect(popover.id).toBe(triggers[0].getAttribute("aria-controls"));
+
+    fireEvent.keyDown(document.body, { key: "Escape" });
+    expect(screen.queryByTestId("deduped-claim-utterance-popover")).toBeNull();
+    expect(triggers[0].getAttribute("aria-expanded")).toBe("false");
+
+    fireEvent.click(triggers[0]);
+    expect(screen.getByTestId("deduped-claim-utterance-popover")).toBeDefined();
+    fireEvent.click(document.body);
+    expect(screen.queryByTestId("deduped-claim-utterance-popover")).toBeNull();
+
+    fireEvent.click(triggers[0]);
+    expect(triggers[0].getAttribute("aria-expanded")).toBe("true");
+    fireEvent.click(triggers[1]);
+    expect(triggers[0].getAttribute("aria-expanded")).toBe("false");
+    expect(triggers[1].getAttribute("aria-expanded")).toBe("true");
+    expect(screen.getAllByTestId("deduped-claim-utterance-popover")).toHaveLength(1);
+  });
+
   it("does not render an utterance chip row when a claim has no utterance ids", () => {
     const claimsReport: ClaimsReport = {
       deduped_claims: [
@@ -1032,6 +1092,105 @@ describe("<ClaimsDedupReport />", () => {
     render(() => <ClaimsDedupReport claimsReport={claimsReport} />);
 
     expect(screen.queryByTestId("deduped-claim-utterance-refs")).toBeNull();
+  });
+
+  it("renders supporting facts attached to factual claims", () => {
+    const onUtteranceClick = vi.fn();
+    const claimsReport: ClaimsReport = {
+      deduped_claims: [
+        {
+          canonical_text: "the grant costs $5 million",
+          category: "potentially_factual",
+          occurrence_count: 2,
+          author_count: 2,
+          utterance_ids: ["u-1"],
+          representative_authors: ["@a"],
+          supporting_facts: [
+            {
+              statement: "The proposal names a $5 million grant.",
+              source_kind: "utterance",
+              source_ref: "u-1",
+            },
+          ],
+        },
+      ],
+      total_claims: 2,
+      total_unique: 1,
+    };
+
+    render(() => (
+      <ClaimsDedupReport
+        claimsReport={claimsReport}
+        onUtteranceClick={onUtteranceClick}
+        canJumpToUtterance
+      />
+    ));
+
+    expect(screen.getByTestId("deduped-claim-supporting-facts")).toBeDefined();
+    expect(screen.getByTestId("deduped-claim-supporting-fact").textContent).toContain(
+      "The proposal names a $5 million grant.",
+    );
+    fireEvent.click(screen.getByTestId("deduped-claim-supporting-fact-ref"));
+    expect(onUtteranceClick).toHaveBeenCalledWith("u-1");
+  });
+
+  it("renders a no-sources state for factual claims without supporting facts", () => {
+    const claimsReport: ClaimsReport = {
+      deduped_claims: [
+        {
+          canonical_text: "source missing",
+          category: "potentially_factual",
+          occurrence_count: 1,
+          author_count: 1,
+          utterance_ids: ["u-1"],
+          representative_authors: ["@a"],
+        },
+      ],
+      total_claims: 1,
+      total_unique: 1,
+    };
+
+    render(() => <ClaimsDedupReport claimsReport={claimsReport} />);
+
+    expect(screen.getByTestId("deduped-claim-no-sources").textContent).toContain(
+      "No sources extracted",
+    );
+  });
+
+  it("renders premises attached to non-factual claims", () => {
+    const claimsReport: ClaimsReport = {
+      deduped_claims: [
+        {
+          canonical_text: "this will make rents worse",
+          category: "predictions",
+          occurrence_count: 3,
+          author_count: 2,
+          utterance_ids: ["u-2"],
+          representative_authors: ["@b"],
+          premise_ids: ["premise-1"],
+        },
+      ],
+      total_claims: 3,
+      total_unique: 1,
+      premises: {
+        premises: {
+          "premise-1": {
+            premise_id: "premise-1",
+            statement: "New units would not offset demand quickly enough.",
+          },
+        },
+      },
+    };
+
+    render(() => <ClaimsDedupReport claimsReport={claimsReport} />);
+
+    expect(screen.getByTestId("deduped-claim-premises")).toBeDefined();
+    expect(screen.getByTestId("deduped-claim-premise").textContent).toContain(
+      "New units would not offset demand quickly enough.",
+    );
+    expect(screen.getByTestId("deduped-claim-premise-followup").textContent).toContain(
+      "1 assumption to verify",
+    );
   });
 });
 

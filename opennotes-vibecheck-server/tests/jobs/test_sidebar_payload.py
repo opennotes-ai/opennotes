@@ -62,6 +62,24 @@ def _minimal_done_sections() -> dict[SectionSlug, SectionSlot]:
                 }
             }
         ),
+        SectionSlug.FACTS_CLAIMS_EVIDENCE: _done_slot(
+            {
+                "claims_report": {
+                    "deduped_claims": [],
+                    "total_claims": 0,
+                    "total_unique": 0,
+                }
+            }
+        ),
+        SectionSlug.FACTS_CLAIMS_PREMISES: _done_slot(
+            {
+                "claims_report": {
+                    "deduped_claims": [],
+                    "total_claims": 0,
+                    "total_unique": 0,
+                }
+            }
+        ),
         SectionSlug.FACTS_CLAIMS_KNOWN_MISINFO: _done_slot({"known_misinformation": []}),
         SectionSlug.OPINIONS_SENTIMENTS_SENTIMENT: _done_slot(
             {
@@ -128,6 +146,84 @@ class TestAssembleSidebarPayload:
 
         assert len(sidebar.web_risk.findings) == 1
         assert sidebar.web_risk.findings[0].threat_types == ["MALWARE"]
+
+    def test_facts_slots_merge_into_deduped_claims_by_canonical_text(self):
+        sections = _minimal_done_sections()
+        sections[SectionSlug.FACTS_CLAIMS_DEDUP] = _done_slot(
+            {
+                "claims_report": {
+                    "deduped_claims": [
+                        {
+                            "canonical_text": "The sky is blue.",
+                            "occurrence_count": 1,
+                            "author_count": 1,
+                            "utterance_ids": ["u-1"],
+                            "representative_authors": ["alice"],
+                        }
+                    ],
+                    "total_claims": 1,
+                    "total_unique": 1,
+                }
+            }
+        )
+        sections[SectionSlug.FACTS_CLAIMS_EVIDENCE] = _done_slot(
+            {
+                "claims_report": {
+                    "deduped_claims": [
+                        {
+                            "canonical_text": "The sky is blue.",
+                            "occurrence_count": 1,
+                            "author_count": 1,
+                            "utterance_ids": ["u-1"],
+                            "representative_authors": ["alice"],
+                            "supporting_facts": [
+                                {
+                                    "statement": "Observed data",
+                                    "source_kind": "utterance",
+                                    "source_ref": "u-1",
+                                }
+                            ],
+                        }
+                    ],
+                    "total_claims": 1,
+                    "total_unique": 1,
+                }
+            }
+        )
+        sections[SectionSlug.FACTS_CLAIMS_PREMISES] = _done_slot(
+            {
+                "claims_report": {
+                    "deduped_claims": [
+                        {
+                            "canonical_text": "The sky is blue.",
+                            "occurrence_count": 1,
+                            "author_count": 1,
+                            "utterance_ids": ["u-1"],
+                            "representative_authors": ["alice"],
+                            "premise_ids": ["premise_abcdef123456"],
+                        }
+                    ],
+                    "total_claims": 1,
+                    "total_unique": 1,
+                    "premises": {
+                        "premises": {
+                            "premise_abcdef123456": {
+                                "premise_id": "premise_abcdef123456",
+                                "statement": "Light appears blue to humans.",
+                            }
+                        }
+                    },
+                }
+            }
+        )
+
+        sidebar = assemble_sidebar_payload("https://example.com", sections)
+
+        facts = sidebar.facts_claims.claims_report
+        assert facts.deduped_claims[0].supporting_facts[0].source_ref == "u-1"
+        assert facts.deduped_claims[0].premise_ids == ["premise_abcdef123456"]
+        assert facts.premises is not None
+        assert "premise_abcdef123456" in facts.premises.premises
 
     def test_safety_recommendation_dict_parses(self):
         sections = _minimal_done_sections()

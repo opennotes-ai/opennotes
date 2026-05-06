@@ -46,6 +46,8 @@ const TONE_SLUGS: SectionSlug[] = [
 
 const FACTS_SLUGS: SectionSlug[] = [
   "facts_claims__dedup",
+  "facts_claims__evidence",
+  "facts_claims__premises",
   "facts_claims__known_misinfo",
 ];
 
@@ -921,7 +923,7 @@ describe("Sidebar", () => {
       );
     expect(byLabel("Safety")?.textContent).toBe("4/4");
     expect(byLabel("Tone/dynamics")?.textContent).toBe("2/2");
-    expect(byLabel("Facts/claims")?.textContent).toBe("2/2");
+    expect(byLabel("Facts/claims")?.textContent).toBe("4/4");
     expect(byLabel("Opinions/sentiments")?.textContent).toBe("2/2");
 
     const ALL_SLUGS = [
@@ -932,6 +934,8 @@ describe("Sidebar", () => {
       "tone_dynamics__flashpoint",
       "tone_dynamics__scd",
       "facts_claims__dedup",
+      "facts_claims__evidence",
+      "facts_claims__premises",
       "facts_claims__known_misinfo",
       "opinions_sentiments__sentiment",
       "opinions_sentiments__subjective",
@@ -1006,7 +1010,9 @@ describe("Sidebar", () => {
           tone_dynamics__flashpoint: { state: "running", attempt_id: "a2" },
           tone_dynamics__scd: { state: "running", attempt_id: "a3" },
           facts_claims__dedup: { state: "running", attempt_id: "a4" },
-          facts_claims__known_misinfo: { state: "running", attempt_id: "a5" },
+          facts_claims__evidence: { state: "running", attempt_id: "a5" },
+          facts_claims__premises: { state: "running", attempt_id: "a6" },
+          facts_claims__known_misinfo: { state: "running", attempt_id: "a7" },
           opinions_sentiments__sentiment: { state: "running", attempt_id: "a6" },
           opinions_sentiments__subjective: { state: "running", attempt_id: "a7" },
         }}
@@ -1518,6 +1524,8 @@ describe("Sidebar (extracting-phase indicator)", () => {
     "tone_dynamics__flashpoint",
     "tone_dynamics__scd",
     "facts_claims__dedup",
+    "facts_claims__evidence",
+    "facts_claims__premises",
     "facts_claims__known_misinfo",
     "opinions_sentiments__sentiment",
     "opinions_sentiments__subjective",
@@ -1546,7 +1554,9 @@ describe("Sidebar (extracting-phase indicator)", () => {
       screen.getAllByTestId("skeleton-safety__moderation").length,
     ).toBeGreaterThan(0);
     expect(screen.getByTestId("skeleton-tone_dynamics__flashpoint")).toBeDefined();
-    expect(screen.getByTestId("skeleton-facts_claims__dedup")).toBeDefined();
+    expect(
+      screen.getAllByTestId("skeleton-facts_claims__dedup").length,
+    ).toBeGreaterThan(0);
     expect(
       screen.getByTestId("skeleton-opinions_sentiments__sentiment"),
     ).toBeDefined();

@@ -8,6 +8,8 @@ export const SECTION_SLUGS = [
   "tone_dynamics__flashpoint",
   "tone_dynamics__scd",
   "facts_claims__dedup",
+  "facts_claims__evidence",
+  "facts_claims__premises",
   "facts_claims__known_misinfo",
   "opinions_sentiments__sentiment",
   "opinions_sentiments__subjective",

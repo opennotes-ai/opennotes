@@ -16,6 +16,8 @@ const SECTION_SLUGS = [
   "tone_dynamics__flashpoint",
   "tone_dynamics__scd",
   "facts_claims__dedup",
+  "facts_claims__evidence",
+  "facts_claims__premises",
   "facts_claims__known_misinfo",
   "opinions_sentiments__sentiment",
   "opinions_sentiments__subjective",
@@ -192,6 +194,158 @@ describe("<Sidebar /> payload synthesis fallback", () => {
     expect(
       screen.getByTestId("report-safety__video_moderation").textContent,
     ).toContain("1.0s");
+  });
+
+  it("merges evidence and premises slots into the rendered claims report", () => {
+    const sections = {
+      facts_claims__dedup: {
+        state: "done",
+        attempt_id: "dedup-attempt",
+        data: {
+          claims_report: {
+            deduped_claims: [
+              {
+                canonical_text: "the project costs $5 million",
+                category: "potentially_factual",
+                occurrence_count: 2,
+                author_count: 2,
+                utterance_ids: ["u-1"],
+                representative_authors: ["@a"],
+              },
+              {
+                canonical_text: "this will make rents worse",
+                category: "predictions",
+                occurrence_count: 3,
+                author_count: 2,
+                utterance_ids: ["u-2"],
+                representative_authors: ["@b"],
+              },
+            ],
+            total_claims: 5,
+            total_unique: 2,
+          },
+        },
+      },
+      facts_claims__evidence: {
+        state: "done",
+        attempt_id: "evidence-attempt",
+        data: {
+          claims_report: {
+            deduped_claims: [
+              {
+                canonical_text: "the project costs $5 million",
+                category: "potentially_factual",
+                occurrence_count: 2,
+                author_count: 2,
+                utterance_ids: ["u-1"],
+                representative_authors: ["@a"],
+                supporting_facts: [
+                  {
+                    statement: "The project budget names a $5 million cost.",
+                    source_kind: "utterance",
+                    source_ref: "u-1",
+                  },
+                ],
+              },
+            ],
+            total_claims: 5,
+            total_unique: 2,
+          },
+        },
+      },
+      facts_claims__premises: {
+        state: "done",
+        attempt_id: "premises-attempt",
+        data: {
+          claims_report: {
+            deduped_claims: [
+              {
+                canonical_text: "this will make rents worse",
+                category: "predictions",
+                occurrence_count: 3,
+                author_count: 2,
+                utterance_ids: ["u-2"],
+                representative_authors: ["@b"],
+                premise_ids: ["premise-1"],
+              },
+            ],
+            total_claims: 5,
+            total_unique: 2,
+            premises: {
+              premises: {
+                "premise-1": {
+                  premise_id: "premise-1",
+                  statement: "Supply would not increase quickly enough.",
+                },
+              },
+            },
+          },
+        },
+      },
+      facts_claims__known_misinfo: {
+        state: "done",
+        attempt_id: "known-attempt",
+        data: { known_misinformation: [] },
+      },
+    } as unknown as JobState["sections"];
+
+    render(() => <Sidebar sections={sections} payload={makePayload()} />);
+
+    expect(screen.getByTestId("deduped-claim-supporting-fact").textContent).toContain(
+      "The project budget names a $5 million cost.",
+    );
+    expect(screen.getByTestId("deduped-claim-premise").textContent).toContain(
+      "Supply would not increase quickly enough.",
+    );
+  });
+
+  it("synthesizes evidence slot as failed when payload.evidence_status is 'failed' and suppresses 'No sources extracted'", () => {
+    render(() => (
+      <Sidebar
+        sections={undefined}
+        payloadComplete={true}
+        payload={makePayload({
+          facts_claims: {
+            claims_report: {
+              deduped_claims: [
+                {
+                  canonical_text: "the project costs $5 million",
+                  category: "potentially_factual",
+                  occurrence_count: 1,
+                  author_count: 1,
+                  utterance_ids: ["u-1"],
+                  representative_authors: ["@a"],
+                  supporting_facts: [],
+                  premise_ids: [],
+                },
+              ],
+              total_claims: 1,
+              total_unique: 1,
+            },
+            known_misinformation: [],
+            evidence_status: "failed",
+            premises_status: "done",
+          },
+        })}
+      />
+    ));
+
+    expect(getSlotState("facts_claims__evidence")).toBe("failed");
+    expect(getSlotState("facts_claims__premises")).toBe("done");
+    expect(screen.queryByTestId("deduped-claim-no-sources")).toBeNull();
+  });
+
+  it("falls back to 'done' synthesis when payload predates evidence_status (backward compat)", () => {
+    render(() => (
+      <Sidebar
+        sections={undefined}
+        payloadComplete={true}
+        payload={makePayload()}
+      />
+    ));
+
+    expect(getSlotState("facts_claims__evidence")).toBe("done");
+    expect(getSlotState("facts_claims__premises")).toBe("done");
   });
 
   it("surfaces failed section names on partial jobs while keeping retry controls", () => {

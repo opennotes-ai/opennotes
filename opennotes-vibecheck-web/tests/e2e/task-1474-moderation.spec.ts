@@ -159,6 +159,8 @@ function sectionData(slug: string): Record<string, unknown> {
         },
       };
     case "facts_claims__dedup":
+    case "facts_claims__evidence":
+    case "facts_claims__premises":
       return {
         claims_report: {
           deduped_claims: [],

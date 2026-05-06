@@ -95,6 +95,10 @@ function slugHeadingLabel(slug: SectionSlugLiteral): string {
       return "Speaker dynamics";
     case "facts_claims__dedup":
       return "Deduped claims";
+    case "facts_claims__evidence":
+      return "Claim evidence";
+    case "facts_claims__premises":
+      return "Claim premises";
     case "facts_claims__known_misinfo":
       return "Known misinformation";
     case "opinions_sentiments__sentiment":

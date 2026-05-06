@@ -10,7 +10,7 @@ function clampPct(value: number): number {
   if (!Number.isFinite(value)) return 0;
   if (value <= 0) return 0;
   if (value >= 100) return 100;
-  return Math.round(value);
+  return value;
 }
 
 function formatValence(value: number): string {
@@ -21,9 +21,21 @@ function formatValence(value: number): string {
 }
 
 export default function SentimentReport(props: SentimentReportProps) {
-  const positive = () => clampPct(props.stats.positive_pct);
-  const negative = () => clampPct(props.stats.negative_pct);
-  const neutral = () => clampPct(props.stats.neutral_pct);
+  const normalized = () => {
+    const pos = clampPct(props.stats.positive_pct);
+    const neg = clampPct(props.stats.negative_pct);
+    const neu = clampPct(props.stats.neutral_pct);
+    const total = pos + neg + neu;
+    const scale = total > 100 ? 100 / total : 1;
+    return {
+      positive: Math.round(pos * scale),
+      negative: Math.round(neg * scale),
+      neutral: Math.round(neu * scale),
+    };
+  };
+  const positive = () => normalized().positive;
+  const negative = () => normalized().negative;
+  const neutral = () => normalized().neutral;
 
   return (
     <div
@@ -36,12 +48,12 @@ export default function SentimentReport(props: SentimentReportProps) {
         class="flex h-2 w-full overflow-hidden rounded-full bg-muted"
       >
         <div
-          class="h-full bg-chart-1"
+          class="h-full bg-positive"
           style={{ width: `${positive()}%` }}
           data-testid="sentiment-positive"
         />
         <div
-          class="h-full bg-chart-4"
+          class="h-full bg-negative"
           style={{ width: `${negative()}%` }}
           data-testid="sentiment-negative"
         />
@@ -51,17 +63,26 @@ export default function SentimentReport(props: SentimentReportProps) {
           data-testid="sentiment-neutral"
         />
       </div>
-      <dl class="grid grid-cols-3 gap-2 text-[11px] text-muted-foreground">
+      <dl
+        data-testid="sentiment-legend"
+        class="grid grid-cols-3 gap-2 text-center text-[11px] text-muted-foreground justify-items-center"
+      >
         <div>
-          <dt class="font-semibold text-foreground">+ {positive()}%</dt>
+          <dt class="font-semibold text-positive" data-testid="sentiment-positive-label">
+            {positive()}%
+          </dt>
           <dd>positive</dd>
         </div>
         <div>
-          <dt class="font-semibold text-foreground">- {negative()}%</dt>
+          <dt class="font-semibold text-negative" data-testid="sentiment-negative-label">
+            {negative()}%
+          </dt>
           <dd>negative</dd>
         </div>
         <div>
-          <dt class="font-semibold text-foreground">{neutral()}%</dt>
+          <dt class="font-semibold text-foreground" data-testid="sentiment-neutral-label">
+            {neutral()}%
+          </dt>
           <dd>neutral</dd>
         </div>
       </dl>

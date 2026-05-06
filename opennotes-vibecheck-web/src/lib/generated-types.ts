@@ -466,6 +466,7 @@ export interface components {
             total_claims: number;
             /** Total Unique */
             total_unique: number;
+            premises?: components["schemas"]["PremisesRegistry"] | null;
         };
         /**
          * DedupedClaim
@@ -484,6 +485,10 @@ export interface components {
             utterance_ids: string[];
             /** Representative Authors */
             representative_authors: string[];
+            /** Supporting Facts */
+            supporting_facts?: components["schemas"]["SupportingFact"][];
+            /** Premise Ids */
+            premise_ids?: string[];
         };
         /**
          * ErrorCode
@@ -517,11 +522,29 @@ export interface components {
         /**
          * FactsClaimsSection
          * @description Deduped verifiable claims and any matching published fact-checks.
+         *
+         *     `evidence_status` and `premises_status` expose the terminal lifecycle
+         *     of the two enrichment slots (`FACTS_CLAIMS_EVIDENCE` /
+         *     `FACTS_CLAIMS_PREMISES`) at sidebar-payload assembly time. Frontend
+         *     surfaces use them to distinguish "evidence ran and found nothing" from
+         *     "evidence failed" — without these, both paths render the same empty
+         *     `supporting_facts` and the user sees a misleading "No sources extracted"
+         *     placeholder for sub-slots that actually errored.
          */
         FactsClaimsSection: {
             claims_report: components["schemas"]["ClaimsReport"];
             /** Known Misinformation */
             known_misinformation?: components["schemas"]["FactCheckMatch"][];
+            /**
+             * Evidence Status
+             * @description Terminal state of the FACTS_CLAIMS_EVIDENCE slot at the time the sidebar payload was assembled. `done` means the slot ran (rows may still be empty); `failed` means the slot errored and any empty `supporting_facts` should be surfaced as a failure rather than a clean empty result; `pending` / `running` mean the slot has not yet reached a terminal state for this payload snapshot. Null when an older cached payload was assembled before this field existed.
+             */
+            evidence_status?: ("pending" | "running" | "done" | "failed") | null;
+            /**
+             * Premises Status
+             * @description Terminal state of the FACTS_CLAIMS_PREMISES slot at the time the sidebar payload was assembled. Same semantics as `evidence_status`.
+             */
+            premises_status?: ("pending" | "running" | "done" | "failed") | null;
         };
         /**
          * FlashpointMatch
@@ -823,6 +846,26 @@ export interface components {
          */
         PageKind: "blog_post" | "forum_thread" | "hierarchical_thread" | "blog_index" | "article" | "other";
         /**
+         * Premise
+         * @description A premise statement attached to one or more claims.
+         */
+        Premise: {
+            /** Premise Id */
+            premise_id: string;
+            /** Statement */
+            statement: string;
+        };
+        /**
+         * PremisesRegistry
+         * @description Global registry of unique premises discovered across all claims.
+         */
+        PremisesRegistry: {
+            /** Premises */
+            premises?: {
+                [key: string]: components["schemas"]["Premise"];
+            };
+        };
+        /**
          * RecentAnalysis
          * @description One card in the "Recently vibe checked" gallery (TASK-1485).
          *
@@ -1091,7 +1134,7 @@ export interface components {
          * @description The sidebar slots the async pipeline fills independently.
          * @enum {string}
          */
-        SectionSlug: "safety__moderation" | "safety__web_risk" | "safety__image_moderation" | "safety__video_moderation" | "tone_dynamics__flashpoint" | "tone_dynamics__scd" | "facts_claims__dedup" | "facts_claims__known_misinfo" | "opinions_sentiments__sentiment" | "opinions_sentiments__subjective";
+        SectionSlug: "safety__moderation" | "safety__web_risk" | "safety__image_moderation" | "safety__video_moderation" | "tone_dynamics__flashpoint" | "tone_dynamics__scd" | "facts_claims__dedup" | "facts_claims__evidence" | "facts_claims__premises" | "facts_claims__known_misinfo" | "opinions_sentiments__sentiment" | "opinions_sentiments__subjective";
         /**
          * SectionState
          * @description Lifecycle of a single sidebar slot during a job.
@@ -1168,6 +1211,12 @@ export interface components {
             utterances?: components["schemas"]["UtteranceAnchor"][];
         };
         /**
+         * SourceKind
+         * @description Origin of a supporting fact used by the evidence slot.
+         * @enum {string}
+         */
+        SourceKind: "utterance" | "external";
+        /**
          * SpeakerArc
          * @description Per-speaker arc within a conversation, intended for timeline visualization.
          *
@@ -1205,6 +1254,17 @@ export interface components {
              * @enum {string}
              */
             stance: "supports" | "opposes" | "evaluates";
+        };
+        /**
+         * SupportingFact
+         * @description A single supporting statement for a deduped claim.
+         */
+        SupportingFact: {
+            /** Statement */
+            statement: string;
+            source_kind: components["schemas"]["SourceKind"];
+            /** Source Ref */
+            source_ref: string;
         };
         /**
          * ToneDynamicsSection

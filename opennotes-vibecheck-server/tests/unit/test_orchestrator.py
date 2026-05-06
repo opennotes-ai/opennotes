@@ -118,6 +118,71 @@ async def test_run_section_write_slot_exception_still_raises_when_mark_slot_also
         await _run_section(pool, job_id, task_attempt, slug, payload, settings)
 
 
+async def test_run_all_sections_persists_empty_enrichment_slots_when_dedup_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """B-C2 regression: dedup failure must not strand the three claim
+    enrichment slots in unwritten state.
+
+    `maybe_finalize_job` blocks on `len(sections) < len(SectionSlug)`, so
+    when dedup fails the orchestrator must write terminal slots for
+    FACTS_CLAIMS_EVIDENCE / FACTS_CLAIMS_PREMISES / FACTS_CLAIMS_KNOWN_MISINFO
+    so finalize can proceed.
+    """
+    from src.jobs import orchestrator
+
+    run_section_calls: list[SectionSlug] = []
+
+    async def fake_run_section(
+        pool: object,
+        job_id: object,
+        task_attempt: object,
+        slug: SectionSlug,
+        payload: object,
+        settings: object,
+        *,
+        test_fail_slug: str | None = None,
+    ) -> SectionState:
+        del pool, job_id, task_attempt, payload, settings, test_fail_slug
+        run_section_calls.append(slug)
+        if slug == SectionSlug.FACTS_CLAIMS_DEDUP:
+            return SectionState.FAILED
+        return SectionState.DONE
+
+    written: list[tuple[SectionSlug, SectionState, dict[str, Any] | None]] = []
+
+    async def fake_write_slot(pool, job_id, task_attempt, slug, slot):
+        del pool, job_id, task_attempt
+        written.append((slug, slot.state, slot.data))
+        return 1
+
+    monkeypatch.setattr(orchestrator, "_run_section", fake_run_section)
+    monkeypatch.setattr(orchestrator, "write_slot", fake_write_slot)
+
+    await orchestrator._run_all_sections(
+        pool=object(),
+        job_id=uuid4(),
+        task_attempt=uuid4(),
+        payload=object(),
+        settings=MagicMock(),
+    )
+
+    enrichment_slugs = {
+        SectionSlug.FACTS_CLAIMS_EVIDENCE,
+        SectionSlug.FACTS_CLAIMS_PREMISES,
+        SectionSlug.FACTS_CLAIMS_KNOWN_MISINFO,
+    }
+    written_slugs = {slug for slug, _state, _data in written}
+    assert enrichment_slugs.issubset(written_slugs)
+    for slug, state, data in written:
+        if slug in enrichment_slugs:
+            assert state == SectionState.DONE
+            assert isinstance(data, dict)
+    assert all(
+        slug not in run_section_calls for slug in enrichment_slugs
+    ), "enrichment slots must skip _run_section when dedup fails"
+
+
 class FakeAcquire:
     def __init__(self, conn):
         self.conn = conn

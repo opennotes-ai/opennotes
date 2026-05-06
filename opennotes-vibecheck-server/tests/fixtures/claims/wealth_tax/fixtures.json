@@ -1,0 +1,112 @@
+{
+  "utterances": [
+    {
+      "utterance_id": "u-sub-01",
+      "kind": "post",
+      "text": "A wealth tax is just unfair to middle-income families.",
+      "author": "alex"
+    },
+    {
+      "utterance_id": "u-sub-02",
+      "kind": "comment",
+      "text": "That wealth tax is unfair and it targets hard-working households.",
+      "author": "blair"
+    },
+    {
+      "utterance_id": "u-sub-03",
+      "kind": "reply",
+      "text": "I hate the idea, because a wealth tax is unfair.",
+      "author": "casey"
+    },
+    {
+      "utterance_id": "u-pred-01",
+      "kind": "post",
+      "text": "A national wealth tax would devastate the economy and wreck budgets.",
+      "author": "dana"
+    },
+    {
+      "utterance_id": "u-pred-02",
+      "kind": "comment",
+      "text": "The wealth tax would devastate the economy over the next decade.",
+      "author": "elliot"
+    },
+    {
+      "utterance_id": "u-fact-01",
+      "kind": "comment",
+      "text": "The top 1% holds about 20% of U.S. wealth.",
+      "author": "frank"
+    },
+    {
+      "utterance_id": "u-fact-02",
+      "kind": "comment",
+      "text": "About 20% of U.S. wealth is held by the top one percent.",
+      "author": "gina"
+    },
+    {
+      "utterance_id": "u-fact-03",
+      "kind": "reply",
+      "text": "The top one percent owns only 12% of all U.S. wealth.",
+      "author": "harry"
+    }
+  ],
+  "claims": [
+    {
+      "claim_text": "A wealth tax is unfair to middle-income families.",
+      "utterance_id": "u-sub-01",
+      "category": "subjective",
+      "confidence": 0.81
+    },
+    {
+      "claim_text": "Charging a wealth tax is unfair to middle-income families.",
+      "utterance_id": "u-sub-02",
+      "category": "subjective",
+      "confidence": 0.78
+    },
+    {
+      "claim_text": "A national wealth tax is unfair to people who work hard.",
+      "utterance_id": "u-sub-03",
+      "category": "subjective",
+      "confidence": 0.79
+    },
+    {
+      "claim_text": "A national wealth tax would devastate the economy and budget.",
+      "category": "predictions",
+      "utterance_id": "u-pred-01",
+      "confidence": 0.92
+    },
+    {
+      "claim_text": "The wealth tax would devastate the economy over the next decade.",
+      "category": "predictions",
+      "utterance_id": "u-pred-02",
+      "confidence": 0.89
+    },
+    {
+      "claim_text": "The top 1% currently holds about 20% of U.S. wealth.",
+      "category": "potentially_factual",
+      "utterance_id": "u-fact-01",
+      "confidence": 0.95
+    },
+    {
+      "claim_text": "About 20% of U.S. wealth is controlled by the top one percent.",
+      "category": "potentially_factual",
+      "utterance_id": "u-fact-02",
+      "confidence": 0.93
+    },
+    {
+      "claim_text": "The top one percent owns only 12% of all U.S. wealth.",
+      "category": "potentially_factual",
+      "utterance_id": "u-fact-03",
+      "confidence": 0.9
+    }
+  ],
+  "embeddings": {
+    "A wealth tax is unfair to middle-income families.": [1.0, 0.0],
+    "Charging a wealth tax is unfair to middle-income families.": [1.0, 0.0],
+    "A national wealth tax is unfair to people who work hard.": [1.0, 0.0],
+    "A national wealth tax would devastate the economy and budget.": [0.0, 1.0],
+    "The wealth tax would devastate the economy over the next decade.": [0.0, 1.0],
+    "The top 1% currently holds about 20% of U.S. wealth.": [0.6, 0.8],
+    "About 20% of U.S. wealth is controlled by the top one percent.": [0.6, 0.8],
+    "The top one percent owns only 12% of all U.S. wealth.": [0.6, -0.8]
+  }
+}

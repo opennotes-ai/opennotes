@@ -100,7 +100,11 @@ function sectionData(slug: string): Record<string, unknown> {
       },
     };
   }
-  if (slug === "facts_claims__dedup") {
+  if (
+    slug === "facts_claims__dedup" ||
+    slug === "facts_claims__evidence" ||
+    slug === "facts_claims__premises"
+  ) {
     return {
       claims_report: {
         deduped_claims: [],
@@ -185,6 +189,7 @@ function terminalJobState(jobId: string) {
     updated_at: "2026-04-23T22:09:00Z",
     sections,
     sidebar_payload: sidebarPayload(headline),
+    sidebar_payload_complete: true,
     cached: true,
     next_poll_ms: 1500,
     page_title: jobId === FALLBACK_HEADLINE_JOB_ID
@@ -267,6 +272,34 @@ async function assertHeadlineNoClippingStyles(page: Page): Promise<void> {
     style.scrollHeight,
     "headline text should not be visually clipped by text element height constraints",
   ).toBeLessThanOrEqual(style.clientHeight + heightTolerancePx);
+
+  const widths = await page.evaluate(() => {
+    const headline = document.querySelector(
+      '[data-testid="headline-summary"]',
+    ) as HTMLElement | null;
+    const text = document.querySelector(
+      '[data-testid="headline-summary-text"]',
+    ) as HTMLElement | null;
+    const layout = document.querySelector(
+      '[data-testid="analyze-layout"]',
+    ) as HTMLElement | null;
+    if (!headline || !text || !layout) {
+      throw new Error("Cannot measure headline/analyze layout widths");
+    }
+    return {
+      headline: headline.getBoundingClientRect().width,
+      text: text.getBoundingClientRect().width,
+      layout: layout.getBoundingClientRect().width,
+    };
+  });
+  expect(
+    widths.headline,
+    "hoisted headline section should span the analyze page content width",
+  ).toBeGreaterThanOrEqual(widths.layout * 0.95);
+  expect(
+    widths.text,
+    "headline text line length should stay within the headline section",
+  ).toBeLessThanOrEqual(widths.headline);
 }
 
 async function assertHeadlineSummaryAtViewport(
