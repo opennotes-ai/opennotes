@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import type { EChartsOption } from "echarts";
 import { buildRollingOption } from "~/components/sidebar/reports/sentiment-timeline/buildRollingOption";
 import type { SentimentBucket } from "~/lib/sentiment-buckets";
 
@@ -31,11 +32,26 @@ function makeBuckets(): SentimentBucket[] {
   ];
 }
 
+type BarSeries = {
+  name?: string;
+  type?: string;
+  stack?: string;
+};
+
+type TooltipOption = {
+  trigger?: string;
+  formatter?: (params: unknown) => string;
+};
+
+function rollingOption(): EChartsOption {
+  return buildRollingOption(makeBuckets());
+}
+
 describe("buildRollingOption", () => {
   it("builds three stacked bar series with bucket-bound time-axis limits", () => {
     const buckets = makeBuckets();
     const option = buildRollingOption(buckets);
-    const series = Array.isArray(option.series) ? option.series : [];
+    const series = (Array.isArray(option.series) ? option.series : []) as BarSeries[];
 
     expect(series).toHaveLength(3);
     expect(
@@ -63,14 +79,13 @@ describe("buildRollingOption", () => {
   });
 
   it("formats tooltip windows in local time with one-decimal running percentages", () => {
-    const option = buildRollingOption(makeBuckets());
-    const tooltip = option.tooltip;
+    const tooltip = rollingOption().tooltip as TooltipOption;
 
     expect(tooltip).toBeDefined();
-    expect(tooltip?.trigger).toBe("axis");
-    expect(typeof tooltip?.formatter).toBe("function");
+    expect(tooltip.trigger).toBe("axis");
+    expect(typeof tooltip.formatter).toBe("function");
 
-    const text = (tooltip!.formatter as (params: unknown) => string)([
+    const text = tooltip.formatter!([
       {
         axisValue: BASE_MS + 15 * 60_000,
         data: [BASE_MS + 15 * 60_000, 37.5],
