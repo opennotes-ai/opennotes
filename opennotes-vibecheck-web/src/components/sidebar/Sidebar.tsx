@@ -128,6 +128,7 @@ function synthesizeSectionsFromPayload(
   };
   const webRiskData = {
     findings: payload.web_risk?.findings ?? [],
+    urls_checked: payload.web_risk?.urls_checked ?? 0,
   };
   const imageModerationData = {
     matches: payload.image_moderation?.matches ?? [],
@@ -206,6 +207,11 @@ function extractHarmfulContentMatches(data: unknown): HarmfulContentMatch[] {
 
 function extractWebRiskFindings(data: unknown): WebRiskFinding[] {
   return (asRecord(data).findings ?? []) as WebRiskFinding[];
+}
+
+function extractWebRiskUrlsChecked(data: unknown): number {
+  const raw = asRecord(data).urls_checked;
+  return typeof raw === "number" ? raw : 0;
 }
 
 function extractImageModerationMatches(data: unknown): ImageModerationMatch[] {
@@ -312,11 +318,9 @@ const SAFETY_COUNTS: Partial<
     return { total };
   },
   safety__web_risk: (data) => {
-    const findings = extractWebRiskFindings(data);
-    const flagged = findings.filter(
-      (finding) => (finding.threat_types?.length ?? 0) > 0,
-    ).length;
-    return { flagged, total: findings.length, kind: "flagged" };
+    const flagged = extractWebRiskFindings(data).length;
+    const total = extractWebRiskUrlsChecked(data);
+    return { flagged, total, kind: "flagged" };
   },
   safety__image_moderation: (data) => {
     const matches = extractImageModerationMatches(data);

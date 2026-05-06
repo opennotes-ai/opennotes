@@ -1358,6 +1358,12 @@ export interface components {
         WebRiskSection: {
             /** Findings */
             findings?: components["schemas"]["WebRiskFinding"][];
+            /**
+             * Urls Checked
+             * @description Number of distinct URLs submitted to Web Risk for this job (page URL plus any URLs extracted from utterances).
+             * @default 0
+             */
+            urls_checked: number;
         };
     };
     responses: never;

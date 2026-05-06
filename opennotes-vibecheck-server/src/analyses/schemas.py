@@ -136,6 +136,10 @@ class WebRiskSection(BaseModel):
     """GCP Web Risk findings for URLs referenced in the page."""
 
     findings: list[WebRiskFinding] = Field(default_factory=list)
+    urls_checked: int = Field(
+        default=0,
+        description="Number of distinct URLs submitted to Web Risk for this job (page URL plus any URLs extracted from utterances).",
+    )
 
 
 class ImageModerationSection(BaseModel):

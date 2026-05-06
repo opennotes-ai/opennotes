@@ -72,7 +72,7 @@ async def test_no_utterances_returns_empty_findings_no_http(
     payload = _make_payload(source_url="", utterances=[])
     result = await run_web_risk(None, _JOB_ID, _TASK_ATTEMPT, payload, Settings())
 
-    assert result == {"findings": []}
+    assert result == {"findings": [], "urls_checked": 0}
     assert called == []
 
 
@@ -107,7 +107,8 @@ async def test_unifies_page_url_and_utterance_media_into_pool(
 
     result = await mod.run_web_risk(None, _JOB_ID, _TASK_ATTEMPT, payload, Settings())
 
-    assert result == {"findings": []}
+    assert result["findings"] == []
+    assert result["urls_checked"] == 4
     assert len(received_urls) == 1
     pool = received_urls[0]
     assert sorted(pool) == pool
@@ -135,7 +136,8 @@ async def test_omits_clean_urls_from_output_payload(
 
     result = await run_web_risk(None, _JOB_ID, _TASK_ATTEMPT, payload, Settings())
 
-    assert result == {"findings": []}
+    assert result["findings"] == []
+    assert result["urls_checked"] == 2
 
 
 @pytest.mark.asyncio
@@ -166,6 +168,7 @@ async def test_includes_threatened_findings_only(
     assert len(result["findings"]) == 1
     assert result["findings"][0]["url"] == bad_url
     assert result["findings"][0]["threat_types"] == ["MALWARE"]
+    assert result["urls_checked"] == 2
 
 
 @pytest.mark.asyncio
@@ -192,7 +195,8 @@ async def test_dedupes_url_across_text_image_video_lists(
 
     result = await run_web_risk(None, _JOB_ID, _TASK_ATTEMPT, payload, Settings())
 
-    assert result == {"findings": []}
+    assert result["findings"] == []
+    assert result["urls_checked"] == 1
     assert len(received) == 1
     assert received[0].count(dup_url) == 1
 
