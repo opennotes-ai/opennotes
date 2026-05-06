@@ -1,6 +1,7 @@
 """Slot wrapper for opinion trends/oppositions analysis."""
 from __future__ import annotations
 
+import json
 from collections.abc import Mapping
 from typing import Any
 
@@ -11,6 +12,12 @@ from src.analyses.opinions._trends_schemas import TrendsOppositionsReport
 from src.analyses.opinions.trends_oppositions import extract_trends_oppositions
 from src.analyses.schemas import SectionSlot, SectionSlug, SectionState
 from src.config import Settings
+
+_LOAD_SECTIONS_SQL = """
+SELECT sections
+FROM vibecheck_jobs
+WHERE job_id = $1
+"""
 
 
 def _empty_report() -> dict[str, Any]:
@@ -24,14 +31,31 @@ def _empty_report() -> dict[str, Any]:
 
 
 def _coerce_sections(payload: Any) -> dict[str, Any]:
+    if isinstance(payload, str):
+        try:
+            payload = json.loads(payload)
+        except ValueError:
+            return {}
     if not isinstance(payload, Mapping):
         return {}
-    if "sections" not in payload:
-        return dict(payload)
-    sections = payload["sections"]
+
+    sections = payload.get("sections", payload)
     if not isinstance(sections, Mapping):
         return {}
     return dict(sections)
+
+
+async def _load_sections_from_db(pool: Any, job_id: Any) -> dict[str, Any]:
+    if not hasattr(pool, "acquire"):
+        return {}
+
+    try:
+        async with pool.acquire() as conn:
+            sections = await conn.fetchval(_LOAD_SECTIONS_SQL, job_id)
+    except Exception:
+        return {}
+
+    return _coerce_sections(sections)
 
 
 def _extract_section_payload(payload: Mapping[str, Any], slug: str) -> dict[str, Any]:
@@ -83,11 +107,15 @@ async def run_trends_oppositions(
     payload: Any,
     settings: Settings,
 ) -> dict[str, Any]:
-    del pool, job_id, task_attempt
-
     facts_slot_payload = _load_facts_slot_from_payload(
         payload, SectionSlug.FACTS_CLAIMS_DEDUP.value
     )
+    if not facts_slot_payload:
+        facts_slot_payload = _load_facts_slot_from_payload(
+            await _load_sections_from_db(pool, job_id),
+            SectionSlug.FACTS_CLAIMS_DEDUP.value,
+        )
+
     if not facts_slot_payload:
         return _empty_report()
 

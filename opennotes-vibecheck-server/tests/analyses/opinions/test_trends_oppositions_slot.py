@@ -1,6 +1,7 @@
 """Tests for the `run_trends_oppositions` slot wrapper."""
 from __future__ import annotations
 
+import json
 from typing import Any
 from unittest.mock import AsyncMock
 from uuid import uuid4
@@ -12,6 +13,33 @@ from src.analyses.opinions import trends_oppositions_slot
 from src.analyses.opinions._trends_schemas import TrendsOppositionsReport
 from src.analyses.schemas import SectionSlug
 from src.config import Settings
+
+
+class _Acquire:
+    def __init__(self, sections_row: Any) -> None:
+        self._sections_row = sections_row
+
+    async def __aenter__(self) -> _Conn:
+        return _Conn(self._sections_row)
+
+    async def __aexit__(self, *args: object) -> None:
+        return None
+
+
+class _Conn:
+    def __init__(self, sections_row: Any) -> None:
+        self._sections_row = sections_row
+
+    async def fetchval(self, *_args: object) -> object:
+        return self._sections_row
+
+
+class _Pool:
+    def __init__(self, sections_row: Any) -> None:
+        self._sections_row = sections_row
+
+    def acquire(self) -> _Acquire:
+        return _Acquire(self._sections_row)
 
 
 def _settings() -> Settings:
@@ -82,6 +110,101 @@ async def test_trends_oppositions_facts_slot_not_done_returns_empty_report(
         job_id=uuid4(),
         task_attempt=uuid4(),
         payload=payload,
+        settings=_settings(),
+    )
+
+    assert result == _empty_report()
+    fake.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_trends_oppositions_retry_payload_none_reads_done_facts_slot_from_db(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake = AsyncMock(
+        return_value=TrendsOppositionsReport(
+            trends=[
+                {
+                    "label": "Retry-only fact",
+                    "cluster_ids": ["cluster-1"],
+                    "summary": "Two subjective/self clusters found.",
+                }
+            ],
+            oppositions=[],
+            input_cluster_count=2,
+            skipped_for_cap=0,
+        )
+    )
+    captured: list[DedupedClaim] = []
+
+    async def fake_extract(clusters: list[DedupedClaim], **kwargs: Any) -> TrendsOppositionsReport:
+        captured.extend(clusters)
+        assert kwargs["settings"] is not None
+        return await fake(clusters=clusters, **kwargs)
+
+    monkeypatch.setattr(trends_oppositions_slot, "extract_trends_oppositions", fake_extract)
+
+    sections = json.dumps(
+        {
+            SectionSlug.FACTS_CLAIMS_DEDUP.value: {
+                "state": "done",
+                "attempt_id": str(uuid4()),
+                "data": {
+                    "claims_report": _claims_report(
+                        _cluster("I like this", ClaimCategory.SUBJECTIVE),
+                        _cluster("I prefer this", ClaimCategory.SELF_CLAIMS),
+                        _cluster("This is true", ClaimCategory.POTENTIALLY_FACTUAL),
+                    )
+                },
+            }
+        }
+    )
+    pool = _Pool(sections)
+
+    result = await trends_oppositions_slot.run_trends_oppositions(
+        pool=pool,
+        job_id=uuid4(),
+        task_attempt=uuid4(),
+        payload=None,
+        settings=_settings(),
+    )
+
+    assert result["trends_oppositions_report"]["input_cluster_count"] == 2
+    assert [cluster.canonical_text for cluster in captured] == [
+        "I like this",
+        "I prefer this",
+    ]
+    assert result["trends_oppositions_report"]["trends"][0]["label"] == "Retry-only fact"
+
+
+@pytest.mark.asyncio
+async def test_trends_oppositions_facts_slot_malformed_db_payload_returns_empty_report(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake = AsyncMock(
+        return_value=TrendsOppositionsReport(
+            trends=[],
+            oppositions=[],
+            input_cluster_count=0,
+            skipped_for_cap=0,
+        )
+    )
+    monkeypatch.setattr(trends_oppositions_slot, "extract_trends_oppositions", fake)
+
+    sections = {
+        SectionSlug.FACTS_CLAIMS_DEDUP.value: {
+            "state": "done",
+            "attempt_id": str(uuid4()),
+            "data": {"claims_report": "malformed"},
+        }
+    }
+    pool = _Pool(json.dumps(sections))
+
+    result = await trends_oppositions_slot.run_trends_oppositions(
+        pool=pool,
+        job_id=uuid4(),
+        task_attempt=uuid4(),
+        payload=None,
         settings=_settings(),
     )
 
