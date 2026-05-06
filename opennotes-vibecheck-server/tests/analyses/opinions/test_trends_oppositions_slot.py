@@ -99,7 +99,7 @@ def _empty_report() -> dict[str, Any]:
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("state", ["failed", "pending"])
+@pytest.mark.parametrize("state", ["failed"])
 async def test_trends_oppositions_facts_slot_not_done_returns_empty_report(
     monkeypatch: pytest.MonkeyPatch,
     state: str,
@@ -135,7 +135,7 @@ async def test_trends_oppositions_facts_slot_not_done_returns_empty_report(
 
 
 @pytest.mark.asyncio
-async def test_trends_oppositions_retry_payload_none_facts_slot_not_done_raises() -> None:
+async def test_trends_oppositions_retry_payload_none_facts_slot_pending_raises() -> None:
     pool = _Pool(
         json.dumps(
             {
@@ -162,20 +162,49 @@ async def test_trends_oppositions_retry_payload_none_facts_slot_not_done_raises(
 
 
 @pytest.mark.asyncio
-async def test_trends_oppositions_retry_payload_none_facts_slot_missing_raises() -> None:
+async def test_trends_oppositions_retry_payload_none_facts_slot_missing_empty() -> None:
     pool = _Pool(json.dumps({}))
 
-    with pytest.raises(
-        trends_oppositions_slot.TrendsDependenciesNotReadyError,
-        match="dependencies not ready",
-    ):
-        await trends_oppositions_slot.run_trends_oppositions(
-            pool=pool,
-            job_id=uuid4(),
-            task_attempt=uuid4(),
-            payload=None,
-            settings=_settings(),
+    result = await trends_oppositions_slot.run_trends_oppositions(
+        pool=pool,
+        job_id=uuid4(),
+        task_attempt=uuid4(),
+        payload=None,
+        settings=_settings(),
+    )
+
+    assert result == _empty_report()
+
+
+@pytest.mark.asyncio
+async def test_trends_oppositions_retry_payload_none_facts_slot_failed_empty() -> None:
+    pool = _Pool(
+        json.dumps(
+            {
+                SectionSlug.FACTS_CLAIMS_DEDUP.value: {
+                    "state": "failed",
+                    "attempt_id": str(uuid4()),
+                    "data": {
+                        "claims_report": {
+                            "deduped_claims": [],
+                            "total_claims": 0,
+                            "total_unique": 0,
+                        }
+                    },
+                }
+            }
         )
+    )
+
+    result = await trends_oppositions_slot.run_trends_oppositions(
+        pool=pool,
+        job_id=uuid4(),
+        task_attempt=uuid4(),
+        payload=None,
+        settings=_settings(),
+    )
+
+    assert result == _empty_report()
 
 
 @pytest.mark.asyncio

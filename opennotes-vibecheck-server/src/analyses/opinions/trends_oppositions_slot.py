@@ -20,6 +20,9 @@ WHERE job_id = $1
 """
 
 
+FIRST_RUN_DEPENDENCY_PAYLOAD: object = object()
+
+
 class TrendsDependenciesNotReadyError(RuntimeError):
     """Dependency data is present but not in a DONE state and cannot be used."""
 
@@ -62,43 +65,34 @@ async def _load_sections_from_db(pool: Any, job_id: Any) -> dict[str, Any]:
 def _extract_section_payload(
     payload: Mapping[str, Any],
     slug: str,
-) -> tuple[dict[str, Any], bool]:
-    """Return `(payload, is_dependency_ready)` for a dependency section.
-
-    `is_dependency_ready` is true when the dependency is present or DONE.
-    Missing, failed, pending, and otherwise unavailable sections are treated as
-    not ready; malformed data remains tolerated as an empty payload for DONE
-    sections.
-    """
+) -> tuple[dict[str, Any], str]:
+    """Return `(payload, dependency_state)` for a dependency section."""
     raw = payload.get(slug)
     data: dict[str, Any] = {}
-    is_dependency_ready = False
+    state = "missing"
     if raw is None:
-        pass
+        return data, state
     elif isinstance(raw, SectionSlot):
         if raw.state == SectionState.DONE:
             data = raw.data if isinstance(raw.data, dict) else {}
-            is_dependency_ready = True
+            return data, SectionState.DONE.value
+        return data, raw.state.value
     elif isinstance(raw, Mapping):
         if "state" not in raw or "attempt_id" not in raw:
             data = dict(raw)
-            is_dependency_ready = True
+            return data, SectionState.DONE.value
         else:
             try:
                 slot = SectionSlot.model_validate(raw)
             except ValidationError:
-                data = {}
-                is_dependency_ready = True
+                return data, "malformed"
             else:
                 if slot.state == SectionState.DONE:
-                    is_dependency_ready = True
                     data = slot.data if isinstance(slot.data, dict) else {}
-                else:
-                    is_dependency_ready = False
+                    return data, slot.state.value
+                return data, slot.state.value
     else:
-        pass
-
-    return data, is_dependency_ready
+        return data, "malformed"
 
 
 def _extract_deduped_claims(payload: Mapping[str, Any]) -> list[DedupedClaim]:
@@ -115,8 +109,20 @@ def _extract_deduped_claims(payload: Mapping[str, Any]) -> list[DedupedClaim]:
 def _load_facts_slot_from_payload(
     payload: Any,
     slug: str,
-) -> tuple[dict[str, Any], bool]:
+) -> tuple[dict[str, Any], str]:
     return _extract_section_payload(_coerce_sections(payload), slug)
+
+
+def _is_retry_mode(payload: Any) -> bool:
+    return payload is None
+
+
+def _is_initial_run_mode(payload: Any) -> bool:
+    return payload is FIRST_RUN_DEPENDENCY_PAYLOAD
+
+
+def _is_transient_dependency_state(state: str) -> bool:
+    return state in {SectionState.RUNNING.value, SectionState.PENDING.value}
 
 
 async def run_trends_oppositions(
@@ -126,24 +132,29 @@ async def run_trends_oppositions(
     payload: Any,
     settings: Settings,
 ) -> dict[str, Any]:
-    is_retry = payload is None
+    is_retry_mode = _is_retry_mode(payload)
+    is_initial_run_mode = _is_initial_run_mode(payload)
+    if is_initial_run_mode:
+        payload = {}
     facts_slot_payload, facts_slot_ready = _load_facts_slot_from_payload(
         payload, SectionSlug.FACTS_CLAIMS_DEDUP.value
     )
-    if not facts_slot_payload:
-        if is_retry:
+    if is_retry_mode or is_initial_run_mode:
+        if not facts_slot_payload:
             db_sections = await _load_sections_from_db(pool, job_id)
             facts_slot_payload, facts_slot_ready = _load_facts_slot_from_payload(
                 db_sections,
                 SectionSlug.FACTS_CLAIMS_DEDUP.value,
             )
-        else:
-            return _empty_report()
 
-    if is_retry and not facts_slot_ready:
+    if facts_slot_ready in {"missing", "malformed", "failed"}:
+        return _empty_report()
+    if is_retry_mode and _is_transient_dependency_state(facts_slot_ready):
         raise TrendsDependenciesNotReadyError(
             f"dependencies not ready for {SectionSlug.OPINIONS_SENTIMENTS_TRENDS_OPPOSITIONS.value}"
         )
+    if is_initial_run_mode and _is_transient_dependency_state(facts_slot_ready):
+        return _empty_report()
 
     if not facts_slot_payload:
         return _empty_report()

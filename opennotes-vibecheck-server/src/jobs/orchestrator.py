@@ -78,6 +78,7 @@ from src.analyses.opinions.sentiment_slot import run_sentiment
 from src.analyses.opinions.subjective_slot import run_subjective
 from src.analyses.opinions.trends_oppositions_slot import (
     TrendsDependenciesNotReadyError,
+    FIRST_RUN_DEPENDENCY_PAYLOAD,
     run_trends_oppositions,
 )
 from src.analyses.safety._schemas import (
@@ -1949,7 +1950,7 @@ async def _run_all_sections(
                 job_id,
                 task_attempt,
                 slug,
-                None,
+                FIRST_RUN_DEPENDENCY_PAYLOAD,
                 settings,
                 test_fail_slug=test_fail_slug,
             )
