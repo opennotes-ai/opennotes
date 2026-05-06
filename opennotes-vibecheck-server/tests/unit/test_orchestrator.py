@@ -118,16 +118,16 @@ async def test_run_section_write_slot_exception_still_raises_when_mark_slot_also
         await _run_section(pool, job_id, task_attempt, slug, payload, settings)
 
 
-async def test_run_all_sections_persists_empty_enrichment_slots_when_dedup_fails(
+async def test_run_all_sections_persists_empty_dedup_dependent_slots_when_dedup_fails(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """B-C2 regression: dedup failure must not strand the three claim
-    enrichment slots in unwritten state.
+    enrichment slots or trends/oppositions in unwritten state.
 
     `maybe_finalize_job` blocks on `len(sections) < len(SectionSlug)`, so
     when dedup fails the orchestrator must write terminal slots for
     FACTS_CLAIMS_EVIDENCE / FACTS_CLAIMS_PREMISES / FACTS_CLAIMS_KNOWN_MISINFO
-    so finalize can proceed.
+    / OPINIONS_SENTIMENTS_TRENDS_OPPOSITIONS so finalize can proceed.
     """
     from src.jobs import orchestrator
 
@@ -167,20 +167,69 @@ async def test_run_all_sections_persists_empty_enrichment_slots_when_dedup_fails
         settings=MagicMock(),
     )
 
-    enrichment_slugs = {
+    dependent_slugs = {
         SectionSlug.FACTS_CLAIMS_EVIDENCE,
         SectionSlug.FACTS_CLAIMS_PREMISES,
         SectionSlug.FACTS_CLAIMS_KNOWN_MISINFO,
+        SectionSlug.OPINIONS_SENTIMENTS_TRENDS_OPPOSITIONS,
     }
     written_slugs = {slug for slug, _state, _data in written}
-    assert enrichment_slugs.issubset(written_slugs)
+    assert dependent_slugs.issubset(written_slugs)
     for slug, state, data in written:
-        if slug in enrichment_slugs:
+        if slug in dependent_slugs:
             assert state == SectionState.DONE
             assert isinstance(data, dict)
     assert all(
-        slug not in run_section_calls for slug in enrichment_slugs
-    ), "enrichment slots must skip _run_section when dedup fails"
+        slug not in run_section_calls for slug in dependent_slugs
+    ), "dedup-dependent slots must skip _run_section when dedup fails"
+
+
+@pytest.mark.asyncio
+async def test_run_all_sections_writes_trends_oppositions_after_dedup(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """FACTS_CLAIMS_DEDUP must complete before trends/oppositions runs."""
+    from src.jobs import orchestrator
+
+    states: dict[str, bool] = {"dedup_done": False}
+    run_order: list[str] = []
+
+    async def fake_run_section(
+        _pool: Any,
+        _job_id: UUID,
+        _task_attempt: UUID,
+        slug: SectionSlug,
+        _payload: Any,
+        _settings: Any,
+        *,
+        test_fail_slug: str | None = None,
+    ) -> None:
+        if slug == SectionSlug.FACTS_CLAIMS_DEDUP:
+            # Simulate a non-trivial slot write path that must finish first.
+            await asyncio.sleep(0.02)
+            run_order.append(slug.value)
+            states["dedup_done"] = True
+        elif slug == SectionSlug.OPINIONS_SENTIMENTS_TRENDS_OPPOSITIONS:
+            assert states["dedup_done"] is True
+            run_order.append(slug.value)
+        else:
+            run_order.append(slug.value)
+
+    monkeypatch.setattr(orchestrator, "_run_section", fake_run_section)
+
+    await orchestrator._run_all_sections(
+        pool=object(),
+        job_id=uuid4(),
+        task_attempt=uuid4(),
+        payload=object(),
+        settings=MagicMock(),
+    )
+
+    assert states["dedup_done"] is True
+    assert (
+        run_order[-1]
+        == SectionSlug.OPINIONS_SENTIMENTS_TRENDS_OPPOSITIONS.value
+    )
 
 
 class FakeAcquire:

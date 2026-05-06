@@ -1904,16 +1904,17 @@ async def _run_all_sections(
     that 200'd back to Cloud Tasks while leaving slots unwritten
     (TASK-1473.41).
     """
-    claim_enrichment_slugs: tuple[SectionSlug, ...] = (
+    dedup_dependent_slugs: tuple[SectionSlug, ...] = (
         SectionSlug.FACTS_CLAIMS_EVIDENCE,
         SectionSlug.FACTS_CLAIMS_PREMISES,
         SectionSlug.FACTS_CLAIMS_KNOWN_MISINFO,
+        SectionSlug.OPINIONS_SENTIMENTS_TRENDS_OPPOSITIONS,
     )
-    claim_enrichment_set = set(claim_enrichment_slugs)
-    non_claim_enrichment_slugs: list[SectionSlug] = [
+    dedup_dependent_set = set(dedup_dependent_slugs)
+    independent_slugs: list[SectionSlug] = [
         slug
         for slug in SectionSlug
-        if slug not in claim_enrichment_set
+        if slug not in dedup_dependent_set
     ]
 
     initial_tasks = {
@@ -1928,17 +1929,17 @@ async def _run_all_sections(
                 test_fail_slug=test_fail_slug,
             )
         )
-        for slug in non_claim_enrichment_slugs
+        for slug in independent_slugs
     }
     dedup_state = await initial_tasks[SectionSlug.FACTS_CLAIMS_DEDUP]
     if dedup_state != SectionState.DONE:
         await asyncio.gather(*initial_tasks.values())
         await _persist_empty_claim_enrichment_slots(
-            pool, job_id, task_attempt, claim_enrichment_slugs
+            pool, job_id, task_attempt, dedup_dependent_slugs
         )
         return
 
-    enrichment_tasks = [
+    dependent_tasks = [
         asyncio.create_task(
             _run_section(
                 pool,
@@ -1950,11 +1951,11 @@ async def _run_all_sections(
                 test_fail_slug=test_fail_slug,
             )
         )
-        for slug in claim_enrichment_slugs
+        for slug in dedup_dependent_slugs
         if slug in _SECTION_HANDLERS
     ]
 
-    await asyncio.gather(*initial_tasks.values(), *enrichment_tasks)
+    await asyncio.gather(*initial_tasks.values(), *dependent_tasks)
 
 
 def _parse_sections(raw: Any) -> dict[str, Any]:
