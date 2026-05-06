@@ -76,7 +76,10 @@ from src.analyses.claims.premises_slot import run_claims_premises
 from src.analyses.opinions._schemas import SentimentStatsReport, SubjectiveClaim
 from src.analyses.opinions.sentiment_slot import run_sentiment
 from src.analyses.opinions.subjective_slot import run_subjective
-from src.analyses.opinions.trends_oppositions_slot import run_trends_oppositions
+from src.analyses.opinions.trends_oppositions_slot import (
+    TrendsDependenciesNotReadyError,
+    run_trends_oppositions,
+)
 from src.analyses.safety._schemas import (
     HarmfulContentMatch,
     ImageModerationMatch,
@@ -1946,7 +1949,7 @@ async def _run_all_sections(
                 job_id,
                 task_attempt,
                 slug,
-                payload,
+                None,
                 settings,
                 test_fail_slug=test_fail_slug,
             )
@@ -2904,6 +2907,15 @@ async def run_section_retry(  # noqa: PLR0912
                 )
                 return RunResult(status_code=200)
             except Exception as exc:
+                if isinstance(exc, TrendsDependenciesNotReadyError):
+                    logger.info(
+                        "section-retry: trends dependencies not ready for job=%s slug=%s — "
+                        "retrying without marking failed",
+                        job_id,
+                        slug.value,
+                    )
+                    return RunResult(status_code=503)
+
                 SECTION_FAILURES.labels(
                     slug=slug.value, error_type=classify_error(exc)
                 ).inc()
