@@ -299,6 +299,22 @@ function extractTrendsOppositionsReport(
     EMPTY_TRENDS_OPPOSITIONS_REPORT) as TrendsOppositionsReportData;
 }
 
+function highlightsRevisionToken(
+  report: OpinionsHighlightsReport | null | undefined,
+): string {
+  if (!report) return "highlights:none";
+  const firstHighlight = report.highlights[0]?.cluster;
+  return [
+    "highlights:present",
+    report.fallback_engaged ? "fallback" : "standard",
+    report.highlights.length,
+    report.floor_eligible_count,
+    report.total_input_count,
+    firstHighlight?.canonical_text ?? "",
+    firstHighlight?.utterance_ids?.[0] ?? "",
+  ].join(":");
+}
+
 const SAFETY_RENDER: Partial<
   Record<SectionSlugLiteral, (data: unknown) => JSX.Element>
 > = {
@@ -518,6 +534,11 @@ function fillMissingSlotsAsRunning(base: SlugToSlots): SlugToSlots {
 export default function Sidebar(props: SidebarProps) {
   const canJump = () => props.canJumpToUtterance === true;
   const utterances = (): UtteranceAnchor[] => props.payload?.utterances ?? [];
+  const opinionsRenderRevision = createMemo(() =>
+    [canJump(), highlightsRevisionToken(props.payload?.opinions_sentiments?.highlights)].join(
+      "|",
+    ),
+  );
   const safetyRender = createMemo<
     Partial<Record<SectionSlugLiteral, (data: unknown) => JSX.Element>>
   >(() => ({
@@ -732,7 +753,7 @@ export default function Sidebar(props: SidebarProps) {
         jobId={props.jobId}
         onRetry={props.onRetry}
         cachedHint={props.cachedHint}
-        renderRevision={canJump()}
+        renderRevision={opinionsRenderRevision()}
       />
     </aside>
   );
