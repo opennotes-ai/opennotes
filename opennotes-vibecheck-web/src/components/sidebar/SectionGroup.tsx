@@ -53,6 +53,13 @@ export interface SectionGroupProps {
   renderRevision?: string | number | boolean;
 }
 
+function slugify(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "");
+}
+
 function ChevronIcon(props: { expanded: boolean; testId: string }) {
   return (
     <ChevronDown
@@ -207,9 +214,12 @@ export default function SectionGroup(props: SectionGroupProps): JSX.Element {
   let initializedAnnouncements = false;
   const [announcement, setAnnouncement] = createSignal("");
   const [groupOpen, setGroupOpen] = createSignal(true);
-  const groupBodyId = `section-group-body-${props.label}`;
+  const labelSlug = slugify(props.label);
+  const groupBodyId = `section-group-body-${labelSlug}`;
   const sectionToggleLabel = () =>
     `${groupOpen() ? "Collapse" : "Expand"} ${props.label} section`;
+
+  const [summaryUserOpen, setSummaryUserOpen] = createSignal<boolean | null>(null);
 
   createEffect(() => {
     const jobId = props.jobId ?? "";
@@ -269,24 +279,20 @@ export default function SectionGroup(props: SectionGroupProps): JSX.Element {
     >
       <header class="flex items-start justify-between gap-2">
         <div class="flex min-w-0 items-center gap-1.5">
-          <button
-            type="button"
-            data-testid={`section-toggle-${props.label}`}
-            aria-label={sectionToggleLabel()}
-            aria-expanded={groupOpen() ? "true" : "false"}
-            aria-controls={groupBodyId}
-            onClick={() => setGroupOpen((current) => !current)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter" || event.key === " ") {
-                event.preventDefault();
-                setGroupOpen((current) => !current);
-              }
-            }}
-            class="inline-flex shrink-0 items-center rounded-sm text-muted-foreground outline-none hover:bg-accent hover:text-accent-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-          >
-            <ChevronIcon expanded={groupOpen()} testId="section-group-chevron" />
-          </button>
-          <h3 class="text-sm font-semibold text-foreground">{props.label}</h3>
+          <h3 class="flex min-w-0 items-center text-sm font-semibold text-foreground">
+            <button
+              type="button"
+              data-testid={`section-toggle-${props.label}`}
+              aria-label={sectionToggleLabel()}
+              aria-expanded={groupOpen() ? "true" : "false"}
+              aria-controls={groupBodyId}
+              onClick={() => setGroupOpen((current) => !current)}
+              class="flex min-w-0 items-center gap-1.5 rounded-sm outline-none hover:opacity-80 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            >
+              <ChevronIcon expanded={groupOpen()} testId="section-group-chevron" />
+              {props.label}
+            </button>
+          </h3>
           <HelpPopover
             copy={sectionHelp(props.label)}
             triggerTestId={`section-help-${props.label}`}
@@ -323,14 +329,13 @@ export default function SectionGroup(props: SectionGroupProps): JSX.Element {
       >
         <Show when={props.summary}>
           {(summary) => {
-            const summaryId = `section-summary-body-${props.label}`;
-            const [userOpen, setUserOpen] = createSignal<boolean | null>(null);
+            const summaryId = `section-summary-body-${labelSlug}`;
             const isOpen = createMemo(
-              () => userOpen() ?? (summary().defaultOpen ?? true),
+              () => summaryUserOpen() ?? (summary().defaultOpen ?? true),
             );
             const summaryToggleLabel = () =>
               `${isOpen() ? "Collapse" : "Expand"} ${summary().label ?? "Summary"} in ${props.label}`;
-            const toggle = () => setUserOpen((current) => !(current ?? isOpen()));
+            const toggle = () => setSummaryUserOpen((current) => !(current ?? isOpen()));
             return (
               <div
                 data-testid={`section-summary-${props.label}`}
@@ -345,12 +350,6 @@ export default function SectionGroup(props: SectionGroupProps): JSX.Element {
                     aria-expanded={isOpen() ? "true" : "false"}
                     aria-controls={summaryId}
                     onClick={toggle}
-                    onKeyDown={(event) => {
-                      if (event.key === "Enter" || event.key === " ") {
-                        event.preventDefault();
-                        toggle();
-                      }
-                    }}
                     class="flex min-w-0 flex-1 items-center justify-between gap-2 rounded-sm text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                   >
                     <span>{summary().label ?? "Summary"}</span>
@@ -359,9 +358,13 @@ export default function SectionGroup(props: SectionGroupProps): JSX.Element {
                     </span>
                   </button>
                 </div>
-                <Show when={isOpen()}>
-                  <div id={summaryId}>{summary().content()}</div>
-                </Show>
+                <div
+                  id={summaryId}
+                  hidden={!isOpen()}
+                  aria-hidden={isOpen() ? "false" : "true"}
+                >
+                  {summary().content()}
+                </div>
               </div>
             );
           }}
@@ -401,12 +404,6 @@ export default function SectionGroup(props: SectionGroupProps): JSX.Element {
                     aria-expanded={isOpen() ? "true" : "false"}
                     aria-controls={bodyId}
                     onClick={toggle}
-                    onKeyDown={(event) => {
-                      if (event.key === "Enter" || event.key === " ") {
-                        event.preventDefault();
-                        toggle();
-                      }
-                    }}
                     class={
                       slot().state === "pending"
                         ? "flex min-w-0 flex-1 items-center justify-between gap-2 rounded-sm text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground opacity-60 outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
@@ -444,7 +441,6 @@ export default function SectionGroup(props: SectionGroupProps): JSX.Element {
                   <div id={bodyId}>
                     <Switch>
                       <Match when={slot().state === "pending"}>
-                        {/* pending: label only, no body */}
                         <span class="sr-only">pending</span>
                       </Match>
                       <Match when={slot().state === "running"}>
@@ -453,13 +449,6 @@ export default function SectionGroup(props: SectionGroupProps): JSX.Element {
                       <Match when={slot().state === "done"}>
                         <Show when={props.render[slug]}>
                           {(renderFn) => {
-                            // Polling fires `slot()` on every tick (~1.5s) with
-                            // freshly-parsed data objects. Without this memo the
-                            // inline `renderFn()(slot().data)` below re-evaluates
-                            // every tick, producing a brand-new JSX tree and
-                            // unmounting+remounting the report's DOM — which
-                            // flickered <img>/<iframe> children as they reloaded.
-                            // Mirrors the PR #409 fix for PageFrame.
                             const attemptKey = createMemo(() => {
                               const s = slot();
                               return s.state === "done" && s.attempt_id
