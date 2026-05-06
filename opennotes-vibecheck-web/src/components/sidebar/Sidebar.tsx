@@ -502,7 +502,7 @@ const OPINIONS_COUNTS: Partial<
 > = {
   opinions_sentiments__sentiment: (data) => {
     const total = extractSentimentStats(data).per_utterance.length;
-    return { total };
+    return { total, kind: "sentences" };
   },
   opinions_sentiments__subjective: (data) => {
     const total = extractSubjectiveClaims(data).length;
