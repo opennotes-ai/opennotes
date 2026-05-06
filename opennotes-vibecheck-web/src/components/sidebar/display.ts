@@ -13,6 +13,7 @@ export const SECTION_DISPLAY_NAMES: Record<SectionSlug, string> = {
   facts_claims__known_misinfo: "Known misinfo",
   opinions_sentiments__sentiment: "Sentiment",
   opinions_sentiments__subjective: "Subjective claims",
+  opinions_sentiments__trends_oppositions: "Trends/oppositions",
 };
 
 export function sectionDisplayName(slug: SectionSlug): string {

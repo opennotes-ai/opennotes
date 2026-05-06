@@ -21,6 +21,7 @@ const SECTION_SLUGS = [
   "facts_claims__known_misinfo",
   "opinions_sentiments__sentiment",
   "opinions_sentiments__subjective",
+  "opinions_sentiments__trends_oppositions",
 ] as const;
 
 function makePayload(overrides: Partial<SidebarPayload> = {}): SidebarPayload {
@@ -57,6 +58,12 @@ function makePayload(overrides: Partial<SidebarPayload> = {}): SidebarPayload {
           mean_valence: 0,
         },
         subjective_claims: [],
+      },
+      trends_oppositions: {
+        trends: [],
+        oppositions: [],
+        input_cluster_count: 0,
+        skipped_for_cap: 0,
       },
     },
     ...overrides,

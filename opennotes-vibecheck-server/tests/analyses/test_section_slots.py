@@ -29,6 +29,11 @@ class _Conn:
     async def fetch(self, *_args: object) -> list[dict[str, object]]:
         return self._rows
 
+    async def fetchval(self, *_args: object) -> object:
+        if not self._rows:
+            return None
+        return self._rows[0].get("utterance_stream_type")
+
 
 class _Pool:
     def __init__(self, rows: list[dict[str, object]]) -> None:
@@ -108,7 +113,8 @@ async def test_run_scd_loads_persisted_utterances_and_returns_report(
 ) -> None:
     from src.analyses.tone import scd_slot
 
-    async def fake_analyze(utterances, settings):
+    async def fake_analyze(utterances, settings, *, utterance_stream_type=None):
+        del utterance_stream_type
         assert [u.author for u in utterances] == ["alice", "bob"]
         return SCDReport(
             narrative="Bob escalates after Alice reports a concrete issue.",

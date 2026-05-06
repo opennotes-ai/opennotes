@@ -73,6 +73,11 @@ const SLOT_HELP: Record<SectionSlugLiteral, SidebarHelpCopy> = {
     looksFor: "Claims framed as judgments, preferences, or personal impressions.",
     means: "Subjective claims may need different handling than factual assertions.",
   },
+  opinions_sentiments__trends_oppositions: {
+    looksFor:
+      "Recurring claim patterns and opposing opinion clusters represented by shared evidence patterns.",
+    means: "These results show where sentiment clusters repeat and where claims split in direction.",
+  },
 };
 
 export function sectionHelp(label: string): SidebarHelpCopy | null {

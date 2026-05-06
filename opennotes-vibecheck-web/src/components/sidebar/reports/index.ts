@@ -10,3 +10,5 @@ export { default as ClaimsDedupReport } from "./ClaimsDedupReport";
 export { default as KnownMisinfoReport } from "./KnownMisinfoReport";
 export { default as SentimentReport } from "./SentimentReport";
 export { default as SubjectiveReport } from "./SubjectiveReport";
+export { default as TrendsOppositionsReport } from "./TrendsOppositionsReport";
+export { EMPTY_TRENDS_OPPOSITIONS_REPORT } from "./TrendsOppositionsReport";

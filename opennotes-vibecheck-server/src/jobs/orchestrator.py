@@ -76,6 +76,11 @@ from src.analyses.claims.premises_slot import run_claims_premises
 from src.analyses.opinions._schemas import SentimentStatsReport, SubjectiveClaim
 from src.analyses.opinions.sentiment_slot import run_sentiment
 from src.analyses.opinions.subjective_slot import run_subjective
+from src.analyses.opinions.trends_oppositions_slot import (
+    FIRST_RUN_DEPENDENCY_PAYLOAD,
+    TrendsDependenciesNotReadyError,
+    run_trends_oppositions,
+)
 from src.analyses.safety._schemas import (
     HarmfulContentMatch,
     ImageModerationMatch,
@@ -127,6 +132,7 @@ from src.firecrawl_client import (
     ScrapeMetadata,
     ScrapeResult,
 )
+from src.jobs.enqueue import enqueue_section_retry
 from src.jobs.finalize import maybe_finalize_job
 from src.jobs.pdf_extract import PDFExtractionError, pdf_extract_step
 from src.jobs.scrape_quality import ScrapeQuality, classify_scrape
@@ -176,6 +182,8 @@ upstream flake. This cap is intentionally equal to Cloud Tasks max_attempts:
 the backstop fires on the same final delivery that Cloud Tasks would also
 stop, preventing wasted deliveries that the prior cap of 2 caused.
 """
+
+_SECTION_RETRY_DEPENDENCY_BACKOFF_SECONDS: Final[int] = 30
 
 
 _CORAL_PARTIAL_MARKERS: tuple[str, ...] = (
@@ -1856,6 +1864,7 @@ _SECTION_HANDLERS: dict[SectionSlug, Any] = {
     SectionSlug.FACTS_CLAIMS_KNOWN_MISINFO: run_facts_claims_known_misinfo,
     SectionSlug.OPINIONS_SENTIMENTS_SENTIMENT: run_sentiment,
     SectionSlug.OPINIONS_SENTIMENTS_SUBJECTIVE: run_subjective,
+    SectionSlug.OPINIONS_SENTIMENTS_TRENDS_OPPOSITIONS: run_trends_oppositions,
 }
 
 
@@ -1902,16 +1911,17 @@ async def _run_all_sections(
     that 200'd back to Cloud Tasks while leaving slots unwritten
     (TASK-1473.41).
     """
-    claim_enrichment_slugs: tuple[SectionSlug, ...] = (
+    dedup_dependent_slugs: tuple[SectionSlug, ...] = (
         SectionSlug.FACTS_CLAIMS_EVIDENCE,
         SectionSlug.FACTS_CLAIMS_PREMISES,
         SectionSlug.FACTS_CLAIMS_KNOWN_MISINFO,
+        SectionSlug.OPINIONS_SENTIMENTS_TRENDS_OPPOSITIONS,
     )
-    claim_enrichment_set = set(claim_enrichment_slugs)
-    non_claim_enrichment_slugs: list[SectionSlug] = [
+    dedup_dependent_set = set(dedup_dependent_slugs)
+    independent_slugs: list[SectionSlug] = [
         slug
         for slug in SectionSlug
-        if slug not in claim_enrichment_set
+        if slug not in dedup_dependent_set
     ]
 
     initial_tasks = {
@@ -1926,33 +1936,33 @@ async def _run_all_sections(
                 test_fail_slug=test_fail_slug,
             )
         )
-        for slug in non_claim_enrichment_slugs
+        for slug in independent_slugs
     }
     dedup_state = await initial_tasks[SectionSlug.FACTS_CLAIMS_DEDUP]
     if dedup_state != SectionState.DONE:
         await asyncio.gather(*initial_tasks.values())
         await _persist_empty_claim_enrichment_slots(
-            pool, job_id, task_attempt, claim_enrichment_slugs
+            pool, job_id, task_attempt, dedup_dependent_slugs
         )
         return
 
-    enrichment_tasks = [
+    dependent_tasks = [
         asyncio.create_task(
             _run_section(
                 pool,
                 job_id,
                 task_attempt,
                 slug,
-                payload,
+                FIRST_RUN_DEPENDENCY_PAYLOAD,
                 settings,
                 test_fail_slug=test_fail_slug,
             )
         )
-        for slug in claim_enrichment_slugs
+        for slug in dedup_dependent_slugs
         if slug in _SECTION_HANDLERS
     ]
 
-    await asyncio.gather(*initial_tasks.values(), *enrichment_tasks)
+    await asyncio.gather(*initial_tasks.values(), *dependent_tasks)
 
 
 def _parse_sections(raw: Any) -> dict[str, Any]:
@@ -2112,6 +2122,14 @@ def _build_headline_summary_inputs(
         SectionSlug.OPINIONS_SENTIMENTS_SUBJECTIVE,
         unavailable_inputs,
         "subjective",
+    )
+    # Trends/oppositions input is used only for unavailable-input tracking in
+    # this task slice; the headline model does not consume this payload yet.
+    _done_slot_data(
+        sections,
+        SectionSlug.OPINIONS_SENTIMENTS_TRENDS_OPPOSITIONS,
+        unavailable_inputs,
+        "trends_oppositions",
     )
 
     safety_recommendation: SafetyRecommendation | None = None
@@ -2753,7 +2771,7 @@ async def _load_job_attempt_and_slot(
     return row["attempt_id"], slot
 
 
-async def run_section_retry(  # noqa: PLR0912
+async def run_section_retry(  # noqa: PLR0911, PLR0912
     pool: Any,
     job_id: UUID,
     slug: SectionSlug,
@@ -2851,6 +2869,7 @@ async def run_section_retry(  # noqa: PLR0912
                         SectionSlug.FACTS_CLAIMS_EVIDENCE,
                         SectionSlug.FACTS_CLAIMS_PREMISES,
                         SectionSlug.FACTS_CLAIMS_KNOWN_MISINFO,
+                        SectionSlug.OPINIONS_SENTIMENTS_TRENDS_OPPOSITIONS,
                     ):
                         await _run_section(
                             pool,
@@ -2893,6 +2912,33 @@ async def run_section_retry(  # noqa: PLR0912
                 )
                 return RunResult(status_code=200)
             except Exception as exc:
+                if isinstance(exc, TrendsDependenciesNotReadyError):
+                    logger.info(
+                        "section-retry: trends dependencies not ready for job=%s slug=%s — "
+                        "rescheduling dependency retry",
+                        job_id,
+                        slug.value,
+                    )
+                    try:
+                        await enqueue_section_retry(
+                            job_id,
+                            slug,
+                            expected_slot_attempt_id,
+                            settings,
+                            task_name=None,
+                            use_deterministic_task_name=False,
+                            schedule_delay_seconds=_SECTION_RETRY_DEPENDENCY_BACKOFF_SECONDS,
+                        )
+                    except Exception as reenqueue_exc:
+                        logger.warning(
+                            "section-retry: failed to re-enqueue dependency wait for job=%s slug=%s: %s",
+                            job_id,
+                            slug.value,
+                            reenqueue_exc,
+                        )
+                        return RunResult(status_code=503)
+                    return RunResult(status_code=200)
+
                 SECTION_FAILURES.labels(
                     slug=slug.value, error_type=classify_error(exc)
                 ).inc()

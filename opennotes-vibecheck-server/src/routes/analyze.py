@@ -580,9 +580,9 @@ def _parse_jsonb(raw: Any) -> Any:
 def _parse_sections(raw: Any) -> dict[SectionSlug, SectionSlot]:
     """Parse the `sections` JSONB into typed SectionSlot per known slug.
 
-    Unknown keys are dropped silently — the schema anchor only emits the
-    seven documented slugs and the frontend must not branch on ad-hoc
-    payloads that might appear mid-migration.
+    Unknown keys are dropped silently — the schema anchor only emits known
+    slugs and the frontend must not branch on ad-hoc payloads that might
+    appear mid-migration.
     """
     decoded = _parse_jsonb(raw) or {}
     if not isinstance(decoded, dict):

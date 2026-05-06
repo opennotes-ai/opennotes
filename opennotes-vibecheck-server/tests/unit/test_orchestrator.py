@@ -42,6 +42,7 @@ from src.jobs.orchestrator import (
     _run_section,
     _run_tier2,
     _tier2_actions_for,
+    run_section_retry,
 )
 from src.utterances.errors import TransientExtractionError, UtteranceExtractionError
 
@@ -118,16 +119,16 @@ async def test_run_section_write_slot_exception_still_raises_when_mark_slot_also
         await _run_section(pool, job_id, task_attempt, slug, payload, settings)
 
 
-async def test_run_all_sections_persists_empty_enrichment_slots_when_dedup_fails(
+async def test_run_all_sections_persists_empty_dedup_dependent_slots_when_dedup_fails(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """B-C2 regression: dedup failure must not strand the three claim
-    enrichment slots in unwritten state.
+    enrichment slots or trends/oppositions in unwritten state.
 
     `maybe_finalize_job` blocks on `len(sections) < len(SectionSlug)`, so
     when dedup fails the orchestrator must write terminal slots for
     FACTS_CLAIMS_EVIDENCE / FACTS_CLAIMS_PREMISES / FACTS_CLAIMS_KNOWN_MISINFO
-    so finalize can proceed.
+    / OPINIONS_SENTIMENTS_TRENDS_OPPOSITIONS so finalize can proceed.
     """
     from src.jobs import orchestrator
 
@@ -167,20 +168,465 @@ async def test_run_all_sections_persists_empty_enrichment_slots_when_dedup_fails
         settings=MagicMock(),
     )
 
-    enrichment_slugs = {
+    dependent_slugs = {
         SectionSlug.FACTS_CLAIMS_EVIDENCE,
         SectionSlug.FACTS_CLAIMS_PREMISES,
         SectionSlug.FACTS_CLAIMS_KNOWN_MISINFO,
+        SectionSlug.OPINIONS_SENTIMENTS_TRENDS_OPPOSITIONS,
     }
     written_slugs = {slug for slug, _state, _data in written}
-    assert enrichment_slugs.issubset(written_slugs)
+    assert dependent_slugs.issubset(written_slugs)
     for slug, state, data in written:
-        if slug in enrichment_slugs:
+        if slug in dependent_slugs:
             assert state == SectionState.DONE
             assert isinstance(data, dict)
     assert all(
-        slug not in run_section_calls for slug in enrichment_slugs
-    ), "enrichment slots must skip _run_section when dedup fails"
+        slug not in run_section_calls for slug in dependent_slugs
+    ), "dedup-dependent slots must skip _run_section when dedup fails"
+
+
+@pytest.mark.asyncio
+async def test_run_all_sections_writes_trends_oppositions_after_dedup(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """FACTS_CLAIMS_DEDUP must complete before trends/oppositions runs."""
+    from src.analyses.opinions import trends_oppositions_slot
+    from src.jobs import orchestrator
+
+    dedup_done = asyncio.Event()
+    run_order: list[str] = []
+    trend_payloads: list[Any] = []
+    fact_payloads: list[Any] = []
+
+    async def fake_run_section(
+        _pool: Any,
+        _job_id: UUID,
+        _task_attempt: UUID,
+        slug: SectionSlug,
+        _payload: Any,
+        _settings: Any,
+        *,
+        test_fail_slug: str | None = None,
+    ) -> None:
+        if slug == SectionSlug.FACTS_CLAIMS_DEDUP:
+            # Simulate a non-trivial slot write path that must finish first.
+            run_order.append(slug.value)
+            fact_payloads.append(_payload)
+            dedup_done.set()
+        elif slug == SectionSlug.OPINIONS_SENTIMENTS_TRENDS_OPPOSITIONS:
+            assert dedup_done.is_set()
+            trend_payloads.append(_payload)
+            run_order.append(slug.value)
+        else:
+            fact_payloads.append(_payload)
+            run_order.append(slug.value)
+        return SectionState.DONE
+
+    monkeypatch.setattr(orchestrator, "_run_section", fake_run_section)
+
+    await orchestrator._run_all_sections(
+        pool=object(),
+        job_id=uuid4(),
+        task_attempt=uuid4(),
+        payload=object(),
+        settings=MagicMock(),
+    )
+
+    assert (
+        run_order[-1]
+        == SectionSlug.OPINIONS_SENTIMENTS_TRENDS_OPPOSITIONS.value
+    )
+    assert trend_payloads
+    assert trend_payloads[-1] is trends_oppositions_slot.FIRST_RUN_DEPENDENCY_PAYLOAD
+    assert all(item is not None for item in fact_payloads)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "sections_payload",
+    [
+        {},
+        {
+            SectionSlug.FACTS_CLAIMS_DEDUP.value: {
+                "state": "failed",
+                "attempt_id": str(uuid4()),
+                "data": {"claims_report": {}},
+            }
+        },
+        {
+            SectionSlug.FACTS_CLAIMS_DEDUP.value: {
+                "state": "pending",
+                "attempt_id": str(uuid4()),
+                "data": {"claims_report": {}},
+            }
+        },
+        {
+            SectionSlug.FACTS_CLAIMS_DEDUP.value: {
+                "state": "running",
+                "attempt_id": str(uuid4()),
+                "data": {"claims_report": {}},
+            }
+        },
+        {
+            SectionSlug.FACTS_CLAIMS_DEDUP.value: {
+                "state": "done",
+                "attempt_id": str(uuid4()),
+                "data": {"claims_report": "malformed"},
+            }
+        },
+    ],
+)
+async def test_run_all_sections_trends_with_unavailable_dedup_does_not_fail(
+    monkeypatch: pytest.MonkeyPatch, sections_payload: dict[str, Any]
+) -> None:
+    """Transient and unavailable first-run dependent states should not fail trends slot."""
+    from src.analyses.opinions import trends_oppositions_slot
+    from src.jobs import orchestrator
+
+    class _Conn:
+        def __init__(self, row: Any) -> None:
+            self.row = row
+
+        async def fetchval(self, *_args: object) -> Any:
+            return self.row
+
+    class _Pool:
+        def __init__(self, row: Any) -> None:
+            self.conn = _Conn(row)
+
+        def acquire(self) -> FakeAcquire:
+            return FakeAcquire(self.conn)
+
+    async def no_op_handler(*args: Any, **kwargs: Any) -> dict[str, Any]:
+        return {}
+
+    mark_slot_failed_calls: list[tuple] = []
+    write_slot_calls: list[tuple] = []
+
+    async def fake_write_slot(*args: Any, **kwargs: Any) -> int:
+        write_slot_calls.append((args, kwargs))
+        return 1
+
+    async def never_failed(*args: Any, **kwargs: Any) -> int:
+        mark_slot_failed_calls.append((args, kwargs))
+        return 1
+
+    original_handlers = dict(orchestrator._SECTION_HANDLERS)
+    handlers = dict(original_handlers)
+    for slug in original_handlers:
+        handlers[slug] = no_op_handler
+    handlers[SectionSlug.OPINIONS_SENTIMENTS_TRENDS_OPPOSITIONS] = (
+        trends_oppositions_slot.run_trends_oppositions
+    )
+    monkeypatch.setattr(orchestrator, "_SECTION_HANDLERS", handlers)
+    monkeypatch.setattr(orchestrator, "write_slot", fake_write_slot)
+    monkeypatch.setattr(orchestrator, "mark_slot_failed", never_failed)
+
+    fake_extract = AsyncMock()
+    monkeypatch.setattr(trends_oppositions_slot, "extract_trends_oppositions", fake_extract)
+
+    await orchestrator._run_all_sections(
+        pool=_Pool(sections_payload),
+        job_id=uuid4(),
+        task_attempt=uuid4(),
+        payload=object(),
+        settings=MagicMock(),
+    )
+
+    assert write_slot_calls
+    assert mark_slot_failed_calls == []
+    fake_extract.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_run_section_retry_trends_dependencies_not_ready_reenqueues_with_backoff(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.analyses.opinions import trends_oppositions_slot
+    from src.jobs import orchestrator
+
+    task_attempt = uuid4()
+    slot_attempt = str(task_attempt)
+
+    async def handler(*args: Any, **kwargs: Any) -> dict[str, Any]:
+        raise trends_oppositions_slot.TrendsDependenciesNotReadyError("pending deps")
+
+    async def _load(*args: Any, **kwargs: Any) -> tuple[UUID, dict[str, Any]]:
+        return task_attempt, {
+            "state": "running",
+            "attempt_id": slot_attempt,
+            "data": None,
+        }
+
+    mark_slot_failed_calls: list[tuple] = []
+    mark_slot_done_calls: list[tuple] = []
+
+    async def never_done(*args: Any, **kwargs: Any) -> int:
+        mark_slot_done_calls.append((args, kwargs))
+        return 1
+
+    async def never_failed(*args: Any, **kwargs: Any) -> int:
+        mark_slot_failed_calls.append((args, kwargs))
+        return 1
+
+    enqueue_calls: list[tuple[tuple[Any, ...], dict[str, Any]]] = []
+
+    async def fake_enqueue_section_retry(*args: Any, **kwargs: Any) -> None:
+        enqueue_calls.append((args, kwargs))
+
+    monkeypatch.setattr(orchestrator, "_load_job_attempt_and_slot", _load)
+    monkeypatch.setitem(
+        orchestrator._SECTION_HANDLERS,
+        SectionSlug.OPINIONS_SENTIMENTS_TRENDS_OPPOSITIONS,
+        handler,
+    )
+    monkeypatch.setattr(orchestrator, "mark_slot_done", never_done)
+    monkeypatch.setattr(orchestrator, "mark_slot_failed", never_failed)
+    monkeypatch.setattr(orchestrator, "enqueue_section_retry", fake_enqueue_section_retry)
+
+    job_id = uuid4()
+    result = await run_section_retry(
+        pool=MagicMock(),
+        job_id=job_id,
+        slug=SectionSlug.OPINIONS_SENTIMENTS_TRENDS_OPPOSITIONS,
+        expected_slot_attempt_id=task_attempt,
+        settings=MagicMock(),
+    )
+
+    assert result.status_code == 200
+    assert len(enqueue_calls) == 1
+    enqueue_args, enqueue_kwargs = enqueue_calls[0]
+    assert enqueue_args[0] == job_id
+    assert enqueue_args[1] == SectionSlug.OPINIONS_SENTIMENTS_TRENDS_OPPOSITIONS
+    assert enqueue_args[2] == task_attempt
+    assert enqueue_args[3] is not None
+    assert enqueue_kwargs == {
+        "task_name": None,
+        "use_deterministic_task_name": False,
+        "schedule_delay_seconds": orchestrator._SECTION_RETRY_DEPENDENCY_BACKOFF_SECONDS,
+    }
+    assert mark_slot_failed_calls == []
+    assert mark_slot_done_calls == []
+
+
+@pytest.mark.asyncio
+async def test_run_section_retry_trends_dependencies_not_ready_marked_reenqueue_failure_as_503(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.analyses.opinions import trends_oppositions_slot
+    from src.jobs import orchestrator
+
+    task_attempt = uuid4()
+    slot_attempt = str(task_attempt)
+
+    async def handler(*args: Any, **kwargs: Any) -> dict[str, Any]:
+        raise trends_oppositions_slot.TrendsDependenciesNotReadyError("pending deps")
+
+    async def _load(*args: Any, **kwargs: Any) -> tuple[UUID, dict[str, Any]]:
+        return task_attempt, {
+            "state": "running",
+            "attempt_id": slot_attempt,
+            "data": None,
+        }
+
+    mark_slot_failed_calls: list[tuple] = []
+    mark_slot_done_calls: list[tuple] = []
+
+    async def never_done(*args: Any, **kwargs: Any) -> int:
+        mark_slot_done_calls.append((args, kwargs))
+        return 1
+
+    async def never_failed(*args: Any, **kwargs: Any) -> int:
+        mark_slot_failed_calls.append((args, kwargs))
+        return 1
+
+    async def fake_enqueue_section_retry(*args: Any, **kwargs: Any) -> None:
+        raise RuntimeError("enqueue failed")
+
+    monkeypatch.setattr(orchestrator, "_load_job_attempt_and_slot", _load)
+    monkeypatch.setitem(
+        orchestrator._SECTION_HANDLERS,
+        SectionSlug.OPINIONS_SENTIMENTS_TRENDS_OPPOSITIONS,
+        handler,
+    )
+    monkeypatch.setattr(orchestrator, "mark_slot_done", never_done)
+    monkeypatch.setattr(orchestrator, "mark_slot_failed", never_failed)
+    monkeypatch.setattr(orchestrator, "enqueue_section_retry", fake_enqueue_section_retry)
+
+    result = await run_section_retry(
+        pool=MagicMock(),
+        job_id=uuid4(),
+        slug=SectionSlug.OPINIONS_SENTIMENTS_TRENDS_OPPOSITIONS,
+        expected_slot_attempt_id=task_attempt,
+        settings=MagicMock(),
+    )
+
+    assert result.status_code == 503
+    assert mark_slot_failed_calls == []
+    assert mark_slot_done_calls == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "sections_payload",
+    [
+        {},
+        {SectionSlug.FACTS_CLAIMS_DEDUP.value: {"state": "failed", "attempt_id": str(uuid4()), "data": {"claims_report": {"deduped_claims": [], "total_claims": 0, "total_unique": 0}}}},
+        {
+            SectionSlug.FACTS_CLAIMS_DEDUP.value: {
+                "state": "done",
+                "attempt_id": str(uuid4()),
+                "data": {"claims_report": "malformed"},
+            }
+        },
+        {
+            SectionSlug.FACTS_CLAIMS_DEDUP.value: {
+                "state": "done",
+                "attempt_id": str(uuid4()),
+                "data": {
+                    "claims_report": {
+                        "deduped_claims": [],
+                        "total_claims": 0,
+                        "total_unique": 0,
+                    }
+                },
+            }
+        },
+    ],
+)
+async def test_run_section_retry_trends_with_permanent_dependency_states_settles_empty(
+    monkeypatch: pytest.MonkeyPatch, sections_payload: dict[str, Any]
+) -> None:
+    from src.analyses.opinions import trends_oppositions_slot
+    from src.jobs import orchestrator
+
+    task_attempt = uuid4()
+    slot_attempt = str(task_attempt)
+
+    class _Conn:
+        def __init__(self, row: Any) -> None:
+            self.row = row
+
+        async def fetchval(self, *_args: object) -> Any:
+            return self.row
+
+    class _Pool:
+        def __init__(self, row: Any) -> None:
+            self.conn = _Conn(row)
+
+        def acquire(self) -> FakeAcquire:
+            return FakeAcquire(self.conn)
+
+    async def _load(*args: Any, **kwargs: Any) -> tuple[UUID, dict[str, Any]]:
+        return task_attempt, {
+            "state": "running",
+            "attempt_id": slot_attempt,
+            "data": None,
+        }
+
+    mark_slot_failed_calls: list[tuple] = []
+    mark_slot_done_calls: list[tuple] = []
+
+    async def fake_done(*args: Any, **kwargs: Any) -> int:
+        mark_slot_done_calls.append((args, kwargs))
+        return 1
+
+    async def fake_failed(*args: Any, **kwargs: Any) -> int:
+        mark_slot_failed_calls.append((args, kwargs))
+        return 1
+
+    monkeypatch.setattr(orchestrator, "_load_job_attempt_and_slot", _load)
+    monkeypatch.setitem(
+        orchestrator._SECTION_HANDLERS,
+        SectionSlug.OPINIONS_SENTIMENTS_TRENDS_OPPOSITIONS,
+        trends_oppositions_slot.run_trends_oppositions,
+    )
+    monkeypatch.setattr(orchestrator, "mark_slot_done", fake_done)
+    monkeypatch.setattr(orchestrator, "mark_slot_failed", fake_failed)
+    monkeypatch.setattr(orchestrator, "_set_last_stage", AsyncMock())
+    monkeypatch.setattr(orchestrator, "_run_safety_recommendation_step", AsyncMock())
+    monkeypatch.setattr(orchestrator, "_run_headline_summary_step", AsyncMock())
+    monkeypatch.setattr(orchestrator, "maybe_finalize_job", AsyncMock(return_value=False))
+
+    result = await run_section_retry(
+        pool=_Pool(sections_payload),
+        job_id=uuid4(),
+        slug=SectionSlug.OPINIONS_SENTIMENTS_TRENDS_OPPOSITIONS,
+        expected_slot_attempt_id=task_attempt,
+        settings=MagicMock(),
+    )
+
+    assert result.status_code == 200
+    assert mark_slot_failed_calls == []
+    assert mark_slot_done_calls
+
+
+@pytest.mark.asyncio
+async def test_run_section_retry_dedup_refreshes_all_dependent_slots(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.jobs import orchestrator
+
+    task_attempt = uuid4()
+    slot_attempt = uuid4()
+    rerun_slugs: list[SectionSlug] = []
+
+    async def _load(*args: Any, **kwargs: Any) -> tuple[UUID, dict[str, Any]]:
+        return task_attempt, {
+            "state": "running",
+            "attempt_id": str(slot_attempt),
+            "data": None,
+        }
+
+    async def dedup_handler(*args: Any, **kwargs: Any) -> dict[str, Any]:
+        return {"claims_report": {"deduped_claims": [], "total_claims": 0, "total_unique": 0}}
+
+    async def fake_mark_slot_done(*args: Any, **kwargs: Any) -> int:
+        return 1
+
+    async def fake_run_section(
+        _pool: Any,
+        _job_id: UUID,
+        _task_attempt: UUID,
+        slug: SectionSlug,
+        _payload: Any,
+        _settings: Any,
+        *,
+        test_fail_slug: str | None = None,
+    ) -> SectionState:
+        del test_fail_slug
+        rerun_slugs.append(slug)
+        return SectionState.DONE
+
+    monkeypatch.setattr(orchestrator, "_load_job_attempt_and_slot", _load)
+    monkeypatch.setitem(
+        orchestrator._SECTION_HANDLERS,
+        SectionSlug.FACTS_CLAIMS_DEDUP,
+        dedup_handler,
+    )
+    monkeypatch.setattr(orchestrator, "mark_slot_done", fake_mark_slot_done)
+    monkeypatch.setattr(orchestrator, "_run_section", fake_run_section)
+    monkeypatch.setattr(orchestrator, "_set_last_stage", AsyncMock())
+    monkeypatch.setattr(orchestrator, "_run_safety_recommendation_step", AsyncMock())
+    monkeypatch.setattr(orchestrator, "_run_headline_summary_step", AsyncMock())
+    monkeypatch.setattr(orchestrator, "maybe_finalize_job", AsyncMock(return_value=False))
+
+    result = await run_section_retry(
+        pool=MagicMock(),
+        job_id=uuid4(),
+        slug=SectionSlug.FACTS_CLAIMS_DEDUP,
+        expected_slot_attempt_id=slot_attempt,
+        settings=MagicMock(),
+    )
+
+    assert result.status_code == 200
+    assert rerun_slugs == [
+        SectionSlug.FACTS_CLAIMS_EVIDENCE,
+        SectionSlug.FACTS_CLAIMS_PREMISES,
+        SectionSlug.FACTS_CLAIMS_KNOWN_MISINFO,
+        SectionSlug.OPINIONS_SENTIMENTS_TRENDS_OPPOSITIONS,
+    ]
+
 
 
 class FakeAcquire:
@@ -3941,6 +4387,17 @@ def _all_sections_done(**overrides):
         ),
         SectionSlug.OPINIONS_SENTIMENTS_SUBJECTIVE.value: _slot(
             SectionState.DONE, {"subjective_claims": []}
+        ),
+        SectionSlug.OPINIONS_SENTIMENTS_TRENDS_OPPOSITIONS.value: _slot(
+            SectionState.DONE,
+            {
+                "trends_oppositions_report": {
+                    "trends": [],
+                    "oppositions": [],
+                    "input_cluster_count": 0,
+                    "skipped_for_cap": 0,
+                }
+            },
         ),
     }
     sections.update(overrides)

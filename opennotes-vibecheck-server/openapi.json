@@ -836,6 +836,72 @@
         ],
         "title": "ClaimCategory"
       },
+      "ClaimOpposition": {
+        "properties": {
+          "topic": {
+            "type": "string",
+            "title": "Topic"
+          },
+          "supporting_cluster_texts": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Supporting Cluster Texts"
+          },
+          "opposing_cluster_texts": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Opposing Cluster Texts"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          }
+        },
+        "type": "object",
+        "required": [
+          "topic",
+          "supporting_cluster_texts",
+          "opposing_cluster_texts"
+        ],
+        "title": "ClaimOpposition"
+      },
+      "ClaimTrend": {
+        "properties": {
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "cluster_texts": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Cluster Texts"
+          },
+          "summary": {
+            "type": "string",
+            "title": "Summary"
+          }
+        },
+        "type": "object",
+        "required": [
+          "label",
+          "cluster_texts",
+          "summary"
+        ],
+        "title": "ClaimTrend"
+      },
       "ClaimsReport": {
         "properties": {
           "deduped_claims": {
@@ -1607,6 +1673,16 @@
         "properties": {
           "opinions_report": {
             "$ref": "#/components/schemas/OpinionsReport"
+          },
+          "trends_oppositions": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TrendsOppositionsReport"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "type": "object",
@@ -2135,7 +2211,8 @@
           "facts_claims__premises",
           "facts_claims__known_misinfo",
           "opinions_sentiments__sentiment",
-          "opinions_sentiments__subjective"
+          "opinions_sentiments__subjective",
+          "opinions_sentiments__trends_oppositions"
         ],
         "title": "SectionSlug",
         "description": "The sidebar slots the async pipeline fills independently."
@@ -2442,6 +2519,40 @@
         ],
         "title": "ToneDynamicsSection",
         "description": "Speaker conversational dynamics + per-utterance flashpoint matches."
+      },
+      "TrendsOppositionsReport": {
+        "properties": {
+          "trends": {
+            "items": {
+              "$ref": "#/components/schemas/ClaimTrend"
+            },
+            "type": "array",
+            "title": "Trends"
+          },
+          "oppositions": {
+            "items": {
+              "$ref": "#/components/schemas/ClaimOpposition"
+            },
+            "type": "array",
+            "title": "Oppositions"
+          },
+          "input_cluster_count": {
+            "type": "integer",
+            "title": "Input Cluster Count"
+          },
+          "skipped_for_cap": {
+            "type": "integer",
+            "title": "Skipped For Cap"
+          }
+        },
+        "type": "object",
+        "required": [
+          "trends",
+          "oppositions",
+          "input_cluster_count",
+          "skipped_for_cap"
+        ],
+        "title": "TrendsOppositionsReport"
       },
       "UploadPDFResponse": {
         "properties": {

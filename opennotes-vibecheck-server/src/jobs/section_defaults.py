@@ -4,6 +4,9 @@ from __future__ import annotations
 from copy import deepcopy
 from typing import Any
 
+from src.analyses.opinions._trends_schemas import (
+    empty_trends_oppositions_report,
+)
 from src.analyses.schemas import SectionSlug
 
 _EMPTY_SECTION_DATA: dict[SectionSlug, dict[str, Any]] = {
@@ -56,6 +59,11 @@ _EMPTY_SECTION_DATA: dict[SectionSlug, dict[str, Any]] = {
         }
     },
     SectionSlug.OPINIONS_SENTIMENTS_SUBJECTIVE: {"subjective_claims": []},
+    SectionSlug.OPINIONS_SENTIMENTS_TRENDS_OPPOSITIONS: {
+        "trends_oppositions_report": empty_trends_oppositions_report().model_dump(
+            mode="json"
+        )
+    },
 }
 
 

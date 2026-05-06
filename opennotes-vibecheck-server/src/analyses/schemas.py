@@ -25,6 +25,7 @@ from pydantic import BaseModel, Field
 from src.analyses.claims._claims_schemas import ClaimsReport
 from src.analyses.claims._factcheck_schemas import FactCheckMatch
 from src.analyses.opinions._schemas import OpinionsReport
+from src.analyses.opinions._trends_schemas import TrendsOppositionsReport
 from src.analyses.safety._schemas import (
     HarmfulContentMatch,
     ImageModerationMatch,
@@ -68,6 +69,7 @@ class SectionSlug(StrEnum):
     FACTS_CLAIMS_KNOWN_MISINFO = "facts_claims__known_misinfo"
     OPINIONS_SENTIMENTS_SENTIMENT = "opinions_sentiments__sentiment"
     OPINIONS_SENTIMENTS_SUBJECTIVE = "opinions_sentiments__subjective"
+    OPINIONS_SENTIMENTS_TRENDS_OPPOSITIONS = "opinions_sentiments__trends_oppositions"
 
 
 class SectionState(StrEnum):
@@ -200,6 +202,7 @@ class OpinionsSection(BaseModel):
     """Sentiment distribution and extracted subjective claims."""
 
     opinions_report: OpinionsReport
+    trends_oppositions: TrendsOppositionsReport | None = None
 
 
 class HeadlineSummary(BaseModel):
