@@ -5,6 +5,7 @@ import { ErrorBoundary, Suspense } from "solid-js";
 import { MetaProvider, Title } from "@solidjs/meta";
 import { NavBar } from "@opennotes/ui/components/nav-bar";
 import ModeToggle from "@opennotes/ui/components/mode-toggle";
+import { Logo } from "@opennotes/ui/components/logo";
 
 export default function App() {
   return (
@@ -13,13 +14,7 @@ export default function App() {
         <MetaProvider>
           <Title>vibecheck</Title>
           <NavBar
-            logo={
-              <img
-                src="/opennotes-logo.svg"
-                alt="Open Notes"
-                class="h-9 w-auto"
-              />
-            }
+            logo={<Logo class="h-9 w-auto" />}
             logoHref="https://opennotes.ai"
             items={[
               { label: "Home", href: "https://opennotes.ai", external: true },

@@ -54,10 +54,12 @@ test.describe("/ landing page (anonymous)", () => {
     }
   });
 
-  test("logo is served at /opennotes-logo.svg", async ({ page }) => {
-    const resp = await page.goto("/opennotes-logo.svg");
-    expect(resp?.status()).toBe(200);
-    expect(resp?.headers()["content-type"]).toMatch(/svg/);
+  test("logo renders from canonical GCS URL", async ({ page }) => {
+    await page.goto("/");
+    const logo = page.locator('nav img[alt="Open Notes"]');
+    await expect(logo).toBeVisible();
+    const src = await logo.getAttribute("src");
+    expect(src).toContain("open-notes-core-public-assets/opennotes-logo.svg");
   });
 });
 

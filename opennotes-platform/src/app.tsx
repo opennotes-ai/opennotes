@@ -6,6 +6,7 @@ import { MetaProvider, Title } from "@solidjs/meta";
 import { Button, buttonVariants } from "@opennotes/ui/components/ui/button";
 import { NavBar } from "@opennotes/ui/components/nav-bar";
 import ModeToggle from "@opennotes/ui/components/mode-toggle";
+import { Logo } from "@opennotes/ui/components/logo";
 import { createClient } from "~/lib/supabase-browser";
 import { getUser } from "~/lib/supabase-server";
 
@@ -29,13 +30,7 @@ export function RootLayout(props: { children?: JSX.Element }): JSX.Element {
     <MetaProvider>
       <Title>Open Notes Platform</Title>
       <NavBar
-        logo={
-          <img
-            src="/opennotes-logo.svg"
-            alt="Open Notes"
-            class="h-9 w-auto"
-          />
-        }
+        logo={<Logo class="h-9 w-auto" />}
         logoHref="/"
         items={[
           { label: "Home", href: "https://opennotes.ai", external: true },
