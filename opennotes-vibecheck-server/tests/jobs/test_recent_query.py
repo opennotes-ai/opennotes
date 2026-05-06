@@ -52,6 +52,7 @@ CREATE TABLE vibecheck_scrapes (
     url TEXT NOT NULL,
     host TEXT NOT NULL,
     page_kind TEXT NOT NULL DEFAULT 'other',
+    utterance_stream_type TEXT NOT NULL DEFAULT 'unknown',
     page_title TEXT,
     markdown TEXT,
     html TEXT,

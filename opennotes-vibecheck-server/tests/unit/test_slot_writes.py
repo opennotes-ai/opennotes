@@ -64,7 +64,8 @@ CREATE TABLE vibecheck_job_utterances (
     position INT NOT NULL DEFAULT 0,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     page_title TEXT,
-    page_kind TEXT
+    page_kind TEXT,
+    utterance_stream_type TEXT
 );
 """
 )

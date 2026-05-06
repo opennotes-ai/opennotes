@@ -679,6 +679,10 @@ function makeScd(overrides: Partial<SCDReport> = {}): SCDReport {
     per_speaker_notes: {},
     speaker_arcs: [],
     insufficient_conversation: false,
+    upstream_stream_type: "unknown",
+    observed_stream_type: "unknown",
+    observed_confidence: 0,
+    disagreement_rationale: "",
     ...overrides,
   };
 }
@@ -842,6 +846,10 @@ describe("<ScdReport />", () => {
       tone_labels: [],
       per_speaker_notes: {},
       insufficient_conversation: false,
+      upstream_stream_type: "unknown",
+      observed_stream_type: "unknown",
+      observed_confidence: 0,
+      disagreement_rationale: "",
     };
 
     render(() => <ScdReport scd={scd} />);
@@ -878,6 +886,21 @@ describe("<ScdReport />", () => {
     const text = container.textContent ?? "";
     expect(text).not.toMatch(/SCD/);
   });
+
+  it("renders stream divergence rationale only when observed type differs", () => {
+    const scd = makeScd({
+      upstream_stream_type: "dialogue",
+      observed_stream_type: "comment_section",
+      disagreement_rationale:
+        "The thread is mostly root-post reactions rather than direct turn-taking.",
+    });
+
+    render(() => <ScdReport scd={scd} upstreamStreamType="dialogue" />);
+
+    expect(screen.getByTestId("scd-stream-divergence").textContent).toContain(
+      "comment_section",
+    );
+  });
 });
 
 describe("<ClaimsDedupReport />", () => {
@@ -886,6 +909,7 @@ describe("<ClaimsDedupReport />", () => {
       deduped_claims: [
         {
           canonical_text: "rarely said",
+          category: "potentially_factual",
           occurrence_count: 1,
           author_count: 1,
           utterance_ids: ["u-1"],
@@ -893,6 +917,7 @@ describe("<ClaimsDedupReport />", () => {
         },
         {
           canonical_text: "often said",
+          category: "potentially_factual",
           occurrence_count: 5,
           author_count: 3,
           utterance_ids: ["u-2", "u-3"],
@@ -907,6 +932,37 @@ describe("<ClaimsDedupReport />", () => {
     expect(items).toHaveLength(2);
     expect(items[0]?.textContent).toContain("often said");
     expect(items[1]?.textContent).toContain("rarely said");
+  });
+
+  it("groups deduped claims by category label", () => {
+    const claimsReport: ClaimsReport = {
+      deduped_claims: [
+        {
+          canonical_text: "this would hurt the budget",
+          category: "predictions",
+          occurrence_count: 2,
+          author_count: 2,
+          utterance_ids: ["u-1", "u-2"],
+          representative_authors: ["@a", "@b"],
+        },
+        {
+          canonical_text: "I dislike the proposal",
+          category: "self_claims",
+          occurrence_count: 1,
+          author_count: 1,
+          utterance_ids: ["u-3"],
+          representative_authors: ["@c"],
+        },
+      ],
+      total_claims: 3,
+      total_unique: 2,
+    };
+
+    render(() => <ClaimsDedupReport claimsReport={claimsReport} />);
+
+    expect(screen.getByText("Predictions")).toBeDefined();
+    expect(screen.getByText("Self-reported")).toBeDefined();
+    expect(screen.queryByText("Other")).toBeNull();
   });
 
   it("falls back to empty copy when nothing was deduped", () => {
@@ -928,6 +984,7 @@ describe("<ClaimsDedupReport />", () => {
       deduped_claims: [
         {
           canonical_text: "often said",
+          category: "potentially_factual",
           occurrence_count: 3,
           author_count: 2,
           utterance_ids: ["u-1", "u-2", "u-3"],
@@ -961,6 +1018,7 @@ describe("<ClaimsDedupReport />", () => {
       deduped_claims: [
         {
           canonical_text: "source absent",
+          category: "potentially_factual",
           occurrence_count: 1,
           author_count: 1,
           utterance_ids: [],

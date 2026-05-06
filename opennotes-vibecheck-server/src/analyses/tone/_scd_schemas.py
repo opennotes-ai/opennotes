@@ -9,6 +9,8 @@ from typing import Annotated
 
 from pydantic import BaseModel, Field, field_validator
 
+from src.analyses.stream_types import UtteranceStreamType
+
 
 class SpeakerArc(BaseModel):
     """Per-speaker arc within a conversation, intended for timeline visualization.
@@ -133,4 +135,22 @@ class SCDReport(BaseModel):
             "should treat `summary` as a fixed placeholder and ignore "
             "`tone_labels` / `per_speaker_notes` / `speaker_arcs`."
         ),
+    )
+    upstream_stream_type: UtteranceStreamType = Field(
+        default=UtteranceStreamType.UNKNOWN,
+        description="Extractor-provided advisory utterance stream type.",
+    )
+    observed_stream_type: UtteranceStreamType = Field(
+        default=UtteranceStreamType.UNKNOWN,
+        description="SCD model's own classification of the utterance stream shape.",
+    )
+    observed_confidence: float = Field(
+        default=0.0,
+        ge=0.0,
+        le=1.0,
+        description="Confidence in observed_stream_type, from 0.0 to 1.0.",
+    )
+    disagreement_rationale: str = Field(
+        default="",
+        description="Short rationale when observed_stream_type differs from the upstream prior.",
     )

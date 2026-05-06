@@ -20,10 +20,12 @@ from uuid import UUID
 from src.analyses.schemas import (
     ErrorCode,
     JobStatus,
+    PageKind,
     SectionSlot,
     SectionSlug,
     SectionState,
     UtteranceAnchor,
+    UtteranceStreamType,
 )
 from src.jobs.preview_description import (
     DerivationContext,
@@ -59,10 +61,12 @@ SELECT
     j.headline_summary,
     j.sidebar_payload IS NOT NULL AS already_finalized,
     meta.page_title AS page_title_meta,
+    meta.page_kind AS page_kind_meta,
+    meta.utterance_stream_type AS utterance_stream_type_meta,
     first_utt.text AS first_utterance_text
 FROM vibecheck_jobs j
 LEFT JOIN LATERAL (
-    SELECT u.page_title
+    SELECT u.page_title, u.page_kind, u.utterance_stream_type
     FROM vibecheck_job_utterances u
     WHERE u.job_id = j.job_id
     ORDER BY u.position
@@ -219,6 +223,13 @@ async def maybe_finalize_job(  # noqa: PLR0911
             row["safety_recommendation"],
             row["headline_summary"],
             utterance_anchors,
+            page_title=row["page_title_meta"],
+            page_kind=PageKind(row["page_kind_meta"]) if row["page_kind_meta"] else PageKind.OTHER,
+            utterance_stream_type=(
+                UtteranceStreamType(row["utterance_stream_type_meta"])
+                if row["utterance_stream_type_meta"]
+                else UtteranceStreamType.UNKNOWN
+            ),
         )
         ctx = DerivationContext(
             page_title=row["page_title_meta"],

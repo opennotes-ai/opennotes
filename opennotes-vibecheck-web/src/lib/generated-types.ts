@@ -451,6 +451,11 @@ export interface components {
             cached: boolean;
         };
         /**
+         * ClaimCategory
+         * @enum {string}
+         */
+        ClaimCategory: "potentially_factual" | "self_claims" | "predictions" | "subjective" | "other";
+        /**
          * ClaimsReport
          * @description Output of `dedupe_claims` — prevalence stats for the Facts sidebar.
          */
@@ -469,6 +474,8 @@ export interface components {
         DedupedClaim: {
             /** Canonical Text */
             canonical_text: string;
+            /** @default potentially_factual */
+            category: components["schemas"]["ClaimCategory"];
             /** Occurrence Count */
             occurrence_count: number;
             /** Author Count */
@@ -772,6 +779,8 @@ export interface components {
             page_title?: string | null;
             /** @description Extracted page shape, sourced from vibecheck_job_utterances. Null until the extractor runs. */
             page_kind?: components["schemas"]["PageKind"] | null;
+            /** @description Extracted utterance-stream shape, sourced from vibecheck_job_utterances. Null until the extractor runs. */
+            utterance_stream_type?: components["schemas"]["UtteranceStreamType"] | null;
             /**
              * Utterance Count
              * @description Number of utterances extracted for this job. 0 until the extractor writes any rows.
@@ -780,7 +789,7 @@ export interface components {
             utterance_count: number;
             /**
              * Expired At
-             * @description When set, this job has been soft-deleted by the 7-day purge cron. Heavy payload columns (sidebar_payload, sections) are NULL. The job_id permalink remains addressable; clients should render an 'analysis expired — re-analyze' card instead of the standard sidebar.
+             * @description When set, this job has been soft-deleted by the 7-day purge cron. Heavy payload columns are cleared: sidebar_payload is NULL, sections is '{}' (empty JSON object). The job_id permalink remains addressable; clients should render an 'analysis expired — re-analyze' card instead of the standard sidebar.
              */
             expired_at?: string | null;
         };
@@ -953,6 +962,28 @@ export interface components {
              * @default false
              */
             insufficient_conversation: boolean;
+            /**
+             * @description Extractor-provided advisory utterance stream type.
+             * @default unknown
+             */
+            upstream_stream_type: components["schemas"]["UtteranceStreamType"];
+            /**
+             * @description SCD model's own classification of the utterance stream shape.
+             * @default unknown
+             */
+            observed_stream_type: components["schemas"]["UtteranceStreamType"];
+            /**
+             * Observed Confidence
+             * @description Confidence in observed_stream_type, from 0.0 to 1.0.
+             * @default 0
+             */
+            observed_confidence: number;
+            /**
+             * Disagreement Rationale
+             * @description Short rationale when observed_stream_type differs from the upstream prior.
+             * @default
+             */
+            disagreement_rationale: string;
         };
         /**
          * SafetyLevel
@@ -1108,6 +1139,8 @@ export interface components {
             page_title?: string | null;
             /** @default other */
             page_kind: components["schemas"]["PageKind"];
+            /** @default unknown */
+            utterance_stream_type: components["schemas"]["UtteranceStreamType"];
             /**
              * Scraped At
              * Format: date-time
@@ -1205,6 +1238,12 @@ export interface components {
              */
             utterance_id: string;
         };
+        /**
+         * UtteranceStreamType
+         * @description Discourse shape observed in the extracted utterance stream.
+         * @enum {string}
+         */
+        UtteranceStreamType: "dialogue" | "comment_section" | "article_or_monologue" | "mixed" | "unknown";
         /** ValidationError */
         ValidationError: {
             /** Location */

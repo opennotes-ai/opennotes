@@ -54,6 +54,7 @@ from src.analyses.schemas import (
     SectionSlug,
     SectionState,
     SidebarPayload,
+    UtteranceStreamType,
 )
 from src.cache.scrape_cache import canonical_cache_key
 from src.config import Settings, get_settings
@@ -549,6 +550,7 @@ SELECT
     j.expired_at,
     meta.page_title,
     meta.page_kind,
+    meta.utterance_stream_type,
     (
         SELECT COUNT(*)
         FROM vibecheck_job_utterances u
@@ -556,7 +558,7 @@ SELECT
     ) AS utterance_count
 FROM vibecheck_jobs j
 LEFT JOIN LATERAL (
-    SELECT u.page_title, u.page_kind
+    SELECT u.page_title, u.page_kind, u.utterance_stream_type
     FROM vibecheck_job_utterances u
     WHERE u.job_id = j.job_id
     ORDER BY u.position
@@ -622,6 +624,13 @@ def _row_to_job_state(row: Any) -> JobState:
             safety_recommendation=row.get("safety_recommendation", None),
             headline_summary=row.get("headline_summary", None),
             utterances=[],
+            page_title=row.get("page_title", None),
+            page_kind=PageKind(row["page_kind"]) if row.get("page_kind", None) else PageKind.OTHER,
+            utterance_stream_type=(
+                UtteranceStreamType(row["utterance_stream_type"])
+                if row.get("utterance_stream_type", None)
+                else UtteranceStreamType.UNKNOWN
+            ),
         )
         sidebar_payload_complete = False
     else:
@@ -630,6 +639,12 @@ def _row_to_job_state(row: Any) -> JobState:
 
     page_kind_raw = row.get("page_kind", None)
     page_kind = PageKind(page_kind_raw) if isinstance(page_kind_raw, str) else None
+    stream_type_raw = row.get("utterance_stream_type", None)
+    utterance_stream_type = (
+        UtteranceStreamType(stream_type_raw)
+        if isinstance(stream_type_raw, str)
+        else None
+    )
     utterance_count_raw = row.get("utterance_count", 0)
 
     if is_non_terminal:
@@ -663,6 +678,7 @@ def _row_to_job_state(row: Any) -> JobState:
         next_poll_ms=_POLL_DELAY_BY_STATUS[status],
         page_title=row.get("page_title", None),
         page_kind=page_kind,
+        utterance_stream_type=utterance_stream_type,
         utterance_count=int(utterance_count_raw or 0),
         expired_at=row.get("expired_at", None),
     )

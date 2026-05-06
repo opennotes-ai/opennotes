@@ -9,13 +9,26 @@ lifted back into opennotes-server later.
 from __future__ import annotations
 
 import math
+from collections.abc import Mapping
 
-from src.analyses.claims._claims_schemas import Claim, ClaimsReport, DedupedClaim
+from src.analyses.claims._claims_schemas import (
+    Claim,
+    ClaimCategory,
+    ClaimsReport,
+    DedupedClaim,
+)
 from src.config import Settings
 from src.services.embeddings import embed_texts
 from src.utterances.schema import Utterance
 
 DEFAULT_SIMILARITY_THRESHOLD = 0.85
+DEFAULT_CATEGORY_THRESHOLDS: Mapping[ClaimCategory, float] = {
+    ClaimCategory.POTENTIALLY_FACTUAL: DEFAULT_SIMILARITY_THRESHOLD,
+    ClaimCategory.PREDICTIONS: 0.82,
+    ClaimCategory.SUBJECTIVE: 0.78,
+    ClaimCategory.SELF_CLAIMS: 0.78,
+    ClaimCategory.OTHER: 1.01,
+}
 
 
 def _cosine(a: list[float], b: list[float]) -> float:
@@ -53,11 +66,13 @@ class _UnionFind:
             self._parent[rb] = ra
 
 
-async def dedupe_claims(
+async def dedupe_claims(  # noqa: PLR0912 - clustering flow is intentionally explicit.
     claims: list[Claim],
     utterances: list[Utterance],
     settings: Settings,
     threshold: float = DEFAULT_SIMILARITY_THRESHOLD,
+    *,
+    category_thresholds: Mapping[ClaimCategory, float] | None = None,
 ) -> ClaimsReport:
     """Cluster claims by semantic similarity and compute prevalence stats.
 
@@ -81,10 +96,17 @@ async def dedupe_claims(
             f"embed_texts returned {len(vectors)} vectors for {len(claims)} claims"
         )
 
+    if category_thresholds is None and threshold != DEFAULT_SIMILARITY_THRESHOLD:
+        thresholds = dict.fromkeys(ClaimCategory, threshold)
+    else:
+        thresholds = category_thresholds or DEFAULT_CATEGORY_THRESHOLDS
     uf = _UnionFind(len(claims))
     for i in range(len(claims)):
         for j in range(i + 1, len(claims)):
-            if _cosine(vectors[i], vectors[j]) >= threshold:
+            if claims[i].category != claims[j].category:
+                continue
+            category_threshold = thresholds.get(claims[i].category, threshold)
+            if _cosine(vectors[i], vectors[j]) >= category_threshold:
                 uf.union(i, j)
 
     clusters: dict[int, list[int]] = {}
@@ -110,6 +132,7 @@ async def dedupe_claims(
         deduped.append(
             DedupedClaim(
                 canonical_text=canonical.claim_text,
+                category=canonical.category,
                 occurrence_count=len(members),
                 author_count=len(author_set),
                 utterance_ids=utterance_ids,

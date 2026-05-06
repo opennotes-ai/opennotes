@@ -17,6 +17,7 @@ from __future__ import annotations
 from functools import lru_cache
 from pathlib import Path
 
+from src.analyses.stream_types import UtteranceStreamType
 from src.config import Settings
 from src.services.gemini_agent import build_agent, run_vertex_agent_with_retry
 from src.services.vertex_limiter import vertex_slot
@@ -77,7 +78,9 @@ def _distinct_authors(utterances: list[Utterance]) -> int:
     return len({u.author for u in utterances if u.author})
 
 
-def _insufficient_report() -> SCDReport:
+def _insufficient_report(
+    utterance_stream_type: UtteranceStreamType = UtteranceStreamType.UNKNOWN,
+) -> SCDReport:
     return SCDReport(
         narrative="",
         speaker_arcs=[],
@@ -85,12 +88,18 @@ def _insufficient_report() -> SCDReport:
         tone_labels=[],
         per_speaker_notes={},
         insufficient_conversation=True,
+        upstream_stream_type=utterance_stream_type,
+        observed_stream_type=utterance_stream_type,
+        observed_confidence=1.0 if utterance_stream_type is not UtteranceStreamType.UNKNOWN else 0.0,
+        disagreement_rationale="",
     )
 
 
 async def analyze_scd(
     utterances: list[Utterance],
     settings: Settings,
+    *,
+    utterance_stream_type: UtteranceStreamType = UtteranceStreamType.UNKNOWN,
 ) -> SCDReport:
     """Analyze tone/dynamics of a conversation using the SCD prompt.
 
@@ -105,7 +114,7 @@ async def analyze_scd(
         report is returned without invoking the LLM.
     """
     if len(utterances) < 2 or _distinct_authors(utterances) < 2:
-        return _insufficient_report()
+        return _insufficient_report(utterance_stream_type)
 
     prompt = _load_scd_prompt()
     agent = build_agent(
@@ -115,6 +124,12 @@ async def analyze_scd(
         name="vibecheck.scd",
     )
     formatted = _format_utterances(utterances)
+    user_prompt = (
+        f"Upstream-claimed utterance_stream_type: {utterance_stream_type.value}\n"
+        "Treat this as advisory. Classify the observed stream yourself in the output.\n\n"
+        f"{formatted}"
+    )
     async with vertex_slot(settings):
-        result = await run_vertex_agent_with_retry(agent, formatted)
-    return result.output
+        result = await run_vertex_agent_with_retry(agent, user_prompt)
+    report = result.output
+    return report.model_copy(update={"upstream_stream_type": utterance_stream_type})

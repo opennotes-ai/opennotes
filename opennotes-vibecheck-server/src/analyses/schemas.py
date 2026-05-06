@@ -32,6 +32,7 @@ from src.analyses.safety._schemas import (
     VideoModerationMatch,
     WebRiskFinding,
 )
+from src.analyses.stream_types import UtteranceStreamType
 from src.analyses.tone._flashpoint_schemas import FlashpointMatch
 from src.analyses.tone._scd_schemas import SCDReport
 
@@ -200,6 +201,7 @@ class SidebarPayload(BaseModel):
     source_url: str
     page_title: str | None = None
     page_kind: PageKind = PageKind.OTHER
+    utterance_stream_type: UtteranceStreamType = UtteranceStreamType.UNKNOWN
     scraped_at: datetime
     cached: bool = False
     cached_at: datetime | None = None
@@ -288,6 +290,13 @@ class JobState(BaseModel):
         default=None,
         description="Extracted page shape, sourced from vibecheck_job_utterances. Null until the extractor runs.",
     )
+    utterance_stream_type: UtteranceStreamType | None = Field(
+        default=None,
+        description=(
+            "Extracted utterance-stream shape, sourced from vibecheck_job_utterances. "
+            "Null until the extractor runs."
+        ),
+    )
     utterance_count: int = Field(
         default=0,
         description="Number of utterances extracted for this job. 0 until the extractor writes any rows.",
@@ -344,6 +353,7 @@ __all__ = [
     "SidebarPayload",
     "ToneDynamicsSection",
     "UtteranceAnchor",
+    "UtteranceStreamType",
     "VideoModerationSection",
     "WebRiskSection",
 ]
