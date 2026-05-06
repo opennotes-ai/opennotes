@@ -1,7 +1,7 @@
 import { onMount, onCleanup, createEffect } from "solid-js";
 import type { EChartsOption } from "echarts";
 import * as echarts from "echarts/core";
-import { LineChart, BarChart } from "echarts/charts";
+import { LineChart, BarChart, ScatterChart } from "echarts/charts";
 import {
   GridComponent,
   TooltipComponent,
@@ -13,6 +13,7 @@ import { CanvasRenderer } from "echarts/renderers";
 echarts.use([
   LineChart,
   BarChart,
+  ScatterChart,
   GridComponent,
   TooltipComponent,
   LegendComponent,
