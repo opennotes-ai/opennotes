@@ -337,7 +337,7 @@ async def test_run_all_sections_trends_with_unavailable_dedup_does_not_fail(
 
 
 @pytest.mark.asyncio
-async def test_run_section_retry_trends_dependencies_not_ready_does_not_mark_slot_failed(
+async def test_run_section_retry_trends_dependencies_not_ready_reenqueues_with_backoff(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from src.analyses.opinions import trends_oppositions_slot
@@ -367,6 +367,11 @@ async def test_run_section_retry_trends_dependencies_not_ready_does_not_mark_slo
         mark_slot_failed_calls.append((args, kwargs))
         return 1
 
+    enqueue_calls: list[tuple[tuple[Any, ...], dict[str, Any]]] = []
+
+    async def fake_enqueue_section_retry(*args: Any, **kwargs: Any) -> None:
+        enqueue_calls.append((args, kwargs))
+
     monkeypatch.setattr(orchestrator, "_load_job_attempt_and_slot", _load)
     monkeypatch.setitem(
         orchestrator._SECTION_HANDLERS,
@@ -375,6 +380,76 @@ async def test_run_section_retry_trends_dependencies_not_ready_does_not_mark_slo
     )
     monkeypatch.setattr(orchestrator, "mark_slot_done", never_done)
     monkeypatch.setattr(orchestrator, "mark_slot_failed", never_failed)
+    monkeypatch.setattr(orchestrator, "enqueue_section_retry", fake_enqueue_section_retry)
+
+    job_id = uuid4()
+    result = await run_section_retry(
+        pool=MagicMock(),
+        job_id=job_id,
+        slug=SectionSlug.OPINIONS_SENTIMENTS_TRENDS_OPPOSITIONS,
+        expected_slot_attempt_id=task_attempt,
+        settings=MagicMock(),
+    )
+
+    assert result.status_code == 200
+    assert len(enqueue_calls) == 1
+    enqueue_args, enqueue_kwargs = enqueue_calls[0]
+    assert enqueue_args[0] == job_id
+    assert enqueue_args[1] == SectionSlug.OPINIONS_SENTIMENTS_TRENDS_OPPOSITIONS
+    assert enqueue_args[2] == task_attempt
+    assert enqueue_args[3] is not None
+    assert enqueue_kwargs == {
+        "task_name": None,
+        "use_deterministic_task_name": False,
+        "schedule_delay_seconds": orchestrator._SECTION_RETRY_DEPENDENCY_BACKOFF_SECONDS,
+    }
+    assert mark_slot_failed_calls == []
+    assert mark_slot_done_calls == []
+
+
+@pytest.mark.asyncio
+async def test_run_section_retry_trends_dependencies_not_ready_marked_reenqueue_failure_as_503(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.analyses.opinions import trends_oppositions_slot
+    from src.jobs import orchestrator
+
+    task_attempt = uuid4()
+    slot_attempt = str(task_attempt)
+
+    async def handler(*args: Any, **kwargs: Any) -> dict[str, Any]:
+        raise trends_oppositions_slot.TrendsDependenciesNotReadyError("pending deps")
+
+    async def _load(*args: Any, **kwargs: Any) -> tuple[UUID, dict[str, Any]]:
+        return task_attempt, {
+            "state": "running",
+            "attempt_id": slot_attempt,
+            "data": None,
+        }
+
+    mark_slot_failed_calls: list[tuple] = []
+    mark_slot_done_calls: list[tuple] = []
+
+    async def never_done(*args: Any, **kwargs: Any) -> int:
+        mark_slot_done_calls.append((args, kwargs))
+        return 1
+
+    async def never_failed(*args: Any, **kwargs: Any) -> int:
+        mark_slot_failed_calls.append((args, kwargs))
+        return 1
+
+    async def fake_enqueue_section_retry(*args: Any, **kwargs: Any) -> None:
+        raise RuntimeError("enqueue failed")
+
+    monkeypatch.setattr(orchestrator, "_load_job_attempt_and_slot", _load)
+    monkeypatch.setitem(
+        orchestrator._SECTION_HANDLERS,
+        SectionSlug.OPINIONS_SENTIMENTS_TRENDS_OPPOSITIONS,
+        handler,
+    )
+    monkeypatch.setattr(orchestrator, "mark_slot_done", never_done)
+    monkeypatch.setattr(orchestrator, "mark_slot_failed", never_failed)
+    monkeypatch.setattr(orchestrator, "enqueue_section_retry", fake_enqueue_section_retry)
 
     result = await run_section_retry(
         pool=MagicMock(),

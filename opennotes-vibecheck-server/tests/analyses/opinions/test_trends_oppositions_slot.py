@@ -135,12 +135,15 @@ async def test_trends_oppositions_facts_slot_not_done_returns_empty_report(
 
 
 @pytest.mark.asyncio
-async def test_trends_oppositions_retry_payload_none_facts_slot_pending_raises() -> None:
+@pytest.mark.parametrize("facts_state", ["pending", "running"])
+async def test_trends_oppositions_retry_payload_none_facts_slot_not_done_raises(
+    facts_state: str,
+) -> None:
     pool = _Pool(
         json.dumps(
             {
                 SectionSlug.FACTS_CLAIMS_DEDUP.value: {
-                    "state": "pending",
+                    "state": facts_state,
                     "attempt_id": str(uuid4()),
                     "data": {"claims_report": _claims_report()},
                 }

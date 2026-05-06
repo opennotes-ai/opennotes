@@ -25,6 +25,7 @@ production.
 """
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
 import json
 from typing import TYPE_CHECKING, Any
 from uuid import UUID
@@ -211,6 +212,10 @@ async def enqueue_section_retry(
     slug: SectionSlug,
     expected_slot_attempt_id: UUID,
     settings: Settings,
+    *,
+    task_name: str | None = None,
+    use_deterministic_task_name: bool = True,
+    schedule_delay_seconds: int | None = None,
 ) -> None:
     """Publish a Cloud Task that will invoke the section-retry worker target.
 
@@ -218,6 +223,16 @@ async def enqueue_section_retry(
     The worker CAS-claims the slot on `expected_slot_attempt_id`; a
     stale redelivery (newer retry already rotated the slot) hits a 200
     no-op path.
+
+    Args:
+        task_name: Optional fully-qualified `name` to use for this task.
+            Ignored unless `use_deterministic_task_name` is true.
+        use_deterministic_task_name: If false, omit the task name so
+            Cloud Tasks allocates a unique name for this enqueue. Used for
+            durable dependency waits where repeated retries are desired.
+        schedule_delay_seconds: Optional delay in seconds before execution.
+            Used for dependency-driven retries that should outlive the main
+            queue's transient retry budget.
     """
     _require_settings(settings)
 
@@ -233,8 +248,10 @@ async def enqueue_section_retry(
         settings.VIBECHECK_TASKS_LOCATION,
         settings.VIBECHECK_TASKS_QUEUE,
     )
-    task_name = build_section_task_name(job_id, slug, expected_slot_attempt_id)
-    fq_name = f"{parent}/tasks/{task_name}"
+    if use_deterministic_task_name:
+        task_name = task_name or build_section_task_name(
+            job_id, slug, expected_slot_attempt_id
+        )
     target_url = _section_target_url(settings, job_id, slug)
 
     body = json.dumps(
@@ -246,7 +263,6 @@ async def enqueue_section_retry(
     ).encode("utf-8")
 
     task: dict[str, Any] = {
-        "name": fq_name,
         "dispatch_deadline": {"seconds": _DISPATCH_DEADLINE_SECONDS},
         "http_request": {
             "http_method": "POST",
@@ -259,6 +275,14 @@ async def enqueue_section_retry(
             },
         },
     }
+    if use_deterministic_task_name:
+        task["name"] = f"{parent}/tasks/{task_name}"
+    if schedule_delay_seconds is not None and schedule_delay_seconds > 0:
+        task["schedule_time"] = {
+            "seconds": int(
+                (datetime.now(UTC) + timedelta(seconds=schedule_delay_seconds)).timestamp()
+            )
+        }
 
     logger.info(
         "enqueue_section_retry publishing task_name=%s job_id=%s slug=%s slot_attempt=%s target=%s",

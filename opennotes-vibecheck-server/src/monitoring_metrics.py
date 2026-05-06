@@ -4,7 +4,7 @@ Cardinality is the dominant correctness concern for Prometheus metrics — a
 single unbounded label set will explode the time-series database. Every
 metric in this module uses bounded label sets:
 
-- `slug` is the seven-value `SectionSlug` enum.
+- `slug` is bounded by the known `SectionSlug` enum members.
 - `status` is the five-value `JobStatus` enum.
 - `tier` is a small literal set (`scrape`, `analysis`).
 - `error_type` is the four-value `_ERROR_BUCKETS` literal set produced by

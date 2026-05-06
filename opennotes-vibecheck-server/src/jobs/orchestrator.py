@@ -133,6 +133,7 @@ from src.firecrawl_client import (
     ScrapeResult,
 )
 from src.jobs.finalize import maybe_finalize_job
+from src.jobs.enqueue import enqueue_section_retry
 from src.jobs.pdf_extract import PDFExtractionError, pdf_extract_step
 from src.jobs.scrape_quality import ScrapeQuality, classify_scrape
 from src.jobs.section_defaults import empty_section_data as _empty_section_data
@@ -181,6 +182,8 @@ upstream flake. This cap is intentionally equal to Cloud Tasks max_attempts:
 the backstop fires on the same final delivery that Cloud Tasks would also
 stop, preventing wasted deliveries that the prior cap of 2 caused.
 """
+
+_SECTION_RETRY_DEPENDENCY_BACKOFF_SECONDS: Final[int] = 30
 
 
 _CORAL_PARTIAL_MARKERS: tuple[str, ...] = (
@@ -2911,11 +2914,29 @@ async def run_section_retry(  # noqa: PLR0912
                 if isinstance(exc, TrendsDependenciesNotReadyError):
                     logger.info(
                         "section-retry: trends dependencies not ready for job=%s slug=%s — "
-                        "retrying without marking failed",
+                        "rescheduling dependency retry",
                         job_id,
                         slug.value,
                     )
-                    return RunResult(status_code=503)
+                    try:
+                        await enqueue_section_retry(
+                            job_id,
+                            slug,
+                            expected_slot_attempt_id,
+                            settings,
+                            task_name=None,
+                            use_deterministic_task_name=False,
+                            schedule_delay_seconds=_SECTION_RETRY_DEPENDENCY_BACKOFF_SECONDS,
+                        )
+                    except Exception as reenqueue_exc:
+                        logger.warning(
+                            "section-retry: failed to re-enqueue dependency wait for job=%s slug=%s: %s",
+                            job_id,
+                            slug.value,
+                            reenqueue_exc,
+                        )
+                        return RunResult(status_code=503)
+                    return RunResult(status_code=200)
 
                 SECTION_FAILURES.labels(
                     slug=slug.value, error_type=classify_error(exc)
