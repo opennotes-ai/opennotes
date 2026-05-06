@@ -24,6 +24,7 @@ from pydantic import BaseModel, Field
 
 from src.analyses.claims._claims_schemas import ClaimsReport
 from src.analyses.claims._factcheck_schemas import FactCheckMatch
+from src.analyses.opinions._highlights_schemas import OpinionsHighlightsReport
 from src.analyses.opinions._schemas import OpinionsReport
 from src.analyses.opinions._trends_schemas import TrendsOppositionsReport
 from src.analyses.safety._schemas import (
@@ -203,6 +204,7 @@ class OpinionsSection(BaseModel):
 
     opinions_report: OpinionsReport
     trends_oppositions: TrendsOppositionsReport | None = None
+    highlights: OpinionsHighlightsReport | None = None
 
 
 class HeadlineSummary(BaseModel):

@@ -137,6 +137,14 @@ class TestAssembleSidebarPayload:
         assert sidebar.opinions_sentiments.trends_oppositions is None
         assert SidebarPayload.model_validate(sidebar.model_dump(mode="json"))
 
+    def test_no_highlights_slot_returns_none(self):
+        sections = _minimal_done_sections()
+
+        sidebar = assemble_sidebar_payload("https://example.com", sections)
+
+        assert sidebar.opinions_sentiments.highlights is None
+        assert SidebarPayload.model_validate(sidebar.model_dump(mode="json"))
+
     def test_failed_trends_oppositions_slot_returns_none_and_still_validates(self):
         sections = _minimal_done_sections()
         sections[SectionSlug.OPINIONS_SENTIMENTS_TRENDS_OPPOSITIONS] = _failed_slot()
@@ -144,6 +152,15 @@ class TestAssembleSidebarPayload:
         sidebar = assemble_sidebar_payload("https://example.com", sections)
 
         assert sidebar.opinions_sentiments.trends_oppositions is None
+        assert SidebarPayload.model_validate(sidebar.model_dump(mode="json"))
+
+    def test_failed_highlights_slot_returns_none_and_still_validates(self):
+        sections = _minimal_done_sections()
+        sections[SectionSlug.OPINIONS_SENTIMENTS_HIGHLIGHTS] = _failed_slot()
+
+        sidebar = assemble_sidebar_payload("https://example.com", sections)
+
+        assert sidebar.opinions_sentiments.highlights is None
         assert SidebarPayload.model_validate(sidebar.model_dump(mode="json"))
 
     def test_pending_slot_gets_empty_defaults(self):
@@ -444,6 +461,47 @@ class TestAssembleSidebarPayload:
             payload.opinions_sentiments.trends_oppositions.oppositions[0].topic
             == "topic-1"
         )
+
+    def test_highlights_slot_done_populates_field(self):
+        sections = _minimal_done_sections()
+        sections[SectionSlug.OPINIONS_SENTIMENTS_HIGHLIGHTS] = _done_slot(
+            {
+                "highlights_report": {
+                    "highlights": [
+                        {
+                            "cluster": {
+                                "canonical_text": "Shared claim",
+                                "category": "potentially_factual",
+                                "occurrence_count": 3,
+                                "author_count": 2,
+                                "utterance_ids": ["u1", "u2", "u3"],
+                                "representative_authors": ["author-1", "author-2"],
+                            },
+                            "crossed_scaled_threshold": True,
+                        }
+                    ],
+                    "threshold": {
+                        "total_authors": 5,
+                        "total_utterances": 12,
+                        "min_authors_required": 2,
+                        "min_occurrences_required": 3,
+                    },
+                    "fallback_engaged": False,
+                    "floor_eligible_count": 1,
+                    "total_input_count": 4,
+                }
+            }
+        )
+
+        sidebar = assemble_sidebar_payload("https://example.com", sections)
+        payload = SidebarPayload.model_validate(sidebar.model_dump(mode="json"))
+
+        assert payload.opinions_sentiments.highlights is not None
+        assert (
+            payload.opinions_sentiments.highlights.highlights[0].cluster.canonical_text
+            == "Shared claim"
+        )
+        assert payload.opinions_sentiments.highlights.threshold.total_authors == 5
 
     def test_video_moderation_matches_flow_through(self):
         sections = _minimal_done_sections()

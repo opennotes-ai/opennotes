@@ -14,6 +14,7 @@ from typing import Any, Literal, cast
 
 from src.analyses.claims._claims_schemas import ClaimsReport
 from src.analyses.claims._factcheck_schemas import FactCheckMatch
+from src.analyses.opinions._highlights_schemas import OpinionsHighlightsReport
 from src.analyses.opinions._schemas import OpinionsReport
 from src.analyses.opinions._trends_schemas import TrendsOppositionsReport
 from src.analyses.safety._schemas import (
@@ -204,6 +205,16 @@ def assemble_sidebar_payload(
         trends_oppositions = TrendsOppositionsReport.model_validate(
             trends_oppositions_data["trends_oppositions_report"]
         )
+    highlights_slot = sections.get(SectionSlug.OPINIONS_SENTIMENTS_HIGHLIGHTS)
+    highlights_data = data_for(SectionSlug.OPINIONS_SENTIMENTS_HIGHLIGHTS)
+    highlights = None
+    if (
+        highlights_slot is not None
+        and highlights_slot.state == SectionState.DONE
+        and isinstance(highlights_slot.data, dict)
+        and "highlights_report" in highlights_slot.data
+    ):
+        highlights = OpinionsHighlightsReport.model_validate(highlights_data["highlights_report"])
 
     opinions = OpinionsSection(
         opinions_report=OpinionsReport(
@@ -214,6 +225,7 @@ def assemble_sidebar_payload(
             subjective_claims=subjective_data.get("subjective_claims", []),
         ),
         trends_oppositions=trends_oppositions,
+        highlights=highlights,
     )
 
     headline = (
