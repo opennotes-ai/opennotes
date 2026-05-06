@@ -36,20 +36,27 @@ export interface SectionGroupProps {
   slugs: SectionSlugLiteral[];
   sections: SlugToSlots;
   render: Partial<Record<SectionSlugLiteral, (data: unknown) => JSX.Element>>;
+  summary?: {
+    label?: string;
+    content: () => JSX.Element;
+    defaultOpen?: boolean;
+  };
   emptinessChecks?: Partial<
     Record<SectionSlugLiteral, (data: unknown) => boolean>
   >;
-  counts?: Partial<Record<SectionSlugLiteral, (data: unknown) => number>>;
+  counts?: Partial<
+    Record<SectionSlugLiteral, (data: unknown) => SlotCountBadge>
+  >;
   jobId?: string;
   onRetry?: (slug: SectionSlugLiteral) => void;
   cachedHint?: boolean;
   renderRevision?: string | number | boolean;
 }
 
-function ChevronIcon(props: { expanded: boolean }) {
+function ChevronIcon(props: { expanded: boolean; testId: string }) {
   return (
     <ChevronDown
-      data-testid="slot-chevron"
+      data-testid={props.testId}
       data-icon="chevron-down"
       data-state={props.expanded ? "expanded" : "collapsed"}
       aria-hidden="true"
@@ -64,10 +71,25 @@ function ChevronIcon(props: { expanded: boolean }) {
   );
 }
 
-function formatCountBadge(count: number): string {
-  if (!Number.isFinite(count) || count <= 0) return "no results";
-  if (count === 1) return "1 result";
-  return `${count} results`;
+export type SlotCountBadge = {
+  total: number;
+  flagged?: number;
+  kind?: "results" | "flagged";
+};
+
+function asFiniteCount(value: number): number {
+  return Number.isFinite(value) ? value : 0;
+}
+
+function formatCountBadge(count: SlotCountBadge): string {
+  const total = asFiniteCount(count.total);
+  if (count.kind === "flagged") {
+    const flagged = asFiniteCount(count.flagged ?? 0);
+    return `${flagged} (of ${total}) flagged`;
+  }
+  if (total <= 0) return "no results";
+  if (total === 1) return "1 result";
+  return `${total} results`;
 }
 
 function slotFor(
@@ -184,6 +206,10 @@ export default function SectionGroup(props: SectionGroupProps): JSX.Element {
   let announcedJobId = props.jobId ?? "";
   let initializedAnnouncements = false;
   const [announcement, setAnnouncement] = createSignal("");
+  const [groupOpen, setGroupOpen] = createSignal(true);
+  const groupBodyId = `section-group-body-${props.label}`;
+  const sectionToggleLabel = () =>
+    `${groupOpen() ? "Collapse" : "Expand"} ${props.label} section`;
 
   createEffect(() => {
     const jobId = props.jobId ?? "";
@@ -243,6 +269,23 @@ export default function SectionGroup(props: SectionGroupProps): JSX.Element {
     >
       <header class="flex items-start justify-between gap-2">
         <div class="flex min-w-0 items-center gap-1.5">
+          <button
+            type="button"
+            data-testid={`section-toggle-${props.label}`}
+            aria-label={sectionToggleLabel()}
+            aria-expanded={groupOpen() ? "true" : "false"}
+            aria-controls={groupBodyId}
+            onClick={() => setGroupOpen((current) => !current)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" || event.key === " ") {
+                event.preventDefault();
+                setGroupOpen((current) => !current);
+              }
+            }}
+            class="inline-flex shrink-0 items-center rounded-sm text-muted-foreground outline-none hover:bg-accent hover:text-accent-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+          >
+            <ChevronIcon expanded={groupOpen()} testId="section-group-chevron" />
+          </button>
           <h3 class="text-sm font-semibold text-foreground">{props.label}</h3>
           <HelpPopover
             copy={sectionHelp(props.label)}
@@ -271,7 +314,58 @@ export default function SectionGroup(props: SectionGroupProps): JSX.Element {
         {announcement()}
       </span>
 
-      <div class="flex flex-col gap-4">
+      <div
+        data-testid={groupBodyId}
+        id={groupBodyId}
+        aria-hidden={groupOpen() ? "false" : "true"}
+        hidden={!groupOpen()}
+        class="flex flex-col gap-4"
+      >
+        <Show when={props.summary}>
+          {(summary) => {
+            const summaryId = `section-summary-body-${props.label}`;
+            const [userOpen, setUserOpen] = createSignal<boolean | null>(null);
+            const isOpen = createMemo(
+              () => userOpen() ?? (summary().defaultOpen ?? true),
+            );
+            const summaryToggleLabel = () =>
+              `${isOpen() ? "Collapse" : "Expand"} ${summary().label ?? "Summary"} in ${props.label}`;
+            const toggle = () => setUserOpen((current) => !(current ?? isOpen()));
+            return (
+              <div
+                data-testid={`section-summary-${props.label}`}
+                class="flex flex-col gap-2"
+              >
+                <div class="flex items-center gap-2">
+                  <button
+                    type="button"
+                    data-testid={`section-summary-toggle-${props.label}`}
+                    data-summary-label={summary().label ?? "Summary"}
+                    aria-label={summaryToggleLabel()}
+                    aria-expanded={isOpen() ? "true" : "false"}
+                    aria-controls={summaryId}
+                    onClick={toggle}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        toggle();
+                      }
+                    }}
+                    class="flex min-w-0 flex-1 items-center justify-between gap-2 rounded-sm text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                  >
+                    <span>{summary().label ?? "Summary"}</span>
+                    <span class="ml-auto flex items-center gap-2">
+                      <ChevronIcon expanded={isOpen()} testId="section-summary-chevron" />
+                    </span>
+                  </button>
+                </div>
+                <Show when={isOpen()}>
+                  <div id={summaryId}>{summary().content()}</div>
+                </Show>
+              </div>
+            );
+          }}
+        </Show>
         <For each={props.slugs}>
           {(slug) => {
             const slot = () => slotFor(props.sections, slug);
@@ -288,7 +382,7 @@ export default function SectionGroup(props: SectionGroupProps): JSX.Element {
               const current = slot();
               if (current.state !== "done") return null;
               return formatCountBadge(
-                props.counts?.[slug]?.(current.data) ?? 0,
+                props.counts?.[slug]?.(current.data) ?? { flagged: 0, total: 0 },
               );
             });
             const toggle = () => setUserOpen((current) => !(current ?? isOpen()));
@@ -336,7 +430,7 @@ export default function SectionGroup(props: SectionGroupProps): JSX.Element {
                           </span>
                         )}
                       </Show>
-                      <ChevronIcon expanded={isOpen()} />
+                      <ChevronIcon expanded={isOpen()} testId="slot-chevron" />
                     </span>
                   </button>
                   <HelpPopover

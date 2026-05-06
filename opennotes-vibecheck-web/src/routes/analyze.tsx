@@ -645,11 +645,7 @@ function AnalyzePageContent(props: { initialJobState: JobState | null }) {
             class="inline-flex items-center gap-1 text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
           >
             <span aria-hidden="true">&larr;</span>
-            <span>vibecheck</span>
-            <span aria-hidden="true" class="mx-1 text-muted-foreground/60">
-              /
-            </span>
-            <span>back</span>
+            <span>Back to Vibecheck home</span>
           </A>
           <Show when={isCached() && sidebarPayloadComplete()}>
             <CachedBadge cachedAt={cachedAt()} />

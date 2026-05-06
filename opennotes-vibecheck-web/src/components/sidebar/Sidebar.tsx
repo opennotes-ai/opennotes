@@ -12,7 +12,10 @@ import {
   asStrictSectionSlots,
   type SectionSlugLiteral,
 } from "~/lib/section-slots";
-import SectionGroup, { type SlugToSlots } from "./SectionGroup";
+import SectionGroup, {
+  type SlugToSlots,
+  type SlotCountBadge,
+} from "./SectionGroup";
 import ExtractingIndicator from "./ExtractingIndicator";
 import { sectionDisplayName } from "./display";
 import {
@@ -302,12 +305,35 @@ const SAFETY_EMPTINESS: Partial<
 };
 
 const SAFETY_COUNTS: Partial<
-  Record<SectionSlugLiteral, (data: unknown) => number>
+  Record<SectionSlugLiteral, (data: unknown) => SlotCountBadge>
 > = {
-  safety__moderation: (data) => extractHarmfulContentMatches(data).length,
-  safety__web_risk: (data) => extractWebRiskFindings(data).length,
-  safety__image_moderation: (data) => extractImageModerationMatches(data).length,
-  safety__video_moderation: (data) => extractVideoModerationMatches(data).length,
+  safety__moderation: (data) => {
+    const total = extractHarmfulContentMatches(data).length;
+    return { total };
+  },
+  safety__web_risk: (data) => {
+    const findings = extractWebRiskFindings(data);
+    const flagged = findings.filter(
+      (finding) => (finding.threat_types?.length ?? 0) > 0,
+    ).length;
+    return { flagged, total: findings.length, kind: "flagged" };
+  },
+  safety__image_moderation: (data) => {
+    const matches = extractImageModerationMatches(data);
+    return {
+      flagged: matches.filter((match) => match.flagged).length,
+      total: matches.length,
+      kind: "flagged",
+    };
+  },
+  safety__video_moderation: (data) => {
+    const matches = extractVideoModerationMatches(data);
+    return {
+      flagged: matches.filter((match) => match.flagged).length,
+      total: matches.length,
+      kind: "flagged",
+    };
+  },
 };
 
 const TONE_RENDER: Partial<
@@ -334,15 +360,18 @@ const TONE_EMPTINESS: Partial<
 };
 
 const TONE_COUNTS: Partial<
-  Record<SectionSlugLiteral, (data: unknown) => number>
+  Record<SectionSlugLiteral, (data: unknown) => SlotCountBadge>
 > = {
-  tone_dynamics__flashpoint: (data) => extractFlashpointMatches(data).length,
+  tone_dynamics__flashpoint: (data) => {
+    const total = extractFlashpointMatches(data).length;
+    return { total };
+  },
   tone_dynamics__scd: (data) => {
     const scd = extractScd(data);
-    return (
+    const total =
       (scd.tone_labels ?? []).length +
-      Object.keys(scd.per_speaker_notes ?? {}).length
-    );
+      Object.keys(scd.per_speaker_notes ?? {}).length;
+    return { total };
   },
 };
 
@@ -383,20 +412,30 @@ const FACTS_EMPTINESS: Partial<
 };
 
 const FACTS_COUNTS: Partial<
-  Record<SectionSlugLiteral, (data: unknown) => number>
+  Record<SectionSlugLiteral, (data: unknown) => SlotCountBadge>
 > = {
-  facts_claims__dedup: (data) => extractClaimsReport(data).deduped_claims.length,
-  facts_claims__evidence: (data) =>
-    extractClaimsReport(data).deduped_claims.reduce(
+  facts_claims__dedup: (data) => {
+    const total = extractClaimsReport(data).deduped_claims.length;
+    return { total };
+  },
+  facts_claims__evidence: (data) => {
+    const total = extractClaimsReport(data).deduped_claims.reduce(
       (count, claim) => count + (claim.supporting_facts ?? []).length,
       0,
-    ),
-  facts_claims__premises: (data) =>
-    extractClaimsReport(data).deduped_claims.reduce(
+    );
+    return { total };
+  },
+  facts_claims__premises: (data) => {
+    const total = extractClaimsReport(data).deduped_claims.reduce(
       (count, claim) => count + (claim.premise_ids ?? []).length,
       0,
-    ),
-  facts_claims__known_misinfo: (data) => extractKnownMisinfo(data).length,
+    );
+    return { total };
+  },
+  facts_claims__known_misinfo: (data) => {
+    const total = extractKnownMisinfo(data).length;
+    return { total };
+  },
 };
 
 const OPINIONS_RENDER: Partial<
@@ -427,12 +466,16 @@ const OPINIONS_EMPTINESS: Partial<
 };
 
 const OPINIONS_COUNTS: Partial<
-  Record<SectionSlugLiteral, (data: unknown) => number>
+  Record<SectionSlugLiteral, (data: unknown) => SlotCountBadge>
 > = {
-  opinions_sentiments__sentiment: (data) =>
-    extractSentimentStats(data).per_utterance.length,
-  opinions_sentiments__subjective: (data) =>
-    extractSubjectiveClaims(data).length,
+  opinions_sentiments__sentiment: (data) => {
+    const total = extractSentimentStats(data).per_utterance.length;
+    return { total };
+  },
+  opinions_sentiments__subjective: (data) => {
+    const total = extractSubjectiveClaims(data).length;
+    return { total };
+  },
 };
 
 function fillMissingSlotsAsRunning(base: SlugToSlots): SlugToSlots {
@@ -568,6 +611,17 @@ export default function Sidebar(props: SidebarProps) {
       ? (props.payload?.safety?.recommendation ?? null)
       : null,
   );
+  const safetySummary = createMemo(() => {
+    const recommendation = safetyRecommendation();
+    if (!recommendation) return undefined;
+    return {
+      label: "Summary",
+      defaultOpen: true,
+      content: () => (
+        <SafetyRecommendationReport recommendation={recommendation} />
+      ),
+    };
+  });
 
   return (
     <aside
@@ -595,25 +649,19 @@ export default function Sidebar(props: SidebarProps) {
           {partialFailedSlugs().map(sectionDisplayName).join(", ")}
         </div>
       </Show>
-      <section class="flex flex-col gap-3">
-        <Show when={safetyRecommendation()}>
-          {(recommendation) => (
-            <SafetyRecommendationReport recommendation={recommendation()} />
-          )}
-        </Show>
-        <SectionGroup
-          label="Safety"
-          slugs={SAFETY_SLUGS}
-          sections={effectiveSections()}
-          render={safetyRender()}
-          emptinessChecks={SAFETY_EMPTINESS}
-          counts={SAFETY_COUNTS}
-          jobId={props.jobId}
-          onRetry={props.onRetry}
-          cachedHint={props.cachedHint}
-          renderRevision={canJump()}
-        />
-      </section>
+      <SectionGroup
+        label="Safety"
+        slugs={SAFETY_SLUGS}
+        sections={effectiveSections()}
+        render={safetyRender()}
+        summary={safetySummary()}
+        emptinessChecks={SAFETY_EMPTINESS}
+        counts={SAFETY_COUNTS}
+        jobId={props.jobId}
+        onRetry={props.onRetry}
+        cachedHint={props.cachedHint}
+        renderRevision={canJump()}
+      />
       <SectionGroup
         label="Tone/dynamics"
         slugs={TONE_SLUGS}
