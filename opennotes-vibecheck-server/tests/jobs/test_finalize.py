@@ -17,7 +17,7 @@ import pytest
 from testcontainers.postgres import PostgresContainer
 
 from src.analyses.safety._schemas import HarmfulContentMatch
-from src.analyses.schemas import SectionSlug, SectionSlot, SectionState
+from src.analyses.schemas import SectionSlot, SectionSlug, SectionState
 from src.jobs.finalize import maybe_finalize_job
 from tests.conftest import VIBECHECK_JOBS_DDL
 
