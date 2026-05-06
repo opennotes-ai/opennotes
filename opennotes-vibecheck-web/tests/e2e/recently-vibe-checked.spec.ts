@@ -45,6 +45,14 @@ const FIXTURE_ANALYSES = [
     preview_description: "A short blurb about article 5.",
     completed_at: "2026-01-05T00:00:00Z",
   },
+  {
+    job_id: "ffffffff-ffff-7fff-8fff-ffffffffffff",
+    source_url: "https://example.com/article-6",
+    page_title: "Example Article 6",
+    screenshot_url: "https://placehold.co/800x600",
+    preview_description: "A short blurb about article 6.",
+    completed_at: "2026-01-06T00:00:00Z",
+  },
 ];
 
 let mockMode: "normal" | "empty" | "error" = "normal";
@@ -158,12 +166,12 @@ test.beforeEach(() => {
   mockMode = "normal";
 });
 
-test("5 cards render on home page", async ({ page }) => {
+test("6 cards render on home page", async ({ page }) => {
   await page.goto(webBaseUrl, { waitUntil: "networkidle" });
   const section = page.locator('[data-testid="recently-vibe-checked"]');
   await expect(section).toBeVisible({ timeout: 10_000 });
   const cards = section.locator('[data-testid="recent-analysis-card"]');
-  await expect(cards).toHaveCount(5);
+  await expect(cards).toHaveCount(6);
   await expect(section).toContainText("Example Article 1");
 });
 

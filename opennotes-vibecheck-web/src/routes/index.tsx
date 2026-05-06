@@ -68,9 +68,12 @@ export default function HomePage() {
             pending={urlSubmission.pending}
             autofocus
           />
-          <PdfUpload
-            pending={pdfSubmission.pending}
-          />
+          <div id="pdf-upload" class="flex w-full flex-col gap-2">
+            <p class="text-sm text-muted-foreground">
+              Have a PDF, or hit a paywall? Upload it here:
+            </p>
+            <PdfUpload pending={pdfSubmission.pending} />
+          </div>
         </div>
 
         <Show when={errorMessage()}>
