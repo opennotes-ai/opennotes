@@ -8,7 +8,9 @@ from typing import Any
 from pydantic import ValidationError
 
 from src.analyses.claims._claims_schemas import ClaimCategory, ClaimsReport, DedupedClaim
-from src.analyses.opinions._trends_schemas import TrendsOppositionsReport
+from src.analyses.opinions._trends_schemas import (
+    empty_trends_oppositions_report,
+)
 from src.analyses.opinions.trends_oppositions import extract_trends_oppositions
 from src.analyses.schemas import SectionSlot, SectionSlug, SectionState
 from src.config import Settings
@@ -28,13 +30,11 @@ class TrendsDependenciesNotReadyError(RuntimeError):
 
 
 def _empty_report() -> dict[str, Any]:
-    report = TrendsOppositionsReport(
-        trends=[],
-        oppositions=[],
-        input_cluster_count=0,
-        skipped_for_cap=0,
-    )
-    return {"trends_oppositions_report": report.model_dump(mode="json")}
+    return {
+        "trends_oppositions_report": empty_trends_oppositions_report().model_dump(
+            mode="json"
+        )
+    }
 
 
 def _coerce_sections(payload: Any) -> dict[str, Any]:
@@ -67,32 +67,25 @@ def _extract_section_payload(
     slug: str,
 ) -> tuple[dict[str, Any], str]:
     """Return `(payload, dependency_state)` for a dependency section."""
+    empty: dict[str, Any] = {}
     raw = payload.get(slug)
-    data: dict[str, Any] = {}
-    state = "missing"
     if raw is None:
-        return data, state
-    elif isinstance(raw, SectionSlot):
-        if raw.state == SectionState.DONE:
-            data = raw.data if isinstance(raw.data, dict) else {}
-            return data, SectionState.DONE.value
-        return data, raw.state.value
+        return empty, "missing"
+    if isinstance(raw, SectionSlot):
+        slot = raw
     elif isinstance(raw, Mapping):
         if "state" not in raw or "attempt_id" not in raw:
-            data = dict(raw)
-            return data, SectionState.DONE.value
-        else:
-            try:
-                slot = SectionSlot.model_validate(raw)
-            except ValidationError:
-                return data, "malformed"
-            else:
-                if slot.state == SectionState.DONE:
-                    data = slot.data if isinstance(slot.data, dict) else {}
-                    return data, slot.state.value
-                return data, slot.state.value
+            return dict(raw), SectionState.DONE.value
+        try:
+            slot = SectionSlot.model_validate(raw)
+        except ValidationError:
+            return empty, "malformed"
     else:
-        return data, "malformed"
+        return empty, "malformed"
+
+    if slot.state == SectionState.DONE and isinstance(slot.data, dict):
+        return slot.data, SectionState.DONE.value
+    return empty, slot.state.value
 
 
 def _extract_deduped_claims(payload: Mapping[str, Any]) -> list[DedupedClaim]:
@@ -139,13 +132,12 @@ async def run_trends_oppositions(
     facts_slot_payload, facts_slot_ready = _load_facts_slot_from_payload(
         payload, SectionSlug.FACTS_CLAIMS_DEDUP.value
     )
-    if is_retry_mode or is_initial_run_mode:
-        if not facts_slot_payload:
-            db_sections = await _load_sections_from_db(pool, job_id)
-            facts_slot_payload, facts_slot_ready = _load_facts_slot_from_payload(
-                db_sections,
-                SectionSlug.FACTS_CLAIMS_DEDUP.value,
-            )
+    if (is_retry_mode or is_initial_run_mode) and not facts_slot_payload:
+        db_sections = await _load_sections_from_db(pool, job_id)
+        facts_slot_payload, facts_slot_ready = _load_facts_slot_from_payload(
+            db_sections,
+            SectionSlug.FACTS_CLAIMS_DEDUP.value,
+        )
 
     if facts_slot_ready in {"missing", "malformed", "failed"}:
         return _empty_report()

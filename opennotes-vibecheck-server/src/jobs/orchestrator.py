@@ -77,8 +77,8 @@ from src.analyses.opinions._schemas import SentimentStatsReport, SubjectiveClaim
 from src.analyses.opinions.sentiment_slot import run_sentiment
 from src.analyses.opinions.subjective_slot import run_subjective
 from src.analyses.opinions.trends_oppositions_slot import (
-    TrendsDependenciesNotReadyError,
     FIRST_RUN_DEPENDENCY_PAYLOAD,
+    TrendsDependenciesNotReadyError,
     run_trends_oppositions,
 )
 from src.analyses.safety._schemas import (
@@ -132,8 +132,8 @@ from src.firecrawl_client import (
     ScrapeMetadata,
     ScrapeResult,
 )
-from src.jobs.finalize import maybe_finalize_job
 from src.jobs.enqueue import enqueue_section_retry
+from src.jobs.finalize import maybe_finalize_job
 from src.jobs.pdf_extract import PDFExtractionError, pdf_extract_step
 from src.jobs.scrape_quality import ScrapeQuality, classify_scrape
 from src.jobs.section_defaults import empty_section_data as _empty_section_data
@@ -2771,7 +2771,7 @@ async def _load_job_attempt_and_slot(
     return row["attempt_id"], slot
 
 
-async def run_section_retry(  # noqa: PLR0912
+async def run_section_retry(  # noqa: PLR0911, PLR0912
     pool: Any,
     job_id: UUID,
     slug: SectionSlug,

@@ -39,10 +39,10 @@ from src.firecrawl_client import (
 from src.jobs.orchestrator import (
     TerminalError,
     TransientError,
-    run_section_retry,
     _run_section,
     _run_tier2,
     _tier2_actions_for,
+    run_section_retry,
 )
 from src.utterances.errors import TransientExtractionError, UtteranceExtractionError
 
@@ -190,8 +190,8 @@ async def test_run_all_sections_writes_trends_oppositions_after_dedup(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """FACTS_CLAIMS_DEDUP must complete before trends/oppositions runs."""
-    from src.jobs import orchestrator
     from src.analyses.opinions import trends_oppositions_slot
+    from src.jobs import orchestrator
 
     dedup_done = asyncio.Event()
     run_order: list[str] = []
@@ -236,7 +236,8 @@ async def test_run_all_sections_writes_trends_oppositions_after_dedup(
         run_order[-1]
         == SectionSlug.OPINIONS_SENTIMENTS_TRENDS_OPPOSITIONS.value
     )
-    assert trend_payloads and trend_payloads[-1] is trends_oppositions_slot.FIRST_RUN_DEPENDENCY_PAYLOAD
+    assert trend_payloads
+    assert trend_payloads[-1] is trends_oppositions_slot.FIRST_RUN_DEPENDENCY_PAYLOAD
     assert all(item is not None for item in fact_payloads)
 
 
@@ -279,8 +280,8 @@ async def test_run_all_sections_trends_with_unavailable_dedup_does_not_fail(
     monkeypatch: pytest.MonkeyPatch, sections_payload: dict[str, Any]
 ) -> None:
     """Transient and unavailable first-run dependent states should not fail trends slot."""
-    from src.jobs import orchestrator
     from src.analyses.opinions import trends_oppositions_slot
+    from src.jobs import orchestrator
 
     class _Conn:
         def __init__(self, row: Any) -> None:
