@@ -19,7 +19,7 @@ export default function HeadlineSummaryReport(
         >
           <p
             data-testid="headline-summary-text"
-            class="max-w-[78ch] text-base leading-7 text-foreground"
+            class="text-base leading-7 text-foreground"
           >
             {h().text}
           </p>
