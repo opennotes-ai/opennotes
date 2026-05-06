@@ -71,6 +71,7 @@ class SectionSlug(StrEnum):
     OPINIONS_SENTIMENTS_SENTIMENT = "opinions_sentiments__sentiment"
     OPINIONS_SENTIMENTS_SUBJECTIVE = "opinions_sentiments__subjective"
     OPINIONS_SENTIMENTS_TRENDS_OPPOSITIONS = "opinions_sentiments__trends_oppositions"
+    OPINIONS_SENTIMENTS_HIGHLIGHTS = "opinions_sentiments__highlights"
 
 
 class SectionState(StrEnum):
