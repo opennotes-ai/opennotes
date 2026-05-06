@@ -33,12 +33,17 @@ function asOption(): EChartsOption {
 }
 
 describe("buildPunchCardOption", () => {
-  it("builds three scatter series with sentiment categories in display order", () => {
+  it("builds three scatter series with sentiment categories in visible display order", () => {
     const option = asOption();
     const series = option.series as Array<{ type?: string; data?: ScatterDatum[] }>;
-    const yAxis = option.yAxis as { type?: string; data?: string[] };
+    const yAxis = option.yAxis as {
+      type?: string;
+      data?: string[];
+      inverse?: boolean;
+    };
 
     expect(yAxis.type).toBe("category");
+    expect(yAxis.inverse).toBe(true);
     expect(yAxis.data).toEqual(["Positive", "Neutral", "Negative"]);
     expect(series).toHaveLength(3);
     expect(series.map((entry) => entry.type)).toEqual([
@@ -57,6 +62,7 @@ describe("buildPunchCardOption", () => {
     const option = asOption();
     const xAxis = option.xAxis as { min?: number; max?: number };
     const series = option.series as Array<{
+      itemStyle?: { color?: string };
       symbolSize?: (value: ScatterDatum) => number;
     }>;
 
@@ -70,6 +76,7 @@ describe("buildPunchCardOption", () => {
     const positiveSize = symbolSize?.([Date.UTC(2026, 4, 6, 12, 15, 0), "Positive", 5]);
     expect(positiveSize).toBeGreaterThan(0);
     expect(positiveSize).toBeLessThanOrEqual(24);
+    expect(series[1]?.itemStyle?.color).toBe("oklch(0.50 0.01 160 / 0.4)");
   });
 
   it("formats the tooltip with bucket window and per-sentiment counts", () => {

@@ -11,7 +11,7 @@ const SENTIMENTS: Array<{
   color: string;
 }> = [
   { key: "positive", label: "Positive", color: "oklch(0.65 0.15 165)" },
-  { key: "neutral", label: "Neutral", color: "oklch(0.50 0.01 160)" },
+  { key: "neutral", label: "Neutral", color: "oklch(0.50 0.01 160 / 0.4)" },
   { key: "negative", label: "Negative", color: "oklch(0.577 0.245 27.325)" },
 ];
 
@@ -86,6 +86,7 @@ export function buildPunchCardOption(buckets: SentimentBucket[]): EChartsOption 
     },
     yAxis: {
       type: "category",
+      inverse: true,
       data: SENTIMENTS.map((entry) => entry.label),
     },
     tooltip: {
