@@ -455,6 +455,26 @@ export interface components {
          * @enum {string}
          */
         ClaimCategory: "potentially_factual" | "self_claims" | "predictions" | "subjective" | "other";
+        /** ClaimOpposition */
+        ClaimOpposition: {
+            /** Topic */
+            topic: string;
+            /** Supporting Cluster Ids */
+            supporting_cluster_ids: string[];
+            /** Opposing Cluster Ids */
+            opposing_cluster_ids: string[];
+            /** Note */
+            note?: string | null;
+        };
+        /** ClaimTrend */
+        ClaimTrend: {
+            /** Label */
+            label: string;
+            /** Cluster Ids */
+            cluster_ids: string[];
+            /** Summary */
+            summary: string;
+        };
         /**
          * ClaimsReport
          * @description Output of `dedupe_claims` — prevalence stats for the Facts sidebar.
@@ -834,6 +854,7 @@ export interface components {
          */
         OpinionsSection: {
             opinions_report: components["schemas"]["OpinionsReport"];
+            trends_oppositions?: components["schemas"]["TrendsOppositionsReport"] | null;
         };
         /**
          * PageKind
@@ -1134,7 +1155,7 @@ export interface components {
          * @description The sidebar slots the async pipeline fills independently.
          * @enum {string}
          */
-        SectionSlug: "safety__moderation" | "safety__web_risk" | "safety__image_moderation" | "safety__video_moderation" | "tone_dynamics__flashpoint" | "tone_dynamics__scd" | "facts_claims__dedup" | "facts_claims__evidence" | "facts_claims__premises" | "facts_claims__known_misinfo" | "opinions_sentiments__sentiment" | "opinions_sentiments__subjective";
+        SectionSlug: "safety__moderation" | "safety__web_risk" | "safety__image_moderation" | "safety__video_moderation" | "tone_dynamics__flashpoint" | "tone_dynamics__scd" | "facts_claims__dedup" | "facts_claims__evidence" | "facts_claims__premises" | "facts_claims__known_misinfo" | "opinions_sentiments__sentiment" | "opinions_sentiments__subjective" | "opinions_sentiments__trends_oppositions";
         /**
          * SectionState
          * @description Lifecycle of a single sidebar slot during a job.
@@ -1274,6 +1295,17 @@ export interface components {
             scd: components["schemas"]["SCDReport"];
             /** Flashpoint Matches */
             flashpoint_matches?: components["schemas"]["FlashpointMatch"][];
+        };
+        /** TrendsOppositionsReport */
+        TrendsOppositionsReport: {
+            /** Trends */
+            trends: components["schemas"]["ClaimTrend"][];
+            /** Oppositions */
+            oppositions: components["schemas"]["ClaimOpposition"][];
+            /** Input Cluster Count */
+            input_cluster_count: number;
+            /** Skipped For Cap */
+            skipped_for_cap: number;
         };
         /** UploadPDFResponse */
         UploadPDFResponse: {

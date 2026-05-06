@@ -30,6 +30,7 @@ import {
   KnownMisinfoReport,
   SentimentReport,
   SubjectiveReport,
+  TrendsOppositionsReport,
 } from "./reports";
 
 type HarmfulContentMatch = components["schemas"]["HarmfulContentMatch"];
@@ -42,6 +43,8 @@ type SCDReport = components["schemas"]["SCDReport"];
 type FactCheckMatch = components["schemas"]["FactCheckMatch"];
 type SentimentStats = components["schemas"]["SentimentStatsReport"];
 type SubjectiveClaim = components["schemas"]["SubjectiveClaim"];
+type TrendsOppositionsReportData =
+  components["schemas"]["TrendsOppositionsReport"];
 type ClaimsReport = components["schemas"]["ClaimsReport"];
 type UtteranceAnchor = components["schemas"]["UtteranceAnchor"];
 
@@ -79,6 +82,7 @@ const FACTS_SLUGS: SectionSlugLiteral[] = [
 const OPINIONS_SLUGS: SectionSlugLiteral[] = [
   "opinions_sentiments__sentiment",
   "opinions_sentiments__subjective",
+  "opinions_sentiments__trends_oppositions",
 ];
 
 function doneSlot(attemptId: string, data: unknown): SectionSlot {
@@ -116,6 +120,12 @@ const EMPTY_SENTIMENT_STATS: SentimentStats = {
   negative_pct: 0,
   neutral_pct: 0,
   mean_valence: 0,
+};
+const EMPTY_TRENDS_OPPOSITIONS_REPORT: TrendsOppositionsReportData = {
+  trends: [],
+  oppositions: [],
+  input_cluster_count: 0,
+  skipped_for_cap: 0,
 };
 
 function synthesizeSectionsFromPayload(
@@ -173,6 +183,11 @@ function synthesizeSectionsFromPayload(
   const premisesStatus = payload.facts_claims?.premises_status as
     | SlotState
     | undefined;
+  const trendsOppositionsData = {
+    trends_oppositions_report:
+      payload.opinions_sentiments?.trends_oppositions ??
+      EMPTY_TRENDS_OPPOSITIONS_REPORT,
+  };
   return {
     safety__moderation: doneSlot(attemptId, safetyData),
     safety__web_risk: doneSlot(attemptId, webRiskData),
@@ -194,6 +209,10 @@ function synthesizeSectionsFromPayload(
     facts_claims__known_misinfo: doneSlot(attemptId, knownMisinfoData),
     opinions_sentiments__sentiment: doneSlot(attemptId, sentimentData),
     opinions_sentiments__subjective: doneSlot(attemptId, subjectiveData),
+    opinions_sentiments__trends_oppositions: doneSlot(
+      attemptId,
+      trendsOppositionsData,
+    ),
   };
 }
 
@@ -278,6 +297,12 @@ function extractSentimentStats(data: unknown): SentimentStats {
 
 function extractSubjectiveClaims(data: unknown): SubjectiveClaim[] {
   return (asRecord(data).subjective_claims ?? []) as SubjectiveClaim[];
+}
+function extractTrendsOppositionsReport(
+  data: unknown,
+): TrendsOppositionsReportData {
+  return (asRecord(data).trends_oppositions_report ??
+    EMPTY_TRENDS_OPPOSITIONS_REPORT) as TrendsOppositionsReportData;
 }
 
 const SAFETY_RENDER: Partial<
@@ -451,6 +476,11 @@ const OPINIONS_RENDER: Partial<
   opinions_sentiments__subjective: (data) => (
     <SubjectiveReport claims={extractSubjectiveClaims(data)} />
   ),
+  opinions_sentiments__trends_oppositions: (data) => (
+    <TrendsOppositionsReport
+      report={extractTrendsOppositionsReport(data)}
+    />
+  ),
 };
 
 const OPINIONS_EMPTINESS: Partial<
@@ -467,6 +497,10 @@ const OPINIONS_EMPTINESS: Partial<
   },
   opinions_sentiments__subjective: (data) =>
     extractSubjectiveClaims(data).length === 0,
+  opinions_sentiments__trends_oppositions: (data) => {
+    const report = extractTrendsOppositionsReport(data);
+    return report.trends.length === 0 && report.oppositions.length === 0;
+  },
 };
 
 const OPINIONS_COUNTS: Partial<
@@ -479,6 +513,10 @@ const OPINIONS_COUNTS: Partial<
   opinions_sentiments__subjective: (data) => {
     const total = extractSubjectiveClaims(data).length;
     return { total };
+  },
+  opinions_sentiments__trends_oppositions: (data) => {
+    const report = extractTrendsOppositionsReport(data);
+    return { total: report.trends.length + report.oppositions.length };
   },
 };
 
@@ -580,6 +618,11 @@ export default function Sidebar(props: SidebarProps) {
         claims={extractSubjectiveClaims(data)}
         onUtteranceClick={props.onUtteranceClick}
         canJumpToUtterance={canJump()}
+      />
+    ),
+    opinions_sentiments__trends_oppositions: (data) => (
+      <TrendsOppositionsReport
+        report={extractTrendsOppositionsReport(data)}
       />
     ),
   }));

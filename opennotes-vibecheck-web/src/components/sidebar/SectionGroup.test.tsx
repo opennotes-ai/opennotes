@@ -84,6 +84,12 @@ function makeTonePayload(): SidebarPayload {
         },
         subjective_claims: [],
       },
+      trends_oppositions: {
+        trends: [],
+        oppositions: [],
+        input_cluster_count: 2,
+        skipped_for_cap: 0,
+      },
     },
   };
 }
@@ -1365,7 +1371,7 @@ describe("Sidebar", () => {
     expect(byLabel("Safety")?.textContent).toBe("4/4");
     expect(byLabel("Tone/dynamics")?.textContent).toBe("2/2");
     expect(byLabel("Facts/claims")?.textContent).toBe("4/4");
-    expect(byLabel("Opinions/sentiments")?.textContent).toBe("2/2");
+    expect(byLabel("Opinions/sentiments")?.textContent).toBe("3/3");
 
     const ALL_SLUGS = [
       "safety__moderation",
@@ -1380,6 +1386,7 @@ describe("Sidebar", () => {
       "facts_claims__known_misinfo",
       "opinions_sentiments__sentiment",
       "opinions_sentiments__subjective",
+      "opinions_sentiments__trends_oppositions",
     ] as const;
 
     for (const slug of ALL_SLUGS) {
@@ -1456,6 +1463,10 @@ describe("Sidebar", () => {
           facts_claims__known_misinfo: { state: "running", attempt_id: "a7" },
           opinions_sentiments__sentiment: { state: "running", attempt_id: "a6" },
           opinions_sentiments__subjective: { state: "running", attempt_id: "a7" },
+          opinions_sentiments__trends_oppositions: {
+            state: "running",
+            attempt_id: "a8",
+          },
         }}
       />
     ));
@@ -1465,6 +1476,9 @@ describe("Sidebar", () => {
     ).toBe("running");
     expect(
       screen.getByTestId("slot-opinions_sentiments__subjective").getAttribute("data-slot-state"),
+    ).toBe("running");
+    expect(
+      screen.getByTestId("slot-opinions_sentiments__trends_oppositions").getAttribute("data-slot-state"),
     ).toBe("running");
   });
 });
@@ -1628,6 +1642,31 @@ describe("Sidebar (done slots, per-slug reports)", () => {
           ],
         },
       },
+      opinions_sentiments__trends_oppositions: {
+        state: "done",
+        attempt_id: "s-trends",
+        data: {
+          trends_oppositions_report: {
+            trends: [
+              {
+                label: "Policy trend",
+                cluster_ids: ["cluster-a", "cluster-b"],
+                summary: "Recurring policy debate.",
+              },
+            ],
+            oppositions: [
+              {
+                topic: "Biden/Trump approach",
+                supporting_cluster_ids: ["cluster-a"],
+                opposing_cluster_ids: ["cluster-b"],
+                note: "Different causal stories.",
+              },
+            ],
+            input_cluster_count: 2,
+            skipped_for_cap: 0,
+          },
+        },
+      },
     };
   }
 
@@ -1688,6 +1727,13 @@ describe("Sidebar (done slots, per-slug reports)", () => {
     );
     expect(subjectiveReport.textContent).toContain("subjective-claim-one");
     expect(subjectiveReport.textContent).not.toContain("mean valence");
+
+    const trendsReport = screen.getByTestId(
+      "report-opinions_sentiments__trends_oppositions",
+    );
+    expect(trendsReport.textContent).toContain("Recurring patterns");
+    expect(trendsReport.textContent).toContain("Policy trend");
+    expect(trendsReport.textContent).toContain("Counter-positions");
   });
 
   it("shows explicit provider names and hides non-harm confidence numbers", () => {
@@ -1961,6 +2007,18 @@ describe("Sidebar (done slots, per-slug reports)", () => {
           },
           subjective_claims: [],
         },
+        trends_oppositions: {
+          trends: [
+            {
+              label: "Policy split",
+              summary: "Two sides are emphasizing different causal drivers.",
+              cluster_ids: ["policy-c1", "policy-c2"],
+            },
+          ],
+          oppositions: [],
+          input_cluster_count: 0,
+          skipped_for_cap: 0,
+        },
       },
     };
     render(() => <Sidebar payload={payload} payloadComplete={true} />);
@@ -1971,6 +2029,12 @@ describe("Sidebar (done slots, per-slug reports)", () => {
     await fireEvent.click(screen.getByTestId("slot-toggle-facts_claims__dedup"));
     await fireEvent.click(screen.getByTestId("slot-toggle-facts_claims__known_misinfo"));
     await fireEvent.click(screen.getByTestId("slot-toggle-opinions_sentiments__subjective"));
+    const trendsOppositionsToggle = screen.getByTestId(
+      "slot-toggle-opinions_sentiments__trends_oppositions",
+    );
+    if (trendsOppositionsToggle.getAttribute("aria-expanded") === "false") {
+      await fireEvent.click(trendsOppositionsToggle);
+    }
     expect(
       screen.getByTestId("report-tone_dynamics__flashpoint"),
     ).toBeDefined();
@@ -1986,6 +2050,9 @@ describe("Sidebar (done slots, per-slug reports)", () => {
     ).toBeDefined();
     expect(
       screen.getByTestId("report-opinions_sentiments__subjective"),
+    ).toBeDefined();
+    expect(
+      screen.getByTestId("report-opinions_sentiments__trends_oppositions"),
     ).toBeDefined();
 
     expect(screen.getByTestId("report-safety__moderation")).toBeDefined();
@@ -2052,6 +2119,7 @@ describe("Sidebar (extracting-phase indicator)", () => {
     "facts_claims__known_misinfo",
     "opinions_sentiments__sentiment",
     "opinions_sentiments__subjective",
+    "opinions_sentiments__trends_oppositions",
   ] as const;
 
   it("renders the extracting indicator and per-slug skeletons when jobStatus is extracting and sections is empty", () => {
@@ -2081,8 +2149,8 @@ describe("Sidebar (extracting-phase indicator)", () => {
       screen.getAllByTestId("skeleton-facts_claims__dedup").length,
     ).toBeGreaterThan(0);
     expect(
-      screen.getByTestId("skeleton-opinions_sentiments__sentiment"),
-    ).toBeDefined();
+      screen.getAllByTestId("skeleton-opinions_sentiments__sentiment").length,
+    ).toBeGreaterThan(0);
   });
 
   it("does not render the extracting indicator when jobStatus is done (cached-hit path)", () => {

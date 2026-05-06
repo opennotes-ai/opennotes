@@ -1,0 +1,114 @@
+import { For, Show } from "solid-js";
+import type { components } from "~/lib/generated-types";
+
+type ClaimTrend = components["schemas"]["ClaimTrend"];
+type ClaimOpposition = components["schemas"]["ClaimOpposition"];
+type TrendsOppositionsReport = components["schemas"]["TrendsOppositionsReport"];
+
+export interface TrendsOppositionsReportProps {
+  report: TrendsOppositionsReport | null;
+}
+
+function hasNoContent(report: TrendsOppositionsReport | null): boolean {
+  if (!report) return true;
+  return (report.trends ?? []).length === 0 && (report.oppositions ?? []).length === 0;
+}
+
+function TrendListItem(props: { trend: ClaimTrend }) {
+  return (
+    <li data-testid="trends-opposition-trend" class="rounded-md border border-border/50 p-2">
+      <div class="mb-1 flex items-start justify-between gap-2 text-xs">
+        <p class="font-semibold text-foreground">{props.trend.label}</p>
+        <span
+          data-testid="trends-opposition-trend-count"
+          class="rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium tabular-nums text-muted-foreground"
+          title="Number of clusters"
+        >
+          {props.trend.cluster_ids.length} clusters
+        </span>
+      </div>
+      <p class="text-xs leading-relaxed text-muted-foreground">
+        {props.trend.summary}
+      </p>
+    </li>
+  );
+}
+
+function OppositionRow(props: { opposition: ClaimOpposition }) {
+  return (
+    <li class="rounded-md border border-border/50 p-2">
+      <p class="mb-2 text-xs font-semibold text-foreground">
+        {props.opposition.topic}
+      </p>
+      {props.opposition.note ? (
+        <p class="mb-2 text-[11px] text-muted-foreground">{props.opposition.note}</p>
+      ) : null}
+      <div class="grid grid-cols-2 gap-3 text-[11px]">
+        <div>
+          <h4 class="mb-1 font-semibold uppercase tracking-wide text-muted-foreground">
+            In favor
+          </h4>
+          <ul class="space-y-1">
+            <For each={props.opposition.supporting_cluster_ids}>
+              {(clusterId) => (
+                <li class="rounded-sm bg-muted/50 px-2 py-1 text-foreground">{clusterId}</li>
+              )}
+            </For>
+          </ul>
+        </div>
+        <div>
+          <h4 class="mb-1 font-semibold uppercase tracking-wide text-muted-foreground">
+            Against
+          </h4>
+          <ul class="space-y-1">
+            <For each={props.opposition.opposing_cluster_ids}>
+              {(clusterId) => (
+                <li class="rounded-sm bg-muted/50 px-2 py-1 text-foreground">{clusterId}</li>
+              )}
+            </For>
+          </ul>
+        </div>
+      </div>
+    </li>
+  );
+}
+
+export default function TrendsOppositionsReport(props: TrendsOppositionsReportProps) {
+  const report = () => props.report;
+  const trends = () => report()?.trends ?? [];
+  const oppositions = () => report()?.oppositions ?? [];
+
+  if (hasNoContent(report())) return null;
+
+  return (
+    <div
+      data-testid="report-opinions_sentiments__trends_oppositions"
+      class="space-y-4"
+    >
+      <Show when={trends().length > 0}>
+        <section>
+          <h4 class="mb-2 text-xs font-semibold tracking-wide text-muted-foreground">
+            Recurring patterns
+          </h4>
+          <ul class="space-y-2">
+            <For each={trends()}>
+              {(trend) => <TrendListItem trend={trend} />}
+            </For>
+          </ul>
+        </section>
+      </Show>
+      <Show when={oppositions().length > 0}>
+        <section>
+          <h4 class="mb-2 text-xs font-semibold tracking-wide text-muted-foreground">
+            Counter-positions
+          </h4>
+          <ul class="space-y-2">
+            <For each={oppositions()}>
+              {(opposition) => <OppositionRow opposition={opposition} />}
+            </For>
+          </ul>
+        </section>
+      </Show>
+    </div>
+  );
+}
