@@ -1620,7 +1620,7 @@ describe("AnalyzePage headline summary mount (TASK-1483.13.10)", () => {
     );
   });
 
-  it("places headline-summary before preview-mode-selector inside analyze-left-column", async () => {
+  it("places headline-summary above the layout grid, before preview-mode-selector", async () => {
     renderAt("/analyze?job=job-headline-order&url=https://news.example.com/a");
 
     await waitFor(() => {
@@ -1641,16 +1641,11 @@ describe("AnalyzePage headline summary mount (TASK-1483.13.10)", () => {
       }),
     );
 
-    const leftColumn = await screen.findByTestId("analyze-left-column");
-    const headline = screen.getByTestId("headline-summary");
+    const headline = await screen.findByTestId("headline-summary");
     const previewMode = screen.getByTestId("preview-mode-selector");
 
-    expect(headline.closest("[data-testid='analyze-left-column']")).toBe(
-      leftColumn,
-    );
-    expect(previewMode.closest("[data-testid='analyze-left-column']")).toBe(
-      leftColumn,
-    );
+    expect(headline.closest("[data-testid='analyze-left-column']")).toBeNull();
+    expect(previewMode.closest("[data-testid='analyze-left-column']")).not.toBeNull();
     expect(
       headline.compareDocumentPosition(previewMode) &
         Node.DOCUMENT_POSITION_FOLLOWING,
