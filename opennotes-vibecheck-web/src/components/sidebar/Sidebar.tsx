@@ -461,22 +461,6 @@ const FACTS_COUNTS: Partial<
   },
 };
 
-const OPINIONS_RENDER: Partial<
-  Record<SectionSlugLiteral, (data: unknown) => JSX.Element>
-> = {
-  opinions_sentiments__sentiment: (data) => (
-    <SentimentReport stats={extractSentimentStats(data)} anchors={[]} />
-  ),
-  opinions_sentiments__subjective: (data) => (
-    <SubjectiveReport claims={extractSubjectiveClaims(data)} />
-  ),
-  opinions_sentiments__trends_oppositions: (data) => (
-    <TrendsOppositionsReport
-      report={extractTrendsOppositionsReport(data)}
-    />
-  ),
-};
-
 const OPINIONS_EMPTINESS: Partial<
   Record<SectionSlugLiteral, (data: unknown) => boolean>
 > = {
@@ -486,7 +470,7 @@ const OPINIONS_EMPTINESS: Partial<
       stats.per_utterance.length === 0 &&
       stats.positive_pct === 0 &&
       stats.negative_pct === 0 &&
-      stats.mean_valence === 0
+      stats.neutral_pct === 0
     );
   },
   opinions_sentiments__subjective: (data) =>

@@ -1802,10 +1802,30 @@ describe("Sidebar (done slots, per-slug reports)", () => {
     const sentimentReport = screen.getByTestId(
       "report-opinions_sentiments__sentiment",
     );
-    expect(sentimentReport.textContent).toContain("mean valence");
+    expect(sentimentReport.textContent).toContain("40%");
+    expect(sentimentReport.textContent).toContain("10%");
+    expect(sentimentReport.textContent).toContain("50%");
+    expect(
+      within(sentimentReport)
+        .getByTestId("sentiment-positive")
+        .getAttribute("style"),
+    ).toContain("width: 40%");
+    expect(
+      within(sentimentReport)
+        .getByTestId("sentiment-negative")
+        .getAttribute("style"),
+    ).toContain("width: 10%");
+    expect(
+      within(sentimentReport)
+        .getByTestId("sentiment-neutral")
+        .getAttribute("style"),
+    ).toContain("width: 50%");
     expect(sentimentReport.textContent).not.toContain(
       "subjective-claim-one",
     );
+    expect(
+      within(sentimentReport).queryByTestId("sentiment-mean-valence"),
+    ).toBeNull();
 
     const subjectiveReport = screen.getByTestId(
       "report-opinions_sentiments__subjective",
@@ -2132,6 +2152,9 @@ describe("Sidebar (done slots, per-slug reports)", () => {
     ).toBeDefined();
     expect(
       screen.getByTestId("report-opinions_sentiments__sentiment"),
+    ).toBeDefined();
+    expect(
+      screen.getByLabelText("Sentiment: 10% positive, 10% negative, 80% neutral"),
     ).toBeDefined();
     expect(
       screen.getByTestId("report-opinions_sentiments__subjective"),
