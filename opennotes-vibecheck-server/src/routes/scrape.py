@@ -31,7 +31,7 @@ from src.routes.analyze import (
     _host_of,
     limiter,
 )
-from src.utils.html_sanitize import strip_noise
+from src.utils.html_sanitize import strip_for_display
 from src.utils.url_security import InvalidURL
 
 logger = get_logger(__name__)
@@ -286,7 +286,7 @@ async def submit_scrape(  # noqa: PLR0911
             )
         return _error_response(400, "unsafe_url", "url flagged by Web Risk")
 
-    sanitized_html = strip_noise(body.html) or ""
+    sanitized_html = strip_for_display(body.html) or ""
     markdown = body.markdown.strip() if body.markdown and body.markdown.strip() else None
     if markdown is None:
         markdown = _markdown_from_html(sanitized_html)

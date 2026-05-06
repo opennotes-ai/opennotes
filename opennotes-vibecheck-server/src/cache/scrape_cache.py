@@ -12,14 +12,9 @@ resources are coordinated per entry:
   expires). Callers mint a fresh 15-minute signed URL via
   `signed_screenshot_url`.
 
-HTML sanitation choice: regex rather than BeautifulSoup. The four targets
-(`<script>`, `<style>`, `<link>`, HTML comments) all have a well-defined
-syntactic shape that a small set of regex passes strips safely, and avoiding
-a ~1MB parser dep for this one method keeps the cache module self-contained.
-If the target set expands to attribute-level sanitation we should switch to
-a real parser. (See TASK-1473 follow-up filed for hardening beyond this
-regex set — malformed/nested/unclosed tags are out of scope for the first
-pass.)
+HTML sanitation choice: cache writes use the shared BeautifulSoup sanitizer
+for display archives. It removes scripts and comments while preserving style
+and link tags so the archived iframe keeps CSS-defined layout.
 
 Race / orphan notes:
 
@@ -50,7 +45,7 @@ from src.cache.screenshot_store import ScreenshotStore
 from src.cache.supabase_cache import normalize_url
 from src.firecrawl_client import ScrapeMetadata, ScrapeResult
 from src.monitoring import get_logger
-from src.utils.html_sanitize import strip_noise
+from src.utils.html_sanitize import strip_for_display
 from src.utils.url_security import validate_public_http_url
 
 logger = get_logger(__name__)
@@ -119,7 +114,7 @@ class CachedScrape(ScrapeResult):
 
 
 def _sanitize_html(html: str | None) -> str | None:
-    return strip_noise(html)
+    return strip_for_display(html)
 
 
 def screenshot_storage_key_for(url: str) -> str:

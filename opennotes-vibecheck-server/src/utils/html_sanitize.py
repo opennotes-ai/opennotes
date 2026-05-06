@@ -12,24 +12,20 @@ Why not trafilatura: trafilatura is a content extractor — it keeps only
 the "main article body" and discards structure like forum threads and
 comment trees. The extractor agent's `get_html()` tool is specifically
 reached for when markdown extraction lost that structure, so we need a
-surgical strip (script/style/link/comments) rather than a content
-extractor.
+surgical strip rather than a content extractor. Display archives preserve
+stylesheet tags; model input keeps the stricter script/style/link cleanup.
 """
 from __future__ import annotations
 
 from bs4 import BeautifulSoup, Comment
 
-_STRIPPED_TAGS: tuple[str, ...] = ("script", "style", "link")
+_DISPLAY_STRIPPED_TAGS: tuple[str, ...] = ("script",)
+_LLM_STRIPPED_TAGS: tuple[str, ...] = ("script", "style", "link")
 
 
-def strip_noise(html: str | None) -> str | None:
-    """Remove `<script>`, `<style>`, `<link>`, and HTML comments from `html`.
-
-    Returns None if input is None; returns '' if input is an empty string.
-    Preserves every other element and text node so downstream consumers
-    (scrape cache persistence, extractor `get_html()` tool) still see
-    utterance-carrying markup.
-    """
+def _strip_tags_and_comments(
+    html: str | None, stripped_tags: tuple[str, ...]
+) -> str | None:
     if html is None:
         return None
     if not html:
@@ -37,10 +33,29 @@ def strip_noise(html: str | None) -> str | None:
 
     soup = BeautifulSoup(html, "html.parser")
 
-    for tag in soup.find_all(_STRIPPED_TAGS):
+    for tag in soup.find_all(stripped_tags):
         tag.decompose()
 
     for comment in soup.find_all(string=lambda s: isinstance(s, Comment)):
         comment.extract()
 
     return str(soup)
+
+
+def strip_for_display(html: str | None) -> str | None:
+    """Remove executable/comment noise while preserving stylesheet tags.
+
+    Returns None if input is None; returns '' if input is an empty string.
+    Preserves every other element and text node so downstream consumers
+    that render archived HTML still see page styling.
+    """
+    return _strip_tags_and_comments(html, _DISPLAY_STRIPPED_TAGS)
+
+
+def strip_for_llm(html: str | None) -> str | None:
+    """Remove `<script>`, `<style>`, `<link>`, and HTML comments from `html`.
+
+    This preserves the prior `strip_noise` behavior for extractor and model
+    input paths that do not need display CSS.
+    """
+    return _strip_tags_and_comments(html, _LLM_STRIPPED_TAGS)

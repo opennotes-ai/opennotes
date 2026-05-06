@@ -25,7 +25,7 @@ from src.firecrawl_client import (
 from src.jobs.pdf_storage import get_pdf_upload_store
 from src.jobs.scrape_quality import ScrapeQuality, classify_scrape
 from src.monitoring import get_logger
-from src.utils.html_sanitize import strip_noise
+from src.utils.html_sanitize import strip_for_display
 from src.utils.url_security import InvalidURL, validate_public_http_url
 from src.utterances.annotate_html import annotate_utterances_in_html
 from src.utterances.lookup import get_utterances_for_archive
@@ -576,7 +576,7 @@ async def archive_preview(
         raise HTTPException(status_code=502, detail="Archive unavailable") from exc
 
     await _revalidate_archive_final_url(stored, original_url=url, scrape_cache=scrape_cache)
-    html = strip_noise(stored.html) if stored.html else None
+    html = strip_for_display(stored.html) if stored.html else None
     if not html:
         raise HTTPException(status_code=502, detail="Archive unavailable")
     html = await _annotate_archive_html(

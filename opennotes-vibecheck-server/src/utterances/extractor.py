@@ -53,7 +53,7 @@ from src.services.gemini_agent import (
     run_vertex_agent_with_retry,
 )
 from src.services.vertex_limiter import vertex_slot
-from src.utils.html_sanitize import strip_noise
+from src.utils.html_sanitize import strip_for_llm
 from src.utterances.errors import (
     TransientExtractionError,
     UtteranceExtractionError,
@@ -276,7 +276,7 @@ def _set_upstream_span_attrs(
 
 
 def _sanitize_html(html: str) -> str:
-    cleaned = strip_noise(html)
+    cleaned = strip_for_llm(html)
     return cleaned or ""
 
 
