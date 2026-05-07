@@ -14,7 +14,7 @@ from __future__ import annotations
 import logging
 import re
 from collections.abc import Awaitable, Callable
-from typing import Any
+from typing import Any, Literal, NamedTuple
 from urllib.parse import urlsplit, urlunsplit
 
 from pydantic import BaseModel, Field, ValidationError
@@ -31,6 +31,27 @@ from src.services.gemini_agent import build_agent, run_vertex_agent_with_retry
 from src.services.vertex_limiter import vertex_slot
 
 logger = logging.getLogger(__name__)
+
+INLINE_FACT_MAX_CHARS = 600
+_INLINE_FACT_ELLIPSIS = "…"
+
+
+def _truncate_for_inline_fact(text: str) -> str:
+    text = text.lstrip()
+    if len(text) <= INLINE_FACT_MAX_CHARS:
+        return text
+    budget = INLINE_FACT_MAX_CHARS - len(_INLINE_FACT_ELLIPSIS)
+    cut = text.rfind(" ", 0, budget)
+    if cut < budget // 2:
+        cut = budget
+    return text[:cut].rstrip() + _INLINE_FACT_ELLIPSIS
+
+
+class _UtteranceMeta(NamedTuple):
+    text: str
+    kind: Literal["post", "comment", "reply"]
+
+
 _INLINE_TAUTOLOGY_PADDING_WORDS = {
     "claim",
     "claims",
@@ -41,6 +62,8 @@ _INLINE_TAUTOLOGY_PADDING_WORDS = {
     "that",
     "this",
 }
+
+_MIN_TAUTOLOGY_CONTAINMENT_WORDS = 3
 
 ExternalEvidenceFetcher = Callable[
     [list[str], Settings], Awaitable[dict[str, list[dict[str, Any]]]]
@@ -173,14 +196,7 @@ def _normalize_for_similarity(text: str) -> str:
     return " ".join(normalized.split())
 
 
-def _is_inline_tautology(statement: str, claim_text: str) -> bool:
-    normalized_statement = _normalize_for_similarity(statement)
-    normalized_claim = _normalize_for_similarity(claim_text)
-    if not normalized_statement or not normalized_claim:
-        return False
-    if normalized_statement == normalized_claim:
-        return True
-
+def _matches_with_padding(normalized_statement: str, normalized_claim: str) -> bool:
     extra_text = ""
     if normalized_statement.startswith(f"{normalized_claim} "):
         extra_text = normalized_statement[len(normalized_claim) :].strip()
@@ -188,24 +204,46 @@ def _is_inline_tautology(statement: str, claim_text: str) -> bool:
         extra_text = normalized_statement[: -len(normalized_claim)].strip()
     else:
         return False
-
     extra_words = extra_text.split()
     return bool(extra_words) and all(
         word in _INLINE_TAUTOLOGY_PADDING_WORDS for word in extra_words
     )
 
 
+def _is_inline_tautology(statement: str, claim_text: str) -> bool:
+    normalized_statement = _normalize_for_similarity(statement)
+    normalized_claim = _normalize_for_similarity(claim_text)
+    if not normalized_statement or not normalized_claim:
+        return False
+    if normalized_statement == normalized_claim:
+        return True
+    if _matches_with_padding(normalized_statement, normalized_claim):
+        return True
+    if len(normalized_claim.split()) < _MIN_TAUTOLOGY_CONTAINMENT_WORDS:
+        return False
+    padded_claim = f" {normalized_claim} "
+    padded_statement = f" {normalized_statement} "
+    if padded_claim not in padded_statement:
+        return False
+    start = padded_statement.index(padded_claim)
+    prefix = padded_statement[:start].strip()
+    return bool(prefix)
+
+
 def _inline_supporting_facts(
     claim: DedupedClaim,
-    utterance_text_by_id: dict[str, str],
+    utterance_meta_by_id: dict[str, _UtteranceMeta],
 ) -> list[SupportingFact]:
     facts: list[SupportingFact] = []
     for utterance_id in _unique_items_in_order(claim.utterance_ids):
-        statement = utterance_text_by_id.get(utterance_id)
-        if not statement:
+        meta = utterance_meta_by_id.get(utterance_id)
+        if meta is None or not meta.text:
             continue
-        if _is_inline_tautology(statement, claim.canonical_text):
+        if meta.kind == "post":
             continue
+        if _is_inline_tautology(meta.text, claim.canonical_text):
+            continue
+        statement = _truncate_for_inline_fact(meta.text)
         facts.append(
             SupportingFact(
                 statement=statement,
@@ -230,7 +268,7 @@ def _dedupe_supporting_facts(facts: list[SupportingFact]) -> list[SupportingFact
 
 async def build_supporting_facts_by_claim(
     claims: list[DedupedClaim],
-    utterance_text_by_id: dict[str, str],
+    utterance_meta_by_id: dict[str, _UtteranceMeta],
     settings: Settings,
     *,
     external_fetcher: ExternalEvidenceFetcher = fetch_external_evidence_batch,
@@ -248,7 +286,7 @@ async def build_supporting_facts_by_claim(
 
     facts_by_claim: dict[str, list[SupportingFact]] = {}
     for claim in eligible_claims:
-        inline_facts = _inline_supporting_facts(claim, utterance_text_by_id)
+        inline_facts = _inline_supporting_facts(claim, utterance_meta_by_id)
         if inline_facts:
             facts_by_claim[claim.canonical_text] = inline_facts
 
@@ -283,4 +321,8 @@ async def build_supporting_facts_by_claim(
     }
 
 
-__all__ = ["build_supporting_facts_by_claim", "fetch_external_evidence_batch"]
+__all__ = [
+    "INLINE_FACT_MAX_CHARS",
+    "build_supporting_facts_by_claim",
+    "fetch_external_evidence_batch",
+]

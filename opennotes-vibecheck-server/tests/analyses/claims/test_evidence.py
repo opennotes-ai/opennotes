@@ -15,6 +15,7 @@ from src.analyses.claims._claims_schemas import (
     DedupedClaim,
     SourceKind,
 )
+from src.analyses.claims.evidence import _UtteranceMeta
 from src.analyses.claims.evidence_slot import run_claims_evidence
 from src.config import Settings
 from src.utterances.schema import Utterance
@@ -144,7 +145,10 @@ async def test_build_supporting_facts_only_includes_potentially_factual_claims(
 
     facts = await evidence.build_supporting_facts_by_claim(
         claims,
-        {"u-1": "First sentence", "u-2": "Second"},
+        {
+            "u-1": _UtteranceMeta(text="First sentence", kind="comment"),
+            "u-2": _UtteranceMeta(text="Second", kind="comment"),
+        },
         settings,
         external_fetcher=_no_external_fetcher,
     )
@@ -212,7 +216,7 @@ async def test_build_supporting_facts_adds_external_facts_even_with_inline_facts
 
     facts = await evidence.build_supporting_facts_by_claim(
         _claims_report("The moon is round.").deduped_claims,
-        {"u-1": "The moon is round and glows."},
+        {"u-1": _UtteranceMeta(text="The moon is round and glows.", kind="comment")},
         settings,
         external_fetcher=fake_external_fetcher,
     )
@@ -239,7 +243,7 @@ async def test_build_supporting_facts_filters_inline_self_references(
 ) -> None:
     facts = await evidence.build_supporting_facts_by_claim(
         _claims_report("The moon is round.").deduped_claims,
-        {"u-1": utterance_text},
+        {"u-1": _UtteranceMeta(text=utterance_text, kind="comment")},
         settings,
         external_fetcher=_no_external_fetcher,
     )
@@ -253,7 +257,12 @@ async def test_build_supporting_facts_keeps_inline_statements_with_context(
 ) -> None:
     facts = await evidence.build_supporting_facts_by_claim(
         _claims_report("The moon is round.").deduped_claims,
-        {"u-1": "The moon is round because its gravity pulls it into hydrostatic equilibrium."},
+        {
+            "u-1": _UtteranceMeta(
+                text="The moon is round because its gravity pulls it into hydrostatic equilibrium.",
+                kind="comment",
+            )
+        },
         settings,
         external_fetcher=_no_external_fetcher,
     )
@@ -374,8 +383,8 @@ async def test_run_claims_evidence_falls_back_to_dedup_slot_when_payload_missing
         del job_id
         return [
             Utterance(
-                kind="post",
-                text="Scientists observe the ocean.",
+                kind="comment",
+                text="The ocean is blue because it absorbs light from the atmosphere.",
                 utterance_id="u-1",
                 author="alice",
             )
@@ -398,11 +407,50 @@ async def test_run_claims_evidence_falls_back_to_dedup_slot_when_payload_missing
     assert claim["canonical_text"] == "The ocean is blue."
     assert claim["supporting_facts"] == [
         {
-            "statement": "Scientists observe the ocean.",
+            "statement": "The ocean is blue because it absorbs light from the atmosphere.",
             "source_kind": "utterance",
             "source_ref": "u-1",
         }
     ]
+
+
+@pytest.mark.asyncio
+async def test_run_claims_evidence_drops_post_kind_utterance_from_dedup_slot(
+    monkeypatch: pytest.MonkeyPatch,
+    no_external_settings: Settings,
+) -> None:
+    fake_row = {
+        "state": "done",
+        "data": {"claims_report": _claims_report("The ocean is blue.").model_dump(mode="json")},
+    }
+
+    async def fake_load_utterances(_pool: object, job_id: object) -> list[Utterance]:
+        del job_id
+        return [
+            Utterance(
+                kind="post",
+                text="The ocean is blue and vast.",
+                utterance_id="u-1",
+                author="alice",
+            )
+        ]
+
+    monkeypatch.setattr(
+        "src.analyses.claims.evidence_slot.load_job_utterances",
+        fake_load_utterances,
+    )
+
+    result = await run_claims_evidence(
+        pool=_Pool(fake_row),
+        job_id=uuid4(),
+        task_attempt=uuid4(),
+        payload=object(),
+        settings=no_external_settings,
+    )
+
+    claim = result["claims_report"]["deduped_claims"][0]
+    assert claim["canonical_text"] == "The ocean is blue."
+    assert claim["supporting_facts"] == []
 
 
 @pytest.mark.asyncio
@@ -525,3 +573,295 @@ async def test_run_claims_evidence_sets_zero_facts_to_verify_for_subjective_clai
     claim_payload = result["claims_report"]["deduped_claims"][0]
     assert claim_payload["supporting_facts"] == []
     assert claim_payload["facts_to_verify"] == 0
+
+
+@pytest.mark.asyncio
+async def test_utterance_meta_text_and_kind_propagate_through_supporting_facts(
+    no_external_settings: Settings,
+) -> None:
+    meta = _UtteranceMeta(
+        text="The moon is round because gravity pulls it into hydrostatic equilibrium.",
+        kind="comment",
+    )
+
+    facts = await evidence.build_supporting_facts_by_claim(
+        _claims_report("The moon is round.").deduped_claims,
+        {"u-1": meta},
+        no_external_settings,
+        external_fetcher=_no_external_fetcher,
+    )
+
+    assert meta.text == "The moon is round because gravity pulls it into hydrostatic equilibrium."
+    assert meta.kind == "comment"
+    assert facts["The moon is round."][0].statement == meta.text
+    assert facts["The moon is round."][0].source_ref == "u-1"
+
+
+@pytest.mark.asyncio
+async def test_inline_facts_drop_post_kind_utterance(
+    no_external_settings: Settings,
+) -> None:
+    claim = DedupedClaim(
+        canonical_text="Cats can see in the dark.",
+        category=ClaimCategory.POTENTIALLY_FACTUAL,
+        occurrence_count=1,
+        author_count=1,
+        utterance_ids=["u-post"],
+        representative_authors=["alice"],
+    )
+
+    facts = await evidence.build_supporting_facts_by_claim(
+        [claim],
+        {"u-post": _UtteranceMeta(text="Cats can see in the dark very well.", kind="post")},
+        no_external_settings,
+        external_fetcher=_no_external_fetcher,
+    )
+
+    assert facts == {}
+
+
+@pytest.mark.asyncio
+async def test_inline_facts_keep_comment_when_post_also_referenced(
+    no_external_settings: Settings,
+) -> None:
+    claim = DedupedClaim(
+        canonical_text="Cats can see in the dark.",
+        category=ClaimCategory.POTENTIALLY_FACTUAL,
+        occurrence_count=2,
+        author_count=2,
+        utterance_ids=["u-post", "u-comment"],
+        representative_authors=["alice", "bob"],
+    )
+
+    facts = await evidence.build_supporting_facts_by_claim(
+        [claim],
+        {
+            "u-post": _UtteranceMeta(text="Cats can see in the dark very well.", kind="post"),
+            "u-comment": _UtteranceMeta(
+                text="Studies show cats have tapetum lucidum for night vision.", kind="comment"
+            ),
+        },
+        no_external_settings,
+        external_fetcher=_no_external_fetcher,
+    )
+
+    assert len(facts["Cats can see in the dark."]) == 1
+    assert facts["Cats can see in the dark."][0].statement == (
+        "Studies show cats have tapetum lucidum for night vision."
+    )
+    assert facts["Cats can see in the dark."][0].source_ref == "u-comment"
+
+
+def test_truncate_falls_back_to_hard_cut_when_only_early_whitespace() -> None:
+    text = "abc " + "x" * 1000
+    truncated = evidence._truncate_for_inline_fact(text)
+    assert len(truncated) <= evidence.INLINE_FACT_MAX_CHARS
+    assert truncated.endswith("…")
+    assert len(truncated) > evidence.INLINE_FACT_MAX_CHARS // 2
+
+
+def test_truncate_lstrips_leading_whitespace_then_truncates() -> None:
+    text = " " * 601 + "x" * 1000
+    truncated = evidence._truncate_for_inline_fact(text)
+    assert truncated != "…"
+    assert truncated.endswith("…")
+    assert len(truncated) <= evidence.INLINE_FACT_MAX_CHARS
+    assert truncated.rstrip("…").strip() != ""
+
+
+def test_truncate_returns_short_lstripped_text_unchanged() -> None:
+    text = "   hello world"
+    truncated = evidence._truncate_for_inline_fact(text)
+    assert truncated == "hello world"
+
+
+def test_inline_tautology_detects_substring_containment() -> None:
+    claim = "the company shipped feature x last week"
+    statement = "I read that the company shipped feature x last week and it was great."
+
+    assert evidence._is_inline_tautology(statement, claim) is True
+
+
+def test_inline_tautology_rejects_non_contiguous_topic_overlap() -> None:
+    claim = "the company shipped feature x"
+    statement = "the company has been busy they shipped feature x today"
+
+    assert evidence._is_inline_tautology(statement, claim) is False
+
+
+def test_inline_tautology_rejects_short_claim_in_long_statement() -> None:
+    claim = "rain falls"
+    statement = "Yesterday the heavy rain falls over the valley caused trouble."
+
+    assert evidence._is_inline_tautology(statement, claim) is False
+
+
+def test_inline_tautology_detects_claim_at_end_of_long_statement() -> None:
+    claim = "the moon is round"
+    statement = "Recent studies show the moon is round."
+
+    assert evidence._is_inline_tautology(statement, claim) is True
+
+
+def test_inline_tautology_still_rejects_short_claim_at_edge() -> None:
+    claim = "is round"
+    statement = "Scientists have concluded that the earth is round after extensive study."
+
+    assert evidence._is_inline_tautology(statement, claim) is False
+
+
+@pytest.mark.asyncio
+async def test_inline_facts_skip_long_post_containing_claim_verbatim(
+    no_external_settings: Settings,
+) -> None:
+    claim_text = "Cats can see in the dark."
+    long_post = (
+        "This is a very long post about various topics. " * 100
+        + claim_text
+        + " "
+        + "More unrelated content follows. " * 100
+    )
+    assert len(long_post) > 5000
+
+    claim = DedupedClaim(
+        canonical_text=claim_text,
+        category=ClaimCategory.POTENTIALLY_FACTUAL,
+        occurrence_count=1,
+        author_count=1,
+        utterance_ids=["u-long-post"],
+        representative_authors=["alice"],
+    )
+
+    facts = await evidence.build_supporting_facts_by_claim(
+        [claim],
+        {"u-long-post": _UtteranceMeta(text=long_post, kind="post")},
+        no_external_settings,
+        external_fetcher=_no_external_fetcher,
+    )
+
+    assert facts == {}
+
+
+@pytest.mark.asyncio
+async def test_inline_fact_truncates_long_utterance(
+    no_external_settings: Settings,
+) -> None:
+    long_text = "word " * 300
+    assert len(long_text) > 600
+
+    claim = DedupedClaim(
+        canonical_text="Mars has two moons.",
+        category=ClaimCategory.POTENTIALLY_FACTUAL,
+        occurrence_count=1,
+        author_count=1,
+        utterance_ids=["u-long"],
+        representative_authors=["alice"],
+    )
+
+    facts = await evidence.build_supporting_facts_by_claim(
+        [claim],
+        {"u-long": _UtteranceMeta(text=long_text, kind="comment")},
+        no_external_settings,
+        external_fetcher=_no_external_fetcher,
+    )
+
+    statement = facts["Mars has two moons."][0].statement
+    assert len(statement) <= 600
+    assert statement.endswith("…")
+    assert len(statement) >= 2
+    assert not statement[-2].isspace()
+
+
+@pytest.mark.asyncio
+async def test_inline_fact_preserves_short_utterance(
+    no_external_settings: Settings,
+) -> None:
+    short_text = "Scientists have confirmed this finding through multiple studies."
+    assert len(short_text) <= 200
+
+    claim = DedupedClaim(
+        canonical_text="Mars has two moons.",
+        category=ClaimCategory.POTENTIALLY_FACTUAL,
+        occurrence_count=1,
+        author_count=1,
+        utterance_ids=["u-short"],
+        representative_authors=["alice"],
+    )
+
+    facts = await evidence.build_supporting_facts_by_claim(
+        [claim],
+        {"u-short": _UtteranceMeta(text=short_text, kind="comment")},
+        no_external_settings,
+        external_fetcher=_no_external_fetcher,
+    )
+
+    assert facts["Mars has two moons."][0].statement == short_text
+
+
+@pytest.mark.asyncio
+async def test_inline_fact_truncation_cap_is_module_constant(
+    monkeypatch: pytest.MonkeyPatch,
+    no_external_settings: Settings,
+) -> None:
+    monkeypatch.setattr(evidence, "INLINE_FACT_MAX_CHARS", 50)
+
+    text_200 = "word " * 40
+    assert len(text_200) == 200
+
+    claim = DedupedClaim(
+        canonical_text="Mars has two moons.",
+        category=ClaimCategory.POTENTIALLY_FACTUAL,
+        occurrence_count=1,
+        author_count=1,
+        utterance_ids=["u-mid"],
+        representative_authors=["alice"],
+    )
+
+    facts = await evidence.build_supporting_facts_by_claim(
+        [claim],
+        {"u-mid": _UtteranceMeta(text=text_200, kind="comment")},
+        no_external_settings,
+        external_fetcher=_no_external_fetcher,
+    )
+
+    statement = facts["Mars has two moons."][0].statement
+    assert len(statement) <= 50
+    assert statement.endswith("…")
+
+
+@pytest.mark.asyncio
+async def test_external_supporting_facts_are_not_truncated() -> None:
+    long_statement = "x" * 1000
+
+    async def fake_external_fetcher(
+        claim_texts: list[str], _settings: Settings
+    ) -> dict[str, list[dict[str, Any]]]:
+        return {
+            claim_texts[0]: [
+                {
+                    "statement": long_statement,
+                    "source_kind": SourceKind.EXTERNAL.value,
+                    "source_ref": "https://example.com/source",
+                }
+            ]
+        }
+
+    claim = DedupedClaim(
+        canonical_text="Mars has two moons.",
+        category=ClaimCategory.POTENTIALLY_FACTUAL,
+        occurrence_count=1,
+        author_count=1,
+        utterance_ids=[],
+        representative_authors=["alice"],
+    )
+
+    settings = Settings(EVIDENCE_MAX_EXTERNAL_RETRIEVALS=1)
+
+    facts = await evidence.build_supporting_facts_by_claim(
+        [claim],
+        {},
+        settings,
+        external_fetcher=fake_external_fetcher,
+    )
+
+    assert facts["Mars has two moons."][0].statement == long_statement
