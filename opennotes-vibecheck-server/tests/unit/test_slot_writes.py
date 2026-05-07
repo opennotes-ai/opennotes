@@ -297,6 +297,14 @@ async def test_claim_slot_permitted_when_job_is_analyzing(db_pool) -> None:
     assert isinstance(slot_attempt, UUID)
 
 
+def test_retry_claim_sql_clears_weather_report() -> None:
+    from src.jobs.slots import _RETRY_CLAIM_SQL
+
+    assert "weather_report = NULL" in _RETRY_CLAIM_SQL
+    assert "headline_summary = NULL" in _RETRY_CLAIM_SQL
+    assert "sidebar_payload = NULL" in _RETRY_CLAIM_SQL
+
+
 # --- mark_slot_done / mark_slot_failed CAS ---------------------------------
 
 
