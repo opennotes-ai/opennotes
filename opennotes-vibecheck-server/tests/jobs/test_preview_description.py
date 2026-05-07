@@ -16,6 +16,7 @@ from src.analyses.safety._schemas import (
 )
 from src.analyses.schemas import (
     FactsClaimsSection,
+    HeadlineSummary,
     OpinionsSection,
     PageKind,
     SafetySection,
@@ -70,8 +71,42 @@ def _empty_ctx() -> DerivationContext:
     return DerivationContext(page_title=None, first_utterance_text=None)
 
 
+class TestHeadlineSummaryBranch:
+    """Priority 1: headline synthesis wins over downstream findings."""
+
+    def test_headline_summary_text_is_used_first(self) -> None:
+        payload = _empty_payload()
+        payload.headline = HeadlineSummary(
+            text="Readers are debating whether the proposal solves the actual problem.",
+            kind="synthesized",
+        )
+        payload.safety.recommendation = SafetyRecommendation(
+            level=SafetyLevel.CAUTION,
+            rationale="Multiple high-confidence hate-speech utterances",
+            top_signals=["hate", "harassment"],
+        )
+
+        out = derive_preview_description(payload, _empty_ctx())
+
+        assert out == "Readers are debating whether the proposal solves the actual problem."
+
+    def test_blank_headline_summary_falls_through_to_safety(self) -> None:
+        payload = _empty_payload()
+        payload.headline = HeadlineSummary(text="   ", kind="synthesized")
+        payload.safety.recommendation = SafetyRecommendation(
+            level=SafetyLevel.CAUTION,
+            rationale="Multiple high-confidence hate-speech utterances",
+            top_signals=["hate", "harassment"],
+        )
+
+        out = derive_preview_description(payload, _empty_ctx())
+
+        assert "Caution" in out
+        assert "hate-speech" in out
+
+
 class TestSafetyRecommendationBranch:
-    """Priority 1: SafetyRecommendation rationale wins over everything."""
+    """Priority 2: SafetyRecommendation rationale wins over later branches."""
 
     def test_caution_recommendation_renders_level_and_rationale(self) -> None:
         payload = _empty_payload()
