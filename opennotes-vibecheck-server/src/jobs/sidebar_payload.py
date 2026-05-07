@@ -157,13 +157,11 @@ def assemble_sidebar_payload(
     for claim in dedup_claims_report.deduped_claims:
         by_text = claim.model_copy()
         if claim.canonical_text in enriched_claims_by_canonical:
-            by_text.supporting_facts = enriched_claims_by_canonical[
-                claim.canonical_text
-            ].supporting_facts
+            evidence_claim = enriched_claims_by_canonical[claim.canonical_text]
+            by_text.supporting_facts = evidence_claim.supporting_facts
+            by_text.facts_to_verify = evidence_claim.facts_to_verify
         if claim.canonical_text in premises_claims_by_canonical:
-            by_text.premise_ids = premises_claims_by_canonical[
-                claim.canonical_text
-            ].premise_ids
+            by_text.premise_ids = premises_claims_by_canonical[claim.canonical_text].premise_ids
         merged_claims.append(by_text)
 
     merged_claims_payload = dedup_claims_report.model_copy(
@@ -178,9 +176,7 @@ def assemble_sidebar_payload(
     ) -> Literal["pending", "running", "done", "failed"]:
         slot = sections.get(slug)
         state = slot.state if slot is not None else SectionState.PENDING
-        return cast(
-            Literal["pending", "running", "done", "failed"], state.value
-        )
+        return cast(Literal["pending", "running", "done", "failed"], state.value)
 
     facts = FactsClaimsSection(
         claims_report=ClaimsReport.model_validate(merged_claims_payload),

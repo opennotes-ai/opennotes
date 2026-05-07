@@ -3,6 +3,7 @@
 Covers AC1: public helper assembles SidebarPayload from any SectionSlot map
 using neutral defaults for missing, pending, running, or failed slots.
 """
+
 from __future__ import annotations
 
 import json
@@ -229,6 +230,7 @@ class TestAssembleSidebarPayload:
                                     "source_ref": "u-1",
                                 }
                             ],
+                            "facts_to_verify": 2,
                         }
                     ],
                     "total_claims": 1,
@@ -267,6 +269,7 @@ class TestAssembleSidebarPayload:
 
         facts = sidebar.facts_claims.claims_report
         assert facts.deduped_claims[0].supporting_facts[0].source_ref == "u-1"
+        assert facts.deduped_claims[0].facts_to_verify == 2
         assert facts.deduped_claims[0].premise_ids == ["premise_abcdef123456"]
         assert facts.premises is not None
         assert "premise_abcdef123456" in facts.premises.premises
@@ -457,10 +460,7 @@ class TestAssembleSidebarPayload:
 
         assert payload.opinions_sentiments.trends_oppositions is not None
         assert payload.opinions_sentiments.trends_oppositions.trends[0].label == "trend"
-        assert (
-            payload.opinions_sentiments.trends_oppositions.oppositions[0].topic
-            == "topic-1"
-        )
+        assert payload.opinions_sentiments.trends_oppositions.oppositions[0].topic == "topic-1"
 
     def test_highlights_slot_done_populates_field(self):
         sections = _minimal_done_sections()
