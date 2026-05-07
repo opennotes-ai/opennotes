@@ -1255,6 +1255,7 @@ export interface components {
             image_moderation?: components["schemas"]["ImageModerationSection"];
             video_moderation?: components["schemas"]["VideoModerationSection"];
             headline?: components["schemas"]["HeadlineSummary"] | null;
+            weather_report?: components["schemas"]["WeatherReport"] | null;
             /**
              * Utterances
              * @description Minimal position-to-id anchors used by sidebar controls to jump into the archived transcript.
@@ -1407,6 +1408,72 @@ export interface components {
         VideoModerationSection: {
             /** Matches */
             matches?: components["schemas"]["VideoModerationMatch"][];
+        };
+        /** WeatherAxisAlternative[Literal['insightful', 'on_topic', 'chatty', 'drifting', 'off_topic']] */
+        WeatherAxisAlternative_Literal__insightful____on_topic____chatty____drifting____off_topic___: {
+            /**
+             * Label
+             * @enum {string}
+             */
+            label: "insightful" | "on_topic" | "chatty" | "drifting" | "off_topic";
+            /** Logprob */
+            logprob?: number | null;
+        };
+        /** WeatherAxisAlternative[Literal['sourced', 'mostly_factual', 'self_reported', 'hearsay', 'misleading']] */
+        WeatherAxisAlternative_Literal__sourced____mostly_factual____self_reported____hearsay____misleading___: {
+            /**
+             * Label
+             * @enum {string}
+             */
+            label: "sourced" | "mostly_factual" | "self_reported" | "hearsay" | "misleading";
+            /** Logprob */
+            logprob?: number | null;
+        };
+        /** WeatherAxisAlternative[str] */
+        WeatherAxisAlternative_str_: {
+            /** Label */
+            label: string;
+            /** Logprob */
+            logprob?: number | null;
+        };
+        /** WeatherAxis[Literal['insightful', 'on_topic', 'chatty', 'drifting', 'off_topic']] */
+        WeatherAxis_Literal__insightful____on_topic____chatty____drifting____off_topic___: {
+            /**
+             * Label
+             * @enum {string}
+             */
+            label: "insightful" | "on_topic" | "chatty" | "drifting" | "off_topic";
+            /** Logprob */
+            logprob?: number | null;
+            /** Alternatives */
+            alternatives?: components["schemas"]["WeatherAxisAlternative_Literal__insightful____on_topic____chatty____drifting____off_topic___"][];
+        };
+        /** WeatherAxis[Literal['sourced', 'mostly_factual', 'self_reported', 'hearsay', 'misleading']] */
+        WeatherAxis_Literal__sourced____mostly_factual____self_reported____hearsay____misleading___: {
+            /**
+             * Label
+             * @enum {string}
+             */
+            label: "sourced" | "mostly_factual" | "self_reported" | "hearsay" | "misleading";
+            /** Logprob */
+            logprob?: number | null;
+            /** Alternatives */
+            alternatives?: components["schemas"]["WeatherAxisAlternative_Literal__sourced____mostly_factual____self_reported____hearsay____misleading___"][];
+        };
+        /** WeatherAxis[str] */
+        WeatherAxis_str_: {
+            /** Label */
+            label: string;
+            /** Logprob */
+            logprob?: number | null;
+            /** Alternatives */
+            alternatives?: components["schemas"]["WeatherAxisAlternative_str_"][];
+        };
+        /** WeatherReport */
+        WeatherReport: {
+            truth: components["schemas"]["WeatherAxis_Literal__sourced____mostly_factual____self_reported____hearsay____misleading___"];
+            relevance: components["schemas"]["WeatherAxis_Literal__insightful____on_topic____chatty____drifting____off_topic___"];
+            sentiment: components["schemas"]["WeatherAxis_str_"];
         };
         /**
          * WebRiskFinding
