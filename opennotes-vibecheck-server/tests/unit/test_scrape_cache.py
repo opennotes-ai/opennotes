@@ -228,6 +228,7 @@ class _FakeSupabaseClient:
             "page_title": params["p_page_title"],
             "markdown": params["p_markdown"],
             "html": params["p_html"],
+            "raw_html": params.get("p_raw_html"),
             "screenshot_storage_key": params["p_screenshot_storage_key"],
             "scraped_at": params["p_scraped_at"],
             "expires_at": params["p_expires_at"],
@@ -334,12 +335,14 @@ def _make_scrape(
     *,
     markdown: str | None = "# Hello world\n\nContent body.",
     html: str | None = "<html><body><p>keep</p></body></html>",
+    raw_html: str | None = None,
     screenshot: str | None = None,
     title: str | None = "Hello",
 ) -> ScrapeResult:
     return ScrapeResult(
         markdown=markdown,
         html=html,
+        raw_html=raw_html,
         screenshot=screenshot,
         metadata=ScrapeMetadata(title=title, source_url="https://example.com/a"),
     )
@@ -464,6 +467,28 @@ class TestRoundTrip:
         assert got.markdown == "# Article\n\nThe body."
         assert got.metadata is not None
         assert got.metadata.title == "Article"
+
+    @pytest.mark.asyncio
+    async def test_put_then_get_round_trips_raw_html(self) -> None:
+        # TASK-1577.01: persist Firecrawl rawHtml alongside the main-content
+        # html so future consumers (different extractors, debugging) can
+        # reach the original SSR document. Round-trip asserts the column
+        # is wired end-to-end through the upsert RPC and the row reader.
+        fake = _FakeSupabaseClient()
+        cache, _ = _make_cache(fake)
+        raw_html = "<html><body><div id='shell'>shell</div><article>post</article></body></html>"
+        scrape = _make_scrape(
+            markdown="# Post",
+            html="<article>post</article>",
+            raw_html=raw_html,
+            title="Post",
+        )
+
+        await cache.put("https://example.com/raw", scrape)
+        got = await cache.get("https://example.com/raw")
+
+        assert got is not None
+        assert got.raw_html == raw_html
 
     @pytest.mark.asyncio
     async def test_get_returns_none_when_url_not_cached(self) -> None:

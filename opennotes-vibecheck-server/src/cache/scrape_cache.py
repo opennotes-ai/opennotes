@@ -93,7 +93,7 @@ _EVICT_FENCE_CLOCK_SKEW_SECONDS = 1
 
 _SELECTED_COLUMNS = (
     "normalized_url, tier, url, final_url, host, page_kind, page_title, "
-    "markdown, html, screenshot_storage_key, scraped_at, expires_at, "
+    "markdown, html, raw_html, screenshot_storage_key, scraped_at, expires_at, "
     "evicted_at"
 )
 
@@ -259,6 +259,7 @@ class SupabaseScrapeCache:
             "page_title": metadata.title,
             "markdown": scrape.markdown,
             "html": _sanitize_html(scrape.html),
+            "raw_html": scrape.raw_html,
             "screenshot_storage_key": storage_key,
             "scraped_at": now.isoformat(),
             "expires_at": expires.isoformat(),
@@ -317,6 +318,7 @@ class SupabaseScrapeCache:
                     "p_page_title": row["page_title"],
                     "p_markdown": row["markdown"],
                     "p_html": row["html"],
+                    "p_raw_html": row["raw_html"],
                     "p_screenshot_storage_key": row["screenshot_storage_key"],
                     "p_scraped_at": row["scraped_at"],
                     "p_expires_at": row["expires_at"],
@@ -594,9 +596,11 @@ def _row_to_cached_scrape(row: dict[str, Any]) -> CachedScrape:
         source_url=source_url,
     )
     storage_key = row.get("screenshot_storage_key")
+    raw_html = row.get("raw_html")
     return CachedScrape(
         markdown=row.get("markdown"),
         html=row.get("html"),
+        raw_html=raw_html if isinstance(raw_html, str) else None,
         screenshot=None,
         metadata=metadata,
         storage_key=storage_key if isinstance(storage_key, str) else None,

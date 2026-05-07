@@ -706,7 +706,187 @@ class TestScreenshot:
         assert resp.json() == {"detail": "URL must be an http(s) URL"}
 
 
+_SPA_SHAPED_CACHED_HTML = (
+    "<!doctype html><html><body>"
+    "<div id='spa'>"
+    "  <div class='column'>"
+    "    <div class='search'><h4>Recent searches</h4>"
+    "      <p>No recent searches</p></div>"
+    "  </div>"
+    "  <div class='column'>"
+    "    <div class='banner'>"
+    "      <p><strong>example.social</strong> is one of the many "
+    "         independent Mastodon servers you can use to participate "
+    "         in the fediverse.</p>"
+    "      <h4>Server stats:</h4>"
+    "      <p><strong>2.4K</strong> active users</p>"
+    "    </div>"
+    "  </div>"
+    "  <div class='column'>"
+    "    <h1>Back</h1>"
+    "    <article class='status'>"
+    "      <header><strong>Author Name</strong> @author</header>"
+    "      <div class='status__content'>"
+    "        <p>Today's threads (a thread)</p>"
+    "        <p>Inside: an investigation into chrome offset bugs and the "
+    "           several paragraphs of substantive post body that should "
+    "           appear in the archive viewport ahead of any nav or banner "
+    "           text from the surrounding SPA shell.</p>"
+    "        <p>The 2026 Guelph Lecture on enshittification will explore "
+    "           how we can fix the internet by giving users back control. "
+    "           This paragraph is here so the extracted main content "
+    "           clears the substantial-content threshold comfortably.</p>"
+    "      </div>"
+    "    </article>"
+    "  </div>"
+    "</div>"
+    "</body></html>"
+)
+
+
 class TestArchivePreview:
+    def test_archive_preview_extracts_main_content_for_spa_shaped_html(
+        self, client: TestClient
+    ) -> None:
+        # TASK-1577.02: archive iframe for SPA-served pages must surface
+        # the post text ahead of site chrome. The route now runs
+        # extract_archive_main_content on cached.html before falling
+        # back to strip_for_display.
+        from src.cache.scrape_cache import CachedScrape
+
+        class StubCache:
+            async def get(
+                self, url: str, *, tier: str = "scrape"
+            ) -> CachedScrape | None:
+                if tier in {"browser_html", "interact"}:
+                    return None
+                return CachedScrape(html=_SPA_SHAPED_CACHED_HTML)
+
+        with patch("src.routes.frame.get_scrape_cache", return_value=StubCache()):
+            resp = client.get(
+                "/api/archive-preview",
+                params={"url": "https://example.social/@author/123"},
+            )
+
+        assert resp.status_code == 200
+        post_idx = resp.text.find("Today's threads")
+        chrome_idx = resp.text.find("Server stats")
+        recent_idx = resp.text.find("Recent searches")
+        assert post_idx > 0, "post text missing from archive response"
+        assert chrome_idx == -1 or post_idx < chrome_idx
+        assert recent_idx == -1 or post_idx < recent_idx
+
+    def test_archive_preview_uses_strip_when_extraction_loses_utterances(
+        self, client: TestClient
+    ) -> None:
+        # TASK-1577.02 / Codex P1.2: when the analyze pipeline produced
+        # utterances and the trafilatura extraction would drop one or more
+        # of them, the route falls back to strip_for_display so the
+        # per-utterance annotations don't silently disappear from the
+        # archived view. Cached HTML below contains the utterance text;
+        # we monkey-patch the extractor to return content that does NOT.
+        from src.cache.scrape_cache import CachedScrape
+        from src.utterances.schema import Utterance
+
+        original_html = (
+            "<!doctype html><html><body><main>"
+            "<article><p>Alice opens calmly.</p></article>"
+            "<section aria-label='Comments'><article class='comment'>"
+            "<p>This comment is a forum reply that the analyze pipeline "
+            "marked as an utterance.</p></article></section></main></body></html>"
+        )
+        # Extracted version drops the comment block (simulating trafilatura
+        # over-stripping) — long enough to clear the 200-char threshold.
+        extraction_without_utterance = (
+            "<html><body><article>" + ("<p>Alice opens calmly.</p>" * 30)
+            + "</article></body></html>"
+        )
+
+        class StubCache:
+            async def get(
+                self, url: str, *, tier: str = "scrape"
+            ) -> CachedScrape | None:
+                if tier in {"browser_html", "interact"}:
+                    return None
+                return CachedScrape(html=original_html)
+
+        async def stub_lookup(
+            pool: object, job_id: object, requested_url: str
+        ) -> list[Utterance]:
+            return [
+                Utterance(
+                    utterance_id="comment-1",
+                    kind="comment",
+                    text="This comment is a forum reply that the analyze pipeline marked as an utterance.",
+                )
+            ]
+
+        from src.utils import html_sanitize as _hs
+
+        _hs.extract_archive_main_content.cache_clear()  # type: ignore[attr-defined]
+
+        _client_state(client).db_pool = object()
+        try:
+            with (
+                patch("src.routes.frame.get_scrape_cache", return_value=StubCache()),
+                patch(
+                    "src.routes.frame.get_utterances_for_archive",
+                    side_effect=stub_lookup,
+                    create=True,
+                ),
+                patch(
+                    "src.utils.html_sanitize.extract_archive_main_content.__wrapped__",
+                    return_value=extraction_without_utterance,
+                ),
+            ):
+                _hs.extract_archive_main_content.cache_clear()  # type: ignore[attr-defined]
+                resp = client.get(
+                    "/api/archive-preview",
+                    params={
+                        "url": "https://example.com/article",
+                        "job_id": "11111111-1111-1111-1111-111111111111",
+                    },
+                )
+        finally:
+            del _client_state(client).db_pool
+            _hs.extract_archive_main_content.cache_clear()  # type: ignore[attr-defined]
+
+        assert resp.status_code == 200
+        # Strip path was used → the comment text (and its annotation) survives.
+        assert 'data-utterance-id="comment-1"' in resp.text
+        assert "This comment is a forum reply" in resp.text
+
+    def test_archive_preview_falls_back_to_strip_when_extractor_under_threshold(
+        self, client: TestClient
+    ) -> None:
+        # When trafilatura yields content shorter than the substantial-content
+        # threshold and there is no markdown to render, the route falls back
+        # to the existing strip_for_display path so non-SPA pages keep
+        # working. Asserts via response text content rather than cache call
+        # bookkeeping (state-over-interactions per writing-better-tests).
+        from src.cache.scrape_cache import CachedScrape
+
+        small_html = "<html><body><p>tiny</p></body></html>"
+
+        class StubCache:
+            async def get(
+                self, url: str, *, tier: str = "scrape"
+            ) -> CachedScrape | None:
+                if tier in {"browser_html", "interact"}:
+                    return None
+                return CachedScrape(html=small_html)
+
+        with patch("src.routes.frame.get_scrape_cache", return_value=StubCache()):
+            resp = client.get(
+                "/api/archive-preview",
+                params={"url": "https://example.com/tiny"},
+            )
+
+        assert resp.status_code == 200
+        # `strip_for_display` round-trips the body through bs4 — the literal
+        # `<p>tiny</p>` survives intact.
+        assert "<p>tiny</p>" in resp.text
+
     def test_cached_interact_html_served_when_scrape_tier_is_superficially_ok(
         self, client: TestClient
     ) -> None:
@@ -1459,7 +1639,7 @@ class TestArchivePreview:
                 self, url: str, formats: list[str], *, only_main_content: bool = False
             ) -> ScrapeResult:
                 assert url == "https://example.com/fresh"
-                assert formats == ["html"]
+                assert formats == ["html", "markdown"]
                 assert only_main_content is True
                 return ScrapeResult(html="<article>Fresh archive</article>")
 
@@ -1513,7 +1693,7 @@ class TestArchivePreview:
                 self, url: str, formats: list[str], *, only_main_content: bool = False
             ) -> ScrapeResult:
                 assert url == "https://example.com/fresh-wall"
-                assert formats == ["html"]
+                assert formats == ["html", "markdown"]
                 assert only_main_content is True
                 return ScrapeResult(html=html, markdown=markdown)
 

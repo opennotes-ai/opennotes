@@ -26,7 +26,7 @@ from src.firecrawl_client import (
 from src.jobs.pdf_storage import get_pdf_upload_store
 from src.jobs.scrape_quality import ScrapeQuality, classify_scrape
 from src.monitoring import get_logger
-from src.utils.html_sanitize import strip_for_display
+from src.utils.html_sanitize import extract_archive_main_content, strip_for_display
 from src.utils.url_security import InvalidURL, validate_public_http_url
 from src.utterances.annotate_html import annotate_utterances_in_html
 from src.utterances.lookup import get_utterances_for_archive
@@ -437,6 +437,36 @@ async def _revalidate_archive_final_url(
         raise
 
 
+def _archive_display_html(
+    cached_html: str | None,
+    cached_markdown: str | None,
+    *,
+    utterances: list | None = None,
+) -> str | None:
+    """Pick the archive iframe body for `cached_html`/`cached_markdown`.
+
+    TASK-1577.02 prefers main-content extraction so SPA-rendered pages
+    surface the post within the visible iframe viewport. Falls back to
+    the surgical `strip_for_display` so non-SPA pages keep working.
+
+    Codex P1.2: when the job has utterances, we prefer the extracted
+    version only when it preserves every utterance text — otherwise the
+    per-utterance highlights would silently disappear. Falling through
+    to `strip_for_display` is safe because that path keeps the full
+    document text.
+    """
+    extracted = extract_archive_main_content(cached_html, cached_markdown)
+    stripped = strip_for_display(cached_html) if cached_html else None
+
+    if extracted and (
+        not utterances or _extracted_preserves_utterances(extracted, utterances)
+    ):
+        return extracted
+    if stripped:
+        return stripped
+    return extracted
+
+
 def _archive_response(html: str) -> Response:
     m = _DOCTYPE_RE.match(html)
     content = (
@@ -488,6 +518,77 @@ async def _get_pdf_gcs_key(pool: Any, job_id: UUID) -> str | None:
     return gcs_key if isinstance(gcs_key, str) else None
 
 
+async def _fetch_archive_utterances(
+    *,
+    request: Request,
+    job_id: UUID | None,
+    requested_url: str,
+) -> list:
+    if job_id is None:
+        return []
+    pool = getattr(request.app.state, "db_pool", None)
+    if pool is None:
+        logger.warning("archive utterance annotation skipped: database pool not initialized")
+        return []
+    try:
+        return await get_utterances_for_archive(pool, job_id, requested_url)
+    except Exception as exc:
+        logger.warning("archive utterance lookup failed for job %s: %s", job_id, exc)
+        return []
+
+
+def _extracted_preserves_utterances(
+    extracted_html: str,
+    utterances: list,
+) -> bool:
+    """Return True iff every utterance text appears in `extracted_html`.
+
+    Codex P1.2: trafilatura can drop comment/forum blocks that the analyze
+    pipeline marked as utterances. When that happens the archive iframe
+    shows main content but the per-utterance highlights silently disappear.
+    Caller compares this against a strip_for_display fallback that tends
+    to preserve all original text and picks whichever surfaces more
+    utterances.
+    """
+    if not utterances:
+        return True
+    haystack = extracted_html.lower()
+    for utterance in utterances:
+        text = getattr(utterance, "text", None)
+        if not isinstance(text, str) or not text.strip():
+            continue
+        if text.strip().lower() not in haystack:
+            return False
+    return True
+
+
+async def _render_archive_response(
+    cached_html: str | None,
+    cached_markdown: str | None,
+    *,
+    request: Request,
+    job_id: UUID | None,
+    requested_url: str,
+) -> Response:
+    """Build the archive iframe response for the supplied scrape body.
+
+    Centralizes the cached and fresh-scrape paths so archive_preview
+    stays under the cyclomatic-complexity budget. Fetches utterances,
+    picks extracted vs stripped, annotates, wraps with CSP + styles.
+    """
+    utterances = await _fetch_archive_utterances(
+        request=request, job_id=job_id, requested_url=requested_url
+    )
+    display_html = _archive_display_html(
+        cached_html, cached_markdown, utterances=utterances
+    )
+    if not display_html:
+        raise HTTPException(status_code=502, detail="Archive unavailable")
+    if utterances:
+        display_html = annotate_utterances_in_html(display_html, utterances)
+    return _archive_response(display_html)
+
+
 async def _annotate_archive_html(
     html: str,
     *,
@@ -495,17 +596,9 @@ async def _annotate_archive_html(
     job_id: UUID | None,
     requested_url: str,
 ) -> str:
-    if job_id is None:
-        return html
-    pool = getattr(request.app.state, "db_pool", None)
-    if pool is None:
-        logger.warning("archive utterance annotation skipped: database pool not initialized")
-        return html
-    try:
-        utterances = await get_utterances_for_archive(pool, job_id, requested_url)
-    except Exception as exc:
-        logger.warning("archive utterance lookup failed for job %s: %s", job_id, exc)
-        return html
+    utterances = await _fetch_archive_utterances(
+        request=request, job_id=job_id, requested_url=requested_url
+    )
     if not utterances:
         return html
     return annotate_utterances_in_html(html, utterances)
@@ -552,24 +645,24 @@ async def archive_preview(
         await _revalidate_archive_final_url(
             cached, original_url=url, scrape_cache=scrape_cache, tier=cached_tier or "scrape"
         )
-        display_html = strip_for_display(cached.html)
-        if not display_html:
-            raise HTTPException(status_code=502, detail="Archive unavailable")
-        html = await _annotate_archive_html(
-            display_html,
+        return await _render_archive_response(
+            cached.html,
+            cached.markdown,
             request=request,
             job_id=parsed_job_id,
             requested_url=url,
         )
-        return _archive_response(html)
 
     if not generate:
         raise HTTPException(status_code=404, detail="Archive unavailable")
 
     fc = get_firecrawl_client()
     try:
+        # TASK-1577.02: request markdown alongside html so the archive
+        # display extractor's markdown fallback (`extract_archive_main_content`)
+        # can fire when trafilatura under-extracts on a fresh scrape too.
         fresh = await asyncio.wait_for(
-            fc.scrape(url, formats=["html"], only_main_content=True),
+            fc.scrape(url, formats=["html", "markdown"], only_main_content=True),
             timeout=_ARCHIVE_REQUEST_BUDGET_SECONDS,
         )
     except TimeoutError:
@@ -588,16 +681,13 @@ async def archive_preview(
         raise HTTPException(status_code=502, detail="Archive unavailable") from exc
 
     await _revalidate_archive_final_url(stored, original_url=url, scrape_cache=scrape_cache)
-    html = strip_for_display(stored.html) if stored.html else None
-    if not html:
-        raise HTTPException(status_code=502, detail="Archive unavailable")
-    html = await _annotate_archive_html(
-        html,
+    return await _render_archive_response(
+        stored.html,
+        stored.markdown,
         request=request,
         job_id=parsed_job_id,
         requested_url=url,
     )
-    return _archive_response(html)
 
 
 @router.get("/pdf-read")
