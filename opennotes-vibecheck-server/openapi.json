@@ -986,6 +986,12 @@
             },
             "type": "array",
             "title": "Premise Ids"
+          },
+          "facts_to_verify": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Facts To Verify",
+            "default": 0
           }
         },
         "type": "object",

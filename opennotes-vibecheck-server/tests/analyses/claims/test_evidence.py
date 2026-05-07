@@ -5,6 +5,7 @@ from typing import Any, ClassVar
 from uuid import uuid4
 
 import pytest
+from pydantic import ValidationError
 
 from src.analyses.claims import evidence
 from src.analyses.claims._claims_schemas import (
@@ -68,9 +69,42 @@ def _claims_report(*texts: str) -> ClaimsReport:
     )
 
 
+def _deduped_claim_payload(**overrides: Any) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "canonical_text": "The moon is round.",
+        "category": ClaimCategory.POTENTIALLY_FACTUAL,
+        "occurrence_count": 1,
+        "author_count": 1,
+        "utterance_ids": ["u-1"],
+        "representative_authors": ["alice"],
+    }
+    payload.update(overrides)
+    return payload
+
+
 class _Payload:
     def __init__(self, claims_report: ClaimsReport) -> None:
         self.claims_report = claims_report
+
+
+def test_deduped_claim_defaults_facts_to_verify_to_zero() -> None:
+    claim = DedupedClaim(**_deduped_claim_payload())
+
+    assert claim.facts_to_verify == 0
+
+
+def test_deduped_claim_round_trips_positive_facts_to_verify() -> None:
+    claim = DedupedClaim(**_deduped_claim_payload(facts_to_verify=3))
+
+    dumped = claim.model_dump(mode="json")
+
+    assert dumped["facts_to_verify"] == 3
+    assert DedupedClaim.model_validate(dumped).facts_to_verify == 3
+
+
+def test_deduped_claim_rejects_negative_facts_to_verify() -> None:
+    with pytest.raises(ValidationError):
+        DedupedClaim(**_deduped_claim_payload(facts_to_verify=-1))
 
 
 @pytest.mark.asyncio

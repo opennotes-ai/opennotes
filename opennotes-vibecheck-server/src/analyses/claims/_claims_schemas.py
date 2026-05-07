@@ -111,6 +111,7 @@ class DedupedClaim(BaseModel):
     representative_authors: list[str]
     supporting_facts: list[SupportingFact] = Field(default_factory=list)
     premise_ids: list[str] = Field(default_factory=list)
+    facts_to_verify: int = Field(default=0, ge=0)
 
 
 class ClaimsReport(BaseModel):
