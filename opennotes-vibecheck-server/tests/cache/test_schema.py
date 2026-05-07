@@ -406,6 +406,88 @@ class TestWebRiskLookupsTable:
         assert forbidden == []
 
 
+class TestImageAnalysisCacheTable:
+    # TASK-1483.24.01: Vision API SafeSearch results cached per-image-URL.
+    def test_create_table_if_not_exists(self, schema_sql: str) -> None:
+        assert "CREATE TABLE IF NOT EXISTS public.vibecheck_image_analysis_cache" in schema_sql
+
+    def test_columns(self, schema_sql: str) -> None:
+        assert "image_url TEXT PRIMARY KEY" in schema_sql
+        assert "result_payload JSONB NOT NULL" in schema_sql
+
+    def test_rls_enabled_and_forced(self, schema_sql: str) -> None:
+        assert (
+            "ALTER TABLE public.vibecheck_image_analysis_cache ENABLE ROW LEVEL SECURITY"
+            in schema_sql
+        )
+        assert (
+            "ALTER TABLE public.vibecheck_image_analysis_cache FORCE ROW LEVEL SECURITY"
+            in schema_sql
+        )
+
+    def test_revokes_anon_and_authenticated(self, schema_sql: str) -> None:
+        assert (
+            "REVOKE ALL ON public.vibecheck_image_analysis_cache FROM anon, authenticated"
+            in schema_sql
+        )
+
+    def test_expires_at_index_exists(self, schema_sql: str) -> None:
+        assert (
+            "CREATE INDEX IF NOT EXISTS vibecheck_image_analysis_cache_expires_at_idx"
+            in schema_sql
+        )
+
+    def test_no_policies_or_grants_for_anon_or_authenticated(self, schema_sql: str) -> None:
+        forbidden = [
+            line
+            for line in schema_sql.splitlines()
+            if "vibecheck_image_analysis_cache" in line
+            and (line.strip().startswith("CREATE POLICY") or re.search(r"\bGRANT\b", line))
+        ]
+        assert forbidden == []
+
+
+class TestVideoAnalysisCacheTable:
+    # TASK-1483.24.01: Vision API frame findings cached per-video-URL.
+    def test_create_table_if_not_exists(self, schema_sql: str) -> None:
+        assert "CREATE TABLE IF NOT EXISTS public.vibecheck_video_analysis_cache" in schema_sql
+
+    def test_columns(self, schema_sql: str) -> None:
+        assert "video_url TEXT PRIMARY KEY" in schema_sql
+        assert "frame_findings_payload JSONB NOT NULL" in schema_sql
+
+    def test_rls_enabled_and_forced(self, schema_sql: str) -> None:
+        assert (
+            "ALTER TABLE public.vibecheck_video_analysis_cache ENABLE ROW LEVEL SECURITY"
+            in schema_sql
+        )
+        assert (
+            "ALTER TABLE public.vibecheck_video_analysis_cache FORCE ROW LEVEL SECURITY"
+            in schema_sql
+        )
+
+    def test_revokes_anon_and_authenticated(self, schema_sql: str) -> None:
+        assert (
+            "REVOKE ALL ON public.vibecheck_video_analysis_cache FROM anon, authenticated"
+            in schema_sql
+        )
+
+    def test_expires_at_index_exists(self, schema_sql: str) -> None:
+        assert (
+            "CREATE INDEX IF NOT EXISTS vibecheck_video_analysis_cache_expires_at_idx"
+            in schema_sql
+        )
+
+    def test_no_policies_or_grants_for_anon_or_authenticated(self, schema_sql: str) -> None:
+        forbidden = [
+            line
+            for line in schema_sql.splitlines()
+            if "vibecheck_video_analysis_cache" in line
+            and (line.strip().startswith("CREATE POLICY") or re.search(r"\bGRANT\b", line))
+        ]
+        assert forbidden == []
+
+
 class TestUnsafeUrlErrorCode:
     def test_error_code_check_includes_unsafe_url(self, schema_sql: str) -> None:
         assert "'unsafe_url'" in schema_sql
