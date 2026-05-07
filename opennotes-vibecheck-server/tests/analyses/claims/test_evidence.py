@@ -52,6 +52,11 @@ def settings() -> Settings:
     return Settings()
 
 
+@pytest.fixture
+def no_external_settings() -> Settings:
+    return Settings(EVIDENCE_MAX_EXTERNAL_RETRIEVALS=0)
+
+
 def _claims_report(*texts: str) -> ClaimsReport:
     return ClaimsReport(
         deduped_claims=[
@@ -317,7 +322,7 @@ def test_grounded_urls_from_result_normalizes_search_result_urls() -> None:
 @pytest.mark.asyncio
 async def test_run_claims_evidence_merges_from_payload(
     monkeypatch: pytest.MonkeyPatch,
-    settings: Settings,
+    no_external_settings: Settings,
 ) -> None:
     async def fake_load_utterances(_pool: object, job_id: object) -> list[Utterance]:
         del job_id
@@ -340,7 +345,7 @@ async def test_run_claims_evidence_merges_from_payload(
         job_id=uuid4(),
         task_attempt=uuid4(),
         payload=_Payload(_claims_report("The moon is round.")),
-        settings=settings,
+        settings=no_external_settings,
     )
 
     claim = result["claims_report"]["deduped_claims"][0]
@@ -358,7 +363,7 @@ async def test_run_claims_evidence_merges_from_payload(
 @pytest.mark.asyncio
 async def test_run_claims_evidence_falls_back_to_dedup_slot_when_payload_missing(
     monkeypatch: pytest.MonkeyPatch,
-    settings: Settings,
+    no_external_settings: Settings,
 ) -> None:
     fake_row = {
         "state": "done",
@@ -386,7 +391,7 @@ async def test_run_claims_evidence_falls_back_to_dedup_slot_when_payload_missing
         job_id=uuid4(),
         task_attempt=uuid4(),
         payload=object(),
-        settings=settings,
+        settings=no_external_settings,
     )
 
     claim = result["claims_report"]["deduped_claims"][0]
@@ -449,7 +454,7 @@ async def test_run_claims_evidence_counts_unique_utterances_when_facts_empty(
 @pytest.mark.asyncio
 async def test_run_claims_evidence_sets_zero_facts_to_verify_when_fact_exists(
     monkeypatch: pytest.MonkeyPatch,
-    settings: Settings,
+    no_external_settings: Settings,
 ) -> None:
     async def fake_load_utterances(_pool: object, job_id: object) -> list[Utterance]:
         del job_id
@@ -472,7 +477,7 @@ async def test_run_claims_evidence_sets_zero_facts_to_verify_when_fact_exists(
         job_id=uuid4(),
         task_attempt=uuid4(),
         payload=_Payload(_claims_report("The moon has ice.")),
-        settings=settings,
+        settings=no_external_settings,
     )
 
     claim_payload = result["claims_report"]["deduped_claims"][0]
