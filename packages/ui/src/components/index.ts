@@ -9,6 +9,7 @@ export * from "./ui/icons";
 export { default as IdBadge } from "./ui/id-badge";
 export { default as InlineHistogram, CHART_COLORS } from "./ui/inline-histogram";
 export * from "./ui/input";
+export * from "./ui/link";
 export { default as PaginationControls } from "./ui/pagination-controls";
 export * from "./ui/popover";
 export { default as SectionHeader } from "./ui/section-header";
