@@ -514,7 +514,12 @@ function AnalyzePageContent(props: { initialJobState: JobState | null }) {
     (sidebarPayload()?.utterances?.length ?? 0) > 0;
   const isActivePolling = () => {
     const status = jobStatus();
-    return status === "extracting" || status === "analyzing" || status === "partial";
+    return (
+      status === "pending" ||
+      status === "extracting" ||
+      status === "analyzing" ||
+      status === "partial"
+    );
   };
   const rawHeadline = () => sidebarPayload()?.headline;
   const hasServerHeadline = () => rawHeadline() != null;
@@ -537,17 +542,15 @@ function AnalyzePageContent(props: { initialJobState: JobState | null }) {
   const showHeadlineLeadIn = () => {
     if (isExpired() || showFailure()) return false;
     if (hasHeadlineLeadInValue() || hasWeatherPayload()) return true;
-    return isActivePolling() && sidebarPayload() !== null && !sidebarPayloadComplete();
+    return isActivePolling() && !sidebarPayloadComplete();
   };
   const showHeadlineSkeleton = () =>
-    isActivePolling() &&
-    !hasHeadlineLeadInValue() &&
     showHeadlineLeadIn() &&
+    !hasHeadlineLeadInValue() &&
     !sidebarPayloadComplete();
   const showWeatherSkeleton = () =>
-    isActivePolling() &&
-    !hasWeatherPayload() &&
     showHeadlineLeadIn() &&
+    !hasWeatherPayload() &&
     !sidebarPayloadComplete();
   const shouldCollapseSidebarGroups = () =>
     hasHeadlineLeadInValue() || hasWeatherPayload();

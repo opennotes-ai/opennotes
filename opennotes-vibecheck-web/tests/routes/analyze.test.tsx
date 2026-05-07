@@ -1784,6 +1784,173 @@ describe("AnalyzePage headline summary mount (TASK-1483.13.10)", () => {
     ).toBeTruthy();
   });
 
+  it("renders headline and weather skeletons when job is queued (pending) with no sidebar_payload", async () => {
+    renderAt("/analyze?job=job-queued-leadin&url=https://news.example.com/a");
+
+    await waitFor(() => {
+      expect(pollingHandles.length).toBeGreaterThan(0);
+    });
+
+    setPolledJobState(
+      makeJobState({
+        status: "pending",
+        sidebar_payload: null,
+        sidebar_payload_complete: false,
+      } as unknown as Partial<JobState>),
+    );
+
+    expect(await screen.findByTestId("headline-lead-in")).toBeDefined();
+    expect(screen.getByTestId("headline-summary-skeleton")).toBeDefined();
+    expect(screen.getByTestId("weather-report-skeleton")).toBeDefined();
+  });
+
+  it("keeps headline and weather skeletons visible when job transitions to extracting with no sidebar_payload", async () => {
+    renderAt("/analyze?job=job-extracting-leadin&url=https://news.example.com/a");
+
+    await waitFor(() => {
+      expect(pollingHandles.length).toBeGreaterThan(0);
+    });
+
+    setPolledJobState(
+      makeJobState({
+        status: "pending",
+        sidebar_payload: null,
+        sidebar_payload_complete: false,
+      } as unknown as Partial<JobState>),
+    );
+
+    expect(await screen.findByTestId("headline-lead-in")).toBeDefined();
+
+    setPolledJobState(
+      makeJobState({
+        status: "extracting",
+        sidebar_payload: null,
+        sidebar_payload_complete: false,
+      } as unknown as Partial<JobState>),
+    );
+
+    await waitFor(() => {
+      expect(screen.queryByTestId("headline-summary-skeleton")).not.toBeNull();
+      expect(screen.queryByTestId("weather-report-skeleton")).not.toBeNull();
+    });
+  });
+
+  it("replaces headline skeleton with HeadlineSummaryReport when real headline arrives without flashing empty state", async () => {
+    renderAt("/analyze?job=job-leadin-replace&url=https://news.example.com/a");
+
+    await waitFor(() => {
+      expect(pollingHandles.length).toBeGreaterThan(0);
+    });
+
+    setPolledJobState(
+      makeJobState({
+        status: "pending",
+        sidebar_payload: null,
+        sidebar_payload_complete: false,
+      } as unknown as Partial<JobState>),
+    );
+
+    expect(await screen.findByTestId("headline-summary-skeleton")).toBeDefined();
+
+    setPolledJobState(
+      makeJobState({
+        status: "analyzing",
+        sidebar_payload: makeSidebarPayload({
+          headline: {
+            text: "Real headline arrived.",
+            kind: "synthesized",
+            unavailable_inputs: [],
+          },
+        }),
+        sidebar_payload_complete: false,
+      } as unknown as Partial<JobState>),
+    );
+
+    const headline = await screen.findByTestId("headline-summary");
+    expect(headline).toBeDefined();
+    expect(screen.getByTestId("headline-summary-text").textContent).toBe(
+      "Real headline arrived.",
+    );
+    expect(screen.queryByTestId("headline-lead-in")).not.toBeNull();
+    expect(screen.queryByTestId("headline-summary-skeleton")).toBeNull();
+  });
+
+  it("does not render headline lead-in skeletons for terminal done jobs without payload data", async () => {
+    renderAt("/analyze?job=job-done-no-leadin&url=https://news.example.com/a");
+
+    await waitFor(() => {
+      expect(pollingHandles.length).toBeGreaterThan(0);
+    });
+
+    setPolledJobState(
+      makeJobState({
+        status: "done",
+        sidebar_payload: makeSidebarPayloadWithoutHeadline(),
+        sidebar_payload_complete: true,
+      } as unknown as Partial<JobState>),
+    );
+
+    await waitFor(() => {
+      expect(screen.queryByTestId("preview-mode-selector")).not.toBeNull();
+    });
+    expect(screen.queryByTestId("headline-summary-skeleton")).toBeNull();
+    expect(screen.queryByTestId("weather-report-skeleton")).toBeNull();
+  });
+
+  it("does not render headline lead-in skeletons for failed jobs", async () => {
+    renderAt("/analyze?job=job-failed-no-leadin&url=https://news.example.com/a");
+
+    await waitFor(() => {
+      expect(pollingHandles.length).toBeGreaterThan(0);
+    });
+
+    setPolledJobState(
+      makeJobState({
+        status: "failed",
+        error_code: "upstream_error",
+        sidebar_payload: null,
+        sidebar_payload_complete: false,
+      } as unknown as Partial<JobState>),
+    );
+
+    await waitFor(() => {
+      expect(screen.queryByTestId("job-failure-card")).not.toBeNull();
+    });
+    expect(screen.queryByTestId("headline-summary-skeleton")).toBeNull();
+    expect(screen.queryByTestId("weather-report-skeleton")).toBeNull();
+  });
+
+  it("does not render headline lead-in skeletons for expired jobs", async () => {
+    renderAt("/analyze?job=job-expired-no-leadin&url=https://news.example.com/a");
+
+    await waitFor(() => {
+      expect(pollingHandles.length).toBeGreaterThan(0);
+    });
+
+    setPolledJobState({
+      job_id: "job-expired-no-leadin",
+      url: "https://news.example.com/a",
+      status: "failed",
+      attempt_id: "attempt-1",
+      source_type: "url",
+      created_at: "2026-04-28T00:00:00Z",
+      updated_at: "2026-04-28T00:00:00Z",
+      cached: false,
+      expired_at: "2026-04-28T10:00:00Z",
+      sidebar_payload: null,
+      sidebar_payload_complete: false,
+      sections: {},
+      next_poll_ms: 1500,
+      utterance_count: 0,
+    } as unknown as JobState);
+
+    await waitFor(() => {
+      expect(screen.queryByTestId("expired-analysis-card")).not.toBeNull();
+    });
+    expect(screen.queryByTestId("headline-summary-skeleton")).toBeNull();
+    expect(screen.queryByTestId("weather-report-skeleton")).toBeNull();
+  });
+
   it("renders weather badges beside the headline when payload has a report", async () => {
     renderAt("/analyze?job=job-weather-complete&url=https://news.example.com/a");
 
