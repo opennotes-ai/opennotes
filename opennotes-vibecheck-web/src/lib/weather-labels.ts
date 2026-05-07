@@ -8,14 +8,26 @@ type WeatherAxisLabel =
 
 export function formatWeatherLabel(value: WeatherAxisLabel): string {
   switch (value) {
-    case "mostly_factual":
-      return "Mostly Factual";
-    case "self_reported":
-      return "Self-Reported";
+    case "sourced":
+      return "Sourced";
+    case "factual_claims":
+      return "Factual claims";
+    case "first_person":
+      return "First-person";
+    case "hearsay":
+      return "Second-hand";
+    case "misleading":
+      return "Actively misleading";
+    case "insightful":
+      return "Insightful";
     case "on_topic":
-      return "On Topic";
+      return "On topic";
+    case "chatty":
+      return "Chatty";
+    case "drifting":
+      return "Drifting";
     case "off_topic":
-      return "Off Topic";
+      return "Off topic";
     default:
       return String(value)
         .split(/[_\s-]+/)
