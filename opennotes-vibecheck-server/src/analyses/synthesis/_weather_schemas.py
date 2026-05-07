@@ -22,19 +22,14 @@ RelevanceLabel = Literal["insightful", "on_topic", "chatty", "drifting", "off_to
 
 
 def _weather_schema_name(title: str) -> str | None:
-    if title.startswith("WeatherAxisAlternative[Literal["):
-        if "'sourced'" in title:
-            return "WeatherAxisAlternativeTruth"
-        return "WeatherAxisAlternativeRelevance"
-    if title == "WeatherAxisAlternative[str]":
-        return "WeatherAxisAlternativeSentiment"
-    if title.startswith("WeatherAxis[Literal["):
-        if "'sourced'" in title:
-            return "WeatherAxisTruth"
-        return "WeatherAxisRelevance"
-    if title == "WeatherAxis[str]":
-        return "WeatherAxisSentiment"
-    return None
+    return {
+        "WeatherAxisAlternative[Literal['insightful', 'on_topic', 'chatty', 'drifting', 'off_topic']]": "WeatherAxisAlternativeRelevance",
+        "WeatherAxisAlternative[Literal['sourced', 'mostly_factual', 'self_reported', 'hearsay', 'misleading']]": "WeatherAxisAlternativeTruth",
+        "WeatherAxisAlternative[str]": "WeatherAxisAlternativeSentiment",
+        "WeatherAxis[Literal['insightful', 'on_topic', 'chatty', 'drifting', 'off_topic']]": "WeatherAxisRelevance",
+        "WeatherAxis[Literal['sourced', 'mostly_factual', 'self_reported', 'hearsay', 'misleading']]": "WeatherAxisTruth",
+        "WeatherAxis[str]": "WeatherAxisSentiment",
+    }.get(title)
 
 
 def _normalize_weather_schema_names(schema: dict[str, Any]) -> dict[str, Any]:

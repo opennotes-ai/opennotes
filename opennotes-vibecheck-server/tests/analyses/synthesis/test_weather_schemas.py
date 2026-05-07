@@ -3,9 +3,11 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 import pytest
+from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
 from src.analyses.schemas import SidebarPayload
+from src.main import app
 from src.analyses.synthesis._weather_schemas import (
     RelevanceLabel,
     TruthLabel,
@@ -146,3 +148,24 @@ def test_weather_report_json_schema_uses_stable_public_schema_names():
     }
     assert all(not name.startswith("WeatherAxisAlternative_Literal") for name in defs)
     assert all(not name.startswith("WeatherAxis_Literal") for name in defs)
+
+
+def test_openapi_json_stable_weather_axis_schema_names() -> None:
+    response = TestClient(app).get("/openapi.json")
+    assert response.status_code == 200
+
+    schema = response.json()
+    schemas: dict[str, object] = schema["components"]["schemas"]
+
+    assert "WeatherAxisTruth" in schemas
+    assert "WeatherAxisRelevance" in schemas
+    assert "WeatherAxisSentiment" in schemas
+    assert "WeatherAxisAlternativeTruth" in schemas
+    assert "WeatherAxisAlternativeRelevance" in schemas
+    assert "WeatherAxisAlternativeSentiment" in schemas
+
+    assert not any(
+        name.startswith("WeatherAxisAlternative_Literal")
+        or name.startswith("WeatherAxis_Literal")
+        for name in schemas
+    )
