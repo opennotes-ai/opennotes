@@ -544,14 +544,14 @@ function AnalyzePageContent(props: { initialJobState: JobState | null }) {
     if (hasHeadlineLeadInValue() || hasWeatherPayload()) return true;
     return isActivePolling() && !sidebarPayloadComplete();
   };
+  const weatherPermanentlyMissing = () =>
+    sidebarPayloadComplete() && !hasWeatherPayload();
   const showHeadlineSkeleton = () =>
-    showHeadlineLeadIn() &&
-    !hasHeadlineLeadInValue() &&
-    !sidebarPayloadComplete();
+    showHeadlineLeadIn() && !hasHeadlineLeadInValue();
   const showWeatherSkeleton = () =>
     showHeadlineLeadIn() &&
     !hasWeatherPayload() &&
-    !sidebarPayloadComplete();
+    !weatherPermanentlyMissing();
   const shouldCollapseSidebarGroups = () =>
     hasHeadlineLeadInValue() || hasWeatherPayload();
 
