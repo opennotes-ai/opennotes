@@ -1,26 +1,18 @@
 import type { APIEvent } from "@solidjs/start/server";
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-import path from "node:path";
 import satori from "satori";
 import { Resvg } from "@resvg/resvg-js";
 import { pollJob } from "~/lib/api-client.server";
-import type { JobState, JobStatus } from "~/lib/api-client.server";
+import type { JobState } from "~/lib/api-client.server";
 import { formatWeatherLabel } from "~/lib/weather-labels";
+import {
+  PLEX_SANS_700_B64,
+  PLEX_SANS_600_B64,
+  PLEX_SERIF_400_B64,
+} from "../../assets/fonts/fonts-data";
 
-function resolveFontDir(): string {
-  try {
-    return fileURLToPath(new URL("../../assets/fonts/", import.meta.url));
-  } catch {
-    return path.resolve(process.cwd(), "src/assets/fonts");
-  }
-}
-
-const FONT_DIR = resolveFontDir();
-
-const PLEX_SANS_700 = readFileSync(path.join(FONT_DIR, "IBMPlexSansCond-Bold.ttf"));
-const PLEX_SANS_600 = readFileSync(path.join(FONT_DIR, "IBMPlexSansCond-SemiBold.ttf"));
-const PLEX_SERIF_400 = readFileSync(path.join(FONT_DIR, "IBMPlexSerif-Regular.ttf"));
+const PLEX_SANS_700 = Buffer.from(PLEX_SANS_700_B64, "base64");
+const PLEX_SANS_600 = Buffer.from(PLEX_SANS_600_B64, "base64");
+const PLEX_SERIF_400 = Buffer.from(PLEX_SERIF_400_B64, "base64");
 
 const FONTS: Parameters<typeof satori>[1]["fonts"] = [
   { name: "IBM Plex Sans Condensed", data: PLEX_SANS_700, weight: 700, style: "normal" },
@@ -28,9 +20,28 @@ const FONTS: Parameters<typeof satori>[1]["fonts"] = [
   { name: "IBM Plex Serif", data: PLEX_SERIF_400, weight: 400, style: "normal" },
 ];
 
-const TERMINAL_STATES = new Set<JobStatus>(["done", "partial", "failed"]);
+const NON_TERMINAL_STATES = new Set(["pending", "extracting", "analyzing"] as const);
 const TERMINAL_CC = "public, max-age=43200, s-maxage=43200, immutable";
 const NON_TERMINAL_CC = "public, max-age=300, s-maxage=300";
+
+const MINIMAL_TRANSPARENT_PNG = new Uint8Array([
+  0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
+  0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52,
+  0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
+  0x08, 0x06, 0x00, 0x00, 0x00, 0x1f, 0x15, 0xc4,
+  0x89, 0x00, 0x00, 0x00, 0x0b, 0x49, 0x44, 0x41,
+  0x54, 0x78, 0x9c, 0x62, 0x00, 0x01, 0x00, 0x00,
+  0x05, 0x00, 0x01, 0x0d, 0x0a, 0x2d, 0xb4, 0x00,
+  0x00, 0x00, 0x00, 0x49, 0x45, 0x4e, 0x44, 0xae,
+  0x42, 0x60, 0x82,
+]);
+
+function cacheControlFor(jobState: JobState | null): string {
+  if (jobState && NON_TERMINAL_STATES.has(jobState.status as "pending" | "extracting" | "analyzing")) {
+    return NON_TERMINAL_CC;
+  }
+  return TERMINAL_CC;
+}
 
 type ElementLike = {
   type: string;
@@ -231,7 +242,8 @@ function buildJobCard(job: JobState): ElementLike {
   );
 }
 
-async function renderPng(tree: ElementLike): Promise<Uint8Array> {
+async function renderCard(job: JobState | null): Promise<Uint8Array> {
+  const tree = job ? buildJobCard(job) : buildGenericCard();
   const svg = await satori(tree as Parameters<typeof satori>[0], {
     width: 1200,
     height: 630,
@@ -240,34 +252,38 @@ async function renderPng(tree: ElementLike): Promise<Uint8Array> {
   return new Resvg(svg).render().asPng();
 }
 
+async function safeRender(job: JobState | null): Promise<Uint8Array> {
+  try {
+    return await renderCard(job);
+  } catch (err) {
+    console.error("og:render-card-failed", err);
+    try {
+      return await renderCard(null);
+    } catch (err2) {
+      console.error("og:generic-fallback-also-failed", err2);
+      return MINIMAL_TRANSPARENT_PNG;
+    }
+  }
+}
+
 export async function GET(event: APIEvent): Promise<Response> {
   const url = new URL(event.request.url);
   const jobId = url.searchParams.get("job");
 
-  let tree: ElementLike;
+  let job: JobState | null = null;
   let cacheControl: string;
 
-  if (!jobId) {
-    tree = buildGenericCard();
-    cacheControl = TERMINAL_CC;
-  } else {
-    let job: JobState | null = null;
+  if (jobId) {
     try {
       job = await pollJob(jobId, { signal: AbortSignal.timeout(10_000) });
     } catch (error: unknown) {
       console.error(`[og] Failed to load job ${jobId}:`, error);
     }
-
-    if (!job) {
-      tree = buildGenericCard();
-      cacheControl = TERMINAL_CC;
-    } else {
-      tree = buildJobCard(job);
-      cacheControl = TERMINAL_STATES.has(job.status) ? TERMINAL_CC : NON_TERMINAL_CC;
-    }
   }
 
-  const pngBytes = await renderPng(tree);
+  cacheControl = cacheControlFor(job);
+
+  const pngBytes = await safeRender(job);
   const png: BodyInit = pngBytes.buffer as ArrayBuffer;
 
   return new Response(png, {
