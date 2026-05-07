@@ -59,6 +59,7 @@ ExternalAPIErrorCategory = Literal[
     "upstream",
     "network",
     "invalid_response",
+    "invalid_image",
     "extraction",
     "internal",
 ]

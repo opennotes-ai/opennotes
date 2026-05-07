@@ -83,7 +83,12 @@ async def annotate_images(
             if r.status_code >= 500:
                 obs.set_error_category("upstream")
                 raise VisionTransientError(f"vision {r.status_code}")
-            r.raise_for_status()
+            if 400 <= r.status_code < 500:
+                obs.set_error_category("invalid_image")
+                for url in batch:
+                    results[url] = None
+                obs.add_flagged(0)
+                continue
             responses = r.json().get("responses") or []
             batch_flagged = 0
             for url, resp in zip(batch, responses, strict=False):
@@ -182,7 +187,9 @@ async def _retry_with_inline_bytes(
         if r.status_code >= 500:
             obs.set_error_category("upstream")
             raise VisionTransientError(f"vision-inline {r.status_code}")
-        r.raise_for_status()
+        if 400 <= r.status_code < 500:
+            obs.set_error_category("invalid_image")
+            return None
         resp = (r.json().get("responses") or [{}])[0]
         if resp.get("error") is not None:
             return None
