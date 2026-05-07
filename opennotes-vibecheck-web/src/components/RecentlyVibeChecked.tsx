@@ -5,6 +5,7 @@
 
 import { For, Show } from "solid-js";
 import type { RecentAnalysis } from "~/lib/api-client.server";
+import { formatWeatherReadout } from "~/lib/weather-labels";
 
 interface RecentlyVibeCheckedProps {
   analyses: RecentAnalysis[];
@@ -65,6 +66,16 @@ export default function RecentlyVibeChecked(props: RecentlyVibeCheckedProps) {
                   <p class="line-clamp-2 text-xs text-muted-foreground">
                     {item.preview_description}
                   </p>
+                  <Show when={item.weather_report}>
+                    {(weatherReport) => (
+                      <p
+                        data-testid="recent-analysis-weather"
+                        class="truncate text-[11px] text-muted-foreground"
+                      >
+                        {formatWeatherReadout(weatherReport())}
+                      </p>
+                    )}
+                  </Show>
                 </div>
               </a>
             )}

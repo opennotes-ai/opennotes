@@ -14,8 +14,18 @@ function makeAnalysis(overrides?: Partial<RecentAnalysis>): RecentAnalysis {
     page_title: "Example Article",
     screenshot_url: "https://cdn.example.com/shot.png",
     preview_description: "A short preview.",
+    headline_summary: null,
+    weather_report: null,
     completed_at: "2026-01-01T00:00:00Z",
     ...overrides,
+  };
+}
+
+function makeWeatherReport(): NonNullable<RecentAnalysis["weather_report"]> {
+  return {
+    truth: { label: "sourced", logprob: null, alternatives: [] },
+    relevance: { label: "on_topic", logprob: null, alternatives: [] },
+    sentiment: { label: "engaged", logprob: null, alternatives: [] },
   };
 }
 
@@ -68,5 +78,25 @@ describe("<RecentlyVibeChecked />", () => {
 
     const links = screen.getAllByRole("link");
     expect(links).toHaveLength(1);
+  });
+
+  it("renders weather readout only for cards with a weather report", () => {
+    const analyses = [
+      makeAnalysis({
+        job_id: "job-with-weather",
+        page_title: "Article With Weather",
+        weather_report: makeWeatherReport(),
+      }),
+      makeAnalysis({
+        job_id: "job-without-weather",
+        page_title: "Article Without Weather",
+        weather_report: null,
+      }),
+    ];
+
+    render(() => <RecentlyVibeChecked analyses={analyses} />);
+
+    expect(screen.getByText("Sourced · On Topic · Engaged")).toBeTruthy();
+    expect(screen.getAllByTestId("recent-analysis-weather")).toHaveLength(1);
   });
 });
