@@ -1979,13 +1979,13 @@ describe("AnalyzePage headline summary mount (TASK-1483.13.10)", () => {
 
     expect(await screen.findByTestId("headline-lead-in")).toBeDefined();
     expect(screen.getByTestId("weather-truth-value").textContent).toBe(
-      "First-person",
+      "First-Person",
     );
     expect(screen.getByTestId("weather-relevance-value").textContent).toBe(
       "Insightful",
     );
     expect(screen.getByTestId("weather-sentiment-value").textContent).toBe(
-      "warm but skeptical",
+      "Warm But Skeptical",
     );
     expect(screen.getByTestId("headline-summary-text").textContent).toBe(
       "Complete headline text.",
