@@ -518,14 +518,14 @@ test("AC2 tooltip hover: hovering a weather-axis row reveals axis name + interpr
 
   type AxisCheck = { axisType: string; copyMatch: RegExp };
   const checks: AxisCheck[] = [
-    { axisType: "truth", copyMatch: /factually grounded|sourced|misleading/i },
+    { axisType: "truth", copyMatch: /sourced|misleading|epistemic stance/i },
     {
       axisType: "relevance",
-      copyMatch: /on-topic|insightful|drifting/i,
+      copyMatch: /insightful|on topic|drifting/i,
     },
     {
       axisType: "sentiment",
-      copyMatch: /emotional tone|free-form descriptor/i,
+      copyMatch: /supportive|neutral|critical|oppositional|emotional stance/i,
     },
   ];
 
