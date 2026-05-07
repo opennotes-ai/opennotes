@@ -58,6 +58,7 @@ export interface SidebarProps {
   payloadComplete?: boolean;
   jobId?: string;
   jobStatus?: JobStatus;
+  collapseTopLevelByDefault?: boolean;
   class?: string;
   onRetry?: (slug: SectionSlugLiteral) => void;
   cachedHint?: boolean;
@@ -778,6 +779,7 @@ export default function Sidebar(props: SidebarProps) {
         label="Safety"
         slugs={SAFETY_SLUGS}
         sections={effectiveSections()}
+        defaultOpen={props.collapseTopLevelByDefault !== true}
         render={safetyRender()}
         summary={safetySummary()}
         emptinessChecks={SAFETY_EMPTINESS}
@@ -791,6 +793,7 @@ export default function Sidebar(props: SidebarProps) {
         label="Tone/dynamics"
         slugs={TONE_SLUGS}
         sections={effectiveSections()}
+        defaultOpen={props.collapseTopLevelByDefault !== true}
         render={toneRender()}
         emptinessChecks={TONE_EMPTINESS}
         counts={TONE_COUNTS}
@@ -803,6 +806,7 @@ export default function Sidebar(props: SidebarProps) {
         label="Facts/claims"
         slugs={FACTS_SLUGS}
         sections={effectiveSections()}
+        defaultOpen={props.collapseTopLevelByDefault !== true}
         render={factsRender()}
         emptinessChecks={FACTS_EMPTINESS}
         counts={FACTS_COUNTS}
@@ -823,6 +827,7 @@ export default function Sidebar(props: SidebarProps) {
         label="Opinions/sentiments"
         slugs={OPINIONS_SLUGS}
         sections={effectiveSections()}
+        defaultOpen={props.collapseTopLevelByDefault !== true}
         render={opinionsRender()}
         emptinessChecks={OPINIONS_EMPTINESS}
         counts={OPINIONS_COUNTS}

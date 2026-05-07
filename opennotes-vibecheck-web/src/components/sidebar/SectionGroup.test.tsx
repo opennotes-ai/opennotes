@@ -1413,6 +1413,19 @@ describe("Sidebar", () => {
     ).toBeDefined();
   });
 
+  it("collapses top-level groups by default when requested and still lets users expand them", async () => {
+    render(() => <Sidebar sections={{}} collapseTopLevelByDefault={true} />);
+
+    const safetyToggle = screen.getByTestId("section-toggle-Safety");
+    const safetyBody = screen.getByTestId("section-group-body-safety");
+    expect(safetyToggle.getAttribute("aria-expanded")).toBe("false");
+    expect(safetyBody.hasAttribute("hidden")).toBe(true);
+
+    await fireEvent.click(safetyToggle);
+    expect(safetyToggle.getAttribute("aria-expanded")).toBe("true");
+    expect(safetyBody.hasAttribute("hidden")).toBe(false);
+  });
+
   it("places aria-live on per-section status nodes only (not on the aside)", () => {
     render(() => <Sidebar sections={{}} />);
 

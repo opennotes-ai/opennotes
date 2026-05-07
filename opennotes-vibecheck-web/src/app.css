@@ -21,6 +21,15 @@
   50%      { opacity: 0.7; }
 }
 
+.skeleton-pulse-extra {
+  animation: skeleton-pulse-kf 2200ms cubic-bezier(0.4, 0, 0.2, 1) infinite;
+  animation-delay: 0ms;
+}
+
+.skeleton-pulse-extra-delay-1 { animation-delay: 80ms; }
+.skeleton-pulse-extra-delay-2 { animation-delay: 300ms; }
+.skeleton-pulse-extra-delay-3 { animation-delay: 520ms; }
+
 .skeleton-pulse {
   animation: skeleton-pulse-kf 1600ms ease-in-out infinite;
   animation-delay: 0s;
@@ -55,6 +64,10 @@
     animation: none;
     opacity: 0.55;
   }
+  .skeleton-pulse-extra {
+    animation: none;
+    opacity: 0.55;
+  }
   .skeleton-pulse-delay-1,
   .skeleton-pulse-delay-2,
   .skeleton-pulse-delay-3 {
@@ -69,6 +82,10 @@
 [data-cached-hint="1"] .skeleton-pulse,
 [data-cached-hint="1"] .skeleton-pulse-delay-1,
 [data-cached-hint="1"] .skeleton-pulse-delay-2,
-[data-cached-hint="1"] .skeleton-pulse-delay-3 {
+[data-cached-hint="1"] .skeleton-pulse-delay-3,
+[data-cached-hint="1"] .skeleton-pulse-extra,
+[data-cached-hint="1"] .skeleton-pulse-extra-delay-1,
+[data-cached-hint="1"] .skeleton-pulse-extra-delay-2,
+[data-cached-hint="1"] .skeleton-pulse-extra-delay-3 {
   opacity: 0;
 }
