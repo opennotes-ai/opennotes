@@ -12,6 +12,8 @@ import { fileURLToPath } from "node:url";
 import { stopWebProcess } from "./_helpers/web-process";
 
 const ARCHIVE_IMAGE_JOB_ID = "15360000-0002-7000-8000-000000000002";
+const DEFENSIVE_STYLES =
+  "<style>img,video,iframe{max-width:100%;height:auto}</style>";
 const ATTEMPT_ID = "15360000-9999-7000-8000-000000000999";
 const WEB_ROOT = fileURLToPath(new URL("../..", import.meta.url));
 const FIXTURE_ROOT = fileURLToPath(new URL("../fixtures/", import.meta.url));
@@ -164,7 +166,7 @@ test.beforeAll(async () => {
         "cache-control": "no-store, private",
         "content-type": "text/html; charset=utf-8",
       });
-      response.end(archiveHtml);
+      response.end(DEFENSIVE_STYLES + archiveHtml);
       return;
     }
     if (request.method === "GET" && requestUrl.pathname === "/api/screenshot") {
@@ -250,4 +252,29 @@ test("archive iframe preserves CSS-set image dimensions", async ({ page }) => {
   await expect
     .poll(async () => imageSize(page, '[data-fixture-image="inline"]'))
     .toEqual({ width: 300, height: 200 });
+});
+
+test("defensive stylesheet caps intrinsically-sized images to iframe width", async ({ page }) => {
+  await page.route(CSS_URL, async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "text/css; charset=utf-8",
+      body: archiveCss,
+    });
+  });
+
+  await page.goto(`${webBaseUrl}/analyze?job=${ARCHIVE_IMAGE_JOB_ID}`);
+  await expect(page.getByTestId("page-frame-archived-iframe")).toBeVisible({
+    timeout: 10_000,
+  });
+
+  const iframeBox = await page.getByTestId("page-frame-archived-iframe").boundingBox();
+  if (!iframeBox) throw new Error("iframe has no bounding box");
+
+  await expect
+    .poll(async () => {
+      const size = await imageSize(page, '[data-fixture-image="intrinsic"]');
+      return size.width;
+    })
+    .toBeLessThanOrEqual(iframeBox.width);
 });
