@@ -1,18 +1,20 @@
 from __future__ import annotations
 
-from src.routes.frame import _ARCHIVE_DISPLAY_STYLES, _archive_response
+from src.routes.frame import _archive_response
+
+_EXPECTED_DISPLAY_RULE = "img,video,iframe{max-width:100%;height:auto}"
 
 
 def test_archive_response_injects_defensive_stylesheet() -> None:
     response = _archive_response("<html><body></body></html>")
 
-    assert b"img,video,iframe{max-width:100%;height:auto}" in response.body
+    assert _EXPECTED_DISPLAY_RULE.encode() in bytes(response.body)
 
 
 def test_archive_response_stylesheet_precedes_html() -> None:
     response = _archive_response("<html><body>content</body></html>")
 
-    body = response.body.decode("utf-8")
+    body = bytes(response.body).decode("utf-8")
     assert "<style>" in body
     assert "<html>" in body
     assert body.index("<style>") < body.index("<html>")
@@ -26,7 +28,8 @@ def test_archive_response_headers() -> None:
     assert "default-src 'none'" in response.headers["content-security-policy"]
 
 
-def test_archive_display_styles_constant_value() -> None:
-    assert "img,video,iframe{max-width:100%;height:auto}" in _ARCHIVE_DISPLAY_STYLES
-    assert _ARCHIVE_DISPLAY_STYLES.startswith("<style>")
-    assert _ARCHIVE_DISPLAY_STYLES.endswith("</style>")
+def test_archive_response_stylesheet_is_wrapped_in_style_tag() -> None:
+    response = _archive_response("<html></html>")
+
+    body = bytes(response.body).decode("utf-8")
+    assert f"<style>{_EXPECTED_DISPLAY_RULE}</style>" in body
