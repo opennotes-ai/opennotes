@@ -756,6 +756,20 @@ def _minimal_slot_payloads() -> dict[SectionSlug, dict[str, Any]]:
                 "skipped_for_cap": 0,
             }
         },
+        SectionSlug.OPINIONS_SENTIMENTS_HIGHLIGHTS: {
+            "highlights_report": {
+                "highlights": [],
+                "threshold": {
+                    "total_authors": 0,
+                    "total_utterances": 0,
+                    "min_authors_required": 2,
+                    "min_occurrences_required": 3,
+                },
+                "fallback_engaged": False,
+                "floor_eligible_count": 0,
+                "total_input_count": 0,
+            }
+        },
     }
 
 

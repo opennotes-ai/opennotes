@@ -234,8 +234,9 @@ async def test_run_all_sections_writes_trends_oppositions_after_dedup(
 
     assert (
         run_order[-1]
-        == SectionSlug.OPINIONS_SENTIMENTS_TRENDS_OPPOSITIONS.value
+        == SectionSlug.OPINIONS_SENTIMENTS_HIGHLIGHTS.value
     )
+    assert SectionSlug.OPINIONS_SENTIMENTS_TRENDS_OPPOSITIONS.value in run_order
     assert trend_payloads
     assert trend_payloads[-1] is trends_oppositions_slot.FIRST_RUN_DEPENDENCY_PAYLOAD
     assert all(item is not None for item in fact_payloads)
@@ -625,6 +626,7 @@ async def test_run_section_retry_dedup_refreshes_all_dependent_slots(
         SectionSlug.FACTS_CLAIMS_PREMISES,
         SectionSlug.FACTS_CLAIMS_KNOWN_MISINFO,
         SectionSlug.OPINIONS_SENTIMENTS_TRENDS_OPPOSITIONS,
+        SectionSlug.OPINIONS_SENTIMENTS_HIGHLIGHTS,
     ]
 
 
