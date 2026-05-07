@@ -63,6 +63,7 @@ _ARCHIVE_CSP = (
     "font-src https: data:; frame-src 'none'; form-action 'none'; base-uri 'none'; "
     "frame-ancestors 'self'"
 )
+_ARCHIVE_DISPLAY_STYLES = "<style>img,video,iframe{max-width:100%;height:auto}</style>"
 
 _SELECT_PDF_ARCHIVE_SQL = """
 SELECT a.html, j.normalized_url AS gcs_key
@@ -436,7 +437,7 @@ async def _revalidate_archive_final_url(
 
 def _archive_response(html: str) -> Response:
     return Response(
-        content=html,
+        content=_ARCHIVE_DISPLAY_STYLES + html,
         headers={
             "content-type": "text/html; charset=utf-8",
             "cache-control": "no-store, private",
@@ -543,8 +544,9 @@ async def archive_preview(
         await _revalidate_archive_final_url(
             cached, original_url=url, scrape_cache=scrape_cache, tier=cached_tier or "scrape"
         )
+        display_html = strip_for_display(cached.html) or ""
         html = await _annotate_archive_html(
-            cached.html,
+            display_html,
             request=request,
             job_id=parsed_job_id,
             requested_url=url,
