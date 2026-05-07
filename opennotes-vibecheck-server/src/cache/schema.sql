@@ -234,9 +234,55 @@ ALTER TABLE public.vibecheck_jobs
 ALTER TABLE public.vibecheck_jobs
     ADD COLUMN IF NOT EXISTS weather_report JSONB;
 
--- TASK-1578.02: rewrite retired TruthLabel values in persisted sidebar
--- payloads before the stricter Pydantic enum reads them back. This preserves
+-- TASK-1578.02: rewrite retired TruthLabel values in persisted weather
+-- report JSON before the stricter Pydantic enum reads it back. This preserves
 -- the distinction between sourced factual claims and unsourced factual claims.
+UPDATE public.vibecheck_jobs
+SET weather_report = jsonb_set(
+    weather_report,
+    '{truth,label}',
+    CASE
+        WHEN weather_report->'truth'->>'label' = 'mostly_factual'
+            THEN '"factual_claims"'::jsonb
+        WHEN weather_report->'truth'->>'label' = 'self_reported'
+            THEN '"first_person"'::jsonb
+        ELSE weather_report->'truth'->'label'
+    END,
+    false
+)
+WHERE weather_report->'truth'->>'label'
+    IN ('mostly_factual', 'self_reported');
+
+UPDATE public.vibecheck_jobs vj
+SET weather_report = jsonb_set(
+    vj.weather_report,
+    '{truth,alternatives}',
+    (
+        SELECT jsonb_agg(
+            CASE
+                WHEN alt.value->>'label' = 'mostly_factual'
+                    THEN jsonb_set(alt.value, '{label}', '"factual_claims"'::jsonb, false)
+                WHEN alt.value->>'label' = 'self_reported'
+                    THEN jsonb_set(alt.value, '{label}', '"first_person"'::jsonb, false)
+                ELSE alt.value
+            END
+            ORDER BY alt.ordinality
+        )
+        FROM jsonb_array_elements(
+            vj.weather_report->'truth'->'alternatives'
+        ) WITH ORDINALITY AS alt(value, ordinality)
+    ),
+    false
+)
+WHERE jsonb_typeof(vj.weather_report->'truth'->'alternatives') = 'array'
+  AND EXISTS (
+      SELECT 1
+      FROM jsonb_array_elements(
+          vj.weather_report->'truth'->'alternatives'
+      ) alt
+      WHERE alt->>'label' IN ('mostly_factual', 'self_reported')
+  );
+
 UPDATE public.vibecheck_jobs
 SET sidebar_payload = jsonb_set(
     sidebar_payload,
