@@ -311,6 +311,24 @@ async def test_cache_fetch_failure_falls_back_to_full_api(caplog):
 
 
 @pytest.mark.asyncio
+async def test_all_images_unanalyzable_returns_empty_matches():
+    urls = [
+        "https://example.com/img1.jpg",
+        "https://example.com/img2.jpg",
+    ]
+    payload = _Payload([_Utterance("utt-1", urls)])
+    settings = _make_settings()
+
+    with patch(
+        "src.analyses.safety.image_moderation_worker.annotate_images",
+        new=AsyncMock(return_value=dict.fromkeys(urls)),
+    ):
+        result = await run_image_moderation(None, uuid4(), uuid4(), payload, settings)
+
+    assert result == {"matches": []}
+
+
+@pytest.mark.asyncio
 async def test_none_results_not_persisted_to_cache():
     payload = _Payload([
         _Utterance("utt-1", [

@@ -288,6 +288,77 @@ async def test_missing_token_raises_transient_error(no_token):
 
 
 @pytest.mark.asyncio
+async def test_batch_400_returns_none_for_every_url_in_batch(mock_token):
+    urls = [
+        "https://example.com/img1.jpg",
+        "https://example.com/img2.jpg",
+    ]
+
+    transport = _make_transport(
+        {("POST", ANNOTATE_URL): httpx.Response(400)}
+    )
+    async with httpx.AsyncClient(transport=transport) as client:
+        results = await annotate_images(urls, httpx_client=client)
+
+    assert results[urls[0]] is None
+    assert results[urls[1]] is None
+
+
+@pytest.mark.asyncio
+async def test_inline_fallback_400_returns_none(mock_token):
+    url = "https://cdn.example.com/restricted.jpg"
+    fake_image_bytes = b"FAKE_IMAGE_DATA"
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if str(request.url) == ANNOTATE_URL and request.method == "POST":
+            body = json.loads(request.content)
+            req = body["requests"][0]
+            if "source" in req["image"]:
+                return httpx.Response(200, json=_vision_error_response())
+            return httpx.Response(400)
+        if str(request.url) == url and request.method == "GET":
+            return httpx.Response(
+                200,
+                content=fake_image_bytes,
+                headers={"content-type": "image/jpeg"},
+            )
+        return httpx.Response(404)
+
+    transport = httpx.MockTransport(handler)
+    async with httpx.AsyncClient(transport=transport) as client:
+        results = await annotate_images([url], httpx_client=client)
+
+    assert results[url] is None
+
+
+@pytest.mark.asyncio
+async def test_inline_fallback_403_returns_none(mock_token):
+    url = "https://cdn.example.com/forbidden.jpg"
+    fake_image_bytes = b"FAKE_IMAGE_DATA"
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if str(request.url) == ANNOTATE_URL and request.method == "POST":
+            body = json.loads(request.content)
+            req = body["requests"][0]
+            if "source" in req["image"]:
+                return httpx.Response(200, json=_vision_error_response())
+            return httpx.Response(403)
+        if str(request.url) == url and request.method == "GET":
+            return httpx.Response(
+                200,
+                content=fake_image_bytes,
+                headers={"content-type": "image/jpeg"},
+            )
+        return httpx.Response(404)
+
+    transport = httpx.MockTransport(handler)
+    async with httpx.AsyncClient(transport=transport) as client:
+        results = await annotate_images([url], httpx_client=client)
+
+    assert results[url] is None
+
+
+@pytest.mark.asyncio
 async def test_inline_fallback_ssrf_guard_rejects_internal_url(mock_token):
     """Codex P0.1 regression: internal URL must not be fetched server-side.
 
@@ -319,3 +390,75 @@ async def test_inline_fallback_ssrf_guard_rejects_internal_url(mock_token):
     assert out == {url: None}
     # Primary annotate fires; inline fallback short-circuits with no second POST.
     assert len(posts) == 1
+
+
+@pytest.mark.asyncio
+async def test_inline_fallback_429_raises_transient_error(mock_token):
+    """Regression for AC #3: a 429 on the inline retry path must still raise
+    VisionTransientError so the slot worker retries the slot. Without this
+    test, swapping the 429 and 4xx branches in _retry_with_inline_bytes would
+    silently swallow rate limits.
+    """
+    url = "https://cdn.example.com/img.jpg"
+    fake_image_bytes = b"FAKE_IMAGE_DATA"
+    inline_call_count = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal inline_call_count
+        if str(request.url) == ANNOTATE_URL and request.method == "POST":
+            body = json.loads(request.content)
+            req = body["requests"][0]
+            if "source" in req["image"]:
+                return httpx.Response(200, json=_vision_error_response())
+            inline_call_count += 1
+            return httpx.Response(429)
+        if str(request.url) == url and request.method == "GET":
+            return httpx.Response(
+                200,
+                content=fake_image_bytes,
+                headers={"content-type": "image/jpeg"},
+            )
+        return httpx.Response(404)
+
+    transport = httpx.MockTransport(handler)
+    async with httpx.AsyncClient(transport=transport) as client:
+        with pytest.raises(VisionTransientError, match="vision-inline 429"):
+            await annotate_images([url], httpx_client=client)
+
+    assert inline_call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_inline_fallback_5xx_raises_transient_error(mock_token):
+    """Regression for AC #3: a 5xx on the inline retry path must still raise
+    VisionTransientError so the slot worker retries the slot. Without this
+    test, swapping the 5xx and 4xx branches in _retry_with_inline_bytes would
+    silently swallow server errors.
+    """
+    url = "https://cdn.example.com/img.jpg"
+    fake_image_bytes = b"FAKE_IMAGE_DATA"
+    inline_call_count = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal inline_call_count
+        if str(request.url) == ANNOTATE_URL and request.method == "POST":
+            body = json.loads(request.content)
+            req = body["requests"][0]
+            if "source" in req["image"]:
+                return httpx.Response(200, json=_vision_error_response())
+            inline_call_count += 1
+            return httpx.Response(503)
+        if str(request.url) == url and request.method == "GET":
+            return httpx.Response(
+                200,
+                content=fake_image_bytes,
+                headers={"content-type": "image/jpeg"},
+            )
+        return httpx.Response(404)
+
+    transport = httpx.MockTransport(handler)
+    async with httpx.AsyncClient(transport=transport) as client:
+        with pytest.raises(VisionTransientError, match="vision-inline 503"):
+            await annotate_images([url], httpx_client=client)
+
+    assert inline_call_count == 1
