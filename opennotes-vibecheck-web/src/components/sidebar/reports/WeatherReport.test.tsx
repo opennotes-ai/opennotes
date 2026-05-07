@@ -1,6 +1,17 @@
 import { createSignal } from "solid-js";
 import { afterEach, describe, expect, it } from "vitest";
-import { cleanup, render, screen, waitFor } from "@solidjs/testing-library";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@solidjs/testing-library";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@opennotes/ui/components/ui/tooltip";
 import type { components } from "~/lib/generated-types";
 import WeatherReport from "./WeatherReport";
 
@@ -51,6 +62,69 @@ describe("WeatherReport", () => {
     );
   });
 
+  it("renders ONE outer container, not three separate boxes", () => {
+    render(() => <WeatherReport report={makeWeatherReport()} />);
+
+    expect(screen.getAllByTestId("weather-report")).toHaveLength(1);
+    const root = screen.getByTestId("weather-report");
+    expect(root.contains(screen.getByTestId("weather-axis-card-truth"))).toBe(
+      true,
+    );
+    expect(
+      root.contains(screen.getByTestId("weather-axis-card-relevance")),
+    ).toBe(true);
+    expect(
+      root.contains(screen.getByTestId("weather-axis-card-sentiment")),
+    ).toBe(true);
+  });
+
+  it("uses Table primitive with three TableRows in TableBody and no TableHeader", () => {
+    render(() => <WeatherReport report={makeWeatherReport()} />);
+
+    const root = screen.getByTestId("weather-report");
+    const tbody = root.querySelector('[data-slot="table-body"]');
+    expect(tbody).not.toBeNull();
+    const rows = tbody!.querySelectorAll('[data-slot="table-row"]');
+    expect(rows.length).toBe(3);
+    expect(root.querySelector('[data-slot="table-header"]')).toBeNull();
+  });
+
+  it("removes inline axis heading text from the row chrome", () => {
+    render(() => <WeatherReport report={makeWeatherReport()} />);
+    const root = screen.getByTestId("weather-report");
+
+    for (const heading of ["Truth", "Relevance", "Sentiment"]) {
+      const matches = Array.from(
+        root.querySelectorAll<HTMLElement>("h1, h2, h3, h4, h5, h6"),
+      ).filter((node) => node.textContent?.trim() === heading);
+      expect(matches).toHaveLength(0);
+    }
+  });
+
+  it("renders tooltip content with the axis interpretation hint when opened", async () => {
+    render(() => (
+      <Tooltip open>
+        <TooltipTrigger as="span">trigger</TooltipTrigger>
+        <TooltipContent>
+          Truth — How factually grounded the claim is. Higher = better-sourced;
+          lower = misleading or unverified.
+        </TooltipContent>
+      </Tooltip>
+    ));
+
+    await screen.findByText(/Truth — How factually grounded/);
+  });
+
+  it("hovering a row emits pointerenter that Kobalte will use to open tooltip", () => {
+    render(() => <WeatherReport report={makeWeatherReport()} />);
+
+    const truthRow = screen.getByTestId("weather-axis-card-truth");
+    expect(() => {
+      fireEvent.pointerEnter(truthRow);
+      fireEvent.focus(truthRow);
+    }).not.toThrow();
+  });
+
   it("renders stable shimmer skeletons when report is null", () => {
     render(() => <WeatherReport report={null} />);
 
@@ -65,14 +139,19 @@ describe("WeatherReport", () => {
     ).toBeTruthy();
   });
 
-  it("does not impose a min-h-[110px] on the skeleton container or its cards", () => {
+  it("skeleton uses the unified Card+Table shape", () => {
+    render(() => <WeatherReport report={null} />);
+    const root = screen.getByTestId("weather-report-skeleton");
+    const tbody = root.querySelector('[data-slot="table-body"]');
+    expect(tbody).not.toBeNull();
+    const rows = tbody!.querySelectorAll('[data-slot="table-row"]');
+    expect(rows.length).toBe(3);
+  });
+
+  it("does not impose a min-h-[110px] on the skeleton container", () => {
     render(() => <WeatherReport report={null} />);
     const root = screen.getByTestId("weather-report-skeleton");
     expect(root.className).not.toContain("min-h-[110px]");
-    for (const axis of ["truth", "relevance", "sentiment"]) {
-      const card = screen.getByTestId(`weather-skeleton-${axis}`);
-      expect(card.className).not.toContain("min-h-[110px]");
-    }
   });
 
   it("uses Skeleton primitives, not legacy skeleton-pulse-extra classes", () => {
@@ -89,13 +168,13 @@ describe("WeatherReport", () => {
     expect(root.className).not.toContain("min-h-[110px]");
   });
 
-  it("real AxisCards keep their border and bg-card chrome", () => {
+  it("populated container keeps Card-style chrome (border + bg-card)", () => {
     render(() => <WeatherReport report={makeWeatherReport()} />);
-    const card = screen.getByTestId("weather-axis-card-truth");
-    const cls = card.className;
+    const root = screen.getByTestId("weather-report");
+    const cls = root.className;
     expect(cls).toContain("border");
     expect(cls).toContain("bg-card");
-    expect(cls).toContain("rounded-md");
+    expect(cls).toContain("rounded-lg");
   });
 
   it("keeps self-reported truth neutral, not amber or destructive", () => {
@@ -107,14 +186,17 @@ describe("WeatherReport", () => {
     expect(className).not.toContain("destructive");
   });
 
-  it("uses a horizontal row by default and accepts desktop rail classes", () => {
+  it("forwards consumer-provided class to the outer container", () => {
     render(() => (
-      <WeatherReport report={makeWeatherReport()} class="grid-cols-3 lg:grid-cols-1" />
+      <WeatherReport
+        report={makeWeatherReport()}
+        class="lg:max-w-md custom-rail"
+      />
     ));
 
     const className = screen.getByTestId("weather-report").className;
-    expect(className).toContain("grid-cols-3");
-    expect(className).toContain("lg:grid-cols-1");
+    expect(className).toContain("lg:max-w-md");
+    expect(className).toContain("custom-rail");
   });
 
   it("renders alternatives only when present", () => {

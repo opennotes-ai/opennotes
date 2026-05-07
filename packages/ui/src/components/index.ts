@@ -18,6 +18,7 @@ export * from "./ui/separator";
 export * from "./ui/sheet";
 export * from "./ui/skeleton";
 export { default as SortableHeader, type SortDirection } from "./ui/sortable-header";
+export * from "./ui/table";
 export * from "./ui/toggle";
 export * from "./ui/toggle-group";
 export * from "./ui/tooltip";
