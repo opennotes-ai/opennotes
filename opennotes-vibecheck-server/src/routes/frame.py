@@ -26,7 +26,7 @@ from src.firecrawl_client import (
 from src.jobs.pdf_storage import get_pdf_upload_store
 from src.jobs.scrape_quality import ScrapeQuality, classify_scrape
 from src.monitoring import get_logger
-from src.utils.html_sanitize import strip_for_display
+from src.utils.html_sanitize import extract_archive_main_content, strip_for_display
 from src.utils.url_security import InvalidURL, validate_public_http_url
 from src.utterances.annotate_html import annotate_utterances_in_html
 from src.utterances.lookup import get_utterances_for_archive
@@ -437,6 +437,25 @@ async def _revalidate_archive_final_url(
         raise
 
 
+def _archive_display_html(
+    cached_html: str | None, cached_markdown: str | None
+) -> str | None:
+    """Pick the archive iframe body for `cached_html`/`cached_markdown`.
+
+    TASK-1577.02 prefers main-content extraction so SPA-rendered pages
+    surface the post within the visible iframe viewport. Falls back to
+    the surgical `strip_for_display` so non-SPA pages keep working.
+    Returns None when both produce nothing usable; callers raise the
+    existing 502 so the frontend chains to the screenshot tab.
+    """
+    extracted = extract_archive_main_content(cached_html, cached_markdown)
+    if extracted:
+        return extracted
+    if cached_html:
+        return strip_for_display(cached_html)
+    return None
+
+
 def _archive_response(html: str) -> Response:
     m = _DOCTYPE_RE.match(html)
     content = (
@@ -552,7 +571,7 @@ async def archive_preview(
         await _revalidate_archive_final_url(
             cached, original_url=url, scrape_cache=scrape_cache, tier=cached_tier or "scrape"
         )
-        display_html = strip_for_display(cached.html)
+        display_html = _archive_display_html(cached.html, cached.markdown)
         if not display_html:
             raise HTTPException(status_code=502, detail="Archive unavailable")
         html = await _annotate_archive_html(
@@ -588,7 +607,7 @@ async def archive_preview(
         raise HTTPException(status_code=502, detail="Archive unavailable") from exc
 
     await _revalidate_archive_final_url(stored, original_url=url, scrape_cache=scrape_cache)
-    html = strip_for_display(stored.html) if stored.html else None
+    html = _archive_display_html(stored.html, stored.markdown)
     if not html:
         raise HTTPException(status_code=502, detail="Archive unavailable")
     html = await _annotate_archive_html(

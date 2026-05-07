@@ -706,7 +706,107 @@ class TestScreenshot:
         assert resp.json() == {"detail": "URL must be an http(s) URL"}
 
 
+_SPA_SHAPED_CACHED_HTML = (
+    "<!doctype html><html><body>"
+    "<div id='spa'>"
+    "  <div class='column'>"
+    "    <div class='search'><h4>Recent searches</h4>"
+    "      <p>No recent searches</p></div>"
+    "  </div>"
+    "  <div class='column'>"
+    "    <div class='banner'>"
+    "      <p><strong>example.social</strong> is one of the many "
+    "         independent Mastodon servers you can use to participate "
+    "         in the fediverse.</p>"
+    "      <h4>Server stats:</h4>"
+    "      <p><strong>2.4K</strong> active users</p>"
+    "    </div>"
+    "  </div>"
+    "  <div class='column'>"
+    "    <h1>Back</h1>"
+    "    <article class='status'>"
+    "      <header><strong>Author Name</strong> @author</header>"
+    "      <div class='status__content'>"
+    "        <p>Today's threads (a thread)</p>"
+    "        <p>Inside: an investigation into chrome offset bugs and the "
+    "           several paragraphs of substantive post body that should "
+    "           appear in the archive viewport ahead of any nav or banner "
+    "           text from the surrounding SPA shell.</p>"
+    "        <p>The 2026 Guelph Lecture on enshittification will explore "
+    "           how we can fix the internet by giving users back control. "
+    "           This paragraph is here so the extracted main content "
+    "           clears the substantial-content threshold comfortably.</p>"
+    "      </div>"
+    "    </article>"
+    "  </div>"
+    "</div>"
+    "</body></html>"
+)
+
+
 class TestArchivePreview:
+    def test_archive_preview_extracts_main_content_for_spa_shaped_html(
+        self, client: TestClient
+    ) -> None:
+        # TASK-1577.02: archive iframe for SPA-served pages must surface
+        # the post text ahead of site chrome. The route now runs
+        # extract_archive_main_content on cached.html before falling
+        # back to strip_for_display.
+        from src.cache.scrape_cache import CachedScrape
+
+        class StubCache:
+            async def get(
+                self, url: str, *, tier: str = "scrape"
+            ) -> CachedScrape | None:
+                if tier in {"browser_html", "interact"}:
+                    return None
+                return CachedScrape(html=_SPA_SHAPED_CACHED_HTML)
+
+        with patch("src.routes.frame.get_scrape_cache", return_value=StubCache()):
+            resp = client.get(
+                "/api/archive-preview",
+                params={"url": "https://example.social/@author/123"},
+            )
+
+        assert resp.status_code == 200
+        post_idx = resp.text.find("Today's threads")
+        chrome_idx = resp.text.find("Server stats")
+        recent_idx = resp.text.find("Recent searches")
+        assert post_idx > 0, "post text missing from archive response"
+        assert chrome_idx == -1 or post_idx < chrome_idx
+        assert recent_idx == -1 or post_idx < recent_idx
+
+    def test_archive_preview_falls_back_to_strip_when_extractor_under_threshold(
+        self, client: TestClient
+    ) -> None:
+        # When trafilatura yields content shorter than the substantial-content
+        # threshold and there is no markdown to render, the route falls back
+        # to the existing strip_for_display path so non-SPA pages keep
+        # working. Asserts via response text content rather than cache call
+        # bookkeeping (state-over-interactions per writing-better-tests).
+        from src.cache.scrape_cache import CachedScrape
+
+        small_html = "<html><body><p>tiny</p></body></html>"
+
+        class StubCache:
+            async def get(
+                self, url: str, *, tier: str = "scrape"
+            ) -> CachedScrape | None:
+                if tier in {"browser_html", "interact"}:
+                    return None
+                return CachedScrape(html=small_html)
+
+        with patch("src.routes.frame.get_scrape_cache", return_value=StubCache()):
+            resp = client.get(
+                "/api/archive-preview",
+                params={"url": "https://example.com/tiny"},
+            )
+
+        assert resp.status_code == 200
+        # `strip_for_display` round-trips the body through bs4 — the literal
+        # `<p>tiny</p>` survives intact.
+        assert "<p>tiny</p>" in resp.text
+
     def test_cached_interact_html_served_when_scrape_tier_is_superficially_ok(
         self, client: TestClient
     ) -> None:

@@ -69,8 +69,15 @@ async def full_schema_conn(
         await conn.execute(f"DROP TABLE IF EXISTS {table} CASCADE")
     for fn in (
         "public.exec_sql(text)",
+        # Pre-TASK-1577.01 14-arg signature: drop guarded by IF EXISTS so this
+        # cleanup is a no-op once the new 15-arg form is the only one present.
         "public.vibecheck_upsert_scrape_if_not_evicted("
         "text, text, text, text, text, text, text, text, text, text, "
+        "timestamp with time zone, timestamp with time zone, "
+        "timestamp with time zone, integer)",
+        # Post-TASK-1577.01 15-arg signature with p_raw_html.
+        "public.vibecheck_upsert_scrape_if_not_evicted("
+        "text, text, text, text, text, text, text, text, text, text, text, "
         "timestamp with time zone, timestamp with time zone, "
         "timestamp with time zone, integer)",
         "public.vibecheck_sweep_orphan_jobs()",
@@ -289,7 +296,7 @@ async def test_atomic_scrape_upsert_rpc_respects_newer_tombstone(
     wrote = await full_schema_conn.fetchval(
         """
         SELECT public.vibecheck_upsert_scrape_if_not_evicted(
-            $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14
+            $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15
         )
         """,
         "https://example.com/rpc",
@@ -301,7 +308,8 @@ async def test_atomic_scrape_upsert_rpc_respects_newer_tombstone(
         "RPC",
         "fresh",
         "<main>fresh</main>",
-        None,
+        None,  # p_raw_html (TASK-1577.01)
+        None,  # p_screenshot_storage_key
         now,
         now + timedelta(hours=72),
         now,
@@ -329,7 +337,7 @@ async def test_atomic_scrape_upsert_rpc_respects_newer_tombstone(
         wrote_after_tombstone = await full_schema_conn.fetchval(
             """
             SELECT public.vibecheck_upsert_scrape_if_not_evicted(
-                $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14
+                $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15
             )
             """,
             "https://example.com/rpc",
@@ -341,7 +349,8 @@ async def test_atomic_scrape_upsert_rpc_respects_newer_tombstone(
             "RPC",
             "resurrected",
             "<main>resurrected</main>",
-            None,
+            None,  # p_raw_html (TASK-1577.01)
+            None,  # p_screenshot_storage_key
             tombstone_time + timedelta(seconds=1),
             tombstone_time + timedelta(hours=72),
             tombstone_time - timedelta(seconds=2),
