@@ -13,7 +13,7 @@ import asyncio
 import random
 from collections.abc import Mapping, Sequence
 from functools import lru_cache
-from typing import Any, Final, Literal, TypedDict, TypeVar, cast, overload
+from typing import Any, Final, Literal, TypedDict, TypeVar, overload
 
 import logfire
 from pydantic import BaseModel
@@ -122,7 +122,7 @@ def build_agent(
         kwargs["builtin_tools"] = builtin_tools
     if name is not None:
         kwargs["name"] = name
-    if logprobs:
+    if logprobs or top_logprobs is not None:
         model_settings: GoogleModelSettings = {"google_logprobs": True}
         if top_logprobs is not None:
             model_settings["google_top_logprobs"] = top_logprobs
@@ -144,7 +144,10 @@ def extract_google_logprobs(
 
     Returns ``None`` when provider details are absent or malformed.
     """
-    response = getattr(result, "response", None)
+    try:
+        response = result.response
+    except Exception:
+        return None
     provider_details = getattr(response, "provider_details", None) if response is not None else None
 
     if not isinstance(provider_details, Mapping):
@@ -156,9 +159,11 @@ def extract_google_logprobs(
 
     payload: GoogleLogprobs = {"logprobs": raw_logprobs}
     avg_logprobs = provider_details.get("avg_logprobs")
-    if avg_logprobs is not None:
-        avg_logprobs = cast(float, avg_logprobs)
-        payload["avg_logprobs"] = avg_logprobs
+    if avg_logprobs is None:
+        return payload
+    if not isinstance(avg_logprobs, (int, float)):
+        return None
+    payload["avg_logprobs"] = float(avg_logprobs)
     return payload
 
 
