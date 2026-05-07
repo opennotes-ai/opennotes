@@ -10,7 +10,6 @@ Brown & Levinson 1987).
 from __future__ import annotations
 
 import json
-from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any, cast
 from uuid import UUID
@@ -20,13 +19,7 @@ from src.analyses.opinions._highlights_schemas import OpinionsHighlightsReport
 from src.analyses.opinions._schemas import SentimentStatsReport, SubjectiveClaim
 from src.analyses.opinions._trends_schemas import TrendsOppositionsReport
 from src.analyses.schemas import PageKind
-from src.analyses.synthesis._weather_schemas import (
-    RelevanceLabel,
-    TruthLabel,
-    WeatherAxis,
-    WeatherAxisAlternative,
-    WeatherReport,
-)
+from src.analyses.synthesis._weather_schemas import WeatherAxis, WeatherReport
 from src.analyses.tone._flashpoint_schemas import FlashpointMatch
 from src.analyses.tone._scd_schemas import SCDReport
 from src.config import Settings
@@ -67,8 +60,7 @@ Rules for truth:
 Few-shot fixtures:
 1) Self-reporting fixture
 input: {
-  "transcript_excerpt": "I was sick after this, then rested more and felt better.
-  This is what happened to me personally."
+  "transcript_excerpt": "I was sick after this, then rested more and felt better. This is what happened to me personally."
 }
 output: {
   "truth": {"label": "self_reported"},
@@ -78,8 +70,7 @@ output: {
 
 2) Mixed sourced + self-reported fixture
 input: {
-  "transcript_excerpt": "A clinical report at https://example.edu/notes says
-  sleep improves mood. I tried that routine and it helped me feel calmer."
+  "transcript_excerpt": "A clinical report at https://example.edu/notes says sleep improves mood. I tried that routine and it helped me feel calmer."
 }
 output: {
   "truth": {"label": "self_reported"},
@@ -93,22 +84,6 @@ relevance: insightful | on_topic | chatty | drifting | off_topic
 sentiment: free-form stance token such as supportive, neutral, critical, oppositional
 
 Use JSON only. Return a strict `WeatherReport` object."""
-
-
-_TRUTH_LABELS = {
-    "sourced",
-    "mostly_factual",
-    "self_reported",
-    "hearsay",
-    "misleading",
-}
-_RELEVANCE_LABELS = {
-    "insightful",
-    "on_topic",
-    "chatty",
-    "drifting",
-    "off_topic",
-}
 
 
 @dataclass
@@ -163,157 +138,30 @@ def _coerce_logprob(value: Any) -> float | None:
     return float(value)
 
 
-def _coerce_reliably_mapped_alternatives(
-    raw: Any,
-    *,
-    allowed_labels: set[str] | None = None,
-) -> list[WeatherAxisAlternative[str]] | None:
-    if raw is None:
-        return []
-
-    candidate_pairs: list[tuple[str, float]] = []
-    raw_items: list[tuple[Any, Any]] = []
-
-    if isinstance(raw, Mapping):
-        raw_items = list(raw.items())
-    elif isinstance(raw, list):
-        for item in raw:
-            if not isinstance(item, Mapping):
-                return None
-            raw_label = item.get("label")
-            if not isinstance(raw_label, str):
-                raw_label = item.get("token")
-            raw_prob = item.get("logprob")
-            raw_items.append((raw_label, raw_prob))
-    else:
-        return None
-
-    is_valid = True
-    for raw_label, raw_prob in raw_items:
-        if not isinstance(raw_label, str):
-            is_valid = False
-            break
-        if allowed_labels is not None and raw_label not in allowed_labels:
-            is_valid = False
-            break
-        prob = _coerce_logprob(raw_prob)
-        if prob is None:
-            is_valid = False
-            break
-        candidate_pairs.append((raw_label, prob))
-
-    if not is_valid:
-        return None
-
-    return [
-        WeatherAxisAlternative[str](label=label, logprob=prob)
-        for label, prob in candidate_pairs
-    ]
-
-
-def _parse_axis_logprob(
-    data: Mapping[str, Any] | None,
-    *,
-    allowed_labels: set[str] | None = None,
-) -> tuple[float | None, list[WeatherAxisAlternative[str]], bool]:
-    if not isinstance(data, Mapping):
-        return None, [], False
-
-    axis_logprob = _coerce_logprob(data.get("logprob"))
-
-    alternatives = _coerce_reliably_mapped_alternatives(
-        data.get("top_logprobs"),
-        allowed_labels=allowed_labels,
-    )
-    if alternatives is None:
-        return axis_logprob, [], False
-
-    return axis_logprob, alternatives, True
-
-
-def _replace_axis_with_best_effort_logprobs(
-    axis: WeatherAxis[TruthLabel] | WeatherAxis[RelevanceLabel] | WeatherAxis[str],
-    *,
-    logprob: float | None,
-    alternatives: list[WeatherAxisAlternative[Any]],
-) -> WeatherAxis[Any]:
-    return WeatherAxis[Any](
-        label=axis.label,
-        logprob=logprob,
-        alternatives=alternatives,
-    )
+def _axis_with_empty_alternatives(label: Any, logprob: float | None) -> WeatherAxis[Any]:
+    return WeatherAxis[Any](label=label, logprob=logprob, alternatives=[])
 
 
 def _attach_logprobs(
     report: WeatherReport,
     metadata: GoogleLogprobs | None,
 ) -> WeatherReport:
-    if metadata is None:
+    # Google/pydantic-ai returns logprob metadata at the output level only;
+    # there is no reliable per-axis path today.
+    avg_logprob = _coerce_logprob(metadata.get("avg_logprobs")) if metadata else None
+    if avg_logprob is None:
         return WeatherReport(
-            truth=WeatherAxis(
-                label=report.truth.label,
-                logprob=None,
-                alternatives=[],
-            ),
-            relevance=WeatherAxis(
-                label=report.relevance.label,
-                logprob=None,
-                alternatives=[],
-            ),
-            sentiment=WeatherAxis(
-                label=report.sentiment.label,
-                logprob=None,
-                alternatives=[],
-            ),
+            truth=_axis_with_empty_alternatives(report.truth.label, None),
+            relevance=_axis_with_empty_alternatives(report.relevance.label, None),
+            sentiment=_axis_with_empty_alternatives(report.sentiment.label, None),
         )
 
-    raw_logprobs = metadata.get("logprobs")
-    if not isinstance(raw_logprobs, Mapping):
-        return WeatherReport(
-            truth=WeatherAxis(label=report.truth.label, logprob=None, alternatives=[]),
-            relevance=WeatherAxis(label=report.relevance.label, logprob=None, alternatives=[]),
-            sentiment=WeatherAxis(label=report.sentiment.label, logprob=None, alternatives=[]),
-        )
-
-    truth_logprob, truth_alternatives, truth_mapped = _parse_axis_logprob(
-        cast(Mapping[str, Any] | None, raw_logprobs.get("truth")),
-        allowed_labels=_TRUTH_LABELS,
-    )
-    relevance_logprob, relevance_alternatives, relevance_mapped = _parse_axis_logprob(
-        cast(Mapping[str, Any] | None, raw_logprobs.get("relevance")),
-        allowed_labels=_RELEVANCE_LABELS,
-    )
-    sentiment_logprob, sentiment_alternatives, sentiment_mapped = _parse_axis_logprob(
-        cast(Mapping[str, Any] | None, raw_logprobs.get("sentiment")),
-    )
-
-    mapped_axes = truth_mapped and relevance_mapped and sentiment_mapped
-    avg_logprob = _coerce_logprob(metadata.get("avg_logprobs"))
-    if not mapped_axes and avg_logprob is not None:
-        # Best-effort output-level confidence when per-axis mapping is unavailable.
-        truth_logprob = avg_logprob
-        relevance_logprob = avg_logprob
-        sentiment_logprob = avg_logprob
-        truth_alternatives = []
-        relevance_alternatives = []
-        sentiment_alternatives = []
-
+    # Best-effort coarse confidence: copy output-level score to all axes.
+    # v1 keeps `alternatives=[]` until a dependable alternatives mapping exists.
     return WeatherReport(
-        truth=_replace_axis_with_best_effort_logprobs(
-            report.truth,
-            logprob=truth_logprob,
-            alternatives=truth_alternatives,
-        ),
-        relevance=_replace_axis_with_best_effort_logprobs(
-            report.relevance,
-            logprob=relevance_logprob,
-            alternatives=relevance_alternatives,
-        ),
-        sentiment=_replace_axis_with_best_effort_logprobs(
-            report.sentiment,
-            logprob=sentiment_logprob,
-            alternatives=sentiment_alternatives,
-        ),
+        truth=_axis_with_empty_alternatives(report.truth.label, avg_logprob),
+        relevance=_axis_with_empty_alternatives(report.relevance.label, avg_logprob),
+        sentiment=_axis_with_empty_alternatives(report.sentiment.label, avg_logprob),
     )
 
 
