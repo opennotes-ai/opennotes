@@ -158,6 +158,42 @@ def _minimal_done_sections() -> dict[SectionSlug, SectionSlot]:
                 }
             }
         ),
+        SectionSlug.OPINIONS_SENTIMENTS_HIGHLIGHTS: _done_slot(
+            {
+                "highlights_report": {
+                    "highlights": [],
+                    "threshold": {
+                        "total_authors": 0,
+                        "total_utterances": 0,
+                        "min_authors_required": 0,
+                        "min_occurrences_required": 0,
+                    },
+                    "fallback_engaged": False,
+                    "floor_eligible_count": 0,
+                    "total_input_count": 0,
+                }
+            }
+        ),
+    }
+
+
+def _weather_report_dict() -> dict[str, Any]:
+    return {
+        "truth": {
+            "label": "sourced",
+            "alternatives": [{"label": "mostly_factual", "logprob": 0.05}],
+            "logprob": 0.82,
+        },
+        "relevance": {
+            "label": "insightful",
+            "alternatives": [{"label": "on_topic", "logprob": 0.1}],
+            "logprob": 0.76,
+        },
+        "sentiment": {
+            "label": "supportive",
+            "alternatives": [{"label": "positive", "logprob": 0.18}],
+            "logprob": 0.93,
+        },
     }
 
 
@@ -307,6 +343,42 @@ async def test_maybe_finalize_job_round_trips_utterance_timestamps_to_sidebar_pa
         payload_dict["utterances"][0]["timestamp"].replace("Z", "+00:00")
     ) == timestamp
     assert payload_dict["utterances"][1]["timestamp"] is None
+
+
+@pytest.mark.asyncio
+async def test_maybe_finalize_job_round_trips_weather_report_to_sidebar_payload(
+    db_pool: Any,
+) -> None:
+    task_attempt = uuid4()
+    weather_report = _weather_report_dict()
+    job_id = await _insert_job(
+        db_pool,
+        attempt_id=task_attempt,
+        url="https://example.com/weathered-thread",
+    )
+
+    async with db_pool.acquire() as conn:
+        await conn.execute(
+            "UPDATE vibecheck_jobs SET weather_report = $2::jsonb WHERE job_id = $1",
+            job_id,
+            json.dumps(weather_report),
+        )
+
+    finalized = await maybe_finalize_job(
+        db_pool,
+        job_id,
+        expected_task_attempt=task_attempt,
+    )
+
+    assert finalized is True
+    async with db_pool.acquire() as conn:
+        payload = await conn.fetchval(
+            "SELECT sidebar_payload FROM vibecheck_jobs WHERE job_id = $1",
+            job_id,
+        )
+
+    payload_dict = json.loads(payload) if isinstance(payload, str) else dict(payload)
+    assert payload_dict["weather_report"] == weather_report
 
 
 class TestAssemblePayloadWiresNewSafetySections:
