@@ -150,7 +150,7 @@ function completedSidebarPayload(opts: {
   };
   const weather = opts.withWeather
     ? {
-        truth: { label: "self_reported", logprob: null, alternatives: [] },
+        truth: { label: "first_person", logprob: null, alternatives: [] },
         relevance: { label: "on_topic", logprob: null, alternatives: [] },
         sentiment: { label: "neutral", logprob: null, alternatives: [] },
       }

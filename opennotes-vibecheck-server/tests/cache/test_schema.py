@@ -381,6 +381,27 @@ class TestIdempotency:
             "ALTER TABLE public.vibecheck_jobs\n    ADD COLUMN IF NOT EXISTS weather_report JSONB"
         ) in schema_sql
 
+    def test_retired_truth_labels_are_rewritten_in_weather_jsonb(self, schema_sql: str) -> None:
+        assert "TASK-1578.02: rewrite retired TruthLabel values" in schema_sql
+        assert "weather_report->'truth'->>'label' = 'mostly_factual'" in schema_sql
+        assert "weather_report->'truth'->>'label' = 'self_reported'" in schema_sql
+        assert "'{truth,label}'" in schema_sql
+        assert "'{truth,alternatives}'" in schema_sql
+        assert "jsonb_typeof(vj.weather_report->'truth'->'alternatives') = 'array'" in schema_sql
+        assert "sidebar_payload->'weather_report'->'truth'->>'label' = 'mostly_factual'" in schema_sql
+        assert "sidebar_payload->'weather_report'->'truth'->>'label' = 'self_reported'" in schema_sql
+        assert "'{weather_report,truth,label}'" in schema_sql
+        assert "'{weather_report,truth,alternatives}'" in schema_sql
+        assert "'\"factual_claims\"'::jsonb" in schema_sql
+        assert "'\"first_person\"'::jsonb" in schema_sql
+        assert "jsonb_array_elements(" in schema_sql
+        assert (
+            "jsonb_typeof(vj.sidebar_payload->'weather_report'->'truth'->'alternatives') = 'array'"
+            in schema_sql
+        )
+        assert "alt.value->>'label' = 'mostly_factual'" in schema_sql
+        assert "alt.value->>'label' = 'self_reported'" in schema_sql
+
 
 class TestWebRiskLookupsTable:
     def test_create_table_if_not_exists(self, schema_sql: str) -> None:

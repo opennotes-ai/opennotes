@@ -198,7 +198,7 @@ def _inputs(*, page_title: str = "Example page", transcript_excerpt: str) -> Wea
 
 
 async def test_evaluate_weather_builds_weather_agent(monkeypatch):
-    agent = StubAgent(_report(truth="self_reported"))
+    agent = StubAgent(_report(truth="first_person"))
     settings = Settings()
     build_calls: list[tuple[Any, ...]] = []
 
@@ -217,7 +217,7 @@ async def test_evaluate_weather_builds_weather_agent(monkeypatch):
         job_id=UUID(int=1),
     )
 
-    assert result.truth.label == "self_reported"
+    assert result.truth.label == "first_person"
     assert build_calls == [
         (
             settings,
@@ -231,7 +231,7 @@ async def test_evaluate_weather_builds_weather_agent(monkeypatch):
 
 
 async def test_evaluate_weather_does_not_request_logprobs(monkeypatch):
-    agent = StubAgent(_report(truth="self_reported"))
+    agent = StubAgent(_report(truth="first_person"))
     captured_kwargs: dict[str, Any] = {}
 
     def fake_build_agent(_settings, **kwargs):
@@ -287,7 +287,7 @@ async def test_evaluate_weather_propagates_vertex_400_when_model_rejects_logprob
 
 
 async def test_evaluate_weather_serializes_enriched_inputs(monkeypatch):
-    agent = StubAgent(_report(truth="self_reported", relevance="on_topic"))
+    agent = StubAgent(_report(truth="first_person", relevance="on_topic"))
     monkeypatch.setattr(
         "src.analyses.synthesis.weather_report_agent.build_agent",
         lambda *args, **kwargs: agent,
@@ -357,8 +357,8 @@ async def test_evaluate_weather_serializes_missing_optional_inputs_as_null(monke
 
 
 @pytest.mark.parametrize("transcript", [SELF_REPORTED_TRANSCRIPT, MIXED_TRANSCRIPT])
-async def test_eval_weather_prompt_and_payload_preserve_self_reporting_inputs(monkeypatch, transcript: str):
-    agent = StubAgent(_report(truth="self_reported"))
+async def test_eval_weather_prompt_and_payload_preserve_first_person_inputs(monkeypatch, transcript: str):
+    agent = StubAgent(_report(truth="first_person"))
     monkeypatch.setattr(
         "src.analyses.synthesis.weather_report_agent.build_agent",
         lambda *args, **kwargs: agent,
@@ -372,14 +372,14 @@ async def test_eval_weather_prompt_and_payload_preserve_self_reporting_inputs(mo
 
     payload = json.loads(agent.prompts[0])
     assert transcript in payload["transcript_excerpt"]
-    assert "self_reported" in WEATHER_SYSTEM_PROMPT
-    assert "Self-reporting fixture" in WEATHER_SYSTEM_PROMPT
-    assert result.truth.label == "self_reported"
+    assert "first_person" in WEATHER_SYSTEM_PROMPT
+    assert "First-person fixture" in WEATHER_SYSTEM_PROMPT
+    assert result.truth.label == "first_person"
 
 
 async def test_evaluate_weather_missing_logprobs_returns_none_and_empty_alternatives(monkeypatch):
     report = WeatherReport(
-        truth=WeatherAxis(label="self_reported", logprob=0.93),
+        truth=WeatherAxis(label="first_person", logprob=0.93),
         relevance=WeatherAxis(label="on_topic", logprob=0.91),
         sentiment=WeatherAxis(label="supportive", logprob=0.75),
     )
@@ -405,7 +405,7 @@ async def test_evaluate_weather_missing_logprobs_returns_none_and_empty_alternat
 
 async def test_evaluate_weather_applies_output_level_avg_logprob(monkeypatch):
     agent = StubAgent(
-        _report(truth="self_reported"),
+        _report(truth="first_person"),
         provider_details={
             "logprobs": {"token_count": 42},
             "avg_logprobs": -0.12,
@@ -432,11 +432,11 @@ async def test_evaluate_weather_applies_output_level_avg_logprob(monkeypatch):
 
 async def test_evaluate_weather_keeps_alternatives_empty_even_with_top_candidates(monkeypatch):
     agent = StubAgent(
-        _report(truth="self_reported"),
+        _report(truth="first_person"),
         provider_details={
             "logprobs": {
                 "top_logprobs": [
-                    {"token": "self_reported", "logprob": -0.09},
+                    {"token": "first_person", "logprob": -0.09},
                     {"token": "sourced", "logprob": -1.2},
                 ],
             },
@@ -470,6 +470,19 @@ def test_weather_system_prompt_cites_lineage_and_teaches_few_shot_rules():
     assert "biber & finegan 1989" in lowered
     assert "dubois 2007" in lowered
     assert "brown & levinson 1987" in lowered
-    assert "self-reporting fixture" in lowered
-    assert "mixed sourced + self-reported fixture" in lowered
-    assert '"truth": {"label": "self_reported"}' in lowered
+    assert "first-person fixture" in lowered
+    assert "mixed sourced + first-person fixture" in lowered
+    assert '"truth": {"label": "first_person"}' in lowered
+
+
+def test_weather_system_prompt_uses_epistemic_stance_truth_framing() -> None:
+    assert (
+        "truth: sourced | factual_claims | first_person | hearsay | misleading"
+        in WEATHER_SYSTEM_PROMPT
+    )
+    assert "mostly_factual" not in WEATHER_SYSTEM_PROMPT
+    assert "self_reported" not in WEATHER_SYSTEM_PROMPT
+    assert "strongly likely false" not in WEATHER_SYSTEM_PROMPT
+    assert "evidence is directly contradicted" not in WEATHER_SYSTEM_PROMPT
+    assert "factual_claims` when claims are factual in nature" in WEATHER_SYSTEM_PROMPT
+    assert "first_person` when the speaker presents their own first-person" in WEATHER_SYSTEM_PROMPT

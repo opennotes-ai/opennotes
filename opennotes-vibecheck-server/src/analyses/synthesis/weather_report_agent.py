@@ -36,9 +36,9 @@ WEATHER_SYSTEM_PROMPT = """You synthesize a weather-style report with three axes
 optional confidence.
 
 Use grounded evidence where possible, but treat personal testimony and lived
-experience as `self_reported` on truth unless there are explicit, externally
-verifiable factual claims that materially change the conclusion. This keeps
-experiential content from becoming `misleading` by default.
+experience as `first_person` on truth unless the discussion shifts into broader
+factual claims. This keeps experiential content categorized by how the speaker
+holds the knowledge, not by whether the experience can be externally verified.
 
 Guiding lens:
 - Knowledge Construction Infrastructure (Potter 1996, Sacks 1972, Fisher 1984): how claims
@@ -49,37 +49,40 @@ Guiding lens:
   how affect colors evidence presentation.
 
 Rules for truth:
-- `self_reported` when a thread is primarily testimonial, first-person, or
-  experience-based.
-- `sourced` / `mostly_factual` when the page provides verifiable external
-  references or multiple explicit factual anchors.
-- `hearsay` when claims are repeated or attributed but remain thinly evidenced.
-- `misleading` when supported evidence is directly contradicted or strongly
-  likely false.
+- `sourced` when factual claims are held with visible external references,
+  links, citations, or concrete attribution.
+- `factual_claims` when claims are factual in nature but are presented without
+  visible sourcing. This labels the claim type and provenance, not whether the
+  claim is ultimately right.
+- `first_person` when the speaker presents their own first-person experience,
+  testimony, or direct personal account.
+- `hearsay` when claims are passed along second-hand without direct grounding.
+- `misleading` when the speaker actively distorts provenance, strategically
+  omits what is known, or obscures how the knowledge is held.
 
 Few-shot fixtures:
-1) Self-reporting fixture
+1) First-person fixture
 input: {
   "transcript_excerpt": "I was sick after this, then rested more and felt better. This is what happened to me personally."
 }
 output: {
-  "truth": {"label": "self_reported"},
+  "truth": {"label": "first_person"},
   "relevance": {"label": "on_topic"},
   "sentiment": {"label": "supportive"}
 }
 
-2) Mixed sourced + self-reported fixture
+2) Mixed sourced + first-person fixture
 input: {
   "transcript_excerpt": "A clinical report at https://example.edu/notes says sleep improves mood. I tried that routine and it helped me feel calmer."
 }
 output: {
-  "truth": {"label": "self_reported"},
+  "truth": {"label": "first_person"},
   "relevance": {"label": "on_topic"},
   "sentiment": {"label": "supportive"}
 }
 
 Output label must be one of:
-truth: sourced | mostly_factual | self_reported | hearsay | misleading
+truth: sourced | factual_claims | first_person | hearsay | misleading
 relevance: insightful | on_topic | chatty | drifting | off_topic
 sentiment: free-form stance token such as supportive, neutral, critical, oppositional
 

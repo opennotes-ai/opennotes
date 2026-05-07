@@ -2942,8 +2942,8 @@
             "type": "string",
             "enum": [
               "sourced",
-              "mostly_factual",
-              "self_reported",
+              "factual_claims",
+              "first_person",
               "hearsay",
               "misleading"
             ],
@@ -3035,8 +3035,8 @@
             "type": "string",
             "enum": [
               "sourced",
-              "mostly_factual",
-              "self_reported",
+              "factual_claims",
+              "first_person",
               "hearsay",
               "misleading"
             ],

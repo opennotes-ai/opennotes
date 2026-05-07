@@ -11,8 +11,8 @@ LabelT = TypeVar("LabelT")
 
 TruthLabel = Literal[
     "sourced",
-    "mostly_factual",
-    "self_reported",
+    "factual_claims",
+    "first_person",
     "hearsay",
     "misleading",
 ]
@@ -24,10 +24,10 @@ RelevanceLabel = Literal["insightful", "on_topic", "chatty", "drifting", "off_to
 def _weather_schema_name(title: str) -> str | None:
     return {
         "WeatherAxisAlternative[Literal['insightful', 'on_topic', 'chatty', 'drifting', 'off_topic']]": "WeatherAxisAlternativeRelevance",
-        "WeatherAxisAlternative[Literal['sourced', 'mostly_factual', 'self_reported', 'hearsay', 'misleading']]": "WeatherAxisAlternativeTruth",
+        "WeatherAxisAlternative[Literal['sourced', 'factual_claims', 'first_person', 'hearsay', 'misleading']]": "WeatherAxisAlternativeTruth",
         "WeatherAxisAlternative[str]": "WeatherAxisAlternativeSentiment",
         "WeatherAxis[Literal['insightful', 'on_topic', 'chatty', 'drifting', 'off_topic']]": "WeatherAxisRelevance",
-        "WeatherAxis[Literal['sourced', 'mostly_factual', 'self_reported', 'hearsay', 'misleading']]": "WeatherAxisTruth",
+        "WeatherAxis[Literal['sourced', 'factual_claims', 'first_person', 'hearsay', 'misleading']]": "WeatherAxisTruth",
         "WeatherAxis[str]": "WeatherAxisSentiment",
     }.get(title)
 

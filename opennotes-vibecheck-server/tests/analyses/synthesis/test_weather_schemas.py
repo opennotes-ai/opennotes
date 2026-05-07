@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from typing import get_args
 
 import pytest
 from fastapi.testclient import TestClient
@@ -59,7 +60,7 @@ def _weather_report() -> WeatherReport:
         truth=WeatherAxis[TruthLabel](
             label="sourced",
             logprob=0.87,
-            alternatives=[WeatherAxisAlternative[TruthLabel](label="mostly_factual", logprob=0.08)],
+            alternatives=[WeatherAxisAlternative[TruthLabel](label="factual_claims", logprob=0.08)],
         ),
         relevance=WeatherAxis[RelevanceLabel](
             label="insightful",
@@ -78,7 +79,7 @@ def test_weather_report_accepts_generic_axis_instances():
     report = WeatherReport(
         truth=WeatherAxis[TruthLabel](
             label="sourced",
-            alternatives=[WeatherAxisAlternative[TruthLabel](label="mostly_factual")],
+            alternatives=[WeatherAxisAlternative[TruthLabel](label="first_person")],
         ),
         relevance=WeatherAxis[RelevanceLabel](
             label="insightful",
@@ -105,7 +106,17 @@ def test_weather_report_round_trips_via_sidebar_payload_validation():
     assert payload.weather_report.sentiment.label == "supportive"
     dumped = payload.model_dump()
     assert dumped["weather_report"] is not None
-    assert dumped["weather_report"]["truth"]["alternatives"][0]["label"] == "mostly_factual"
+    assert dumped["weather_report"]["truth"]["alternatives"][0]["label"] == "factual_claims"
+
+
+def test_truth_label_contract_has_five_epistemic_stance_values() -> None:
+    assert get_args(TruthLabel) == (
+        "sourced",
+        "factual_claims",
+        "first_person",
+        "hearsay",
+        "misleading",
+    )
 
 
 def test_weather_report_optional_in_sidebar_payload_is_backward_compatible():

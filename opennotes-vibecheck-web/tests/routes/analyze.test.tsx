@@ -1968,7 +1968,7 @@ describe("AnalyzePage headline summary mount (TASK-1483.13.10)", () => {
             unavailable_inputs: [],
           },
           weather_report: makeWeatherReport({
-            truth: { label: "self_reported", alternatives: [] },
+            truth: { label: "first_person", alternatives: [] },
             relevance: { label: "insightful", alternatives: [] },
             sentiment: { label: "warm but skeptical", alternatives: [] },
           }),
@@ -1979,7 +1979,7 @@ describe("AnalyzePage headline summary mount (TASK-1483.13.10)", () => {
 
     expect(await screen.findByTestId("headline-lead-in")).toBeDefined();
     expect(screen.getByTestId("weather-truth-value").textContent).toBe(
-      "Self-reported",
+      "First-person",
     );
     expect(screen.getByTestId("weather-relevance-value").textContent).toBe(
       "Insightful",

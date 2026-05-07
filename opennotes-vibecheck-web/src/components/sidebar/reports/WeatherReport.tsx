@@ -49,7 +49,7 @@ interface AxisDefinition {
 
 const TOOLTIP_COPY: Record<AxisType, string> = {
   truth:
-    "Truth — How factually grounded the claim is. Higher = better-sourced; lower = misleading or unverified.",
+    "Truth — Epistemic stance, not verdict. Whether claims are sourced, factual claims, first-person, second-hand, or actively misleading.",
   relevance:
     "Relevance — How on-topic the content is. Higher = insightful and on-topic; lower = drifting or off-topic.",
   sentiment:
@@ -92,14 +92,14 @@ function mapTruthLabel(value: WeatherAxisLabel): string {
   switch (value) {
     case "sourced":
       return "Sourced";
-    case "mostly_factual":
-      return "Mostly factual";
-    case "self_reported":
-      return "Self-reported";
+    case "factual_claims":
+      return "Factual claims";
+    case "first_person":
+      return "First-person";
     case "hearsay":
-      return "Hearsay";
+      return "Second-hand";
     case "misleading":
-      return "Misleading";
+      return "Actively misleading";
     default:
       return String(value);
   }
@@ -130,9 +130,9 @@ function valueClassForTruth(value: WeatherAxisLabel): string {
   switch (value) {
     case "sourced":
       return "inline-flex rounded-full bg-emerald-500/10 px-2 py-0.5 text-[11px] font-medium text-emerald-700";
-    case "mostly_factual":
+    case "factual_claims":
       return "inline-flex rounded-full bg-lime-500/10 px-2 py-0.5 text-[11px] font-medium text-lime-700";
-    case "self_reported":
+    case "first_person":
       return "inline-flex rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground";
     case "hearsay":
       return "inline-flex rounded-full bg-amber-500/10 px-2 py-0.5 text-[11px] font-medium text-amber-700";

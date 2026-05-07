@@ -22,7 +22,7 @@ function makeWeatherReport(
 ): WeatherReportData {
   return {
     truth: {
-      label: "self_reported",
+      label: "first_person",
       logprob: null,
       alternatives: [],
     },
@@ -52,7 +52,7 @@ describe("WeatherReport", () => {
     expect(screen.getByTestId("weather-axis-card-relevance")).toBeDefined();
     expect(screen.getByTestId("weather-axis-card-sentiment")).toBeDefined();
     expect(screen.getByTestId("weather-truth-value").textContent).toBe(
-      "Self-reported",
+      "First-person",
     );
     expect(screen.getByTestId("weather-relevance-value").textContent).toBe(
       "On topic",
@@ -106,13 +106,13 @@ describe("WeatherReport", () => {
       <Tooltip open>
         <TooltipTrigger as="span">trigger</TooltipTrigger>
         <TooltipContent>
-          Truth — How factually grounded the claim is. Higher = better-sourced;
-          lower = misleading or unverified.
+          Truth — Epistemic stance, not verdict. Whether claims are sourced,
+          factual claims, first-person, second-hand, or actively misleading.
         </TooltipContent>
       </Tooltip>
     ));
 
-    await screen.findByText(/Truth — How factually grounded/);
+    await screen.findByText(/Truth — Epistemic stance/);
   });
 
   it("hovering a row emits pointerenter that Kobalte will use to open tooltip", () => {
@@ -177,7 +177,7 @@ describe("WeatherReport", () => {
     expect(cls).toContain("rounded-lg");
   });
 
-  it("keeps self-reported truth neutral, not amber or destructive", () => {
+  it("keeps first-person truth neutral, not amber or destructive", () => {
     render(() => <WeatherReport report={makeWeatherReport()} />);
 
     const className = screen.getByTestId("weather-truth-value").className;
@@ -206,7 +206,7 @@ describe("WeatherReport", () => {
           truth: {
             label: "sourced",
             logprob: null,
-            alternatives: [{ label: "mostly_factual", logprob: null }],
+            alternatives: [{ label: "factual_claims", logprob: null }],
           },
         })}
       />
@@ -227,7 +227,7 @@ describe("WeatherReport", () => {
     await waitFor(() => {
       expect(screen.queryByTestId("weather-report-skeleton")).toBeNull();
       expect(screen.getByTestId("weather-truth-value").textContent).toBe(
-        "Self-reported",
+        "First-person",
       );
     });
   });
@@ -258,9 +258,43 @@ describe("WeatherReport", () => {
 
     await waitFor(() => {
       expect(screen.getByTestId("weather-truth-value").textContent).toBe(
-        "Misleading",
+        "Actively misleading",
       );
     });
+  });
+
+  it("maps factual claims and hearsay to stance vocabulary", () => {
+    render(() => (
+      <WeatherReport
+        report={makeWeatherReport({
+          truth: {
+            label: "factual_claims",
+            logprob: null,
+            alternatives: [],
+          },
+        })}
+      />
+    ));
+    expect(screen.getByTestId("weather-truth-value").textContent).toBe(
+      "Factual claims",
+    );
+
+    cleanup();
+
+    render(() => (
+      <WeatherReport
+        report={makeWeatherReport({
+          truth: {
+            label: "hearsay",
+            logprob: null,
+            alternatives: [],
+          },
+        })}
+      />
+    ));
+    expect(screen.getByTestId("weather-truth-value").textContent).toBe(
+      "Second-hand",
+    );
   });
 
   it("renders logprob metadata as linear probability percentages", () => {
@@ -270,7 +304,7 @@ describe("WeatherReport", () => {
           truth: {
             label: "sourced",
             logprob: -0.12,
-            alternatives: [{ label: "mostly_factual", logprob: -1.25 }],
+            alternatives: [{ label: "factual_claims", logprob: -1.25 }],
           },
         })}
       />
@@ -280,7 +314,7 @@ describe("WeatherReport", () => {
       "88.69%",
     );
     expect(screen.getByTestId("weather-truth-alternatives").textContent).toContain(
-      "Mostly factual (28.65%)",
+      "Factual claims (28.65%)",
     );
   });
 });
