@@ -1,6 +1,7 @@
 import { Show, Suspense } from "solid-js";
 import { useSearchParams, useSubmission, createAsync } from "@solidjs/router";
-import { Title } from "@solidjs/meta";
+import { Title, Meta } from "@solidjs/meta";
+import { siteUrl } from "~/lib/site-url";
 import PdfUpload from "~/components/PdfUpload";
 import UrlInput from "~/components/UrlInput";
 import RecentlyVibeChecked, {
@@ -52,6 +53,11 @@ export default function HomePage() {
   return (
     <>
       <Title>vibecheck — URL and PDF analysis</Title>
+      <Meta property="og:title" content="vibecheck — URL and PDF analysis" />
+      <Meta property="og:description" content="Analyze URLs and PDFs for tone, claims, safety, and opinions." />
+      <Meta property="og:url" content={siteUrl("/")} />
+      <Meta property="og:image" content={siteUrl("/api/og")} />
+      <Meta name="twitter:image" content={siteUrl("/api/og")} />
       <main class="mx-auto flex min-h-screen max-w-2xl flex-col items-center justify-center gap-10 px-4 py-16 text-center">
         <header class="space-y-4">
           <h1 class="text-5xl font-semibold tracking-tight sm:text-6xl">

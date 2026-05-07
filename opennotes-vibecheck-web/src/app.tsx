@@ -2,7 +2,7 @@ import "./app.css";
 import { Router } from "@solidjs/router";
 import { FileRoutes } from "@solidjs/start/router";
 import { ErrorBoundary, Suspense } from "solid-js";
-import { MetaProvider, Title } from "@solidjs/meta";
+import { MetaProvider, Title, Meta } from "@solidjs/meta";
 import { NavBar } from "@opennotes/ui/components/nav-bar";
 import ModeToggle from "@opennotes/ui/components/mode-toggle";
 import { Logo } from "@opennotes/ui/components/logo";
@@ -13,6 +13,12 @@ export default function App() {
       root={(props) => (
         <MetaProvider>
           <Title>vibecheck</Title>
+          <Meta property="og:site_name" content="vibecheck" />
+          <Meta property="og:type" content="website" />
+          <Meta property="og:image:type" content="image/png" />
+          <Meta property="og:image:width" content="1200" />
+          <Meta property="og:image:height" content="630" />
+          <Meta name="twitter:card" content="summary_large_image" />
           <NavBar
             logo={<Logo class="h-9 w-auto" />}
             logoHref="https://opennotes.ai"

@@ -96,7 +96,7 @@ describe("<RecentlyVibeChecked />", () => {
 
     render(() => <RecentlyVibeChecked analyses={analyses} />);
 
-    expect(screen.getByText("Sourced · On Topic · Engaged")).toBeTruthy();
+    expect(screen.getByText("Sourced · On topic · Engaged")).toBeTruthy();
     expect(screen.getAllByTestId("recent-analysis-weather")).toHaveLength(1);
   });
 });
