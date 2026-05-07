@@ -105,6 +105,7 @@ describe("<RetryButton />", () => {
       "retry-facts_claims__dedup",
     ) as HTMLButtonElement;
     expect(btn.disabled).toBe(false);
+    expect(btn.getAttribute("data-slot")).toBe("link");
   });
 
   it("calls the retry action with form data and invokes onSuccess on happy path", async () => {
