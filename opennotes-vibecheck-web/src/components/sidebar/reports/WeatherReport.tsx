@@ -55,7 +55,7 @@ const TOOLTIP_COPY: Record<AxisType, string> = {
   relevance:
     "Relevance — Conversational stance, not score. Whether the content is insightful, on topic, chatty, drifting, or off topic.",
   sentiment:
-    "Sentiment — Emotional stance, not judgment. Whether the tone reads as supportive, neutral, critical, or oppositional.",
+    "Sentiment — Emotional stance, not judgment. The tone is rendered as a free-form descriptor (commonly supportive, neutral, critical, or oppositional).",
 };
 
 const AXES: AxisDefinition[] = [

@@ -56,7 +56,7 @@ export function formatWeatherVariant(value: WeatherAxisLabel): WeatherVariant {
 }
 
 export function formatWeatherBadgeClass(value: WeatherAxisLabel): string {
-  return VARIANT_CLASSES[formatWeatherVariant(value)];
+  return VARIANT_CLASSES[formatWeatherVariant(value)] ?? VARIANT_CLASSES[DEFAULT_VARIANT];
 }
 
 export function formatWeatherReadout(report: WeatherReport): string {

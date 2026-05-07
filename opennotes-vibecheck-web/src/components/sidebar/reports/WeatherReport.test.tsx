@@ -177,7 +177,7 @@ describe("WeatherReport", () => {
     expect(cls).toContain("rounded-lg");
   });
 
-  it("keeps first-person truth neutral, not amber or destructive", () => {
+  it("renders first-person truth in indigo, not amber or destructive", () => {
     render(() => <WeatherReport report={makeWeatherReport()} />);
 
     const className = screen.getByTestId("weather-truth-value").className;
