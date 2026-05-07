@@ -1,4 +1,5 @@
 import { For, Show, type JSX } from "solid-js";
+import { Skeleton } from "@opennotes/ui/components/ui/skeleton";
 import type { components } from "~/lib/generated-types";
 
 type WeatherReportData = components["schemas"]["WeatherReport"];
@@ -251,43 +252,31 @@ function WeatherReportSkeleton(props: { class?: string }): JSX.Element {
   return (
     <div
       data-testid="weather-report-skeleton"
-      class={`grid h-full min-h-[110px] grid-cols-3 gap-2 ${props.class ?? ""}`.trim()}
+      class={`grid grid-cols-3 gap-2 ${props.class ?? ""}`.trim()}
     >
       <div
         data-testid="weather-skeleton-truth"
-        class="rounded-md border border-border bg-card p-3"
+        class="rounded-md border border-border bg-card p-2"
         aria-hidden="true"
       >
-        <div class="skeleton-pulse-extra mb-2 h-4 w-16 rounded" />
-        <div class="skeleton-pulse-extra-delay-1 mb-2 h-6 w-24 rounded-full" />
-        <div class="flex items-center gap-2">
-          <div class="skeleton-pulse-extra h-3 w-10 rounded" />
-          <div class="skeleton-pulse-extra-delay-1 h-3 w-16 rounded" />
-        </div>
+        <Skeleton class="mb-1 h-3 w-12" />
+        <Skeleton class="h-4 w-20 rounded-full" />
       </div>
       <div
         data-testid="weather-skeleton-relevance"
-        class="rounded-md border border-border bg-card p-3"
+        class="rounded-md border border-border bg-card p-2"
         aria-hidden="true"
       >
-        <div class="skeleton-pulse-extra mb-2 h-4 w-20 rounded" />
-        <div class="skeleton-pulse-extra-delay-2 mb-2 h-6 w-24 rounded-full" />
-        <div class="flex items-center gap-2">
-          <div class="skeleton-pulse-extra h-3 w-10 rounded" />
-          <div class="skeleton-pulse-extra-delay-1 h-3 w-16 rounded" />
-        </div>
+        <Skeleton class="mb-1 h-3 w-16" />
+        <Skeleton class="h-4 w-20 rounded-full" />
       </div>
       <div
         data-testid="weather-skeleton-sentiment"
-        class="rounded-md border border-border bg-card p-3"
+        class="rounded-md border border-border bg-card p-2"
         aria-hidden="true"
       >
-        <div class="skeleton-pulse-extra mb-2 h-4 w-16 rounded" />
-        <div class="skeleton-pulse-extra-delay-2 mb-2 h-6 w-24 rounded-full" />
-        <div class="flex items-center gap-2">
-          <div class="skeleton-pulse-extra h-3 w-10 rounded" />
-          <div class="skeleton-pulse-extra-delay-1 h-3 w-14 rounded" />
-        </div>
+        <Skeleton class="mb-1 h-3 w-14" />
+        <Skeleton class="h-4 w-20 rounded-full" />
       </div>
     </div>
   );
@@ -302,7 +291,7 @@ export default function WeatherReport(props: WeatherReportProps): JSX.Element {
       {(report) => (
         <div
           data-testid="weather-report"
-          class={`grid h-full min-h-[110px] grid-cols-3 gap-2 ${props.class ?? ""}`.trim()}
+          class={`grid grid-cols-3 gap-2 ${props.class ?? ""}`.trim()}
         >
           <For each={AXES}>
             {(axis) => (

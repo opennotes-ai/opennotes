@@ -1,16 +1,70 @@
-import type { ComponentProps } from "solid-js";
+import type { ComponentProps, JSX } from "solid-js";
+import { splitProps } from "solid-js";
+import * as SkeletonPrimitive from "@kobalte/core/skeleton";
 import { cn } from "../../utils";
 
-export function Skeleton(props: ComponentProps<"div">) {
+const SHIMMER_STYLES = `
+@keyframes opennotesSkeletonShimmer {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+
+[data-opennotes-skeleton] {
+  position: relative;
+  overflow: hidden;
+  background-color: hsl(var(--muted, 220 14% 90%));
+}
+
+[data-skeleton-shimmer] {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image: linear-gradient(
+    90deg,
+    transparent 0%,
+    hsl(var(--card, 0 0% 100%) / 0.55) 50%,
+    transparent 100%
+  );
+  transform: translateX(-100%);
+  animation: opennotesSkeletonShimmer 1.6s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-skeleton-shimmer] {
+    animation: none;
+    display: none;
+  }
+}
+`;
+
+export interface SkeletonProps extends ComponentProps<"div"> {
+  visible?: boolean;
+  radius?: number;
+}
+
+export function Skeleton(props: SkeletonProps): JSX.Element {
+  const [local, others] = splitProps(props, [
+    "class",
+    "visible",
+    "radius",
+    "children",
+  ]);
   return (
-    <div
-      {...props}
-      class={cn("animate-pulse rounded-md bg-muted", props.class)}
-    />
+    <SkeletonPrimitive.Root
+      data-opennotes-skeleton=""
+      visible={local.visible}
+      radius={local.radius}
+      class={cn("rounded-md bg-muted", local.class)}
+      {...others}
+    >
+      <style>{SHIMMER_STYLES}</style>
+      <span aria-hidden="true" data-skeleton-shimmer="" />
+      {local.children}
+    </SkeletonPrimitive.Root>
   );
 }
 
-export function SectionSkeleton() {
+export function SectionSkeleton(): JSX.Element {
   return (
     <div class="space-y-4 py-6">
       <Skeleton class="h-6 w-48" />

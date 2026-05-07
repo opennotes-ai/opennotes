@@ -51,7 +51,7 @@ describe("WeatherReport", () => {
     );
   });
 
-  it("renders stable extra-shimmery skeletons when report is null", () => {
+  it("renders stable shimmer skeletons when report is null", () => {
     render(() => <WeatherReport report={null} />);
 
     expect(screen.getByTestId("weather-report-skeleton")).toBeDefined();
@@ -61,8 +61,41 @@ describe("WeatherReport", () => {
     expect(
       screen
         .getByTestId("weather-skeleton-truth")
-        .querySelector(".skeleton-pulse-extra"),
+        .querySelector("[data-opennotes-skeleton]"),
     ).toBeTruthy();
+  });
+
+  it("does not impose a min-h-[110px] on the skeleton container or its cards", () => {
+    render(() => <WeatherReport report={null} />);
+    const root = screen.getByTestId("weather-report-skeleton");
+    expect(root.className).not.toContain("min-h-[110px]");
+    for (const axis of ["truth", "relevance", "sentiment"]) {
+      const card = screen.getByTestId(`weather-skeleton-${axis}`);
+      expect(card.className).not.toContain("min-h-[110px]");
+    }
+  });
+
+  it("uses Skeleton primitives, not legacy skeleton-pulse-extra classes", () => {
+    render(() => <WeatherReport report={null} />);
+    const root = screen.getByTestId("weather-report-skeleton");
+    expect(root.querySelector(".skeleton-pulse-extra")).toBeNull();
+    expect(root.querySelector(".skeleton-pulse-extra-delay-1")).toBeNull();
+    expect(root.querySelector(".skeleton-pulse-extra-delay-2")).toBeNull();
+  });
+
+  it("does not impose a min-h-[110px] on the real (data) weather report", () => {
+    render(() => <WeatherReport report={makeWeatherReport()} />);
+    const root = screen.getByTestId("weather-report");
+    expect(root.className).not.toContain("min-h-[110px]");
+  });
+
+  it("real AxisCards keep their border and bg-card chrome", () => {
+    render(() => <WeatherReport report={makeWeatherReport()} />);
+    const card = screen.getByTestId("weather-axis-card-truth");
+    const cls = card.className;
+    expect(cls).toContain("border");
+    expect(cls).toContain("bg-card");
+    expect(cls).toContain("rounded-md");
   });
 
   it("keeps self-reported truth neutral, not amber or destructive", () => {
