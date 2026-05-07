@@ -43,7 +43,7 @@ describe("<GalleryHoverCard />", () => {
     expect(screen.getByText("Truth")).toBeTruthy();
     expect(screen.getByText("Sourced")).toBeTruthy();
     expect(screen.getByText("Relevance")).toBeTruthy();
-    expect(screen.getByText("On Topic")).toBeTruthy();
+    expect(screen.getByText("On topic")).toBeTruthy();
     expect(screen.getByText("Sentiment")).toBeTruthy();
     expect(screen.getByText("Engaged")).toBeTruthy();
     expect(screen.getByText("Readers are asking for clearer evidence.")).toBeTruthy();

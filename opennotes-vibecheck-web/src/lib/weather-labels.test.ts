@@ -6,16 +6,16 @@ describe("formatWeatherLabel", () => {
     expect(formatWeatherLabel("mostly_factual")).toBe("Mostly Factual");
   });
 
-  it("returns 'Self-Reported' for self_reported", () => {
-    expect(formatWeatherLabel("self_reported")).toBe("Self-Reported");
+  it("returns 'Self Reported' for self_reported (no explicit case; default title-caser)", () => {
+    expect(formatWeatherLabel("self_reported")).toBe("Self Reported");
   });
 
-  it("returns 'On Topic' for on_topic", () => {
-    expect(formatWeatherLabel("on_topic")).toBe("On Topic");
+  it("returns 'On topic' for on_topic", () => {
+    expect(formatWeatherLabel("on_topic")).toBe("On topic");
   });
 
-  it("returns 'Off Topic' for off_topic", () => {
-    expect(formatWeatherLabel("off_topic")).toBe("Off Topic");
+  it("returns 'Off topic' for off_topic", () => {
+    expect(formatWeatherLabel("off_topic")).toBe("Off topic");
   });
 
   it("returns 'Factual claims' for factual_claims (AC9)", () => {
