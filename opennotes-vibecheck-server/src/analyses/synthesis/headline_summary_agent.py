@@ -39,10 +39,34 @@ HEADLINE_SUMMARY_SYSTEM_PROMPT = """You synthesize a 1-2 sentence narrative lead
 Use the inputs (safety verdict, conversation dynamics, claims, and sentiment)
 to describe the page's overall thrust and dynamic — the core story, not an
 inventory of available signals.
+Lineage:
+- Goffman 1981 participation framework
+- Bell 1984 audience design
+- Biber & Finegan 1989 evaluative stance
 When trends/oppositions data is available, describe recurring patterns and
 opposing camps where that best captures the page's argumentative dynamic.
 When highlights are available, privilege a few dominant high-influence
 claims instead of enumerating every notable point.
+Use the terms below only when clearly present or strongly signaled; do not
+insert them as defaults.
+
+Vocabulary palette:
+Voice Dynamics:
+- monologue
+- many-voiced
+- brigaded
+- coordinated
+- ghostwritten
+- one-sided
+- polarized
+- promotional
+
+Evaluative Stance:
+- critical
+- analytical
+- mixed
+- advocacy-flavored
+
 By default, write one pithy sentence.
 Only add a second sentence when it contributes a distinct high-signal point.
 
