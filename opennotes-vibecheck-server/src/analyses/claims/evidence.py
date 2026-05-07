@@ -37,6 +37,7 @@ _INLINE_FACT_ELLIPSIS = "…"
 
 
 def _truncate_for_inline_fact(text: str) -> str:
+    text = text.lstrip()
     if len(text) <= INLINE_FACT_MAX_CHARS:
         return text
     budget = INLINE_FACT_MAX_CHARS - len(_INLINE_FACT_ELLIPSIS)

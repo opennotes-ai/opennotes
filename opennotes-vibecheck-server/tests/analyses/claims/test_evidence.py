@@ -660,6 +660,21 @@ def test_truncate_falls_back_to_hard_cut_when_only_early_whitespace() -> None:
     assert len(truncated) > evidence.INLINE_FACT_MAX_CHARS // 2
 
 
+def test_truncate_lstrips_leading_whitespace_then_truncates() -> None:
+    text = " " * 601 + "x" * 1000
+    truncated = evidence._truncate_for_inline_fact(text)
+    assert truncated != "…"
+    assert truncated.endswith("…")
+    assert len(truncated) <= evidence.INLINE_FACT_MAX_CHARS
+    assert truncated.rstrip("…").strip() != ""
+
+
+def test_truncate_returns_short_lstripped_text_unchanged() -> None:
+    text = "   hello world"
+    truncated = evidence._truncate_for_inline_fact(text)
+    assert truncated == "hello world"
+
+
 def test_inline_tautology_detects_substring_containment() -> None:
     claim = "the company shipped feature x last week"
     statement = "I read that the company shipped feature x last week and it was great."
