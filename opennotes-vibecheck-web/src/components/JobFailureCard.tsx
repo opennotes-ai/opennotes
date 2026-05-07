@@ -1,5 +1,6 @@
 import { For, Show, type JSX } from "solid-js";
 import { Button } from "@opennotes/ui/components/ui/button";
+import { Link } from "@opennotes/ui/components/ui/link";
 import type { PublicErrorCode } from "~/lib/api-client.server";
 import type { components } from "~/lib/generated-types";
 import { analyzeAction } from "~/routes/analyze.data";
@@ -178,9 +179,9 @@ export default function JobFailureCard(props: JobFailureCardProps): JSX.Element 
       <Show when={showsPdfSuggestion(props.errorCode)}>
         <p class="text-xs text-muted-foreground" data-testid="job-failure-pdf-suggestion">
           Can't access this page?{" "}
-          <a href="/#pdf-upload" class="underline underline-offset-4 hover:text-foreground">
+          <Link href="/#pdf-upload" variant="muted" size="sm">
             Print it as a PDF and upload it for analysis.
-          </a>
+          </Link>
         </p>
       </Show>
 
@@ -199,13 +200,14 @@ export default function JobFailureCard(props: JobFailureCardProps): JSX.Element 
             </Button>
           </form>
         </Show>
-        <a
+        <Link
           href="/"
+          variant="muted"
           data-testid="job-failure-home"
-          class="text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+          class="no-underline hover:underline"
         >
           Back to home
-        </a>
+        </Link>
       </div>
     </section>
   );
