@@ -111,3 +111,77 @@ describe("HeadlineLeadIn headline skeleton", () => {
     expect(cls).toMatch(/\brounded-md\b/);
   });
 });
+
+describe("HeadlineLeadIn weather-column collapse", () => {
+  it("uses 2-column layout while weather is loading (skeleton case)", () => {
+    render(() => (
+      <HeadlineLeadIn
+        headline={null}
+        weatherReport={null}
+        showHeadlineSkeleton
+        showWeatherSkeleton
+      />
+    ));
+    const root = screen.getByTestId("headline-lead-in");
+    const cls = root.getAttribute("class") ?? "";
+    expect(cls).toMatch(/lg:grid-cols-\[minmax\(0,1fr\)_minmax\(0,2fr\)\]/);
+  });
+
+  it("uses 2-column layout when both real headline and real weather are present", () => {
+    render(() => (
+      <HeadlineLeadIn
+        headline={makeHeadline()}
+        weatherReport={makeWeatherReport()}
+      />
+    ));
+    const root = screen.getByTestId("headline-lead-in");
+    const cls = root.getAttribute("class") ?? "";
+    expect(cls).toMatch(/lg:grid-cols-\[minmax\(0,1fr\)_minmax\(0,2fr\)\]/);
+  });
+
+  it("collapses to single-column layout when weather is null and not loading (failure case)", () => {
+    render(() => (
+      <HeadlineLeadIn
+        headline={makeHeadline()}
+        weatherReport={null}
+      />
+    ));
+    const root = screen.getByTestId("headline-lead-in");
+    const cls = root.getAttribute("class") ?? "";
+    expect(cls).not.toMatch(/lg:grid-cols-\[minmax\(0,1fr\)_minmax\(0,2fr\)\]/);
+    expect(cls).toMatch(/\bgrid-cols-1\b/);
+  });
+
+  it("does not render the WeatherReport block when weather is null and not loading", () => {
+    render(() => (
+      <HeadlineLeadIn headline={makeHeadline()} weatherReport={null} />
+    ));
+    expect(screen.queryByTestId("weather-report")).toBeNull();
+  });
+
+  it("layout class set differs between weather-null+complete and 2-column states", () => {
+    const { container: failureContainer } = render(() => (
+      <HeadlineLeadIn headline={makeHeadline()} weatherReport={null} />
+    ));
+    const failureCls =
+      failureContainer
+        .querySelector('[data-testid="headline-lead-in"]')
+        ?.getAttribute("class") ?? "";
+    cleanup();
+
+    const { container: twoColContainer } = render(() => (
+      <HeadlineLeadIn
+        headline={makeHeadline()}
+        weatherReport={makeWeatherReport()}
+      />
+    ));
+    const twoColCls =
+      twoColContainer
+        .querySelector('[data-testid="headline-lead-in"]')
+        ?.getAttribute("class") ?? "";
+
+    expect(failureCls).not.toEqual(twoColCls);
+    expect(twoColCls).toMatch(/lg:grid-cols-\[minmax\(0,1fr\)_minmax\(0,2fr\)\]/);
+    expect(failureCls).not.toMatch(/lg:grid-cols-\[minmax\(0,1fr\)_minmax\(0,2fr\)\]/);
+  });
+});

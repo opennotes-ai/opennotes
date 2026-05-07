@@ -31,18 +31,24 @@ function HeadlineSummarySkeleton(): JSX.Element {
 
 export default function HeadlineLeadIn(props: HeadlineLeadInProps): JSX.Element {
   const hasHeadline = () => props.headline !== null || props.showHeadlineSkeleton === true;
-  const hasWeather = () => props.weatherReport !== null || props.showWeatherSkeleton === true;
+  const weatherSlotVisible = () =>
+    props.weatherReport !== null || props.showWeatherSkeleton === true;
 
-  if (!hasHeadline() && !hasWeather()) {
+  if (!hasHeadline() && !weatherSlotVisible()) {
     return <></>;
   }
+
+  const gridClass = () =>
+    weatherSlotVisible()
+      ? "grid grid-cols-1 gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]"
+      : "grid grid-cols-1 gap-3";
 
   return (
     <section
       data-testid="headline-lead-in"
-      class={`grid grid-cols-1 gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,2fr)] ${props.class ?? ""}`.trim()}
+      class={`${gridClass()} ${props.class ?? ""}`.trim()}
     >
-      <Show when={hasWeather()}>
+      <Show when={weatherSlotVisible()}>
         <WeatherReport
           report={props.showWeatherSkeleton ? null : props.weatherReport}
           class="grid-cols-3 lg:grid-cols-1"
