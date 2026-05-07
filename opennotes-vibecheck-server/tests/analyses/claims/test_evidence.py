@@ -383,8 +383,8 @@ async def test_run_claims_evidence_falls_back_to_dedup_slot_when_payload_missing
         del job_id
         return [
             Utterance(
-                kind="post",
-                text="Scientists observe the ocean.",
+                kind="comment",
+                text="Scientists observe the ocean is blue.",
                 utterance_id="u-1",
                 author="alice",
             )
@@ -407,11 +407,50 @@ async def test_run_claims_evidence_falls_back_to_dedup_slot_when_payload_missing
     assert claim["canonical_text"] == "The ocean is blue."
     assert claim["supporting_facts"] == [
         {
-            "statement": "Scientists observe the ocean.",
+            "statement": "Scientists observe the ocean is blue.",
             "source_kind": "utterance",
             "source_ref": "u-1",
         }
     ]
+
+
+@pytest.mark.asyncio
+async def test_run_claims_evidence_drops_post_kind_utterance_from_dedup_slot(
+    monkeypatch: pytest.MonkeyPatch,
+    no_external_settings: Settings,
+) -> None:
+    fake_row = {
+        "state": "done",
+        "data": {"claims_report": _claims_report("The ocean is blue.").model_dump(mode="json")},
+    }
+
+    async def fake_load_utterances(_pool: object, job_id: object) -> list[Utterance]:
+        del job_id
+        return [
+            Utterance(
+                kind="post",
+                text="The ocean is blue and vast.",
+                utterance_id="u-1",
+                author="alice",
+            )
+        ]
+
+    monkeypatch.setattr(
+        "src.analyses.claims.evidence_slot.load_job_utterances",
+        fake_load_utterances,
+    )
+
+    result = await run_claims_evidence(
+        pool=_Pool(fake_row),
+        job_id=uuid4(),
+        task_attempt=uuid4(),
+        payload=object(),
+        settings=no_external_settings,
+    )
+
+    claim = result["claims_report"]["deduped_claims"][0]
+    assert claim["canonical_text"] == "The ocean is blue."
+    assert claim["supporting_facts"] == []
 
 
 @pytest.mark.asyncio
@@ -553,3 +592,89 @@ async def test_utterance_meta_text_and_kind_propagate_through_supporting_facts(
     assert meta.kind == "comment"
     assert facts["The moon is round."][0].statement == meta.text
     assert facts["The moon is round."][0].source_ref == "u-1"
+
+
+@pytest.mark.asyncio
+async def test_inline_facts_drop_post_kind_utterance(
+    no_external_settings: Settings,
+) -> None:
+    claim = DedupedClaim(
+        canonical_text="Cats can see in the dark.",
+        category=ClaimCategory.POTENTIALLY_FACTUAL,
+        occurrence_count=1,
+        author_count=1,
+        utterance_ids=["u-post"],
+        representative_authors=["alice"],
+    )
+
+    facts = await evidence.build_supporting_facts_by_claim(
+        [claim],
+        {"u-post": _UtteranceMeta(text="Cats can see in the dark very well.", kind="post")},
+        no_external_settings,
+        external_fetcher=_no_external_fetcher,
+    )
+
+    assert facts == {}
+
+
+@pytest.mark.asyncio
+async def test_inline_facts_keep_comment_when_post_also_referenced(
+    no_external_settings: Settings,
+) -> None:
+    claim = DedupedClaim(
+        canonical_text="Cats can see in the dark.",
+        category=ClaimCategory.POTENTIALLY_FACTUAL,
+        occurrence_count=2,
+        author_count=2,
+        utterance_ids=["u-post", "u-comment"],
+        representative_authors=["alice", "bob"],
+    )
+
+    facts = await evidence.build_supporting_facts_by_claim(
+        [claim],
+        {
+            "u-post": _UtteranceMeta(text="Cats can see in the dark very well.", kind="post"),
+            "u-comment": _UtteranceMeta(
+                text="Studies show cats have tapetum lucidum for night vision.", kind="comment"
+            ),
+        },
+        no_external_settings,
+        external_fetcher=_no_external_fetcher,
+    )
+
+    assert len(facts["Cats can see in the dark."]) == 1
+    assert facts["Cats can see in the dark."][0].statement == (
+        "Studies show cats have tapetum lucidum for night vision."
+    )
+    assert facts["Cats can see in the dark."][0].source_ref == "u-comment"
+
+
+@pytest.mark.asyncio
+async def test_inline_facts_skip_long_post_containing_claim_verbatim(
+    no_external_settings: Settings,
+) -> None:
+    claim_text = "Cats can see in the dark."
+    long_post = (
+        "This is a very long post about various topics. " * 100
+        + claim_text
+        + " " + "More unrelated content follows. " * 100
+    )
+    assert len(long_post) > 5000
+
+    claim = DedupedClaim(
+        canonical_text=claim_text,
+        category=ClaimCategory.POTENTIALLY_FACTUAL,
+        occurrence_count=1,
+        author_count=1,
+        utterance_ids=["u-long-post"],
+        representative_authors=["alice"],
+    )
+
+    facts = await evidence.build_supporting_facts_by_claim(
+        [claim],
+        {"u-long-post": _UtteranceMeta(text=long_post, kind="post")},
+        no_external_settings,
+        external_fetcher=_no_external_fetcher,
+    )
+
+    assert facts == {}

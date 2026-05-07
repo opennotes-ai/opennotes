@@ -209,11 +209,11 @@ def _inline_supporting_facts(
     facts: list[SupportingFact] = []
     for utterance_id in _unique_items_in_order(claim.utterance_ids):
         meta = utterance_meta_by_id.get(utterance_id)
-        if not meta:
+        if meta is None or not meta.text:
+            continue
+        if meta.kind == "post":
             continue
         statement = meta.text
-        if not statement:
-            continue
         if _is_inline_tautology(statement, claim.canonical_text):
             continue
         facts.append(
