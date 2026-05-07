@@ -481,10 +481,29 @@ ALTER TABLE public.vibecheck_scrapes
 ALTER TABLE public.vibecheck_scrapes
     ADD COLUMN IF NOT EXISTS evicted_at TIMESTAMPTZ;
 
+-- TASK-1577.01: persist Firecrawl rawHtml alongside the main-content html
+-- so future consumers can reach the original SSR document for re-extraction
+-- or debugging without paying for another scrape. The main-content `html`
+-- column is what archive_preview already serves; `raw_html` is forward-
+-- looking storage with no current reader. Nullable + no default so legacy
+-- rows pre-migration carry NULL until the next put() refreshes them.
+ALTER TABLE public.vibecheck_scrapes
+    ADD COLUMN IF NOT EXISTS raw_html TEXT;
+
 -- TASK-1488.18.01: atomically persist a scrape row unless an evict
 -- tombstone landed after the caller's write-fence anchor. The predicate
 -- lives inside `ON CONFLICT DO UPDATE`, so an evict that arrives between
 -- the application preflight read and the final write cannot be overwritten.
+--
+-- TASK-1577.01: signature gained `p_raw_html`. CREATE OR REPLACE cannot
+-- change a function's parameter list, so the prior 14-arg signature is
+-- dropped first; IF EXISTS keeps re-runs idempotent on fresh databases
+-- where the old signature never existed.
+DROP FUNCTION IF EXISTS public.vibecheck_upsert_scrape_if_not_evicted(
+    TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TIMESTAMPTZ,
+    TIMESTAMPTZ, TIMESTAMPTZ, INT
+);
+
 CREATE OR REPLACE FUNCTION public.vibecheck_upsert_scrape_if_not_evicted(
     p_normalized_url TEXT,
     p_tier TEXT,
@@ -495,6 +514,7 @@ CREATE OR REPLACE FUNCTION public.vibecheck_upsert_scrape_if_not_evicted(
     p_page_title TEXT,
     p_markdown TEXT,
     p_html TEXT,
+    p_raw_html TEXT,
     p_screenshot_storage_key TEXT,
     p_scraped_at TIMESTAMPTZ,
     p_expires_at TIMESTAMPTZ,
@@ -511,12 +531,12 @@ DECLARE
 BEGIN
     INSERT INTO public.vibecheck_scrapes (
         normalized_url, tier, url, final_url, host, page_kind, page_title,
-        markdown, html, screenshot_storage_key, scraped_at, expires_at,
-        evicted_at
+        markdown, html, raw_html, screenshot_storage_key, scraped_at,
+        expires_at, evicted_at
     )
     VALUES (
         p_normalized_url, p_tier, p_url, p_final_url, p_host, p_page_kind,
-        p_page_title, p_markdown, p_html, p_screenshot_storage_key,
+        p_page_title, p_markdown, p_html, p_raw_html, p_screenshot_storage_key,
         p_scraped_at, p_expires_at, NULL
     )
     ON CONFLICT (normalized_url, tier)
@@ -529,6 +549,7 @@ BEGIN
         page_title = EXCLUDED.page_title,
         markdown = EXCLUDED.markdown,
         html = EXCLUDED.html,
+        raw_html = EXCLUDED.raw_html,
         screenshot_storage_key = EXCLUDED.screenshot_storage_key,
         scraped_at = EXCLUDED.scraped_at,
         expires_at = EXCLUDED.expires_at,
@@ -544,16 +565,16 @@ BEGIN
 END;
 $$;
 ALTER FUNCTION public.vibecheck_upsert_scrape_if_not_evicted(
-    TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TIMESTAMPTZ,
-    TIMESTAMPTZ, TIMESTAMPTZ, INT
+    TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT,
+    TIMESTAMPTZ, TIMESTAMPTZ, TIMESTAMPTZ, INT
 ) OWNER TO postgres;
 REVOKE ALL ON FUNCTION public.vibecheck_upsert_scrape_if_not_evicted(
-    TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TIMESTAMPTZ,
-    TIMESTAMPTZ, TIMESTAMPTZ, INT
+    TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT,
+    TIMESTAMPTZ, TIMESTAMPTZ, TIMESTAMPTZ, INT
 ) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.vibecheck_upsert_scrape_if_not_evicted(
-    TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TIMESTAMPTZ,
-    TIMESTAMPTZ, TIMESTAMPTZ, INT
+    TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT,
+    TIMESTAMPTZ, TIMESTAMPTZ, TIMESTAMPTZ, INT
 ) TO service_role;
 
 CREATE OR REPLACE FUNCTION public.vibecheck_upsert_scrape_evict_tombstone(
@@ -573,12 +594,12 @@ AS $$
 BEGIN
     INSERT INTO public.vibecheck_scrapes (
         normalized_url, tier, url, final_url, host, page_kind, page_title,
-        markdown, html, screenshot_storage_key, scraped_at, expires_at,
-        evicted_at
+        markdown, html, raw_html, screenshot_storage_key, scraped_at,
+        expires_at, evicted_at
     )
     VALUES (
         p_normalized_url, p_tier, p_url, NULL, p_host, 'other', NULL,
-        NULL, NULL, NULL, p_scraped_at, p_expires_at, p_evicted_at
+        NULL, NULL, NULL, NULL, p_scraped_at, p_expires_at, p_evicted_at
     )
     ON CONFLICT (normalized_url, tier)
     WHERE tier IN ('scrape', 'interact')
@@ -590,6 +611,7 @@ BEGIN
         page_title = EXCLUDED.page_title,
         markdown = EXCLUDED.markdown,
         html = EXCLUDED.html,
+        raw_html = EXCLUDED.raw_html,
         screenshot_storage_key = EXCLUDED.screenshot_storage_key,
         scraped_at = EXCLUDED.scraped_at,
         expires_at = EXCLUDED.expires_at,
