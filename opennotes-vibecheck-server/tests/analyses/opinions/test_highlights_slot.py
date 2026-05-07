@@ -20,10 +20,10 @@ from src.utterances.schema import Utterance
 
 
 class _Acquire:
-    def __init__(self, conn: "_Conn") -> None:
+    def __init__(self, conn: _Conn) -> None:
         self._conn = conn
 
-    async def __aenter__(self) -> "_Conn":
+    async def __aenter__(self) -> _Conn:
         return self._conn
 
     async def __aexit__(self, *args: object) -> None:

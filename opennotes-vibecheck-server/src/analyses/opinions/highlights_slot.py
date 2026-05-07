@@ -64,29 +64,24 @@ async def _load_sections_from_db(pool: Any, job_id: Any) -> dict[str, Any]:
 
 
 def _extract_section_payload(payload: Mapping[str, Any], slug: str) -> tuple[dict[str, Any], str]:
+    empty: dict[str, Any] = {}
     raw = payload.get(slug)
-    data: dict[str, Any] = {}
-    state = "missing"
     if raw is None:
-        return data, state
+        return empty, "missing"
     if isinstance(raw, SectionSlot):
-        if raw.state == SectionState.DONE:
-            data = raw.data if isinstance(raw.data, dict) else {}
-            return data, SectionState.DONE.value
-        return data, raw.state.value
-    if isinstance(raw, Mapping):
+        slot = raw
+    elif isinstance(raw, Mapping):
         if "state" not in raw or "attempt_id" not in raw:
-            data = dict(raw)
-            return data, SectionState.DONE.value
+            return dict(raw), SectionState.DONE.value
         try:
             slot = SectionSlot.model_validate(raw)
         except ValidationError:
-            return data, "malformed"
-        if slot.state == SectionState.DONE:
-            data = slot.data if isinstance(slot.data, dict) else {}
-            return data, slot.state.value
-        return data, slot.state.value
-    return data, "malformed"
+            return empty, "malformed"
+    else:
+        return empty, "malformed"
+    if slot.state == SectionState.DONE and isinstance(slot.data, dict):
+        return slot.data, SectionState.DONE.value
+    return empty, slot.state.value
 
 
 def _extract_deduped_claims(payload: Mapping[str, Any]) -> list[DedupedClaim]:
