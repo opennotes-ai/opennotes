@@ -372,3 +372,96 @@ async def test_atomic_scrape_upsert_rpc_respects_newer_tombstone(
     assert row["markdown"] is None
     assert row["html"] is None
     assert row["evicted_at"] == tombstone_time
+
+
+async def test_atomic_scrape_upsert_rpc_writes_raw_html(
+    full_schema_conn: asyncpg.Connection,
+) -> None:
+    # TASK-1577.01: assert the new 15-arg signature actually persists
+    # raw_html when a non-NULL value is supplied. The earlier tombstone
+    # test passes NULL and only asserts evict-fence semantics.
+    await _apply_full_schema_as_superuser(full_schema_conn)
+
+    now = datetime.now(UTC)
+    raw_html = "<html><body><div id='shell'>shell</div><article>post</article></body></html>"
+    wrote = await full_schema_conn.fetchval(
+        """
+        SELECT public.vibecheck_upsert_scrape_if_not_evicted(
+            $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15
+        )
+        """,
+        "https://example.com/raw",
+        "scrape",
+        "https://example.com/raw",
+        "https://example.com/raw",
+        "example.com",
+        "other",
+        "Raw",
+        "fresh",
+        "<main>main-content</main>",
+        raw_html,
+        None,
+        now,
+        now + timedelta(hours=72),
+        now,
+        1,
+    )
+    assert wrote is True
+
+    row = await full_schema_conn.fetchrow(
+        """
+        SELECT html, raw_html
+        FROM public.vibecheck_scrapes
+        WHERE normalized_url = $1 AND tier = 'scrape'
+        """,
+        "https://example.com/raw",
+    )
+    assert row is not None
+    assert row["html"] == "<main>main-content</main>"
+    assert row["raw_html"] == raw_html
+
+
+async def test_atomic_scrape_upsert_rpc_14_arg_shim_writes_null_raw_html(
+    full_schema_conn: asyncpg.Connection,
+) -> None:
+    # TASK-1577.01 rolling-deploy shim: the prior 14-arg signature must
+    # remain callable so old replicas can keep serving traffic during a
+    # rolling Cloud Run deploy. The shim delegates to the 15-arg form
+    # with raw_html defaulted to NULL.
+    await _apply_full_schema_as_superuser(full_schema_conn)
+
+    now = datetime.now(UTC)
+    wrote = await full_schema_conn.fetchval(
+        """
+        SELECT public.vibecheck_upsert_scrape_if_not_evicted(
+            $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14
+        )
+        """,
+        "https://example.com/legacy",
+        "scrape",
+        "https://example.com/legacy",
+        "https://example.com/legacy",
+        "example.com",
+        "other",
+        "Legacy",
+        "old replica",
+        "<main>old-replica-html</main>",
+        None,  # p_screenshot_storage_key (14-arg form has no p_raw_html)
+        now,
+        now + timedelta(hours=72),
+        now,
+        1,
+    )
+    assert wrote is True
+
+    row = await full_schema_conn.fetchrow(
+        """
+        SELECT html, raw_html
+        FROM public.vibecheck_scrapes
+        WHERE normalized_url = $1 AND tier = 'scrape'
+        """,
+        "https://example.com/legacy",
+    )
+    assert row is not None
+    assert row["html"] == "<main>old-replica-html</main>"
+    assert row["raw_html"] is None

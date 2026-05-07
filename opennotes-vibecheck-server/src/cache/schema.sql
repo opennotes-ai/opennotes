@@ -495,15 +495,11 @@ ALTER TABLE public.vibecheck_scrapes
 -- lives inside `ON CONFLICT DO UPDATE`, so an evict that arrives between
 -- the application preflight read and the final write cannot be overwritten.
 --
--- TASK-1577.01: signature gained `p_raw_html`. CREATE OR REPLACE cannot
--- change a function's parameter list, so the prior 14-arg signature is
--- dropped first; IF EXISTS keeps re-runs idempotent on fresh databases
--- where the old signature never existed.
-DROP FUNCTION IF EXISTS public.vibecheck_upsert_scrape_if_not_evicted(
-    TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TIMESTAMPTZ,
-    TIMESTAMPTZ, TIMESTAMPTZ, INT
-);
-
+-- TASK-1577.01: a 15-arg signature with `p_raw_html` is added below.
+-- The prior 14-arg form is preserved as a shim that delegates with
+-- `p_raw_html => NULL` so that during a rolling Cloud Run deploy the
+-- old replicas (still calling the 14-arg form) keep working until they
+-- drain. Both forms must coexist; do NOT drop the 14-arg form.
 CREATE OR REPLACE FUNCTION public.vibecheck_upsert_scrape_if_not_evicted(
     p_normalized_url TEXT,
     p_tier TEXT,
@@ -519,7 +515,8 @@ CREATE OR REPLACE FUNCTION public.vibecheck_upsert_scrape_if_not_evicted(
     p_scraped_at TIMESTAMPTZ,
     p_expires_at TIMESTAMPTZ,
     p_put_started_at TIMESTAMPTZ,
-    p_clock_skew_seconds INT DEFAULT 1
+    p_clock_skew_seconds INT  -- TASK-1577.01: no DEFAULT so the 14-arg shim
+                              -- below is unambiguous for positional callers.
 )
 RETURNS BOOLEAN
 LANGUAGE plpgsql
@@ -575,6 +572,65 @@ REVOKE ALL ON FUNCTION public.vibecheck_upsert_scrape_if_not_evicted(
 GRANT EXECUTE ON FUNCTION public.vibecheck_upsert_scrape_if_not_evicted(
     TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT,
     TIMESTAMPTZ, TIMESTAMPTZ, TIMESTAMPTZ, INT
+) TO service_role;
+
+-- TASK-1577.01 rolling-deploy shim: old replicas (pre-1577.01 image)
+-- continue calling the 14-arg signature until they drain. Routes to the
+-- 15-arg form with raw_html defaulted to NULL so old + new can serve
+-- traffic concurrently without PostgREST function-resolution failures.
+-- Drop this shim only after the 14-arg image is fully retired (tracked
+-- separately so the cleanup is intentional, not coincidental).
+CREATE OR REPLACE FUNCTION public.vibecheck_upsert_scrape_if_not_evicted(
+    p_normalized_url TEXT,
+    p_tier TEXT,
+    p_url TEXT,
+    p_final_url TEXT,
+    p_host TEXT,
+    p_page_kind TEXT,
+    p_page_title TEXT,
+    p_markdown TEXT,
+    p_html TEXT,
+    p_screenshot_storage_key TEXT,
+    p_scraped_at TIMESTAMPTZ,
+    p_expires_at TIMESTAMPTZ,
+    p_put_started_at TIMESTAMPTZ,
+    p_clock_skew_seconds INT  -- TASK-1577.01: matches the 15-arg form;
+                              -- explicit so positional calls disambiguate.
+)
+RETURNS BOOLEAN
+LANGUAGE sql
+SECURITY DEFINER
+SET search_path = pg_catalog, pg_temp
+AS $$
+    SELECT public.vibecheck_upsert_scrape_if_not_evicted(
+        p_normalized_url,
+        p_tier,
+        p_url,
+        p_final_url,
+        p_host,
+        p_page_kind,
+        p_page_title,
+        p_markdown,
+        p_html,
+        NULL::TEXT,
+        p_screenshot_storage_key,
+        p_scraped_at,
+        p_expires_at,
+        p_put_started_at,
+        p_clock_skew_seconds
+    );
+$$;
+ALTER FUNCTION public.vibecheck_upsert_scrape_if_not_evicted(
+    TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TIMESTAMPTZ,
+    TIMESTAMPTZ, TIMESTAMPTZ, INT
+) OWNER TO postgres;
+REVOKE ALL ON FUNCTION public.vibecheck_upsert_scrape_if_not_evicted(
+    TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TIMESTAMPTZ,
+    TIMESTAMPTZ, TIMESTAMPTZ, INT
+) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.vibecheck_upsert_scrape_if_not_evicted(
+    TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TIMESTAMPTZ,
+    TIMESTAMPTZ, TIMESTAMPTZ, INT
 ) TO service_role;
 
 CREATE OR REPLACE FUNCTION public.vibecheck_upsert_scrape_evict_tombstone(

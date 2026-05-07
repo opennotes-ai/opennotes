@@ -262,7 +262,10 @@ class TestSweeperFunctions:
     def test_security_definer_functions_pin_search_path(self, schema_sql: str) -> None:
         # SECURITY DEFINER without search_path is a hijack vector via
         # untrusted schemas; pin to pg_catalog + pg_temp.
-        assert schema_sql.count("SET search_path = pg_catalog, pg_temp") == 5
+        # Six functions are pinned: exec_sql, two sweepers (orphan + purge),
+        # the tombstone upsert, and the upsert RPC's 15-arg + 14-arg
+        # signatures (TASK-1577.01 added the 14-arg rolling-deploy shim).
+        assert schema_sql.count("SET search_path = pg_catalog, pg_temp") == 6
         assert "SET search_path = public, pg_temp" not in schema_sql
 
     def test_sweepers_revoke_execute_from_public(self, schema_sql: str) -> None:
