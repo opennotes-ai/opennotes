@@ -384,7 +384,7 @@ async def test_run_claims_evidence_falls_back_to_dedup_slot_when_payload_missing
         return [
             Utterance(
                 kind="comment",
-                text="Scientists observe the ocean is blue.",
+                text="The ocean is blue because it absorbs light from the atmosphere.",
                 utterance_id="u-1",
                 author="alice",
             )
@@ -407,7 +407,7 @@ async def test_run_claims_evidence_falls_back_to_dedup_slot_when_payload_missing
     assert claim["canonical_text"] == "The ocean is blue."
     assert claim["supporting_facts"] == [
         {
-            "statement": "Scientists observe the ocean is blue.",
+            "statement": "The ocean is blue because it absorbs light from the atmosphere.",
             "source_kind": "utterance",
             "source_ref": "u-1",
         }
@@ -579,7 +579,10 @@ async def test_run_claims_evidence_sets_zero_facts_to_verify_for_subjective_clai
 async def test_utterance_meta_text_and_kind_propagate_through_supporting_facts(
     no_external_settings: Settings,
 ) -> None:
-    meta = _UtteranceMeta(text="Scientists confirm the moon is round.", kind="comment")
+    meta = _UtteranceMeta(
+        text="The moon is round because gravity pulls it into hydrostatic equilibrium.",
+        kind="comment",
+    )
 
     facts = await evidence.build_supporting_facts_by_claim(
         _claims_report("The moon is round.").deduped_claims,
@@ -588,7 +591,7 @@ async def test_utterance_meta_text_and_kind_propagate_through_supporting_facts(
         external_fetcher=_no_external_fetcher,
     )
 
-    assert meta.text == "Scientists confirm the moon is round."
+    assert meta.text == "The moon is round because gravity pulls it into hydrostatic equilibrium."
     assert meta.kind == "comment"
     assert facts["The moon is round."][0].statement == meta.text
     assert facts["The moon is round."][0].source_ref == "u-1"
@@ -649,6 +652,14 @@ async def test_inline_facts_keep_comment_when_post_also_referenced(
     assert facts["Cats can see in the dark."][0].source_ref == "u-comment"
 
 
+def test_truncate_falls_back_to_hard_cut_when_only_early_whitespace() -> None:
+    text = "abc " + "x" * 1000
+    truncated = evidence._truncate_for_inline_fact(text)
+    assert len(truncated) <= evidence.INLINE_FACT_MAX_CHARS
+    assert truncated.endswith("…")
+    assert len(truncated) > evidence.INLINE_FACT_MAX_CHARS // 2
+
+
 def test_inline_tautology_detects_substring_containment() -> None:
     claim = "the company shipped feature x last week"
     statement = "I read that the company shipped feature x last week and it was great."
@@ -666,6 +677,20 @@ def test_inline_tautology_rejects_non_contiguous_topic_overlap() -> None:
 def test_inline_tautology_rejects_short_claim_in_long_statement() -> None:
     claim = "rain falls"
     statement = "Yesterday the heavy rain falls over the valley caused trouble."
+
+    assert evidence._is_inline_tautology(statement, claim) is False
+
+
+def test_inline_tautology_detects_claim_at_end_of_long_statement() -> None:
+    claim = "the moon is round"
+    statement = "Recent studies show the moon is round."
+
+    assert evidence._is_inline_tautology(statement, claim) is True
+
+
+def test_inline_tautology_still_rejects_short_claim_at_edge() -> None:
+    claim = "is round"
+    statement = "Scientists have concluded that the earth is round after extensive study."
 
     assert evidence._is_inline_tautology(statement, claim) is False
 
@@ -728,6 +753,7 @@ async def test_inline_fact_truncates_long_utterance(
     statement = facts["Mars has two moons."][0].statement
     assert len(statement) <= 600
     assert statement.endswith("…")
+    assert len(statement) >= 2
     assert not statement[-2].isspace()
 
 

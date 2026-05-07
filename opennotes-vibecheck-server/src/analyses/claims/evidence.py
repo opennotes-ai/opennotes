@@ -41,7 +41,7 @@ def _truncate_for_inline_fact(text: str) -> str:
         return text
     budget = INLINE_FACT_MAX_CHARS - len(_INLINE_FACT_ELLIPSIS)
     cut = text.rfind(" ", 0, budget)
-    if cut <= 0:
+    if cut < budget // 2:
         cut = budget
     return text[:cut].rstrip() + _INLINE_FACT_ELLIPSIS
 
@@ -224,10 +224,9 @@ def _is_inline_tautology(statement: str, claim_text: str) -> bool:
     padded_statement = f" {normalized_statement} "
     if padded_claim not in padded_statement:
         return False
-    prefix = padded_statement[: padded_statement.index(padded_claim)].strip()
-    suffix_start = padded_statement.index(padded_claim) + len(padded_claim)
-    suffix = padded_statement[suffix_start:].strip()
-    return bool(prefix) and bool(suffix)
+    start = padded_statement.index(padded_claim)
+    prefix = padded_statement[:start].strip()
+    return bool(prefix)
 
 
 def _inline_supporting_facts(
