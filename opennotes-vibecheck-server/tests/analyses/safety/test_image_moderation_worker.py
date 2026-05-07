@@ -198,10 +198,10 @@ class _StubPool:
         outer = self
 
         class _CM:
-            async def __aenter__(self_inner):
+            async def __aenter__(self):
                 return outer._make_conn()
 
-            async def __aexit__(self_inner, *exc):
+            async def __aexit__(self, *exc):
                 return False
 
         return _CM()

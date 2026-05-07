@@ -229,10 +229,10 @@ class _StubPool:
                     outer._upsert_fn(rows)
 
         class _CM:
-            async def __aenter__(self_inner):
+            async def __aenter__(self):
                 return _Conn()
 
-            async def __aexit__(self_inner, *exc):
+            async def __aexit__(self, *exc):
                 return False
 
         return _CM()

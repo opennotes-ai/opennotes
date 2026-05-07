@@ -21,7 +21,7 @@ from src.services.gcp_adc import CLOUD_PLATFORM_SCOPE, get_access_token
 logger = logging.getLogger(__name__)
 
 
-async def run_video_moderation(
+async def run_video_moderation(  # noqa: PLR0912
     pool: Any,
     job_id: UUID,
     task_attempt: UUID,
