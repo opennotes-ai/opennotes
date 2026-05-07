@@ -114,7 +114,7 @@ WHERE job_id = $1
 """
 
 _LOAD_UTTERANCE_ANCHORS_SQL = """
-SELECT position + 1 AS position, utterance_id
+SELECT position + 1 AS position, utterance_id, timestamp_at AS timestamp
 FROM vibecheck_job_utterances
 WHERE job_id = $1 AND utterance_id IS NOT NULL
 ORDER BY position
@@ -213,7 +213,11 @@ async def maybe_finalize_job(  # noqa: PLR0911
         )
 
         utterance_anchors = [
-            UtteranceAnchor(position=row["position"], utterance_id=row["utterance_id"])
+            UtteranceAnchor(
+                position=row["position"],
+                utterance_id=row["utterance_id"],
+                timestamp=row["timestamp"],
+            )
             for row in await conn.fetch(_LOAD_UTTERANCE_ANCHORS_SQL, job_id)
         ]
 

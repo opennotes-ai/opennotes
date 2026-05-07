@@ -2583,6 +2583,19 @@
             "type": "string",
             "title": "Utterance Id",
             "description": "Stable utterance id stored in vibecheck_job_utterances."
+          },
+          "timestamp": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Timestamp",
+            "description": "Wall-clock timestamp for the utterance when the source thread exposed one."
           }
         },
         "type": "object",

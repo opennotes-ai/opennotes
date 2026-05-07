@@ -81,7 +81,7 @@ function ChevronIcon(props: { expanded: boolean; testId: string }) {
 export type SlotCountBadge = {
   total: number;
   flagged?: number;
-  kind?: "results" | "flagged";
+  kind?: "results" | "flagged" | "sentences";
 };
 
 function asFiniteCount(value: number): number {
@@ -93,6 +93,11 @@ function formatCountBadge(count: SlotCountBadge): string {
   if (count.kind === "flagged") {
     const flagged = asFiniteCount(count.flagged ?? 0);
     return `${flagged} (of ${total}) flagged`;
+  }
+  if (count.kind === "sentences") {
+    if (total <= 0) return "no sentences scored";
+    if (total === 1) return "based on 1 sentence";
+    return `based on ${total} sentences`;
   }
   if (total <= 0) return "no results";
   if (total === 1) return "1 result";

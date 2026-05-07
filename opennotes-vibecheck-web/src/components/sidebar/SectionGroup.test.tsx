@@ -1119,6 +1119,87 @@ describe("SectionGroup", () => {
     );
   });
 
+  it("shows no sentences scored when a sentence badge count is zero", () => {
+    render(() => (
+      <SectionGroup
+        label="Opinions/sentiments"
+        slugs={["opinions_sentiments__sentiment"]}
+        sections={{
+          opinions_sentiments__sentiment: {
+            state: "done",
+            attempt_id: "a1",
+            data: { sentiment_stats: { per_utterance: [] } },
+          },
+        }}
+        render={{}}
+        counts={{
+          opinions_sentiments__sentiment: () => ({
+            total: 0,
+            kind: "sentences",
+          }),
+        }}
+      />
+    ));
+
+    expect(
+      screen.getByTestId("slot-count-opinions_sentiments__sentiment").textContent,
+    ).toBe("no sentences scored");
+  });
+
+  it("shows based on 1 sentence when a sentence badge count is singular", () => {
+    render(() => (
+      <SectionGroup
+        label="Opinions/sentiments"
+        slugs={["opinions_sentiments__sentiment"]}
+        sections={{
+          opinions_sentiments__sentiment: {
+            state: "done",
+            attempt_id: "a1",
+            data: { sentiment_stats: { per_utterance: [{}] } },
+          },
+        }}
+        render={{}}
+        counts={{
+          opinions_sentiments__sentiment: () => ({
+            total: 1,
+            kind: "sentences",
+          }),
+        }}
+      />
+    ));
+
+    expect(
+      screen.getByTestId("slot-count-opinions_sentiments__sentiment").textContent,
+    ).toBe("based on 1 sentence");
+  });
+
+  it("shows based on N sentences when a sentence badge count is plural", () => {
+    render(() => (
+      <SectionGroup
+        label="Opinions/sentiments"
+        slugs={["opinions_sentiments__sentiment"]}
+        sections={{
+          opinions_sentiments__sentiment: {
+            state: "done",
+            attempt_id: "a1",
+            data: { sentiment_stats: { per_utterance: [{}, {}, {}] } },
+          },
+        }}
+        render={{}}
+        counts={{
+          opinions_sentiments__sentiment: () => ({
+            total: 3,
+            kind: "sentences",
+          }),
+        }}
+      />
+    ));
+
+    expect(
+      screen.getByTestId("slot-count-opinions_sentiments__sentiment").textContent,
+    ).toBe("based on 3 sentences");
+  });
+
   it("does not render a count badge while the slot is still pending or running", () => {
     render(() => (
       <SectionGroup
@@ -1395,6 +1476,10 @@ describe("Sidebar", () => {
       );
       expect(screen.queryByTestId(`skeleton-${slug}`)).toBeNull();
     }
+
+    expect(
+      screen.getByTestId("slot-count-opinions_sentiments__sentiment").textContent,
+    ).toBe("no sentences scored");
   });
 
   it("keeps image moderation collapsed by default when no images were checked", () => {
@@ -1717,10 +1802,30 @@ describe("Sidebar (done slots, per-slug reports)", () => {
     const sentimentReport = screen.getByTestId(
       "report-opinions_sentiments__sentiment",
     );
-    expect(sentimentReport.textContent).toContain("mean valence");
+    expect(sentimentReport.textContent).toContain("40%");
+    expect(sentimentReport.textContent).toContain("10%");
+    expect(sentimentReport.textContent).toContain("50%");
+    expect(
+      within(sentimentReport)
+        .getByTestId("sentiment-positive")
+        .getAttribute("style"),
+    ).toContain("width: 40%");
+    expect(
+      within(sentimentReport)
+        .getByTestId("sentiment-negative")
+        .getAttribute("style"),
+    ).toContain("width: 10%");
+    expect(
+      within(sentimentReport)
+        .getByTestId("sentiment-neutral")
+        .getAttribute("style"),
+    ).toContain("width: 50%");
     expect(sentimentReport.textContent).not.toContain(
       "subjective-claim-one",
     );
+    expect(
+      within(sentimentReport).queryByTestId("sentiment-mean-valence"),
+    ).toBeNull();
 
     const subjectiveReport = screen.getByTestId(
       "report-opinions_sentiments__subjective",
@@ -2047,6 +2152,9 @@ describe("Sidebar (done slots, per-slug reports)", () => {
     ).toBeDefined();
     expect(
       screen.getByTestId("report-opinions_sentiments__sentiment"),
+    ).toBeDefined();
+    expect(
+      screen.getByLabelText("Sentiment: 10% positive, 10% negative, 80% neutral"),
     ).toBeDefined();
     expect(
       screen.getByTestId("report-opinions_sentiments__subjective"),

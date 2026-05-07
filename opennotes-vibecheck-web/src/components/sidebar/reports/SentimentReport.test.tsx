@@ -1,9 +1,19 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen } from "@solidjs/testing-library";
 import type { components } from "~/lib/generated-types";
 import SentimentReport from "./SentimentReport";
 
+vi.mock("@opennotes/ui/components/ui/echart", () => ({
+  EChart: (props: { height?: string }) => (
+    <div data-testid="mock-echart" data-height={props.height ?? ""} />
+  ),
+}));
+
 type SentimentStatsReport = components["schemas"]["SentimentStatsReport"];
+type UtteranceAnchor = components["schemas"]["UtteranceAnchor"];
+type SentimentScore = components["schemas"]["SentimentScore"];
+
+const BASE_MS = Date.UTC(2026, 0, 1, 0, 0, 0);
 
 afterEach(() => {
   cleanup();
@@ -22,9 +32,52 @@ function makeSentimentStats(
   };
 }
 
+function makeScore(
+  utteranceId: string,
+  label: SentimentScore["label"],
+): SentimentScore {
+  return {
+    utterance_id: utteranceId,
+    label,
+    valence: label === "positive" ? 0.75 : label === "negative" ? -0.75 : 0,
+  };
+}
+
+function makeAnchor(
+  utteranceId: string,
+  offsetMinutes?: number | null,
+): UtteranceAnchor {
+  return {
+    position: 1,
+    utterance_id: utteranceId,
+    timestamp:
+      offsetMinutes == null
+        ? offsetMinutes ?? null
+        : new Date(BASE_MS + offsetMinutes * 60_000).toISOString(),
+  };
+}
+
+function renderableTimelineStats(): SentimentStatsReport {
+  return makeSentimentStats({
+    per_utterance: [
+      makeScore("u-1", "positive"),
+      makeScore("u-2", "negative"),
+      makeScore("u-3", "neutral"),
+    ],
+  });
+}
+
+function renderableTimelineAnchors(): UtteranceAnchor[] {
+  return [
+    makeAnchor("u-1", 0),
+    makeAnchor("u-2", 31),
+    makeAnchor("u-3", 62),
+  ];
+}
+
 describe("SentimentReport", () => {
   it("renders percentage shares without leading plus or minus signs", () => {
-    render(() => <SentimentReport stats={makeSentimentStats()} />);
+    render(() => <SentimentReport stats={makeSentimentStats()} anchors={[]} />);
 
     expect(screen.getByTestId("sentiment-positive-label").textContent).toBe("42%");
     expect(screen.getByTestId("sentiment-negative-label").textContent).toBe("27%");
@@ -33,7 +86,7 @@ describe("SentimentReport", () => {
   });
 
   it("uses semantic color classes for sentiment bars", () => {
-    render(() => <SentimentReport stats={makeSentimentStats()} />);
+    render(() => <SentimentReport stats={makeSentimentStats()} anchors={[]} />);
 
     expect(screen.getByTestId("sentiment-positive").className).toContain(
       "bg-positive",
@@ -47,7 +100,7 @@ describe("SentimentReport", () => {
   });
 
   it("uses semantic label colors and centered fixed columns", () => {
-    render(() => <SentimentReport stats={makeSentimentStats()} />);
+    render(() => <SentimentReport stats={makeSentimentStats()} anchors={[]} />);
 
     const legend = screen.getByTestId("sentiment-legend");
     expect(legend.className).toContain("grid-cols-3");
@@ -75,6 +128,7 @@ describe("SentimentReport", () => {
           negative_pct: 60,
           neutral_pct: 20,
         })}
+        anchors={[]}
       />
     ));
 
@@ -112,6 +166,7 @@ describe("SentimentReport", () => {
           negative_pct: 30,
           neutral_pct: 20,
         })}
+        anchors={[]}
       />
     ));
 
@@ -121,5 +176,37 @@ describe("SentimentReport", () => {
     expect(screen.getByTestId("sentiment-positive").style.width).toBe("50%");
     expect(screen.getByTestId("sentiment-negative").style.width).toBe("30%");
     expect(screen.getByTestId("sentiment-neutral").style.width).toBe("20%");
+  });
+
+  it("renders the timeline charts when bucketing is renderable", () => {
+    render(() => (
+      <SentimentReport
+        stats={renderableTimelineStats()}
+        anchors={renderableTimelineAnchors()}
+      />
+    ));
+
+    expect(screen.getByTestId("sentiment-timeline")).toBeDefined();
+    expect(screen.getByTestId("sentiment-rolling-chart")).toBeDefined();
+    expect(screen.getByTestId("sentiment-punch-card-chart")).toBeDefined();
+    expect(screen.queryByTestId("sentiment-mean-valence")).toBeNull();
+    expect(screen.getByTestId("sentiment-legend")).toBeDefined();
+  });
+
+  it("omits the timeline when bucketing is not renderable", () => {
+    render(() => (
+      <SentimentReport
+        stats={renderableTimelineStats()}
+        anchors={[]}
+      />
+    ));
+
+    expect(screen.queryByTestId("sentiment-timeline")).toBeNull();
+    expect(screen.queryByTestId("sentiment-rolling-chart")).toBeNull();
+    expect(screen.queryByTestId("sentiment-punch-card-chart")).toBeNull();
+    expect(screen.queryByTestId("sentiment-mean-valence")).toBeNull();
+    expect(screen.getByTestId("sentiment-positive-label").textContent).toBe("42%");
+    expect(screen.getByTestId("sentiment-negative-label").textContent).toBe("27%");
+    expect(screen.getByTestId("sentiment-neutral-label").textContent).toBe("31%");
   });
 });

@@ -1329,6 +1329,11 @@ export interface components {
              * @description Stable utterance id stored in vibecheck_job_utterances.
              */
             utterance_id: string;
+            /**
+             * Timestamp
+             * @description Wall-clock timestamp for the utterance when the source thread exposed one.
+             */
+            timestamp?: string | null;
         };
         /**
          * UtteranceStreamType
