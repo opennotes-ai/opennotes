@@ -49,6 +49,8 @@ _INLINE_TAUTOLOGY_PADDING_WORDS = {
     "this",
 }
 
+_MIN_TAUTOLOGY_CONTAINMENT_WORDS = 3
+
 ExternalEvidenceFetcher = Callable[
     [list[str], Settings], Awaitable[dict[str, list[dict[str, Any]]]]
 ]
@@ -180,14 +182,7 @@ def _normalize_for_similarity(text: str) -> str:
     return " ".join(normalized.split())
 
 
-def _is_inline_tautology(statement: str, claim_text: str) -> bool:
-    normalized_statement = _normalize_for_similarity(statement)
-    normalized_claim = _normalize_for_similarity(claim_text)
-    if not normalized_statement or not normalized_claim:
-        return False
-    if normalized_statement == normalized_claim:
-        return True
-
+def _matches_with_padding(normalized_statement: str, normalized_claim: str) -> bool:
     extra_text = ""
     if normalized_statement.startswith(f"{normalized_claim} "):
         extra_text = normalized_statement[len(normalized_claim) :].strip()
@@ -195,11 +190,31 @@ def _is_inline_tautology(statement: str, claim_text: str) -> bool:
         extra_text = normalized_statement[: -len(normalized_claim)].strip()
     else:
         return False
-
     extra_words = extra_text.split()
     return bool(extra_words) and all(
         word in _INLINE_TAUTOLOGY_PADDING_WORDS for word in extra_words
     )
+
+
+def _is_inline_tautology(statement: str, claim_text: str) -> bool:
+    normalized_statement = _normalize_for_similarity(statement)
+    normalized_claim = _normalize_for_similarity(claim_text)
+    if not normalized_statement or not normalized_claim:
+        return False
+    if normalized_statement == normalized_claim:
+        return True
+    if _matches_with_padding(normalized_statement, normalized_claim):
+        return True
+    if len(normalized_claim.split()) < _MIN_TAUTOLOGY_CONTAINMENT_WORDS:
+        return False
+    padded_claim = f" {normalized_claim} "
+    padded_statement = f" {normalized_statement} "
+    if padded_claim not in padded_statement:
+        return False
+    prefix = padded_statement[: padded_statement.index(padded_claim)].strip()
+    suffix_start = padded_statement.index(padded_claim) + len(padded_claim)
+    suffix = padded_statement[suffix_start:].strip()
+    return bool(prefix) and bool(suffix)
 
 
 def _inline_supporting_facts(

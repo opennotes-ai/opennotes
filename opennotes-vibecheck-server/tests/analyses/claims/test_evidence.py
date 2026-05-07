@@ -649,6 +649,27 @@ async def test_inline_facts_keep_comment_when_post_also_referenced(
     assert facts["Cats can see in the dark."][0].source_ref == "u-comment"
 
 
+def test_inline_tautology_detects_substring_containment() -> None:
+    claim = "the company shipped feature x last week"
+    statement = "I read that the company shipped feature x last week and it was great."
+
+    assert evidence._is_inline_tautology(statement, claim) is True
+
+
+def test_inline_tautology_rejects_non_contiguous_topic_overlap() -> None:
+    claim = "the company shipped feature x"
+    statement = "the company has been busy they shipped feature x today"
+
+    assert evidence._is_inline_tautology(statement, claim) is False
+
+
+def test_inline_tautology_rejects_short_claim_in_long_statement() -> None:
+    claim = "rain falls"
+    statement = "Yesterday the heavy rain falls over the valley caused trouble."
+
+    assert evidence._is_inline_tautology(statement, claim) is False
+
+
 @pytest.mark.asyncio
 async def test_inline_facts_skip_long_post_containing_claim_verbatim(
     no_external_settings: Settings,
