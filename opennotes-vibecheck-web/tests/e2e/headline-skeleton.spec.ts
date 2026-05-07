@@ -258,8 +258,11 @@ function nextPoll(
 ): Record<string, unknown> {
   const count = (pollCounts.get(jobId) ?? 0) + 1;
   pollCounts.set(jobId, count);
-  // First poll → pending (skeletons visible). Second poll onward → done.
-  if (count <= 1) return pendingState(jobId);
+  // First two polls → pending (skeletons visible). Third poll onward → done.
+  // Two pending polls (≈500 ms with next_poll_ms=250) gives Playwright a
+  // reliably observable skeleton window even on cold dev-server starts where
+  // SSR + hydration consume most of the page.goto budget.
+  if (count <= 2) return pendingState(jobId);
   return doneState(jobId, { withWeather });
 }
 
@@ -421,4 +424,149 @@ test("AC4+AC6 collapse: weather_report=null + done renders single-column headlin
   const cls = (await root.getAttribute("class")) ?? "";
   expect(cls).toMatch(/\bgrid-cols-1\b/);
   expect(cls).not.toMatch(/lg:grid-cols-\[minmax\(0,1fr\)_minmax\(0,2fr\)\]/);
+});
+
+/**
+ * TASK-1572.06 — No-empty-container invariant + tooltip + null-weather collapse.
+ *
+ * The original 1572 bug was empty bubbles/boxes appearing during refresh of an
+ * in-flight or completed job. These tests enforce the invariant that if a
+ * lead-in container is in the DOM at all, it always contains either a skeleton
+ * or real content — never an empty shell.
+ */
+
+async function assertNoEmptyContainers(page: import("@playwright/test").Page) {
+  // headline-lead-in: if present, must contain at least one of:
+  // headline-summary (real), headline-summary-skeleton (skeleton),
+  // weather-report (real), or weather-report-skeleton (skeleton).
+  const leadIn = page.locator('[data-testid="headline-lead-in"]');
+  const leadInCount = await leadIn.count();
+  if (leadInCount > 0) {
+    const childMatches = await leadIn.locator(
+      [
+        '[data-testid="headline-summary"]',
+        '[data-testid="headline-summary-skeleton"]',
+        '[data-testid="weather-report"]',
+        '[data-testid="weather-report-skeleton"]',
+      ].join(", "),
+    ).count();
+    expect(
+      childMatches,
+      "headline-lead-in must contain a skeleton or real content",
+    ).toBeGreaterThan(0);
+  }
+
+  // weather-report (real card): if present, must contain at least one axis row.
+  const weather = page.locator('[data-testid="weather-report"]');
+  if ((await weather.count()) > 0) {
+    const rows = await weather.locator(
+      '[data-testid^="weather-axis-card-"]',
+    ).count();
+    expect(
+      rows,
+      "weather-report must contain at least one axis row",
+    ).toBeGreaterThan(0);
+  }
+
+  // weather-report-skeleton: if present, must have at least one skeleton row.
+  const weatherSkel = page.locator('[data-testid="weather-report-skeleton"]');
+  if ((await weatherSkel.count()) > 0) {
+    const rows = await weatherSkel.locator(
+      '[data-testid^="weather-skeleton-"]',
+    ).count();
+    expect(
+      rows,
+      "weather-report-skeleton must contain at least one skeleton row",
+    ).toBeGreaterThan(0);
+  }
+}
+
+test("AC1 no-empty-container invariant: lead-in always has skeleton or content across the lifecycle", async ({
+  page,
+}) => {
+  await page.goto(`${webBaseUrl}/analyze?job=${RESOLUTION_JOB_ID}`);
+
+  // Initial pending tick — skeletons should be the only children.
+  await expect(
+    page.locator('[data-testid="weather-report-skeleton"]'),
+  ).toBeVisible({ timeout: 1500 });
+  await assertNoEmptyContainers(page);
+
+  // Sample the invariant repeatedly while the job transitions to done.
+  // 12 ticks at 100 ms each = 1.2 s of coverage, comfortably crossing the
+  // 250 ms next_poll_ms cadence configured in the mock API.
+  for (let i = 0; i < 12; i++) {
+    await assertNoEmptyContainers(page);
+    await page.waitForTimeout(100);
+  }
+
+  // Final done tick — real content present, no skeleton.
+  await expect(page.locator('[data-testid="weather-report"]')).toBeVisible({
+    timeout: 15_000,
+  });
+  await expect(page.locator('[data-testid="headline-summary"]')).toBeVisible();
+  await assertNoEmptyContainers(page);
+});
+
+test("AC2 tooltip hover: hovering a weather-axis row reveals axis name + interpretation copy", async ({
+  page,
+}) => {
+  await page.goto(`${webBaseUrl}/analyze?job=${RESOLUTION_JOB_ID}`);
+  await expect(page.locator('[data-testid="weather-report"]')).toBeVisible({
+    timeout: 15_000,
+  });
+
+  type AxisCheck = { axisType: string; copyMatch: RegExp };
+  const checks: AxisCheck[] = [
+    { axisType: "truth", copyMatch: /factually grounded|sourced|misleading/i },
+    {
+      axisType: "relevance",
+      copyMatch: /on-topic|insightful|drifting/i,
+    },
+    {
+      axisType: "sentiment",
+      copyMatch: /emotional tone|free-form descriptor/i,
+    },
+  ];
+
+  for (const { axisType, copyMatch } of checks) {
+    const row = page.locator(`[data-testid="weather-axis-card-${axisType}"]`);
+    await row.hover();
+    const tooltip = page.locator('[role="tooltip"]').first();
+    await expect(tooltip).toBeVisible({ timeout: 5_000 });
+    await expect(tooltip).toContainText(
+      new RegExp(`^${axisType.charAt(0).toUpperCase() + axisType.slice(1)}`),
+    );
+    await expect(tooltip).toContainText(copyMatch);
+    // Move pointer away so the next hover triggers a fresh open.
+    await page.mouse.move(0, 0);
+    await page.waitForTimeout(150);
+  }
+});
+
+test("AC3 null-weather case: no empty weather card appears at any tick", async ({
+  page,
+}) => {
+  await page.goto(`${webBaseUrl}/analyze?job=${NULL_WEATHER_JOB_ID}`);
+
+  // First tick: pending → both skeletons. Must not violate the invariant.
+  await assertNoEmptyContainers(page);
+
+  // Wait for resolution to "done with weather=null".
+  await expect(page.locator('[data-testid="headline-summary"]')).toBeVisible({
+    timeout: 15_000,
+  });
+
+  // After done: weather column collapsed (no weather-report or skeleton).
+  await expect(page.locator('[data-testid="weather-report"]')).toHaveCount(0);
+  await expect(
+    page.locator('[data-testid="weather-report-skeleton"]'),
+  ).toHaveCount(0);
+
+  // Sample the invariant repeatedly to ensure no empty weather container
+  // ever flickers in during the null-weather lifecycle.
+  for (let i = 0; i < 12; i++) {
+    await assertNoEmptyContainers(page);
+    await page.waitForTimeout(100);
+  }
 });
