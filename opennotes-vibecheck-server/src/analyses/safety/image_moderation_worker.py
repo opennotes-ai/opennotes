@@ -47,7 +47,8 @@ async def run_image_moderation(
         except Exception:
             logger.exception("image cache fetch_cached failed; bypassing cache")
             cached = {}
-        missing = [u for u in image_urls if u not in cached]
+        # Dedupe so duplicate URLs across utterances hit the API once.
+        missing = list(dict.fromkeys(u for u in image_urls if u not in cached))
         fresh: dict[str, SafeSearchResult | None] = {}
         if missing:
             async with httpx.AsyncClient() as hx:

@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import json
-from dataclasses import asdict
+from dataclasses import asdict, fields
 from datetime import UTC, datetime, timedelta
 
 import asyncpg
 
 from src.analyses.safety.vision_client import SafeSearchResult
+
+_KNOWN_FIELDS = frozenset(f.name for f in fields(SafeSearchResult))
 
 
 async def fetch_cached(
@@ -28,7 +30,10 @@ async def fetch_cached(
         payload = row["result_payload"]
         if isinstance(payload, str):
             payload = json.loads(payload)
-        out[row["image_url"]] = SafeSearchResult(**payload)
+        # Filter to known fields so a future schema bump does not raise
+        # TypeError on cached rows written by an older deploy.
+        filtered = {k: v for k, v in payload.items() if k in _KNOWN_FIELDS}
+        out[row["image_url"]] = SafeSearchResult(**filtered)
     return out
 
 

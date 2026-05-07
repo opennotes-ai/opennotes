@@ -105,7 +105,7 @@ async def test_flattens_per_utterance_videos_and_caps(caplog):
         with patch("src.analyses.safety.video_moderation_worker.sample_video", new=fake_sample):
             with patch(
                 "src.analyses.safety.video_moderation_worker._annotate_frames",
-                new=AsyncMock(return_value=_clean_frame_findings(1)),
+                new=AsyncMock(return_value=(_clean_frame_findings(1), False)),
             ):
                 with caplog.at_level(logging.INFO, logger="src.analyses.safety.video_moderation_worker"):
                     result = await run_video_moderation(None, uuid4(), uuid4(), payload, settings)
@@ -131,7 +131,7 @@ async def test_sampler_error_emits_empty_frame_findings_match_and_continues():
         with patch("src.analyses.safety.video_moderation_worker.sample_video", new=fake_sample):
             with patch(
                 "src.analyses.safety.video_moderation_worker._annotate_frames",
-                new=AsyncMock(return_value=_clean_frame_findings(1)),
+                new=AsyncMock(return_value=(_clean_frame_findings(1), False)),
             ):
                 result = await run_video_moderation(None, uuid4(), uuid4(), payload, settings)
 
@@ -184,7 +184,7 @@ async def test_aggregate_max_likelihood_and_flagged_across_frames():
         ):
             with patch(
                 "src.analyses.safety.video_moderation_worker._annotate_frames",
-                new=AsyncMock(return_value=mixed_findings),
+                new=AsyncMock(return_value=(mixed_findings, False)),
             ):
                 result = await run_video_moderation(None, uuid4(), uuid4(), payload, settings)
 
@@ -320,7 +320,7 @@ async def test_partial_cache_hit_only_samples_missing():
         new=fake_sample,
     ), patch(
         "src.analyses.safety.video_moderation_worker._annotate_frames",
-        new=AsyncMock(return_value=_clean_frame_findings(1)),
+        new=AsyncMock(return_value=(_clean_frame_findings(1), False)),
     ):
         result = await run_video_moderation(pool, uuid4(), uuid4(), payload, settings)
 
@@ -349,7 +349,7 @@ async def test_full_miss_persists_findings_to_cache():
         new=AsyncMock(return_value=_fake_frames(2)),
     ), patch(
         "src.analyses.safety.video_moderation_worker._annotate_frames",
-        new=AsyncMock(return_value=_clean_frame_findings(2)),
+        new=AsyncMock(return_value=(_clean_frame_findings(2), False)),
     ):
         await run_video_moderation(pool, uuid4(), uuid4(), payload, settings)
 
@@ -380,6 +380,33 @@ async def test_sampling_failure_not_cached():
 
 
 @pytest.mark.asyncio
+async def test_per_frame_vision_error_suppresses_cache_write():
+    """Codex review P1: per-frame Vision `error` responses are scored as
+    UNKNOWN -> 0.5 -> not flagged, so they would persist as a fake "clean"
+    verdict for the whole TTL window. Worker must skip caching that video."""
+    payload = _Payload([_Utterance("utt-1", ["https://example.com/erroring.mp4"])])
+    settings = _make_settings()
+
+    upserted: list = []
+    pool = _StubPool(fetch_fn=lambda urls: [], upsert_fn=upserted.extend)
+
+    with patch(
+        "src.analyses.safety.video_moderation_worker.get_access_token",
+        return_value=FAKE_TOKEN,
+    ), patch(
+        "src.analyses.safety.video_moderation_worker.sample_video",
+        new=AsyncMock(return_value=_fake_frames(2)),
+    ), patch(
+        "src.analyses.safety.video_moderation_worker._annotate_frames",
+        new=AsyncMock(return_value=(_clean_frame_findings(2), True)),
+    ):
+        result = await run_video_moderation(pool, uuid4(), uuid4(), payload, settings)
+
+    assert len(result["matches"]) == 1
+    assert upserted == []  # nothing cached when per-frame errors occurred
+
+
+@pytest.mark.asyncio
 async def test_cache_fetch_failure_falls_back_to_full_pipeline(caplog):
     payload = _Payload([_Utterance("utt-1", ["https://example.com/v.mp4"])])
     settings = _make_settings()
@@ -403,7 +430,7 @@ async def test_cache_fetch_failure_falls_back_to_full_pipeline(caplog):
             new=fake_sample,
         ), patch(
             "src.analyses.safety.video_moderation_worker._annotate_frames",
-            new=AsyncMock(return_value=_clean_frame_findings(1)),
+            new=AsyncMock(return_value=(_clean_frame_findings(1), False)),
         ):
             result = await run_video_moderation(
                 _BrokenPool(), uuid4(), uuid4(), payload, settings

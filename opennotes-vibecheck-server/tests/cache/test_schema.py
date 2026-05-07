@@ -522,6 +522,21 @@ class TestPurgeFunctionExtended:
             in schema_sql
         )
 
+    def test_purge_function_deletes_expired_image_analysis_cache(self, schema_sql: str) -> None:
+        # TASK-1483.24: cache tables grow unbounded if not swept.
+        assert (
+            "DELETE FROM public.vibecheck_image_analysis_cache "
+            "WHERE expires_at < pg_catalog.now()"
+            in schema_sql
+        )
+
+    def test_purge_function_deletes_expired_video_analysis_cache(self, schema_sql: str) -> None:
+        assert (
+            "DELETE FROM public.vibecheck_video_analysis_cache "
+            "WHERE expires_at < pg_catalog.now()"
+            in schema_sql
+        )
+
 
 class TestSchemaQualification:
     def test_all_public_ddl_targets_are_schema_qualified(self, schema_sql: str) -> None:

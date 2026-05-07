@@ -90,9 +90,13 @@ async def run_video_moderation(  # noqa: PLR0912
                         frame_findings=[], flagged=True, max_likelihood=1.0,
                     ))
                     continue
-                assert token is not None
-                frame_findings = await _annotate_frames(frames, hx, token)
-                if frame_findings:
+                if token is None:
+                    raise VisionTransientError("ADC token unavailable")
+                frame_findings, had_errors = await _annotate_frames(frames, hx, token)
+                # Don't cache when any frame returned a Vision error: those frames
+                # default to UNKNOWN scores (codex review P1) and would persist as
+                # a fake "clean" verdict for the whole TTL window.
+                if frame_findings and not had_errors:
                     fresh_to_persist[vurl] = frame_findings
                 max_likelihood = max(
                     (ff.max_likelihood for ff in frame_findings),
@@ -117,9 +121,16 @@ async def run_video_moderation(  # noqa: PLR0912
         return {"matches": [m.model_dump() for m in matches]}
 
 
-async def _annotate_frames(frames: list[FrameBytes], hx: httpx.AsyncClient, token: str) -> list[FrameFinding]:
+async def _annotate_frames(
+    frames: list[FrameBytes], hx: httpx.AsyncClient, token: str
+) -> tuple[list[FrameFinding], bool]:
+    """Returns (findings, had_errors). had_errors is True when any per-frame
+    Vision response contained an `error` payload (e.g. transient backend error
+    for that frame). Callers should suppress caching when had_errors is True
+    so transient failures don't get recorded as a clean verdict for 7 days.
+    """
     if not frames:
-        return []
+        return [], False
     requests_body = {"requests": [
         {
             "image": {"content": base64.b64encode(fb.png_bytes).decode("ascii")},
@@ -149,7 +160,10 @@ async def _annotate_frames(frames: list[FrameBytes], hx: httpx.AsyncClient, toke
         responses = r.json().get("responses") or []
         out: list[FrameFinding] = []
         flagged_count = 0
+        had_errors = False
         for fb, resp in zip(frames, responses, strict=False):
+            if resp.get("error"):
+                had_errors = True
             annotation = resp.get("safeSearchAnnotation") or {}
             scores = {
                 k: likelihood_to_score(str(annotation.get(k, "UNKNOWN")))
@@ -165,4 +179,4 @@ async def _annotate_frames(frames: list[FrameBytes], hx: httpx.AsyncClient, toke
                 max_likelihood=max_likelihood,
             ))
         obs.add_flagged(flagged_count)
-        return out
+        return out, had_errors

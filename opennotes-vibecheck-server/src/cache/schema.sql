@@ -730,6 +730,10 @@ BEGIN
       );
 
     DELETE FROM public.vibecheck_web_risk_lookups WHERE expires_at < pg_catalog.now();
+    -- TASK-1483.24: per-URL Vision API caches expire on TTL; reap stale rows
+    -- so the high-cardinality URL keys do not grow unbounded.
+    DELETE FROM public.vibecheck_image_analysis_cache WHERE expires_at < pg_catalog.now();
+    DELETE FROM public.vibecheck_video_analysis_cache WHERE expires_at < pg_catalog.now();
 
     RETURN purged;
 END;
