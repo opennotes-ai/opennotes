@@ -10,11 +10,16 @@ import pytest
 
 from src.analyses.claims._claims_schemas import ClaimsReport, DedupedClaim
 from src.analyses.claims._factcheck_schemas import FactCheckMatch
+from src.analyses.opinions._highlights_schemas import (
+    HighlightsThresholdInfo,
+    OpinionsHighlightsReport,
+)
 from src.analyses.opinions._schemas import (
     SentimentScore,
     SentimentStatsReport,
     SubjectiveClaim,
 )
+from src.analyses.opinions._trends_schemas import TrendsOppositionsReport
 from src.analyses.safety._schemas import (
     HarmfulContentMatch,
     ImageModerationMatch,
@@ -67,6 +72,8 @@ def _empty_inputs() -> HeadlineSummaryInputs:
         known_misinformation=[],
         sentiment_stats=None,
         subjective_claims=[],
+        trends_oppositions=None,
+        highlights=None,
         page_title=None,
         page_kind=PageKind.OTHER,
         unavailable_inputs=[],
@@ -155,6 +162,51 @@ def _factcheck() -> FactCheckMatch:
     )
 
 
+def _trends_report(*, has_signal: bool = False) -> TrendsOppositionsReport:
+    return TrendsOppositionsReport(
+        trends=[
+            {
+                "label": "same claim repeated",
+                "cluster_texts": ["a", "b"],
+                "summary": "Recurring framing",
+            }
+        ]
+        if has_signal
+        else [],
+        oppositions=[],
+        input_cluster_count=0 if not has_signal else 1,
+        skipped_for_cap=0,
+    )
+
+
+def _highlights_report(*, has_signal: bool = False) -> OpinionsHighlightsReport:
+    return OpinionsHighlightsReport(
+        highlights=[
+            {
+                "cluster": {
+                    "canonical_text": "strong claim",
+                    "occurrence_count": 3,
+                    "author_count": 2,
+                    "utterance_ids": ["u1", "u2", "u3"],
+                    "representative_authors": ["alice"],
+                },
+                "crossed_scaled_threshold": True,
+            }
+        ]
+        if has_signal
+        else [],
+        threshold=HighlightsThresholdInfo(
+            total_authors=3,
+            total_utterances=3,
+            min_authors_required=2,
+            min_occurrences_required=2,
+        ),
+        fallback_engaged=False,
+        floor_eligible_count=3,
+        total_input_count=3,
+    )
+
+
 def _sentiment(positive_pct: float, negative_pct: float) -> SentimentStatsReport:
     neutral_pct = max(0.0, 100.0 - positive_pct - negative_pct)
     return SentimentStatsReport(
@@ -204,6 +256,15 @@ def test_all_inputs_clear_true_when_scd_is_insufficient():
 
 def test_all_inputs_clear_true_when_claims_report_is_empty():
     inputs = replace(_empty_inputs(), claims_report=_claims_report(empty=True))
+    assert all_inputs_clear(inputs) is True
+
+
+def test_all_inputs_clear_true_when_trends_and_highlights_are_empty_reports():
+    inputs = replace(
+        _empty_inputs(),
+        trends_oppositions=_trends_report(),
+        highlights=_highlights_report(),
+    )
     assert all_inputs_clear(inputs) is True
 
 
@@ -282,6 +343,8 @@ def test_all_inputs_clear_true_when_sentiment_is_truly_empty():
         ("flashpoint_matches", [_flashpoint()]),
         ("scd", _scd(insufficient=False)),
         ("claims_report", _claims_report(empty=False)),
+        ("trends_oppositions", _trends_report(has_signal=True)),
+        ("highlights", _highlights_report(has_signal=True)),
         ("known_misinformation", [_factcheck()]),
         ("subjective_claims", [_subjective()]),
         ("sentiment_stats", _sentiment(positive_pct=40.0, negative_pct=10.0)),
@@ -387,6 +450,8 @@ async def test_run_headline_summary_serializes_inputs_for_agent(monkeypatch):
         flashpoint_matches=[_flashpoint()],
         scd=_scd(insufficient=False),
         claims_report=_claims_report(empty=False),
+        trends_oppositions=_trends_report(has_signal=True),
+        highlights=_highlights_report(has_signal=True),
         known_misinformation=[_factcheck()],
         sentiment_stats=_sentiment(positive_pct=40.0, negative_pct=10.0),
         subjective_claims=[_subjective()],
@@ -409,6 +474,8 @@ async def test_run_headline_summary_serializes_inputs_for_agent(monkeypatch):
         "flashpoint_matches",
         "scd",
         "claims_report",
+        "trends_oppositions",
+        "highlights",
         "known_misinformation",
         "sentiment_stats",
         "subjective_claims",
@@ -419,6 +486,8 @@ async def test_run_headline_summary_serializes_inputs_for_agent(monkeypatch):
     assert payload["page_title"] == "A page"
     assert payload["page_kind"] == "article"
     assert payload["unavailable_inputs"] == ["video_moderation"]
+    assert payload["trends_oppositions"] == _trends_report(has_signal=True).model_dump(mode="json")
+    assert payload["highlights"] == _highlights_report(has_signal=True).model_dump(mode="json")
     assert payload["safety_recommendation"]["level"] == "unsafe"
     assert payload["harmful_content_matches"][0]["source"] == "gcp"
     assert payload["web_risk_findings"][0]["url"] == "https://bad.example/x"

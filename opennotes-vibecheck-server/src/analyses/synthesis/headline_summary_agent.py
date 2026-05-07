@@ -17,7 +17,9 @@ from uuid import UUID
 
 from src.analyses.claims._claims_schemas import ClaimsReport
 from src.analyses.claims._factcheck_schemas import FactCheckMatch
+from src.analyses.opinions._highlights_schemas import OpinionsHighlightsReport
 from src.analyses.opinions._schemas import SentimentStatsReport, SubjectiveClaim
+from src.analyses.opinions._trends_schemas import TrendsOppositionsReport
 from src.analyses.safety._schemas import (
     HarmfulContentMatch,
     ImageModerationMatch,
@@ -37,6 +39,10 @@ HEADLINE_SUMMARY_SYSTEM_PROMPT = """You synthesize a 1-2 sentence narrative lead
 Use the inputs (safety verdict, conversation dynamics, claims, and sentiment)
 to describe the page's overall thrust and dynamic — the core story, not an
 inventory of available signals.
+When trends/oppositions data is available, describe recurring patterns and
+opposing camps where that best captures the page's argumentative dynamic.
+When highlights are available, privilege a few dominant high-influence
+claims instead of enumerating every notable point.
 By default, write one pithy sentence.
 Only add a second sentence when it contributes a distinct high-signal point.
 
@@ -91,6 +97,8 @@ class HeadlineSummaryInputs:
     known_misinformation: list[FactCheckMatch]
     sentiment_stats: SentimentStatsReport | None
     subjective_claims: list[SubjectiveClaim]
+    trends_oppositions: TrendsOppositionsReport | None
+    highlights: OpinionsHighlightsReport | None
     page_title: str | None
     page_kind: PageKind
     unavailable_inputs: list[str]
@@ -139,6 +147,16 @@ def all_inputs_clear(inputs: HeadlineSummaryInputs) -> bool:
         or inputs.sentiment_stats.negative_pct > 0.0
         or inputs.sentiment_stats.mean_valence != 0.0
     )
+    trends_oppositions_signal = (
+        inputs.trends_oppositions is not None
+        and (
+            bool(inputs.trends_oppositions.trends)
+            or bool(inputs.trends_oppositions.oppositions)
+        )
+    )
+    highlights_signal = (
+        inputs.highlights is not None and bool(inputs.highlights.highlights)
+    )
     # `run_safety_recommendation` emits CAUTION (not SAFE) for purely
     # coverage-degraded jobs — the prompt classes "partial data" as a
     # caution trigger. When the only reason for CAUTION is missing
@@ -165,6 +183,8 @@ def all_inputs_clear(inputs: HeadlineSummaryInputs) -> bool:
         or claims_signal
         or inputs.known_misinformation
         or inputs.subjective_claims
+        or trends_oppositions_signal
+        or highlights_signal
         or sentiment_signal
         or safety_signal
     )
@@ -215,6 +235,12 @@ def _serialize_inputs(inputs: HeadlineSummaryInputs) -> str:
         if inputs.sentiment_stats is not None
         else None,
         "subjective_claims": [_model_dump(claim) for claim in inputs.subjective_claims],
+        "trends_oppositions": _model_dump(inputs.trends_oppositions)
+        if inputs.trends_oppositions is not None
+        else None,
+        "highlights": _model_dump(inputs.highlights)
+        if inputs.highlights is not None
+        else None,
         "page_title": inputs.page_title,
         "page_kind": inputs.page_kind.value,
         "unavailable_inputs": list(inputs.unavailable_inputs),
