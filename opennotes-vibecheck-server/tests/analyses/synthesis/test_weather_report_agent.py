@@ -6,6 +6,7 @@ from typing import Any
 from uuid import UUID, uuid4
 
 import pytest
+from pydantic_ai.exceptions import ModelHTTPError
 
 from src.analyses.claims._claims_schemas import ClaimsReport, DedupedClaim
 from src.analyses.opinions._highlights_schemas import (
@@ -224,9 +225,65 @@ async def test_evaluate_weather_builds_weather_agent(monkeypatch):
             WEATHER_SYSTEM_PROMPT,
             "vibecheck.weather_report",
             "synthesis",
-            {"logprobs": True},
+            {},
         )
     ]
+
+
+async def test_evaluate_weather_does_not_request_logprobs(monkeypatch):
+    agent = StubAgent(_report(truth="self_reported"))
+    captured_kwargs: dict[str, Any] = {}
+
+    def fake_build_agent(_settings, **kwargs):
+        captured_kwargs.update(kwargs)
+        return agent
+
+    monkeypatch.setattr(
+        "src.analyses.synthesis.weather_report_agent.build_agent",
+        fake_build_agent,
+    )
+
+    await evaluate_weather(
+        _inputs(transcript_excerpt="I tried this and felt okay."),
+        settings=Settings(),
+        job_id=UUID(int=7),
+    )
+
+    assert "logprobs" not in captured_kwargs
+    assert "top_logprobs" not in captured_kwargs
+
+
+async def test_evaluate_weather_propagates_vertex_400_when_model_rejects_logprobs(monkeypatch):
+    class BadAgent:
+        async def run(self, _user_prompt: str):
+            raise ModelHTTPError(
+                status_code=400,
+                model_name="gemini-3.1-pro-preview",
+                body={
+                    "error": {
+                        "code": 400,
+                        "status": "INVALID_ARGUMENT",
+                        "message": (
+                            "Unable to submit request because Logprobs is not "
+                            "supported for this model."
+                        ),
+                    }
+                },
+            )
+
+    monkeypatch.setattr(
+        "src.analyses.synthesis.weather_report_agent.build_agent",
+        lambda *args, **kwargs: BadAgent(),
+    )
+
+    with pytest.raises(ModelHTTPError) as excinfo:
+        await evaluate_weather(
+            _inputs(transcript_excerpt="I tried this and felt okay."),
+            settings=Settings(),
+            job_id=UUID(int=8),
+        )
+    assert excinfo.value.status_code == 400
+    assert "Logprobs is not supported" in str(excinfo.value)
 
 
 async def test_evaluate_weather_serializes_enriched_inputs(monkeypatch):

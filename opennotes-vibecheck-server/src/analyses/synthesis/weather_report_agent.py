@@ -183,7 +183,6 @@ async def evaluate_weather(
             system_prompt=WEATHER_SYSTEM_PROMPT,
             name="vibecheck.weather_report",
             tier="synthesis",
-            logprobs=True,
         ),
     )
     async with vertex_slot(settings):
