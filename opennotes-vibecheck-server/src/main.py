@@ -6,9 +6,9 @@ from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 
+from src.analyses.synthesis._weather_schemas import _normalize_weather_schema_names
 from src.auth.cloud_tasks_oidc import verify_cloud_tasks_oidc
 from src.monitoring import get_logger
-from src.analyses.synthesis._weather_schemas import _normalize_weather_schema_names
 from src.routes import _schema_anchor, analyze, analyze_pdf, frame, internal_jobs, scrape
 from src.startup import lifespan
 

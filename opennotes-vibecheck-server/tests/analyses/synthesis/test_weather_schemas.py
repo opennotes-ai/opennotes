@@ -7,7 +7,6 @@ from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
 from src.analyses.schemas import SidebarPayload
-from src.main import app
 from src.analyses.synthesis._weather_schemas import (
     RelevanceLabel,
     TruthLabel,
@@ -15,6 +14,7 @@ from src.analyses.synthesis._weather_schemas import (
     WeatherAxisAlternative,
     WeatherReport,
 )
+from src.main import app
 
 
 def _empty_sidebar_payload_dict() -> dict[str, object]:
@@ -165,7 +165,6 @@ def test_openapi_json_stable_weather_axis_schema_names() -> None:
     assert "WeatherAxisAlternativeSentiment" in schemas
 
     assert not any(
-        name.startswith("WeatherAxisAlternative_Literal")
-        or name.startswith("WeatherAxis_Literal")
+        name.startswith(("WeatherAxisAlternative_Literal", "WeatherAxis_Literal"))
         for name in schemas
     )

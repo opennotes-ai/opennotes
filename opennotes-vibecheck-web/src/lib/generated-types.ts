@@ -1439,7 +1439,7 @@ export interface components {
              */
             urls_checked: number;
         };
-        /** WeatherAxisAlternative[Literal['insightful', 'on_topic', 'chatty', 'drifting', 'off_topic']] */
+        /** WeatherAxisAlternativeRelevance */
         WeatherAxisAlternativeRelevance: {
             /**
              * Label
@@ -1449,7 +1449,7 @@ export interface components {
             /** Logprob */
             logprob?: number | null;
         };
-        /** WeatherAxisAlternative[Literal['sourced', 'mostly_factual', 'self_reported', 'hearsay', 'misleading']] */
+        /** WeatherAxisAlternativeTruth */
         WeatherAxisAlternativeTruth: {
             /**
              * Label
@@ -1459,14 +1459,14 @@ export interface components {
             /** Logprob */
             logprob?: number | null;
         };
-        /** WeatherAxisAlternative[str] */
+        /** WeatherAxisAlternativeSentiment */
         WeatherAxisAlternativeSentiment: {
             /** Label */
             label: string;
             /** Logprob */
             logprob?: number | null;
         };
-        /** WeatherAxis[Literal['insightful', 'on_topic', 'chatty', 'drifting', 'off_topic']] */
+        /** WeatherAxisRelevance */
         WeatherAxisRelevance: {
             /**
              * Label
@@ -1478,7 +1478,7 @@ export interface components {
             /** Alternatives */
             alternatives?: components["schemas"]["WeatherAxisAlternativeRelevance"][];
         };
-        /** WeatherAxis[Literal['sourced', 'mostly_factual', 'self_reported', 'hearsay', 'misleading']] */
+        /** WeatherAxisTruth */
         WeatherAxisTruth: {
             /**
              * Label
@@ -1490,7 +1490,7 @@ export interface components {
             /** Alternatives */
             alternatives?: components["schemas"]["WeatherAxisAlternativeTruth"][];
         };
-        /** WeatherAxis[str] */
+        /** WeatherAxisSentiment */
         WeatherAxisSentiment: {
             /** Label */
             label: string;

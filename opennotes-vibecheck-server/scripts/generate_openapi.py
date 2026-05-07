@@ -6,14 +6,15 @@ regenerate `src/lib/generated-types.ts` via `pnpm run types:generate`.
 Usage:
     uv run python scripts/generate_openapi.py [--output openapi.json]
 """
+
 from __future__ import annotations
 
 import argparse
 import json
 from pathlib import Path
 
-from src.main import app
 from src.analyses.synthesis._weather_schemas import _normalize_weather_schema_names
+from src.main import app
 
 
 def main() -> None:

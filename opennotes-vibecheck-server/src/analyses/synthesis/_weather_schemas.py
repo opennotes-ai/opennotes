@@ -61,6 +61,8 @@ def _normalize_weather_schema_names(schema: dict[str, Any]) -> dict[str, Any]:
         if old_name == new_name:
             continue
         defs[new_name] = defs.pop(old_name)
+        if isinstance(defs[new_name], dict):
+            defs[new_name]["title"] = new_name
 
     def walk(node: object) -> None:
         if isinstance(node, dict):

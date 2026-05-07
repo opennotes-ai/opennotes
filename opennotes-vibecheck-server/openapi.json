@@ -2907,7 +2907,7 @@
         "required": [
           "label"
         ],
-        "title": "WeatherAxisAlternative[Literal['insightful', 'on_topic', 'chatty', 'drifting', 'off_topic']]"
+        "title": "WeatherAxisAlternativeRelevance"
       },
       "WeatherAxisAlternativeTruth": {
         "properties": {
@@ -2938,7 +2938,7 @@
         "required": [
           "label"
         ],
-        "title": "WeatherAxisAlternative[Literal['sourced', 'mostly_factual', 'self_reported', 'hearsay', 'misleading']]"
+        "title": "WeatherAxisAlternativeTruth"
       },
       "WeatherAxisAlternativeSentiment": {
         "properties": {
@@ -2962,7 +2962,7 @@
         "required": [
           "label"
         ],
-        "title": "WeatherAxisAlternative[str]"
+        "title": "WeatherAxisAlternativeSentiment"
       },
       "WeatherAxisRelevance": {
         "properties": {
@@ -3000,7 +3000,7 @@
         "required": [
           "label"
         ],
-        "title": "WeatherAxis[Literal['insightful', 'on_topic', 'chatty', 'drifting', 'off_topic']]"
+        "title": "WeatherAxisRelevance"
       },
       "WeatherAxisTruth": {
         "properties": {
@@ -3038,7 +3038,7 @@
         "required": [
           "label"
         ],
-        "title": "WeatherAxis[Literal['sourced', 'mostly_factual', 'self_reported', 'hearsay', 'misleading']]"
+        "title": "WeatherAxisTruth"
       },
       "WeatherAxisSentiment": {
         "properties": {
@@ -3069,7 +3069,7 @@
         "required": [
           "label"
         ],
-        "title": "WeatherAxis[str]"
+        "title": "WeatherAxisSentiment"
       }
     }
   }
