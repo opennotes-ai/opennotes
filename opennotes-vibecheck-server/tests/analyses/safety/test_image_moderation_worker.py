@@ -321,7 +321,7 @@ async def test_all_images_unanalyzable_returns_empty_matches():
 
     with patch(
         "src.analyses.safety.image_moderation_worker.annotate_images",
-        new=AsyncMock(return_value={url: None for url in urls}),
+        new=AsyncMock(return_value=dict.fromkeys(urls)),
     ):
         result = await run_image_moderation(None, uuid4(), uuid4(), payload, settings)
 

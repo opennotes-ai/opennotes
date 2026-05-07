@@ -125,7 +125,7 @@ def _build_result(annotation: dict[str, object], threshold: float) -> SafeSearch
     )
 
 
-async def _retry_with_inline_bytes(
+async def _retry_with_inline_bytes(  # noqa: PLR0911
     url: str,
     httpx_client: httpx.AsyncClient,
     token: str,
