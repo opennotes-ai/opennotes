@@ -62,6 +62,13 @@ class Settings(BaseSettings):
     MAX_IMAGES_MODERATED: int = 30
     MAX_VIDEOS_MODERATED: int = 5
     WEB_RISK_CACHE_TTL_HOURS: int = 6
+    # TASK-1483.24: Vision API SafeSearch results are stable per-URL within
+    # the cache window. Cache aggressively (7 days) to bound per-job cost;
+    # override via env to bump down if a flagged image needs re-evaluation.
+    VISION_IMAGE_CACHE_TTL_HOURS: int = 168
+    # TASK-1483.24: Frame findings for a given video URL are stable; mirror
+    # the image cache TTL. Lower if videos at a stable URL get re-edited.
+    VISION_VIDEO_CACHE_TTL_HOURS: int = 168
     EVIDENCE_MAX_EXTERNAL_RETRIEVALS: int = 5
 
     # --- Cloud Tasks + internal worker endpoint (TASK-1473.12) ---

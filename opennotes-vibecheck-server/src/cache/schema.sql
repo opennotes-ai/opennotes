@@ -730,6 +730,10 @@ BEGIN
       );
 
     DELETE FROM public.vibecheck_web_risk_lookups WHERE expires_at < pg_catalog.now();
+    -- TASK-1483.24: per-URL Vision API caches expire on TTL; reap stale rows
+    -- so the high-cardinality URL keys do not grow unbounded.
+    DELETE FROM public.vibecheck_image_analysis_cache WHERE expires_at < pg_catalog.now();
+    DELETE FROM public.vibecheck_video_analysis_cache WHERE expires_at < pg_catalog.now();
 
     RETURN purged;
 END;
@@ -752,6 +756,38 @@ CREATE INDEX IF NOT EXISTS vibecheck_web_risk_lookups_expires_at_idx
 ALTER TABLE public.vibecheck_web_risk_lookups ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.vibecheck_web_risk_lookups FORCE ROW LEVEL SECURITY;
 REVOKE ALL ON public.vibecheck_web_risk_lookups FROM anon, authenticated;
+
+-- =========================================================================
+-- vibecheck_image_analysis_cache (TASK-1483.24 — Vision API SafeSearch cache)
+-- =========================================================================
+
+CREATE TABLE IF NOT EXISTS public.vibecheck_image_analysis_cache (
+    image_url TEXT PRIMARY KEY,
+    result_payload JSONB NOT NULL,
+    checked_at TIMESTAMPTZ NOT NULL DEFAULT pg_catalog.now(),
+    expires_at TIMESTAMPTZ NOT NULL
+);
+CREATE INDEX IF NOT EXISTS vibecheck_image_analysis_cache_expires_at_idx
+    ON public.vibecheck_image_analysis_cache (expires_at);
+ALTER TABLE public.vibecheck_image_analysis_cache ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.vibecheck_image_analysis_cache FORCE ROW LEVEL SECURITY;
+REVOKE ALL ON public.vibecheck_image_analysis_cache FROM anon, authenticated;
+
+-- =========================================================================
+-- vibecheck_video_analysis_cache (TASK-1483.24 — Vision API frame findings cache)
+-- =========================================================================
+
+CREATE TABLE IF NOT EXISTS public.vibecheck_video_analysis_cache (
+    video_url TEXT PRIMARY KEY,
+    frame_findings_payload JSONB NOT NULL,
+    checked_at TIMESTAMPTZ NOT NULL DEFAULT pg_catalog.now(),
+    expires_at TIMESTAMPTZ NOT NULL
+);
+CREATE INDEX IF NOT EXISTS vibecheck_video_analysis_cache_expires_at_idx
+    ON public.vibecheck_video_analysis_cache (expires_at);
+ALTER TABLE public.vibecheck_video_analysis_cache ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.vibecheck_video_analysis_cache FORCE ROW LEVEL SECURITY;
+REVOKE ALL ON public.vibecheck_video_analysis_cache FROM anon, authenticated;
 
 -- =========================================================================
 -- Extend vibecheck_jobs_error_code_check for current PDF pipeline errors

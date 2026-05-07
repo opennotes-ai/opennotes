@@ -12,6 +12,7 @@ from src.analyses.safety._schemas import FrameFinding, VideoModerationMatch
 from src.analyses.safety._vision_likelihood import likelihood_to_score
 from src.analyses.safety.video_sampler import FrameBytes, VideoSamplingError, sample_video
 from src.analyses.safety.vision_client import ANNOTATE_URL, VisionTransientError
+from src.cache import video_analysis_cache
 from src.config import Settings
 from src.monitoring import external_api_span
 from src.monitoring_metrics import SECTION_MEDIA_DROPPED
@@ -20,7 +21,7 @@ from src.services.gcp_adc import CLOUD_PLATFORM_SCOPE, get_access_token
 logger = logging.getLogger(__name__)
 
 
-async def run_video_moderation(
+async def run_video_moderation(  # noqa: PLR0912
     pool: Any,
     job_id: UUID,
     task_attempt: UUID,
@@ -44,26 +45,59 @@ async def run_video_moderation(
         if not capped:
             return {"matches": []}
 
-        token = get_access_token(CLOUD_PLATFORM_SCOPE)
-        if not token:
-            raise VisionTransientError("ADC token unavailable")
+        video_urls = [vurl for _, vurl in capped]
+        try:
+            cached = await video_analysis_cache.fetch_cached(pool, video_urls)
+        except Exception:
+            logger.exception("video cache fetch_cached failed; bypassing cache")
+            cached = {}
+        span.set_attribute("cache_hit_count", len(cached))
 
+        token: str | None = None
+        if any(vurl not in cached for _, vurl in capped):
+            token = get_access_token(CLOUD_PLATFORM_SCOPE)
+            if not token:
+                raise VisionTransientError("ADC token unavailable")
+
+        fresh_to_persist: dict[str, list[FrameFinding]] = {}
         matches: list[VideoModerationMatch] = []
         async with httpx.AsyncClient() as hx:
             for uid, vurl in capped:
+                if vurl in cached:
+                    frame_findings = cached[vurl]
+                    max_likelihood = max(
+                        (ff.max_likelihood for ff in frame_findings),
+                        default=0.0,
+                    )
+                    flagged = any(ff.flagged for ff in frame_findings)
+                    matches.append(VideoModerationMatch(
+                        utterance_id=uid, video_url=vurl,
+                        frame_findings=frame_findings,
+                        flagged=flagged,
+                        max_likelihood=max_likelihood,
+                    ))
+                    continue
                 try:
                     frames = await sample_video(vurl)
                 except VideoSamplingError as exc:
                     # Sampling failures are indeterminate, not "clean". We flag
                     # conservatively so the sidebar surfaces an inconclusive video
                     # rather than silently presenting it as safe (codex P1.3).
+                    # Do NOT cache: failure should retry next run.
                     logger.warning("video sampling failed for %s: %s", vurl, exc)
                     matches.append(VideoModerationMatch(
                         utterance_id=uid, video_url=vurl,
                         frame_findings=[], flagged=True, max_likelihood=1.0,
                     ))
                     continue
-                frame_findings = await _annotate_frames(frames, hx, token)
+                if token is None:
+                    raise VisionTransientError("ADC token unavailable")
+                frame_findings, had_errors = await _annotate_frames(frames, hx, token)
+                # Don't cache when any frame returned a Vision error: those frames
+                # default to UNKNOWN scores (codex review P1) and would persist as
+                # a fake "clean" verdict for the whole TTL window.
+                if frame_findings and not had_errors:
+                    fresh_to_persist[vurl] = frame_findings
                 max_likelihood = max(
                     (ff.max_likelihood for ff in frame_findings),
                     default=0.0,
@@ -75,13 +109,28 @@ async def run_video_moderation(
                     flagged=flagged,
                     max_likelihood=max_likelihood,
                 ))
+        if fresh_to_persist:
+            try:
+                await video_analysis_cache.upsert_cached(
+                    pool, fresh_to_persist,
+                    ttl_hours=settings.VISION_VIDEO_CACHE_TTL_HOURS,
+                )
+            except Exception:
+                logger.exception("video cache upsert_cached failed; results not persisted")
         span.set_attribute("flagged_count", sum(1 for match in matches if match.flagged))
         return {"matches": [m.model_dump() for m in matches]}
 
 
-async def _annotate_frames(frames: list[FrameBytes], hx: httpx.AsyncClient, token: str) -> list[FrameFinding]:
+async def _annotate_frames(
+    frames: list[FrameBytes], hx: httpx.AsyncClient, token: str
+) -> tuple[list[FrameFinding], bool]:
+    """Returns (findings, had_errors). had_errors is True when any per-frame
+    Vision response contained an `error` payload (e.g. transient backend error
+    for that frame). Callers should suppress caching when had_errors is True
+    so transient failures don't get recorded as a clean verdict for 7 days.
+    """
     if not frames:
-        return []
+        return [], False
     requests_body = {"requests": [
         {
             "image": {"content": base64.b64encode(fb.png_bytes).decode("ascii")},
@@ -111,7 +160,10 @@ async def _annotate_frames(frames: list[FrameBytes], hx: httpx.AsyncClient, toke
         responses = r.json().get("responses") or []
         out: list[FrameFinding] = []
         flagged_count = 0
+        had_errors = False
         for fb, resp in zip(frames, responses, strict=False):
+            if resp.get("error"):
+                had_errors = True
             annotation = resp.get("safeSearchAnnotation") or {}
             scores = {
                 k: likelihood_to_score(str(annotation.get(k, "UNKNOWN")))
@@ -127,4 +179,4 @@ async def _annotate_frames(frames: list[FrameBytes], hx: httpx.AsyncClient, toke
                 max_likelihood=max_likelihood,
             ))
         obs.add_flagged(flagged_count)
-        return out
+        return out, had_errors
