@@ -1867,6 +1867,27 @@
             "title": "Preview Description",
             "description": "Short blurb (~140 chars) summarizing the most interesting finding. Non-null at the API boundary."
           },
+          "headline_summary": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Headline Summary"
+          },
+          "weather_report": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WeatherReport"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "completed_at": {
             "type": "string",
             "format": "date-time",
