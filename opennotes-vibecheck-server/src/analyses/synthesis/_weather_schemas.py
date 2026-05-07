@@ -32,7 +32,43 @@ class WeatherAxis(BaseModel, Generic[LabelT]):
     alternatives: list[WeatherAxisAlternative[LabelT]] = Field(default_factory=list)
 
 
+class WeatherAxisAlternativeTruth(WeatherAxisAlternative[TruthLabel]):
+    """WeatherAxisAlternative[TruthLabel] with a stable schema name."""
+
+
+class WeatherAxisAlternativeRelevance(WeatherAxisAlternative[RelevanceLabel]):
+    """WeatherAxisAlternative[RelevanceLabel] with a stable schema name."""
+
+
+class WeatherAxisAlternativeSentiment(WeatherAxisAlternative[str]):
+    """WeatherAxisAlternative[str] with a stable schema name."""
+
+
+class WeatherAxisTruth(WeatherAxis[TruthLabel]):
+    """WeatherAxis[TruthLabel] with a stable schema name."""
+
+    alternatives: list[WeatherAxisAlternativeTruth] = Field(
+        default_factory=list,
+    )
+
+
+class WeatherAxisRelevance(WeatherAxis[RelevanceLabel]):
+    """WeatherAxis[RelevanceLabel] with a stable schema name."""
+
+    alternatives: list[WeatherAxisAlternativeRelevance] = Field(
+        default_factory=list,
+    )
+
+
+class WeatherAxisSentiment(WeatherAxis[str]):
+    """WeatherAxis[str] with a stable schema name."""
+
+    alternatives: list[WeatherAxisAlternativeSentiment] = Field(
+        default_factory=list,
+    )
+
+
 class WeatherReport(BaseModel):
-    truth: WeatherAxis[TruthLabel]
-    relevance: WeatherAxis[RelevanceLabel]
-    sentiment: WeatherAxis[str]
+    truth: WeatherAxisTruth
+    relevance: WeatherAxisRelevance
+    sentiment: WeatherAxisSentiment

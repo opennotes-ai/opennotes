@@ -7,10 +7,12 @@ from pydantic import ValidationError
 
 from src.analyses.schemas import SidebarPayload
 from src.analyses.synthesis._weather_schemas import (
-    RelevanceLabel,
-    TruthLabel,
-    WeatherAxis,
-    WeatherAxisAlternative,
+    WeatherAxisAlternativeRelevance,
+    WeatherAxisAlternativeSentiment,
+    WeatherAxisAlternativeTruth,
+    WeatherAxisRelevance,
+    WeatherAxisSentiment,
+    WeatherAxisTruth,
     WeatherReport,
 )
 
@@ -54,21 +56,23 @@ def _empty_sidebar_payload_dict() -> dict:
 
 def _weather_report() -> WeatherReport:
     return WeatherReport(
-        truth=WeatherAxis[TruthLabel](
+        truth=WeatherAxisTruth(
             label="sourced",
             logprob=0.87,
             alternatives=[
-                WeatherAxisAlternative(label="mostly_factual", logprob=0.08),
+                WeatherAxisAlternativeTruth(label="mostly_factual", logprob=0.08),
             ],
         ),
-        relevance=WeatherAxis[RelevanceLabel](
+        relevance=WeatherAxisRelevance(
             label="insightful",
             logprob=0.8,
-            alternatives=[
-                WeatherAxisAlternative(label="on_topic", logprob=0.12),
-            ],
+            alternatives=[WeatherAxisAlternativeRelevance(label="on_topic", logprob=0.12)],
         ),
-        sentiment=WeatherAxis[str](label="supportive", logprob=0.92, alternatives=[]),
+        sentiment=WeatherAxisSentiment(
+            label="supportive",
+            logprob=0.92,
+            alternatives=[WeatherAxisAlternativeSentiment(label="positive", logprob=0.11)],
+        ),
     )
 
 
@@ -107,6 +111,22 @@ def test_invalid_truth_label_is_rejected():
 
 
 def test_weather_axis_defaults_alternatives_to_empty_and_round_trips_as_list():
-    axis = WeatherAxis[str](label="any")
+    axis = WeatherAxisSentiment(label="any")
     assert axis.alternatives == []
     assert axis.model_dump()["alternatives"] == []
+
+
+def test_weather_report_json_schema_uses_stable_public_schema_names():
+    schema = WeatherReport.model_json_schema()
+    defs = schema.get("$defs", {})
+
+    assert set(defs) == {
+        "WeatherAxisAlternativeRelevance",
+        "WeatherAxisAlternativeSentiment",
+        "WeatherAxisAlternativeTruth",
+        "WeatherAxisRelevance",
+        "WeatherAxisSentiment",
+        "WeatherAxisTruth",
+    }
+    assert all(not name.startswith("WeatherAxisAlternative_Literal") for name in defs)
+    assert all(not name.startswith("WeatherAxis_Literal") for name in defs)
