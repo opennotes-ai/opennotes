@@ -169,3 +169,168 @@ async def test_propagates_vision_transient_error():
         new=AsyncMock(side_effect=VisionTransientError("vision 503")),
     ), pytest.raises(VisionTransientError, match="503"):
         await run_image_moderation(None, uuid4(), uuid4(), payload, settings)
+
+
+# ---- TASK-1483.24.04: cache integration ----
+
+
+class _StubPool:
+    """In-memory stand-in for asyncpg.Pool exercising the cache module path."""
+
+    def __init__(self, fetch_fn=None, upsert_fn=None):
+        self._fetch_fn = fetch_fn
+        self._upsert_fn = upsert_fn
+
+    def _make_conn(self):
+        outer = self
+
+        class _Conn:
+            async def fetch(self, _query, urls):
+                return outer._fetch_fn(urls) if outer._fetch_fn else []
+
+            async def executemany(self, _query, rows):
+                if outer._upsert_fn:
+                    outer._upsert_fn(rows)
+
+        return _Conn()
+
+    def acquire(self):
+        outer = self
+
+        class _CM:
+            async def __aenter__(self_inner):
+                return outer._make_conn()
+
+            async def __aexit__(self_inner, *exc):
+                return False
+
+        return _CM()
+
+
+@pytest.mark.asyncio
+async def test_full_cache_hit_skips_annotate_images():
+    payload = _Payload([
+        _Utterance("utt-1", ["https://example.com/a.jpg", "https://example.com/b.jpg"]),
+    ])
+    settings = _make_settings()
+
+    cached_payload = {
+        "adult": 0.0, "violence": 0.0, "racy": 0.0, "medical": 0.0,
+        "spoof": 0.0, "flagged": False, "max_likelihood": 0.0,
+    }
+
+    def fetch_fn(urls):
+        return [{"image_url": u, "result_payload": cached_payload} for u in urls]
+
+    pool = _StubPool(fetch_fn=fetch_fn)
+
+    with patch(
+        "src.analyses.safety.image_moderation_worker.annotate_images",
+        new=AsyncMock(return_value={}),
+    ) as mock_annotate:
+        result = await run_image_moderation(pool, uuid4(), uuid4(), payload, settings)
+
+    mock_annotate.assert_not_called()
+    assert {m["image_url"] for m in result["matches"]} == {
+        "https://example.com/a.jpg",
+        "https://example.com/b.jpg",
+    }
+
+
+@pytest.mark.asyncio
+async def test_partial_cache_hit_calls_annotate_only_for_missing():
+    payload = _Payload([
+        _Utterance("utt-1", [
+            "https://example.com/cached.jpg",
+            "https://example.com/fresh.jpg",
+        ]),
+    ])
+    settings = _make_settings()
+
+    cached_payload = {
+        "adult": 0.0, "violence": 0.0, "racy": 0.0, "medical": 0.0,
+        "spoof": 0.0, "flagged": False, "max_likelihood": 0.0,
+    }
+
+    def fetch_fn(urls):
+        return [
+            {"image_url": "https://example.com/cached.jpg", "result_payload": cached_payload}
+        ]
+
+    upserted_rows: list = []
+    pool = _StubPool(fetch_fn=fetch_fn, upsert_fn=upserted_rows.extend)
+
+    captured: list[list[str]] = []
+
+    async def fake_annotate(urls, **kwargs):
+        captured.append(list(urls))
+        return {urls[0]: FLAGGED_RESULT}
+
+    with patch(
+        "src.analyses.safety.image_moderation_worker.annotate_images",
+        new=fake_annotate,
+    ):
+        result = await run_image_moderation(pool, uuid4(), uuid4(), payload, settings)
+
+    assert captured == [["https://example.com/fresh.jpg"]]
+    assert {m["image_url"] for m in result["matches"]} == {
+        "https://example.com/cached.jpg",
+        "https://example.com/fresh.jpg",
+    }
+    # only fresh URL persisted to cache
+    assert [r[0] for r in upserted_rows] == ["https://example.com/fresh.jpg"]
+
+
+@pytest.mark.asyncio
+async def test_cache_fetch_failure_falls_back_to_full_api(caplog):
+    payload = _Payload([_Utterance("utt-1", ["https://example.com/a.jpg"])])
+    settings = _make_settings()
+
+    class _BrokenPool:
+        def acquire(self):
+            raise RuntimeError("db down")
+
+    captured_calls: list[list[str]] = []
+
+    async def fake_annotate(urls, **kwargs):
+        captured_calls.append(list(urls))
+        return {urls[0]: CLEAN_RESULT}
+
+    with caplog.at_level(logging.ERROR, logger="src.analyses.safety.image_moderation_worker"):  # noqa: SIM117
+        with patch(
+            "src.analyses.safety.image_moderation_worker.annotate_images",
+            new=fake_annotate,
+        ):
+            result = await run_image_moderation(
+                _BrokenPool(), uuid4(), uuid4(), payload, settings
+            )
+
+    assert captured_calls == [["https://example.com/a.jpg"]]
+    assert len(result["matches"]) == 1
+    assert any("fetch_cached failed" in r.message for r in caplog.records)
+
+
+@pytest.mark.asyncio
+async def test_none_results_not_persisted_to_cache():
+    payload = _Payload([
+        _Utterance("utt-1", [
+            "https://example.com/ok.jpg",
+            "https://example.com/bad.jpg",
+        ]),
+    ])
+    settings = _make_settings()
+
+    upserted_rows: list = []
+    pool = _StubPool(fetch_fn=lambda urls: [], upsert_fn=upserted_rows.extend)
+
+    url_to_result = {
+        "https://example.com/ok.jpg": CLEAN_RESULT,
+        "https://example.com/bad.jpg": None,
+    }
+    with patch(
+        "src.analyses.safety.image_moderation_worker.annotate_images",
+        new=AsyncMock(return_value=url_to_result),
+    ):
+        await run_image_moderation(pool, uuid4(), uuid4(), payload, settings)
+
+    assert [r[0] for r in upserted_rows] == ["https://example.com/ok.jpg"]

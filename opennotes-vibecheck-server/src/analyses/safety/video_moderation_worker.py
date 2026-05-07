@@ -12,6 +12,7 @@ from src.analyses.safety._schemas import FrameFinding, VideoModerationMatch
 from src.analyses.safety._vision_likelihood import likelihood_to_score
 from src.analyses.safety.video_sampler import FrameBytes, VideoSamplingError, sample_video
 from src.analyses.safety.vision_client import ANNOTATE_URL, VisionTransientError
+from src.cache import video_analysis_cache
 from src.config import Settings
 from src.monitoring import external_api_span
 from src.monitoring_metrics import SECTION_MEDIA_DROPPED
@@ -44,26 +45,55 @@ async def run_video_moderation(
         if not capped:
             return {"matches": []}
 
-        token = get_access_token(CLOUD_PLATFORM_SCOPE)
-        if not token:
-            raise VisionTransientError("ADC token unavailable")
+        video_urls = [vurl for _, vurl in capped]
+        try:
+            cached = await video_analysis_cache.fetch_cached(pool, video_urls)
+        except Exception:
+            logger.exception("video cache fetch_cached failed; bypassing cache")
+            cached = {}
+        span.set_attribute("cache_hit_count", len(cached))
 
+        token: str | None = None
+        if any(vurl not in cached for _, vurl in capped):
+            token = get_access_token(CLOUD_PLATFORM_SCOPE)
+            if not token:
+                raise VisionTransientError("ADC token unavailable")
+
+        fresh_to_persist: dict[str, list[FrameFinding]] = {}
         matches: list[VideoModerationMatch] = []
         async with httpx.AsyncClient() as hx:
             for uid, vurl in capped:
+                if vurl in cached:
+                    frame_findings = cached[vurl]
+                    max_likelihood = max(
+                        (ff.max_likelihood for ff in frame_findings),
+                        default=0.0,
+                    )
+                    flagged = any(ff.flagged for ff in frame_findings)
+                    matches.append(VideoModerationMatch(
+                        utterance_id=uid, video_url=vurl,
+                        frame_findings=frame_findings,
+                        flagged=flagged,
+                        max_likelihood=max_likelihood,
+                    ))
+                    continue
                 try:
                     frames = await sample_video(vurl)
                 except VideoSamplingError as exc:
                     # Sampling failures are indeterminate, not "clean". We flag
                     # conservatively so the sidebar surfaces an inconclusive video
                     # rather than silently presenting it as safe (codex P1.3).
+                    # Do NOT cache: failure should retry next run.
                     logger.warning("video sampling failed for %s: %s", vurl, exc)
                     matches.append(VideoModerationMatch(
                         utterance_id=uid, video_url=vurl,
                         frame_findings=[], flagged=True, max_likelihood=1.0,
                     ))
                     continue
+                assert token is not None
                 frame_findings = await _annotate_frames(frames, hx, token)
+                if frame_findings:
+                    fresh_to_persist[vurl] = frame_findings
                 max_likelihood = max(
                     (ff.max_likelihood for ff in frame_findings),
                     default=0.0,
@@ -75,6 +105,14 @@ async def run_video_moderation(
                     flagged=flagged,
                     max_likelihood=max_likelihood,
                 ))
+        if fresh_to_persist:
+            try:
+                await video_analysis_cache.upsert_cached(
+                    pool, fresh_to_persist,
+                    ttl_hours=settings.VISION_VIDEO_CACHE_TTL_HOURS,
+                )
+            except Exception:
+                logger.exception("video cache upsert_cached failed; results not persisted")
         span.set_attribute("flagged_count", sum(1 for match in matches if match.flagged))
         return {"matches": [m.model_dump() for m in matches]}
 

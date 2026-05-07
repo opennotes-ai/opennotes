@@ -8,7 +8,8 @@ import httpx
 import logfire
 
 from src.analyses.safety._schemas import ImageModerationMatch
-from src.analyses.safety.vision_client import annotate_images
+from src.analyses.safety.vision_client import SafeSearchResult, annotate_images
+from src.cache import image_analysis_cache
 from src.config import Settings
 from src.monitoring_metrics import SECTION_MEDIA_DROPPED
 
@@ -40,10 +41,25 @@ async def run_image_moderation(
     ) as span:
         if not capped:
             return {"matches": []}
-        async with httpx.AsyncClient() as hx:
-            url_to_result = await annotate_images(
-                [img for _, img in capped], httpx_client=hx
-            )
+        image_urls = [img for _, img in capped]
+        try:
+            cached = await image_analysis_cache.fetch_cached(pool, image_urls)
+        except Exception:
+            logger.exception("image cache fetch_cached failed; bypassing cache")
+            cached = {}
+        missing = [u for u in image_urls if u not in cached]
+        fresh: dict[str, SafeSearchResult | None] = {}
+        if missing:
+            async with httpx.AsyncClient() as hx:
+                fresh = await annotate_images(missing, httpx_client=hx)
+            try:
+                await image_analysis_cache.upsert_cached(
+                    pool, fresh, ttl_hours=settings.VISION_IMAGE_CACHE_TTL_HOURS
+                )
+            except Exception:
+                logger.exception("image cache upsert_cached failed; results not persisted")
+        url_to_result: dict[str, SafeSearchResult | None] = {**cached, **fresh}
+        span.set_attribute("cache_hit_count", len(cached))
         matches: list[ImageModerationMatch] = []
         for uid, img in capped:
             result = url_to_result.get(img)

@@ -207,3 +207,208 @@ async def test_missing_adc_token_raises_transient_error():
     with patch("src.analyses.safety.video_moderation_worker.get_access_token", return_value=None):  # noqa: SIM117
         with pytest.raises(VisionTransientError, match="ADC token unavailable"):
             await run_video_moderation(None, uuid4(), uuid4(), payload, settings)
+
+
+# ---- TASK-1483.24.05: cache integration ----
+
+
+class _StubPool:
+    def __init__(self, fetch_fn=None, upsert_fn=None):
+        self._fetch_fn = fetch_fn
+        self._upsert_fn = upsert_fn
+
+    def acquire(self):
+        outer = self
+
+        class _Conn:
+            async def fetch(self, _query, urls):
+                return outer._fetch_fn(urls) if outer._fetch_fn else []
+
+            async def executemany(self, _query, rows):
+                if outer._upsert_fn:
+                    outer._upsert_fn(rows)
+
+        class _CM:
+            async def __aenter__(self_inner):
+                return _Conn()
+
+            async def __aexit__(self_inner, *exc):
+                return False
+
+        return _CM()
+
+
+@pytest.mark.asyncio
+async def test_full_cache_hit_skips_sample_and_annotate():
+    payload = _Payload([
+        _Utterance("utt-1", ["https://example.com/a.mp4", "https://example.com/b.mp4"]),
+    ])
+    settings = _make_settings()
+
+    cached_findings_payload = [
+        {
+            "frame_offset_ms": 0, "adult": 0.0, "violence": 0.0, "racy": 0.0,
+            "medical": 0.0, "spoof": 0.0, "flagged": False, "max_likelihood": 0.0,
+        }
+    ]
+
+    def fetch_fn(urls):
+        return [
+            {"video_url": u, "frame_findings_payload": cached_findings_payload}
+            for u in urls
+        ]
+
+    pool = _StubPool(fetch_fn=fetch_fn)
+
+    with patch(
+        "src.analyses.safety.video_moderation_worker.get_access_token",
+        return_value=FAKE_TOKEN,
+    ), patch(
+        "src.analyses.safety.video_moderation_worker.sample_video",
+        new=AsyncMock(),
+    ) as mock_sample, patch(
+        "src.analyses.safety.video_moderation_worker._annotate_frames",
+        new=AsyncMock(),
+    ) as mock_annotate:
+        result = await run_video_moderation(pool, uuid4(), uuid4(), payload, settings)
+
+    mock_sample.assert_not_called()
+    mock_annotate.assert_not_called()
+    assert {m["video_url"] for m in result["matches"]} == {
+        "https://example.com/a.mp4",
+        "https://example.com/b.mp4",
+    }
+
+
+@pytest.mark.asyncio
+async def test_partial_cache_hit_only_samples_missing():
+    payload = _Payload([
+        _Utterance("utt-1", [
+            "https://example.com/cached.mp4",
+            "https://example.com/fresh.mp4",
+        ]),
+    ])
+    settings = _make_settings()
+
+    cached_findings_payload = [
+        {
+            "frame_offset_ms": 0, "adult": 0.0, "violence": 0.0, "racy": 0.0,
+            "medical": 0.0, "spoof": 0.0, "flagged": False, "max_likelihood": 0.0,
+        }
+    ]
+
+    def fetch_fn(urls):
+        return [{
+            "video_url": "https://example.com/cached.mp4",
+            "frame_findings_payload": cached_findings_payload,
+        }]
+
+    upserted: list = []
+    pool = _StubPool(fetch_fn=fetch_fn, upsert_fn=upserted.extend)
+
+    sampled_urls: list[str] = []
+
+    async def fake_sample(vurl):
+        sampled_urls.append(vurl)
+        return _fake_frames(1)
+
+    with patch(
+        "src.analyses.safety.video_moderation_worker.get_access_token",
+        return_value=FAKE_TOKEN,
+    ), patch(
+        "src.analyses.safety.video_moderation_worker.sample_video",
+        new=fake_sample,
+    ), patch(
+        "src.analyses.safety.video_moderation_worker._annotate_frames",
+        new=AsyncMock(return_value=_clean_frame_findings(1)),
+    ):
+        result = await run_video_moderation(pool, uuid4(), uuid4(), payload, settings)
+
+    assert sampled_urls == ["https://example.com/fresh.mp4"]
+    assert {m["video_url"] for m in result["matches"]} == {
+        "https://example.com/cached.mp4",
+        "https://example.com/fresh.mp4",
+    }
+    # only fresh URL persisted
+    assert [r[0] for r in upserted] == ["https://example.com/fresh.mp4"]
+
+
+@pytest.mark.asyncio
+async def test_full_miss_persists_findings_to_cache():
+    payload = _Payload([_Utterance("utt-1", ["https://example.com/v.mp4"])])
+    settings = _make_settings()
+
+    upserted: list = []
+    pool = _StubPool(fetch_fn=lambda urls: [], upsert_fn=upserted.extend)
+
+    with patch(
+        "src.analyses.safety.video_moderation_worker.get_access_token",
+        return_value=FAKE_TOKEN,
+    ), patch(
+        "src.analyses.safety.video_moderation_worker.sample_video",
+        new=AsyncMock(return_value=_fake_frames(2)),
+    ), patch(
+        "src.analyses.safety.video_moderation_worker._annotate_frames",
+        new=AsyncMock(return_value=_clean_frame_findings(2)),
+    ):
+        await run_video_moderation(pool, uuid4(), uuid4(), payload, settings)
+
+    assert [r[0] for r in upserted] == ["https://example.com/v.mp4"]
+
+
+@pytest.mark.asyncio
+async def test_sampling_failure_not_cached():
+    payload = _Payload([_Utterance("utt-1", ["https://example.com/broken.mp4"])])
+    settings = _make_settings()
+
+    upserted: list = []
+    pool = _StubPool(fetch_fn=lambda urls: [], upsert_fn=upserted.extend)
+
+    with patch(
+        "src.analyses.safety.video_moderation_worker.get_access_token",
+        return_value=FAKE_TOKEN,
+    ), patch(
+        "src.analyses.safety.video_moderation_worker.sample_video",
+        new=AsyncMock(side_effect=VideoSamplingError("ffmpeg fail")),
+    ):
+        result = await run_video_moderation(pool, uuid4(), uuid4(), payload, settings)
+
+    # Sampling-failure is conservatively flagged but NOT cached.
+    assert len(result["matches"]) == 1
+    assert result["matches"][0]["flagged"] is True
+    assert upserted == []
+
+
+@pytest.mark.asyncio
+async def test_cache_fetch_failure_falls_back_to_full_pipeline(caplog):
+    payload = _Payload([_Utterance("utt-1", ["https://example.com/v.mp4"])])
+    settings = _make_settings()
+
+    class _BrokenPool:
+        def acquire(self):
+            raise RuntimeError("db down")
+
+    sampled_urls: list[str] = []
+
+    async def fake_sample(vurl):
+        sampled_urls.append(vurl)
+        return _fake_frames(1)
+
+    with caplog.at_level(logging.ERROR, logger="src.analyses.safety.video_moderation_worker"):  # noqa: SIM117
+        with patch(
+            "src.analyses.safety.video_moderation_worker.get_access_token",
+            return_value=FAKE_TOKEN,
+        ), patch(
+            "src.analyses.safety.video_moderation_worker.sample_video",
+            new=fake_sample,
+        ), patch(
+            "src.analyses.safety.video_moderation_worker._annotate_frames",
+            new=AsyncMock(return_value=_clean_frame_findings(1)),
+        ):
+            result = await run_video_moderation(
+                _BrokenPool(), uuid4(), uuid4(), payload, settings
+            )
+
+    assert sampled_urls == ["https://example.com/v.mp4"]
+    assert len(result["matches"]) == 1
+    assert any("fetch_cached failed" in r.message for r in caplog.records)
