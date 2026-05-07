@@ -2432,12 +2432,12 @@ async def _run_weather_report_step(
     returns without raising so a bad weather synthesis never fails the
     job — finalize will continue with `weather_report = null`.
     """
-    async with pool.acquire() as conn:
-        row = await conn.fetchrow(_LOAD_HEADLINE_INPUTS_SQL, job_id, task_attempt)
-    if row is None:
-        return
-
     try:
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(_LOAD_HEADLINE_INPUTS_SQL, job_id, task_attempt)
+        if row is None:
+            return
+
         inputs = _build_weather_report_inputs(
             _parse_sections(row["sections"]),
             row["page_title"],
