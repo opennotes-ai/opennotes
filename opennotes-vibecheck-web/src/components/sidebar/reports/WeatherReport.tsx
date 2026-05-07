@@ -1,4 +1,16 @@
 import { For, Show, type JSX } from "solid-js";
+import { Card, CardContent } from "@opennotes/ui/components/ui/card";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableRow,
+} from "@opennotes/ui/components/ui/table";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@opennotes/ui/components/ui/tooltip";
 import { Skeleton } from "@opennotes/ui/components/ui/skeleton";
 import type { components } from "~/lib/generated-types";
 
@@ -30,26 +42,39 @@ export interface WeatherReportProps {
 interface AxisDefinition {
   axisType: AxisType;
   heading: string;
+  tooltip: string;
   mapLabel: (value: WeatherAxisLabel) => string;
   valueClass: (value: WeatherAxisLabel) => string;
 }
+
+const TOOLTIP_COPY: Record<AxisType, string> = {
+  truth:
+    "Truth — How factually grounded the claim is. Higher = better-sourced; lower = misleading or unverified.",
+  relevance:
+    "Relevance — How on-topic the content is. Higher = insightful and on-topic; lower = drifting or off-topic.",
+  sentiment:
+    "Sentiment — The emotional tone of the content as a free-form descriptor.",
+};
 
 const AXES: AxisDefinition[] = [
   {
     axisType: "truth",
     heading: "Truth",
+    tooltip: TOOLTIP_COPY.truth,
     mapLabel: mapTruthLabel,
     valueClass: valueClassForTruth,
   },
   {
     axisType: "relevance",
     heading: "Relevance",
+    tooltip: TOOLTIP_COPY.relevance,
     mapLabel: mapRelevanceLabel,
     valueClass: valueClassForRelevance,
   },
   {
     axisType: "sentiment",
     heading: "Sentiment",
+    tooltip: TOOLTIP_COPY.sentiment,
     mapLabel: mapSentimentLabel,
     valueClass: valueClassForSentiment,
   },
@@ -148,18 +173,14 @@ function safeAlternatives(axis: WeatherAxis | null): WeatherAxisAlternative[] {
   );
 }
 
-interface AxisCardProps {
-  report: WeatherReportData | null;
-  axisType: AxisType;
-  heading: string;
-  mapLabel: (value: WeatherAxisLabel) => string;
-  valueClass: (value: WeatherAxisLabel) => string;
+interface AxisRowProps {
+  report: WeatherReportData;
+  axis: AxisDefinition;
 }
 
-function AxisCard(props: AxisCardProps): JSX.Element {
-  const axis = (): WeatherAxis | null => {
-    if (!props.report) return null;
-    switch (props.axisType) {
+function AxisRow(props: AxisRowProps): JSX.Element {
+  const axisData = (): WeatherAxis | null => {
+    switch (props.axis.axisType) {
       case "truth":
         return props.report.truth as WeatherAxisTruth;
       case "relevance":
@@ -169,116 +190,112 @@ function AxisCard(props: AxisCardProps): JSX.Element {
     }
   };
 
-  const confidence = () => formatLogprobProbability(axis()?.logprob);
-  const alternatives = () => safeAlternatives(axis());
+  const confidence = () => formatLogprobProbability(axisData()?.logprob);
+  const alternatives = () => safeAlternatives(axisData());
 
   return (
-    <section
-      data-testid={`weather-axis-card-${props.axisType}`}
-      class="rounded-md border border-border bg-card p-2"
-    >
-      <h4 class="mb-1 text-xs font-semibold text-muted-foreground">{props.heading}</h4>
-      <Show
-        when={axis()}
-        fallback={
-          <p
-            data-testid={`weather-${props.axisType}-value`}
-            class="text-sm font-medium text-muted-foreground"
-          >
-            Not available
-          </p>
-        }
+    <Tooltip>
+      <TooltipTrigger
+        as={TableRow}
+        data-testid={`weather-axis-card-${props.axis.axisType}`}
       >
-        {(axisValue) => {
-          const label = () => props.mapLabel(axisValue().label);
-          return (
-            <div class="space-y-2">
-              <p
-                data-testid={`weather-${props.axisType}-value`}
-                class={props.valueClass(axisValue().label)}
-                title={axisValue().label}
+        <TableCell class="w-full">
+          <Show
+            when={axisData()}
+            fallback={
+              <span
+                data-testid={`weather-${props.axis.axisType}-value`}
+                class="text-sm font-medium text-muted-foreground"
               >
-                {label()}
-              </p>
-
-              <Show when={confidence() !== null || alternatives().length > 0}>
-                <div class="flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
+                Not available
+              </span>
+            }
+          >
+            {(axisValue) => {
+              const label = () => props.axis.mapLabel(axisValue().label);
+              return (
+                <div class="flex flex-wrap items-center gap-2">
+                  <span
+                    data-testid={`weather-${props.axis.axisType}-value`}
+                    class={props.axis.valueClass(axisValue().label)}
+                    title={axisValue().label}
+                  >
+                    {label()}
+                  </span>
                   <Show when={confidence() !== null}>
                     <span
-                      data-testid={`weather-${props.axisType}-confidence`}
+                      data-testid={`weather-${props.axis.axisType}-confidence`}
+                      class="text-[11px] text-muted-foreground"
                     >
                       {confidence()}
                     </span>
                   </Show>
+                  <Show when={alternatives().length > 0}>
+                    <ul
+                      data-testid={`weather-${props.axis.axisType}-alternatives`}
+                      class="flex flex-wrap gap-1"
+                    >
+                      <For each={alternatives()}>
+                        {(alternative) => {
+                          const alternativeLabel = props.axis.mapLabel(
+                            alternative.label as WeatherAxisLabel,
+                          );
+                          const alternativeConfidence =
+                            formatLogprobProbability(alternative.logprob);
+                          return (
+                            <li class="inline-flex rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+                              {alternativeLabel}
+                              <Show when={alternativeConfidence !== null}>
+                                <span> ({alternativeConfidence})</span>
+                              </Show>
+                            </li>
+                          );
+                        }}
+                      </For>
+                    </ul>
+                  </Show>
                 </div>
-              </Show>
-
-              <Show when={alternatives().length > 0}>
-                <ul
-                  data-testid={`weather-${props.axisType}-alternatives`}
-                  class="flex flex-wrap gap-2"
-                >
-                  <For each={alternatives()}>
-                    {(alternative) => {
-                      const alternativeLabel = props.mapLabel(
-                        alternative.label as WeatherAxisLabel,
-                      );
-                      const alternativeConfidence = formatLogprobProbability(
-                        alternative.logprob,
-                      );
-                      return (
-                        <li
-                          class="inline-flex rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground"
-                        >
-                          {alternativeLabel}
-                          <Show when={alternativeConfidence !== null}>
-                            <span> ({alternativeConfidence})</span>
-                          </Show>
-                        </li>
-                      );
-                    }}
-                  </For>
-                </ul>
-              </Show>
-            </div>
-          );
-        }}
-      </Show>
-    </section>
+              );
+            }}
+          </Show>
+        </TableCell>
+      </TooltipTrigger>
+      <TooltipContent class="max-w-xs text-xs leading-snug">
+        {props.axis.tooltip}
+      </TooltipContent>
+    </Tooltip>
   );
 }
 
 function WeatherReportSkeleton(props: { class?: string }): JSX.Element {
   return (
-    <div
+    <Card
       data-testid="weather-report-skeleton"
-      class={`grid grid-cols-3 gap-2 ${props.class ?? ""}`.trim()}
+      class={props.class}
+      aria-hidden="true"
     >
-      <div
-        data-testid="weather-skeleton-truth"
-        class="rounded-md border border-border bg-card p-2"
-        aria-hidden="true"
-      >
-        <Skeleton class="mb-1 h-3 w-12" />
-        <Skeleton class="h-4 w-20 rounded-full" />
-      </div>
-      <div
-        data-testid="weather-skeleton-relevance"
-        class="rounded-md border border-border bg-card p-2"
-        aria-hidden="true"
-      >
-        <Skeleton class="mb-1 h-3 w-16" />
-        <Skeleton class="h-4 w-20 rounded-full" />
-      </div>
-      <div
-        data-testid="weather-skeleton-sentiment"
-        class="rounded-md border border-border bg-card p-2"
-        aria-hidden="true"
-      >
-        <Skeleton class="mb-1 h-3 w-14" />
-        <Skeleton class="h-4 w-20 rounded-full" />
-      </div>
-    </div>
+      <CardContent class="p-2">
+        <Table>
+          <TableBody>
+            <TableRow data-testid="weather-skeleton-truth">
+              <TableCell>
+                <Skeleton class="h-4 w-20 rounded-full" />
+              </TableCell>
+            </TableRow>
+            <TableRow data-testid="weather-skeleton-relevance">
+              <TableCell>
+                <Skeleton class="h-4 w-20 rounded-full" />
+              </TableCell>
+            </TableRow>
+            <TableRow data-testid="weather-skeleton-sentiment">
+              <TableCell>
+                <Skeleton class="h-4 w-20 rounded-full" />
+              </TableCell>
+            </TableRow>
+          </TableBody>
+        </Table>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -289,22 +306,17 @@ export default function WeatherReport(props: WeatherReportProps): JSX.Element {
       fallback={<WeatherReportSkeleton class={props.class} />}
     >
       {(report) => (
-        <div
-          data-testid="weather-report"
-          class={`grid grid-cols-3 gap-2 ${props.class ?? ""}`.trim()}
-        >
-          <For each={AXES}>
-            {(axis) => (
-              <AxisCard
-                report={report()}
-                axisType={axis.axisType}
-                heading={axis.heading}
-                mapLabel={axis.mapLabel}
-                valueClass={axis.valueClass}
-              />
-            )}
-          </For>
-        </div>
+        <Card data-testid="weather-report" class={props.class}>
+          <CardContent class="p-2">
+            <Table>
+              <TableBody>
+                <For each={AXES}>
+                  {(axis) => <AxisRow report={report()} axis={axis} />}
+                </For>
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
       )}
     </Show>
   );
