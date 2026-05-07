@@ -594,8 +594,9 @@ CREATE OR REPLACE FUNCTION public.vibecheck_upsert_scrape_if_not_evicted(
     p_scraped_at TIMESTAMPTZ,
     p_expires_at TIMESTAMPTZ,
     p_put_started_at TIMESTAMPTZ,
-    p_clock_skew_seconds INT  -- TASK-1577.01: matches the 15-arg form;
-                              -- explicit so positional calls disambiguate.
+    p_clock_skew_seconds INT DEFAULT 1  -- TASK-1583.01: preserve the
+                                        -- legacy default so schema reapply
+                                        -- can replace pre-1577.01 functions.
 )
 RETURNS BOOLEAN
 LANGUAGE sql

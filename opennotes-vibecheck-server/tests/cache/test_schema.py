@@ -319,6 +319,31 @@ class TestScrapeCacheFunctions:
     ) -> None:
         assert "NOTIFY pgrst, 'reload schema'" in schema_sql
 
+    def test_rolling_deploy_shim_preserves_legacy_clock_skew_default(
+        self, schema_sql: str
+    ) -> None:
+        match = re.search(
+            r"CREATE\s+OR\s+REPLACE\s+FUNCTION\s+public\.vibecheck_upsert_scrape_if_not_evicted"
+            r"\(\s*"
+            r"p_normalized_url\s+TEXT,\s*"
+            r"p_tier\s+TEXT,\s*"
+            r"p_url\s+TEXT,\s*"
+            r"p_final_url\s+TEXT,\s*"
+            r"p_host\s+TEXT,\s*"
+            r"p_page_kind\s+TEXT,\s*"
+            r"p_page_title\s+TEXT,\s*"
+            r"p_markdown\s+TEXT,\s*"
+            r"p_html\s+TEXT,\s*"
+            r"p_screenshot_storage_key\s+TEXT,\s*"
+            r"p_scraped_at\s+TIMESTAMPTZ,\s*"
+            r"p_expires_at\s+TIMESTAMPTZ,\s*"
+            r"p_put_started_at\s+TIMESTAMPTZ,\s*"
+            r"p_clock_skew_seconds\s+INT\s+DEFAULT\s+1\b",
+            schema_sql,
+            re.IGNORECASE,
+        )
+        assert match is not None
+
 
 class TestPgCronSchedules:
     def test_orphan_sweep_scheduled_every_minute(self, schema_sql: str) -> None:

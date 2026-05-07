@@ -115,6 +115,52 @@ async def _apply_full_schema_via_exec_sql(conn: asyncpg.Connection) -> None:
         await conn.execute("RESET ROLE")
 
 
+async def _install_legacy_defaulted_scrape_upsert(conn: asyncpg.Connection) -> None:
+    await conn.execute(
+        """
+        CREATE OR REPLACE FUNCTION public.vibecheck_upsert_scrape_if_not_evicted(
+            p_normalized_url TEXT,
+            p_tier TEXT,
+            p_url TEXT,
+            p_final_url TEXT,
+            p_host TEXT,
+            p_page_kind TEXT,
+            p_page_title TEXT,
+            p_markdown TEXT,
+            p_html TEXT,
+            p_screenshot_storage_key TEXT,
+            p_scraped_at TIMESTAMPTZ,
+            p_expires_at TIMESTAMPTZ,
+            p_put_started_at TIMESTAMPTZ,
+            p_clock_skew_seconds INT DEFAULT 1
+        )
+        RETURNS BOOLEAN
+        LANGUAGE sql
+        SECURITY DEFINER
+        SET search_path = pg_catalog, pg_temp
+        AS $$
+            SELECT public.vibecheck_upsert_scrape_if_not_evicted(
+                p_normalized_url,
+                p_tier,
+                p_url,
+                p_final_url,
+                p_host,
+                p_page_kind,
+                p_page_title,
+                p_markdown,
+                p_html,
+                NULL::TEXT,
+                p_screenshot_storage_key,
+                p_scraped_at,
+                p_expires_at,
+                p_put_started_at,
+                p_clock_skew_seconds
+            );
+        $$;
+        """
+    )
+
+
 async def _assert_rls_enabled(conn: asyncpg.Connection, table: str) -> None:
     row = await conn.fetchrow(
         "SELECT relrowsecurity, relforcerowsecurity FROM pg_class WHERE relname = $1",
@@ -245,6 +291,112 @@ async def test_full_schema_reapply_via_exec_sql_idempotent(
         await _assert_rls_enabled(full_schema_conn, table)
 
     await _assert_sweeper_functions_owned_by_postgres(full_schema_conn)
+
+
+async def test_full_schema_reapply_over_legacy_defaulted_scrape_upsert_function(
+    full_schema_conn: asyncpg.Connection,
+) -> None:
+    await _apply_full_schema_as_superuser(full_schema_conn)
+    await _install_legacy_defaulted_scrape_upsert(full_schema_conn)
+
+    await _apply_full_schema_via_exec_sql(full_schema_conn)
+
+    signatures = await full_schema_conn.fetch(
+        """
+        SELECT pronargs, pg_get_function_arguments(p.oid) AS arguments
+        FROM pg_proc p
+        JOIN pg_namespace n ON n.oid = p.pronamespace
+        WHERE n.nspname = 'public'
+          AND p.proname = 'vibecheck_upsert_scrape_if_not_evicted'
+        ORDER BY pronargs
+        """
+    )
+    assert [(row["pronargs"], row["arguments"]) for row in signatures] == [
+        (
+            14,
+            "p_normalized_url text, p_tier text, p_url text, p_final_url text, "
+            "p_host text, p_page_kind text, p_page_title text, p_markdown text, "
+            "p_html text, p_screenshot_storage_key text, "
+            "p_scraped_at timestamp with time zone, "
+            "p_expires_at timestamp with time zone, "
+            "p_put_started_at timestamp with time zone, "
+            "p_clock_skew_seconds integer DEFAULT 1",
+        ),
+        (
+            15,
+            "p_normalized_url text, p_tier text, p_url text, p_final_url text, "
+            "p_host text, p_page_kind text, p_page_title text, p_markdown text, "
+            "p_html text, p_raw_html text, p_screenshot_storage_key text, "
+            "p_scraped_at timestamp with time zone, "
+            "p_expires_at timestamp with time zone, "
+            "p_put_started_at timestamp with time zone, "
+            "p_clock_skew_seconds integer",
+        ),
+    ]
+
+    now = datetime.now(UTC)
+    wrote_raw = await full_schema_conn.fetchval(
+        """
+        SELECT public.vibecheck_upsert_scrape_if_not_evicted(
+            $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15
+        )
+        """,
+        "https://example.com/reapply/raw",
+        "scrape",
+        "https://example.com/reapply/raw",
+        "https://example.com/reapply/raw",
+        "example.com",
+        "other",
+        "Reapply raw",
+        "new replica",
+        "<main>new</main>",
+        "<html><body><main>new</main></body></html>",
+        None,
+        now,
+        now + timedelta(hours=72),
+        now,
+        1,
+    )
+    assert wrote_raw is True
+
+    wrote_legacy = await full_schema_conn.fetchval(
+        """
+        SELECT public.vibecheck_upsert_scrape_if_not_evicted(
+            $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13
+        )
+        """,
+        "https://example.com/reapply/legacy",
+        "scrape",
+        "https://example.com/reapply/legacy",
+        "https://example.com/reapply/legacy",
+        "example.com",
+        "other",
+        "Reapply legacy",
+        "old replica",
+        "<main>legacy</main>",
+        None,
+        now,
+        now + timedelta(hours=72),
+        now,
+    )
+    assert wrote_legacy is True
+
+    rows = await full_schema_conn.fetch(
+        """
+        SELECT normalized_url, html, raw_html
+        FROM public.vibecheck_scrapes
+        WHERE normalized_url LIKE 'https://example.com/reapply/%'
+        ORDER BY normalized_url
+        """
+    )
+    assert [(row["normalized_url"], row["html"], row["raw_html"]) for row in rows] == [
+        ("https://example.com/reapply/legacy", "<main>legacy</main>", None),
+        (
+            "https://example.com/reapply/raw",
+            "<main>new</main>",
+            "<html><body><main>new</main></body></html>",
+        ),
+    ]
 
 
 async def test_full_schema_reapply_twice_idempotent(
