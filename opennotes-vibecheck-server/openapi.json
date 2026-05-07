@@ -2810,205 +2810,6 @@
         "title": "VideoModerationSection",
         "description": "GCP Video Intelligence SafeSearch results for videos referenced in the page."
       },
-      "WeatherAxisAlternativeRelevance": {
-        "properties": {
-          "label": {
-            "type": "string",
-            "enum": [
-              "insightful",
-              "on_topic",
-              "chatty",
-              "drifting",
-              "off_topic"
-            ],
-            "title": "Label"
-          },
-          "logprob": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Logprob"
-          }
-        },
-        "type": "object",
-        "required": [
-          "label"
-        ],
-        "title": "WeatherAxisAlternativeRelevance",
-        "description": "WeatherAxisAlternative[RelevanceLabel] with a stable schema name."
-      },
-      "WeatherAxisAlternativeSentiment": {
-        "properties": {
-          "label": {
-            "type": "string",
-            "title": "Label"
-          },
-          "logprob": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Logprob"
-          }
-        },
-        "type": "object",
-        "required": [
-          "label"
-        ],
-        "title": "WeatherAxisAlternativeSentiment",
-        "description": "WeatherAxisAlternative[str] with a stable schema name."
-      },
-      "WeatherAxisAlternativeTruth": {
-        "properties": {
-          "label": {
-            "type": "string",
-            "enum": [
-              "sourced",
-              "mostly_factual",
-              "self_reported",
-              "hearsay",
-              "misleading"
-            ],
-            "title": "Label"
-          },
-          "logprob": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Logprob"
-          }
-        },
-        "type": "object",
-        "required": [
-          "label"
-        ],
-        "title": "WeatherAxisAlternativeTruth",
-        "description": "WeatherAxisAlternative[TruthLabel] with a stable schema name."
-      },
-      "WeatherAxisRelevance": {
-        "properties": {
-          "label": {
-            "type": "string",
-            "enum": [
-              "insightful",
-              "on_topic",
-              "chatty",
-              "drifting",
-              "off_topic"
-            ],
-            "title": "Label"
-          },
-          "logprob": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Logprob"
-          },
-          "alternatives": {
-            "items": {
-              "$ref": "#/components/schemas/WeatherAxisAlternativeRelevance"
-            },
-            "type": "array",
-            "title": "Alternatives"
-          }
-        },
-        "type": "object",
-        "required": [
-          "label"
-        ],
-        "title": "WeatherAxisRelevance",
-        "description": "WeatherAxis[RelevanceLabel] with a stable schema name."
-      },
-      "WeatherAxisSentiment": {
-        "properties": {
-          "label": {
-            "type": "string",
-            "title": "Label"
-          },
-          "logprob": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Logprob"
-          },
-          "alternatives": {
-            "items": {
-              "$ref": "#/components/schemas/WeatherAxisAlternativeSentiment"
-            },
-            "type": "array",
-            "title": "Alternatives"
-          }
-        },
-        "type": "object",
-        "required": [
-          "label"
-        ],
-        "title": "WeatherAxisSentiment",
-        "description": "WeatherAxis[str] with a stable schema name."
-      },
-      "WeatherAxisTruth": {
-        "properties": {
-          "label": {
-            "type": "string",
-            "enum": [
-              "sourced",
-              "mostly_factual",
-              "self_reported",
-              "hearsay",
-              "misleading"
-            ],
-            "title": "Label"
-          },
-          "logprob": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Logprob"
-          },
-          "alternatives": {
-            "items": {
-              "$ref": "#/components/schemas/WeatherAxisAlternativeTruth"
-            },
-            "type": "array",
-            "title": "Alternatives"
-          }
-        },
-        "type": "object",
-        "required": [
-          "label"
-        ],
-        "title": "WeatherAxisTruth",
-        "description": "WeatherAxis[TruthLabel] with a stable schema name."
-      },
       "WeatherReport": {
         "properties": {
           "truth": {
@@ -3076,6 +2877,199 @@
         "type": "object",
         "title": "WebRiskSection",
         "description": "GCP Web Risk findings for URLs referenced in the page."
+      },
+      "WeatherAxisAlternativeRelevance": {
+        "properties": {
+          "label": {
+            "type": "string",
+            "enum": [
+              "insightful",
+              "on_topic",
+              "chatty",
+              "drifting",
+              "off_topic"
+            ],
+            "title": "Label"
+          },
+          "logprob": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Logprob"
+          }
+        },
+        "type": "object",
+        "required": [
+          "label"
+        ],
+        "title": "WeatherAxisAlternative[Literal['insightful', 'on_topic', 'chatty', 'drifting', 'off_topic']]"
+      },
+      "WeatherAxisAlternativeTruth": {
+        "properties": {
+          "label": {
+            "type": "string",
+            "enum": [
+              "sourced",
+              "mostly_factual",
+              "self_reported",
+              "hearsay",
+              "misleading"
+            ],
+            "title": "Label"
+          },
+          "logprob": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Logprob"
+          }
+        },
+        "type": "object",
+        "required": [
+          "label"
+        ],
+        "title": "WeatherAxisAlternative[Literal['sourced', 'mostly_factual', 'self_reported', 'hearsay', 'misleading']]"
+      },
+      "WeatherAxisAlternativeSentiment": {
+        "properties": {
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "logprob": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Logprob"
+          }
+        },
+        "type": "object",
+        "required": [
+          "label"
+        ],
+        "title": "WeatherAxisAlternative[str]"
+      },
+      "WeatherAxisRelevance": {
+        "properties": {
+          "label": {
+            "type": "string",
+            "enum": [
+              "insightful",
+              "on_topic",
+              "chatty",
+              "drifting",
+              "off_topic"
+            ],
+            "title": "Label"
+          },
+          "logprob": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Logprob"
+          },
+          "alternatives": {
+            "items": {
+              "$ref": "#/components/schemas/WeatherAxisAlternativeRelevance"
+            },
+            "type": "array",
+            "title": "Alternatives"
+          }
+        },
+        "type": "object",
+        "required": [
+          "label"
+        ],
+        "title": "WeatherAxis[Literal['insightful', 'on_topic', 'chatty', 'drifting', 'off_topic']]"
+      },
+      "WeatherAxisTruth": {
+        "properties": {
+          "label": {
+            "type": "string",
+            "enum": [
+              "sourced",
+              "mostly_factual",
+              "self_reported",
+              "hearsay",
+              "misleading"
+            ],
+            "title": "Label"
+          },
+          "logprob": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Logprob"
+          },
+          "alternatives": {
+            "items": {
+              "$ref": "#/components/schemas/WeatherAxisAlternativeTruth"
+            },
+            "type": "array",
+            "title": "Alternatives"
+          }
+        },
+        "type": "object",
+        "required": [
+          "label"
+        ],
+        "title": "WeatherAxis[Literal['sourced', 'mostly_factual', 'self_reported', 'hearsay', 'misleading']]"
+      },
+      "WeatherAxisSentiment": {
+        "properties": {
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "logprob": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Logprob"
+          },
+          "alternatives": {
+            "items": {
+              "$ref": "#/components/schemas/WeatherAxisAlternativeSentiment"
+            },
+            "type": "array",
+            "title": "Alternatives"
+          }
+        },
+        "type": "object",
+        "required": [
+          "label"
+        ],
+        "title": "WeatherAxis[str]"
       }
     }
   }

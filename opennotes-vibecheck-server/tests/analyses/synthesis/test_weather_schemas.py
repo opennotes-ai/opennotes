@@ -7,17 +7,15 @@ from pydantic import ValidationError
 
 from src.analyses.schemas import SidebarPayload
 from src.analyses.synthesis._weather_schemas import (
-    WeatherAxisAlternativeRelevance,
-    WeatherAxisAlternativeSentiment,
-    WeatherAxisAlternativeTruth,
-    WeatherAxisRelevance,
-    WeatherAxisSentiment,
-    WeatherAxisTruth,
+    RelevanceLabel,
+    TruthLabel,
+    WeatherAxis,
+    WeatherAxisAlternative,
     WeatherReport,
 )
 
 
-def _empty_sidebar_payload_dict() -> dict:
+def _empty_sidebar_payload_dict() -> dict[str, object]:
     return {
         "source_url": "https://example.com",
         "scraped_at": datetime.now(UTC).isoformat(),
@@ -56,24 +54,42 @@ def _empty_sidebar_payload_dict() -> dict:
 
 def _weather_report() -> WeatherReport:
     return WeatherReport(
-        truth=WeatherAxisTruth(
+        truth=WeatherAxis[TruthLabel](
             label="sourced",
             logprob=0.87,
-            alternatives=[
-                WeatherAxisAlternativeTruth(label="mostly_factual", logprob=0.08),
-            ],
+            alternatives=[WeatherAxisAlternative[TruthLabel](label="mostly_factual", logprob=0.08)],
         ),
-        relevance=WeatherAxisRelevance(
+        relevance=WeatherAxis[RelevanceLabel](
             label="insightful",
             logprob=0.8,
-            alternatives=[WeatherAxisAlternativeRelevance(label="on_topic", logprob=0.12)],
+            alternatives=[WeatherAxisAlternative[RelevanceLabel](label="on_topic", logprob=0.12)],
         ),
-        sentiment=WeatherAxisSentiment(
+        sentiment=WeatherAxis[str](
             label="supportive",
             logprob=0.92,
-            alternatives=[WeatherAxisAlternativeSentiment(label="positive", logprob=0.11)],
+            alternatives=[WeatherAxisAlternative[str](label="positive", logprob=0.11)],
         ),
     )
+
+
+def test_weather_report_accepts_generic_axis_instances():
+    report = WeatherReport(
+        truth=WeatherAxis[TruthLabel](
+            label="sourced",
+            alternatives=[WeatherAxisAlternative[TruthLabel](label="mostly_factual")],
+        ),
+        relevance=WeatherAxis[RelevanceLabel](
+            label="insightful",
+            alternatives=[WeatherAxisAlternative[RelevanceLabel](label="on_topic")],
+        ),
+        sentiment=WeatherAxis[str](
+            label="supportive",
+            alternatives=[WeatherAxisAlternative[str](label="positive")],
+        ),
+    )
+    assert report.truth.label == "sourced"
+    assert report.relevance.label == "insightful"
+    assert report.sentiment.label == "supportive"
 
 
 def test_weather_report_round_trips_via_sidebar_payload_validation():
@@ -111,7 +127,7 @@ def test_invalid_truth_label_is_rejected():
 
 
 def test_weather_axis_defaults_alternatives_to_empty_and_round_trips_as_list():
-    axis = WeatherAxisSentiment(label="any")
+    axis = WeatherAxis[str](label="any")
     assert axis.alternatives == []
     assert axis.model_dump()["alternatives"] == []
 

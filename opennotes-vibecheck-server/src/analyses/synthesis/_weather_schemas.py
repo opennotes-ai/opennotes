@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Generic, Literal, TypeVar
+from typing import Any, Generic, Literal, TypeVar
 
 from pydantic import BaseModel, Field
 
@@ -21,6 +21,73 @@ TruthLabel = Literal[
 RelevanceLabel = Literal["insightful", "on_topic", "chatty", "drifting", "off_topic"]
 
 
+def _weather_schema_name(title: str) -> str | None:
+    if title.startswith("WeatherAxisAlternative[Literal["):
+        if "'sourced'" in title:
+            return "WeatherAxisAlternativeTruth"
+        return "WeatherAxisAlternativeRelevance"
+    if title == "WeatherAxisAlternative[str]":
+        return "WeatherAxisAlternativeSentiment"
+    if title.startswith("WeatherAxis[Literal["):
+        if "'sourced'" in title:
+            return "WeatherAxisTruth"
+        return "WeatherAxisRelevance"
+    if title == "WeatherAxis[str]":
+        return "WeatherAxisSentiment"
+    return None
+
+
+def _normalize_weather_schema_names(schema: dict[str, Any]) -> dict[str, Any]:
+    ref_prefix: str | None = None
+    if isinstance(schema.get("$defs"), dict):
+        defs: dict[str, Any] = schema["$defs"]
+        ref_prefix = "#/$defs/"
+    else:
+        components = schema.get("components")
+        if isinstance(components, dict) and isinstance(
+            components.get("schemas"),
+            dict,
+        ):
+            defs = components["schemas"]
+            ref_prefix = "#/components/schemas/"
+        else:
+            return schema
+
+    if not isinstance(defs, dict):
+        return schema
+
+    rename_map: dict[str, str] = {}
+    for old_name, definition in defs.items():
+        target_name = _weather_schema_name(str(definition.get("title", "")))
+        if target_name is not None:
+            rename_map[old_name] = target_name
+
+    for old_name, new_name in rename_map.items():
+        if old_name == new_name:
+            continue
+        defs[new_name] = defs.pop(old_name)
+
+    def walk(node: object) -> None:
+        if isinstance(node, dict):
+            for key, value in node.items():
+                if key == "$ref" and isinstance(value, str):
+                    if ref_prefix is None or not value.startswith(ref_prefix):
+                        continue
+                    prefix = ref_prefix
+                    old_ref = value[len(prefix) :]
+                    replacement = rename_map.get(old_ref)
+                    if replacement is not None:
+                        node[key] = prefix + replacement
+                else:
+                    walk(value)
+        elif isinstance(node, list):
+            for item in node:
+                walk(item)
+
+    walk(schema)
+    return schema
+
+
 class WeatherAxisAlternative(BaseModel, Generic[LabelT]):
     label: LabelT
     logprob: float | None = None
@@ -32,43 +99,17 @@ class WeatherAxis(BaseModel, Generic[LabelT]):
     alternatives: list[WeatherAxisAlternative[LabelT]] = Field(default_factory=list)
 
 
-class WeatherAxisAlternativeTruth(WeatherAxisAlternative[TruthLabel]):
-    """WeatherAxisAlternative[TruthLabel] with a stable schema name."""
-
-
-class WeatherAxisAlternativeRelevance(WeatherAxisAlternative[RelevanceLabel]):
-    """WeatherAxisAlternative[RelevanceLabel] with a stable schema name."""
-
-
-class WeatherAxisAlternativeSentiment(WeatherAxisAlternative[str]):
-    """WeatherAxisAlternative[str] with a stable schema name."""
-
-
-class WeatherAxisTruth(WeatherAxis[TruthLabel]):
-    """WeatherAxis[TruthLabel] with a stable schema name."""
-
-    alternatives: list[WeatherAxisAlternativeTruth] = Field(
-        default_factory=list,
-    )
-
-
-class WeatherAxisRelevance(WeatherAxis[RelevanceLabel]):
-    """WeatherAxis[RelevanceLabel] with a stable schema name."""
-
-    alternatives: list[WeatherAxisAlternativeRelevance] = Field(
-        default_factory=list,
-    )
-
-
-class WeatherAxisSentiment(WeatherAxis[str]):
-    """WeatherAxis[str] with a stable schema name."""
-
-    alternatives: list[WeatherAxisAlternativeSentiment] = Field(
-        default_factory=list,
-    )
-
-
 class WeatherReport(BaseModel):
-    truth: WeatherAxisTruth
-    relevance: WeatherAxisRelevance
-    sentiment: WeatherAxisSentiment
+    truth: WeatherAxis[TruthLabel]
+    relevance: WeatherAxis[RelevanceLabel]
+    sentiment: WeatherAxis[str]
+
+    @classmethod
+    def model_json_schema(
+        cls,
+        *args: Any,
+        **kwargs: Any,
+    ) -> dict[str, Any]:
+        return _normalize_weather_schema_names(
+            super().model_json_schema(*args, **kwargs),
+        )

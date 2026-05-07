@@ -13,6 +13,7 @@ import json
 from pathlib import Path
 
 from src.main import app
+from src.analyses.synthesis._weather_schemas import _normalize_weather_schema_names
 
 
 def main() -> None:
@@ -25,7 +26,7 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    schema = app.openapi()
+    schema = _normalize_weather_schema_names(app.openapi())
     args.output.write_text(json.dumps(schema, indent=2) + "\n", encoding="utf-8")
     print(f"wrote {args.output} ({args.output.stat().st_size} bytes)")
 
