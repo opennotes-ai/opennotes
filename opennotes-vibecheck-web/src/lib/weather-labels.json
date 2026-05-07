@@ -1,0 +1,16 @@
+{
+  "sourced":      { "axis": "truth",     "label": "Sourced",             "variant": "sky" },
+  "factual_claims": { "axis": "truth",   "label": "Factual Claims",      "variant": "blue" },
+  "first_person": { "axis": "truth",     "label": "First-Person",        "variant": "indigo" },
+  "hearsay":      { "axis": "truth",     "label": "Second-Hand",         "variant": "stone" },
+  "misleading":   { "axis": "truth",     "label": "Actively Misleading", "variant": "rose" },
+  "insightful":   { "axis": "relevance", "label": "Insightful",          "variant": "emerald" },
+  "on_topic":     { "axis": "relevance", "label": "On Topic",            "variant": "green" },
+  "chatty":       { "axis": "relevance", "label": "Chatty",              "variant": "teal" },
+  "drifting":     { "axis": "relevance", "label": "Drifting",            "variant": "cyan" },
+  "off_topic":    { "axis": "relevance", "label": "Off Topic",           "variant": "rose" },
+  "supportive":   { "axis": "sentiment", "label": "Supportive",          "variant": "amber" },
+  "neutral":      { "axis": "sentiment", "label": "Neutral",             "variant": "slate" },
+  "critical":     { "axis": "sentiment", "label": "Critical",            "variant": "orange" },
+  "oppositional": { "axis": "sentiment", "label": "Oppositional",        "variant": "violet" }
+}
