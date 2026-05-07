@@ -4334,7 +4334,7 @@ class HeadlineSummaryConn:
 
 
 def _all_sections_done(**overrides):
-    """Section dict with all 10 slots in DONE state, populated with empty data."""
+    """Section dict with all headline-relevant slots in DONE state."""
     sections = {
         SectionSlug.SAFETY_MODERATION.value: _slot(
             SectionState.DONE, {"harmful_content_matches": []}
@@ -4401,9 +4401,75 @@ def _all_sections_done(**overrides):
                 }
             },
         ),
+        SectionSlug.OPINIONS_SENTIMENTS_HIGHLIGHTS.value: _slot(
+            SectionState.DONE,
+            {
+                "highlights_report": {
+                    "highlights": [],
+                    "threshold": {
+                        "total_authors": 0,
+                        "total_utterances": 0,
+                        "min_authors_required": 2,
+                        "min_occurrences_required": 3,
+                    },
+                    "fallback_engaged": False,
+                    "floor_eligible_count": 0,
+                    "total_input_count": 0,
+                }
+            },
+        ),
     }
     sections.update(overrides)
     return sections
+
+
+def _trends_oppositions_payload(has_signal: bool = False) -> dict[str, Any]:
+    return {
+        "trends_oppositions_report": {
+            "trends": [
+                {
+                    "label": "same theme repeats",
+                    "cluster_texts": ["group a", "group b"],
+                    "summary": "Multiple contributors repeat the same framing.",
+                }
+            ]
+            if has_signal
+            else [],
+            "oppositions": [],
+            "input_cluster_count": 0 if not has_signal else 1,
+            "skipped_for_cap": 0,
+        }
+    }
+
+
+def _highlights_payload(has_signal: bool = False) -> dict[str, Any]:
+    return {
+        "highlights_report": {
+            "highlights": [
+                {
+                    "cluster": {
+                        "canonical_text": "high-impact claim",
+                        "occurrence_count": 4,
+                        "author_count": 3,
+                        "utterance_ids": ["u1", "u2", "u3", "u4"],
+                        "representative_authors": ["alice", "bob", "carol"],
+                    },
+                    "crossed_scaled_threshold": True,
+                }
+            ]
+            if has_signal
+            else [],
+            "threshold": {
+                "total_authors": 3,
+                "total_utterances": 4,
+                "min_authors_required": 2,
+                "min_occurrences_required": 3,
+            },
+            "fallback_engaged": False,
+            "floor_eligible_count": 0,
+            "total_input_count": 4,
+        }
+    }
 
 
 async def test_headline_summary_step_writes_serialized_summary(monkeypatch):
@@ -4541,3 +4607,62 @@ def test_build_headline_summary_inputs_marks_safety_unavailable_when_null(monkey
     assert inputs.safety_recommendation is None
     assert "safety_recommendation" in inputs.unavailable_inputs
     assert inputs.page_kind.value == "other"
+
+
+def test_build_headline_summary_inputs_propagates_trends_and_highlights_data(monkeypatch):
+    from src.jobs import orchestrator
+
+    sections = orchestrator._parse_sections(
+        _all_sections_done(
+            **{
+                SectionSlug.OPINIONS_SENTIMENTS_TRENDS_OPPOSITIONS.value: _slot(
+                    SectionState.DONE, _trends_oppositions_payload(has_signal=True)
+                ),
+                SectionSlug.OPINIONS_SENTIMENTS_HIGHLIGHTS.value: _slot(
+                    SectionState.DONE, _highlights_payload(has_signal=True)
+                ),
+            }
+        )
+    )
+    inputs = orchestrator._build_headline_summary_inputs(
+        sections, None, "Title", "article"
+    )
+
+    assert inputs.trends_oppositions is not None
+    assert inputs.trends_oppositions.trends[0].label == "same theme repeats"
+    assert inputs.trends_oppositions.input_cluster_count == 1
+    assert inputs.trends_oppositions.oppositions == []
+    assert inputs.highlights is not None
+    assert inputs.highlights.highlights[0].cluster.canonical_text == "high-impact claim"
+    assert inputs.highlights.highlights[0].crossed_scaled_threshold is True
+
+
+@pytest.mark.parametrize(
+    ("slug", "name"),
+    [
+        (SectionSlug.OPINIONS_SENTIMENTS_TRENDS_OPPOSITIONS, "trends_oppositions"),
+        (SectionSlug.OPINIONS_SENTIMENTS_HIGHLIGHTS, "highlights"),
+    ],
+)
+def test_build_headline_summary_inputs_marks_missing_opinion_slots_unavailable(slug, name):
+    from src.jobs import orchestrator
+
+    sections = orchestrator._parse_sections(
+        _all_sections_done(
+            **{
+                slug.value: _slot(
+                    SectionState.PENDING,
+                    _trends_oppositions_payload() if slug == SectionSlug.OPINIONS_SENTIMENTS_TRENDS_OPPOSITIONS else _highlights_payload(),
+                )
+            }
+        )
+    )
+    inputs = orchestrator._build_headline_summary_inputs(
+        sections, None, "Title", "article"
+    )
+
+    if slug == SectionSlug.OPINIONS_SENTIMENTS_TRENDS_OPPOSITIONS:
+        assert inputs.trends_oppositions is None
+    else:
+        assert inputs.highlights is None
+    assert name in inputs.unavailable_inputs

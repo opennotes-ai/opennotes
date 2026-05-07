@@ -73,7 +73,9 @@ from src.analyses.claims.dedupe_slot import run_claims_dedup
 from src.analyses.claims.evidence_slot import run_claims_evidence
 from src.analyses.claims.facts_agent import run_facts_claims_known_misinfo
 from src.analyses.claims.premises_slot import run_claims_premises
+from src.analyses.opinions._highlights_schemas import OpinionsHighlightsReport
 from src.analyses.opinions._schemas import SentimentStatsReport, SubjectiveClaim
+from src.analyses.opinions._trends_schemas import TrendsOppositionsReport
 from src.analyses.opinions.highlights_slot import run_highlights
 from src.analyses.opinions.sentiment_slot import run_sentiment
 from src.analyses.opinions.subjective_slot import run_subjective
@@ -2126,15 +2128,13 @@ def _build_headline_summary_inputs(
         unavailable_inputs,
         "subjective",
     )
-    # Trends/oppositions input is used only for unavailable-input tracking in
-    # this task slice; the headline model does not consume this payload yet.
-    _done_slot_data(
+    trends_data = _done_slot_data(
         sections,
         SectionSlug.OPINIONS_SENTIMENTS_TRENDS_OPPOSITIONS,
         unavailable_inputs,
         "trends_oppositions",
     )
-    _done_slot_data(
+    highlights_data = _done_slot_data(
         sections,
         SectionSlug.OPINIONS_SENTIMENTS_HIGHLIGHTS,
         unavailable_inputs,
@@ -2165,6 +2165,18 @@ def _build_headline_summary_inputs(
     sentiment_stats = (
         SentimentStatsReport.model_validate(sentiment_data["sentiment_stats"])
         if sentiment_data and "sentiment_stats" in sentiment_data
+        else None
+    )
+    trends_oppositions = (
+        TrendsOppositionsReport.model_validate(
+            trends_data["trends_oppositions_report"]
+        )
+        if trends_data and "trends_oppositions_report" in trends_data
+        else None
+    )
+    highlights = (
+        OpinionsHighlightsReport.model_validate(highlights_data["highlights_report"])
+        if highlights_data and "highlights_report" in highlights_data
         else None
     )
 
@@ -2206,6 +2218,8 @@ def _build_headline_summary_inputs(
             SubjectiveClaim.model_validate(claim)
             for claim in subjective_data.get("subjective_claims", [])
         ],
+        trends_oppositions=trends_oppositions,
+        highlights=highlights,
         page_title=page_title,
         page_kind=page_kind,
         unavailable_inputs=unavailable_inputs,
