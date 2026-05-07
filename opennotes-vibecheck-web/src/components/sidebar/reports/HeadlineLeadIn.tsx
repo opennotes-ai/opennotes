@@ -1,4 +1,5 @@
 import { Show, type JSX } from "solid-js";
+import { Card } from "@opennotes/ui/components/ui/card";
 import { Skeleton } from "@opennotes/ui/components/ui/skeleton";
 import type { components } from "~/lib/generated-types";
 import type { ResolvedHeadline } from "~/lib/headline-fallback";
@@ -17,22 +18,30 @@ export interface HeadlineLeadInProps {
 
 function HeadlineSummarySkeleton(): JSX.Element {
   return (
-    <section
-      data-testid="headline-summary-skeleton"
-      class="space-y-2"
-      aria-hidden="true"
+    <Card
+      data-testid="headline-summary-chrome"
+      class="rounded-md border border-border bg-card p-3"
     >
-      <Skeleton class="h-4 w-full" />
-      <Skeleton class="h-4 w-11/12" />
-      <Skeleton class="h-4 w-4/5" />
-    </section>
+      <section
+        data-testid="headline-summary-skeleton"
+        class="space-y-2"
+        aria-hidden="true"
+      >
+        <Skeleton class="h-4 w-full" />
+        <Skeleton class="h-4 w-11/12" />
+        <Skeleton class="h-4 w-4/5" />
+      </section>
+    </Card>
   );
 }
 
 export default function HeadlineLeadIn(props: HeadlineLeadInProps): JSX.Element {
-  const hasHeadline = () => props.headline !== null || props.showHeadlineSkeleton === true;
   const weatherSlotVisible = () =>
     props.weatherReport !== null || props.showWeatherSkeleton === true;
+  const hasHeadline = () =>
+    props.headline !== null ||
+    props.showHeadlineSkeleton === true ||
+    weatherSlotVisible();
 
   if (!hasHeadline() && !weatherSlotVisible()) {
     return <></>;
@@ -60,12 +69,12 @@ export default function HeadlineLeadIn(props: HeadlineLeadInProps): JSX.Element 
           fallback={<HeadlineSummarySkeleton />}
         >
           {(headline) => (
-            <div
+            <Card
               data-testid="headline-summary-chrome"
               class="rounded-md border border-border bg-card p-3"
             >
               <HeadlineSummaryReport headline={headline()} />
-            </div>
+            </Card>
           )}
         </Show>
       </Show>

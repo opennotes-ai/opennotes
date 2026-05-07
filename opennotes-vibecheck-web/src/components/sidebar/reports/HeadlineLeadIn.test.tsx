@@ -110,6 +110,35 @@ describe("HeadlineLeadIn headline skeleton", () => {
     expect(cls).toMatch(/\bbg-card\b/);
     expect(cls).toMatch(/\brounded-md\b/);
   });
+
+  it("renders the headline-summary-skeleton inside Card chrome when headline=null and showHeadlineSkeleton=true", () => {
+    render(() => (
+      <HeadlineLeadIn
+        headline={null}
+        weatherReport={null}
+        showHeadlineSkeleton
+      />
+    ));
+    const skeleton = screen.getByTestId("headline-summary-skeleton");
+    const chrome = skeleton.closest('[data-testid="headline-summary-chrome"]');
+    expect(chrome).not.toBeNull();
+    const cls = chrome?.getAttribute("class") ?? "";
+    expect(cls).toMatch(/\bborder\b/);
+    expect(cls).toMatch(/\bbg-card\b/);
+    expect(cls).toMatch(/\brounded-md\b/);
+  });
+
+  it("self-defends with skeleton chrome when headline is null but lead-in is visible (weather present)", () => {
+    render(() => (
+      <HeadlineLeadIn
+        headline={null}
+        weatherReport={makeWeatherReport()}
+      />
+    ));
+    const skeleton = screen.getByTestId("headline-summary-skeleton");
+    const chrome = skeleton.closest('[data-testid="headline-summary-chrome"]');
+    expect(chrome).not.toBeNull();
+  });
 });
 
 describe("HeadlineLeadIn weather-column collapse", () => {
