@@ -15,6 +15,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@opennotes/ui/components/ui/popover";
+import { Button } from "@opennotes/ui/components/ui/button";
 import type { SectionSlot } from "~/lib/api-client.server";
 import type {
   PartialSectionSlots,
@@ -158,10 +159,13 @@ function HelpPopover(props: {
       {(copy) => (
         <Popover>
           <PopoverTrigger
+            as={Button}
+            size="icon-sm"
+            variant="ghost"
             type="button"
             data-testid={props.triggerTestId}
             aria-label={`What does ${props.label} mean?`}
-            class="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-sm text-muted-foreground outline-none hover:bg-accent hover:text-accent-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
+            class="size-6 shrink-0 text-muted-foreground"
           >
             <CircleHelp
               aria-hidden="true"
@@ -297,7 +301,8 @@ export default function SectionGroup(props: SectionGroupProps): JSX.Element {
       <header class="flex items-start justify-between gap-2">
         <div class="flex min-w-0 items-center gap-1.5">
           <h3 class="flex min-w-0 items-center text-sm font-semibold text-foreground">
-            <button
+            <Button
+              variant="ghost"
               type="button"
               data-testid={`section-toggle-${props.label}`}
               aria-label={sectionToggleLabel()}
@@ -307,11 +312,11 @@ export default function SectionGroup(props: SectionGroupProps): JSX.Element {
                 setUserToggledGroupOpen(true);
                 setGroupOpen((current) => !current);
               }}
-              class="flex min-w-0 items-center gap-1.5 rounded-sm outline-none hover:opacity-80 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+              class="flex h-auto min-w-0 items-center gap-1.5 px-0 py-0 text-sm font-semibold text-foreground hover:bg-transparent hover:opacity-80"
             >
               <ChevronIcon expanded={groupOpen()} testId="section-group-chevron" />
               {props.label}
-            </button>
+            </Button>
           </h3>
           <HelpPopover
             copy={sectionHelp(props.label)}
@@ -362,7 +367,8 @@ export default function SectionGroup(props: SectionGroupProps): JSX.Element {
                 class="flex flex-col gap-2"
               >
                 <div class="flex items-center gap-2">
-                  <button
+                  <Button
+                    variant="ghost"
                     type="button"
                     data-testid={`section-summary-toggle-${props.label}`}
                     data-summary-label={summary().label ?? "Summary"}
@@ -370,13 +376,13 @@ export default function SectionGroup(props: SectionGroupProps): JSX.Element {
                     aria-expanded={isOpen() ? "true" : "false"}
                     aria-controls={summaryId}
                     onClick={toggle}
-                    class="flex min-w-0 flex-1 items-center justify-between gap-2 rounded-sm text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                    class="flex h-auto min-w-0 flex-1 items-center justify-between gap-2 px-0 py-0 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground hover:bg-transparent"
                   >
                     <span>{summary().label ?? "Summary"}</span>
                     <span class="ml-auto flex items-center gap-2">
                       <ChevronIcon expanded={isOpen()} testId="section-summary-chevron" />
                     </span>
-                  </button>
+                  </Button>
                 </div>
                 <div
                   id={summaryId}
@@ -417,7 +423,8 @@ export default function SectionGroup(props: SectionGroupProps): JSX.Element {
                 class="flex flex-col gap-2"
               >
                 <div class="flex items-center gap-2">
-                  <button
+                  <Button
+                    variant="ghost"
                     type="button"
                     data-testid={`slot-toggle-${slug}`}
                     data-dimmed={slot().state === "pending" ? "true" : "false"}
@@ -426,8 +433,8 @@ export default function SectionGroup(props: SectionGroupProps): JSX.Element {
                     onClick={toggle}
                     class={
                       slot().state === "pending"
-                        ? "flex min-w-0 flex-1 items-center justify-between gap-2 rounded-sm text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground opacity-60 outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                        : "flex min-w-0 flex-1 items-center justify-between gap-2 rounded-sm text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                        ? "flex h-auto min-w-0 flex-1 items-center justify-between gap-2 px-0 py-0 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground opacity-60 hover:bg-transparent"
+                        : "flex h-auto min-w-0 flex-1 items-center justify-between gap-2 px-0 py-0 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground hover:bg-transparent"
                     }
                   >
                     <span
@@ -449,7 +456,7 @@ export default function SectionGroup(props: SectionGroupProps): JSX.Element {
                       </Show>
                       <ChevronIcon expanded={isOpen()} testId="slot-chevron" />
                     </span>
-                  </button>
+                  </Button>
                   <HelpPopover
                     copy={slotHelp(slug)}
                     triggerTestId={`slot-help-${slug}`}
