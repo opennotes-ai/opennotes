@@ -1,4 +1,5 @@
 import { Show, type JSX } from "solid-js";
+import { Skeleton } from "@opennotes/ui/components/ui/skeleton";
 import type { components } from "~/lib/generated-types";
 import type { ResolvedHeadline } from "~/lib/headline-fallback";
 import HeadlineSummaryReport from "./HeadlineSummaryReport";
@@ -18,15 +19,12 @@ function HeadlineSummarySkeleton(): JSX.Element {
   return (
     <section
       data-testid="headline-summary-skeleton"
-      class="rounded-md border border-border bg-card p-3"
+      class="space-y-2"
       aria-hidden="true"
     >
-      <div class="skeleton-pulse-extra mb-2 h-4 w-1/4 rounded" />
-      <div class="space-y-2">
-        <div class="skeleton-pulse-extra-delay-1 h-3 w-full rounded" />
-        <div class="skeleton-pulse-extra-delay-2 h-3 w-11/12 rounded" />
-        <div class="skeleton-pulse-extra-delay-1 h-3 w-4/5 rounded" />
-      </div>
+      <Skeleton class="h-4 w-full" />
+      <Skeleton class="h-4 w-11/12" />
+      <Skeleton class="h-4 w-4/5" />
     </section>
   );
 }
@@ -47,7 +45,7 @@ export default function HeadlineLeadIn(props: HeadlineLeadInProps): JSX.Element 
       <Show when={hasWeather()}>
         <WeatherReport
           report={props.showWeatherSkeleton ? null : props.weatherReport}
-          class="min-h-[110px] grid-cols-3 lg:grid-cols-1"
+          class="grid-cols-3 lg:grid-cols-1"
         />
       </Show>
       <Show when={hasHeadline()}>
@@ -55,7 +53,14 @@ export default function HeadlineLeadIn(props: HeadlineLeadInProps): JSX.Element 
           when={props.headline}
           fallback={<HeadlineSummarySkeleton />}
         >
-          {(headline) => <HeadlineSummaryReport headline={headline()} />}
+          {(headline) => (
+            <div
+              data-testid="headline-summary-chrome"
+              class="rounded-md border border-border bg-card p-3"
+            >
+              <HeadlineSummaryReport headline={headline()} />
+            </div>
+          )}
         </Show>
       </Show>
     </section>

@@ -1780,7 +1780,7 @@ describe("AnalyzePage headline summary mount (TASK-1483.13.10)", () => {
     expect(
       screen
         .getByTestId("headline-summary-skeleton")
-        .querySelector(".skeleton-pulse-extra"),
+        .querySelector("[data-opennotes-skeleton]"),
     ).toBeTruthy();
   });
 
