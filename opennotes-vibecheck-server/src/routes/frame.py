@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import re
 from inspect import isawaitable
 from typing import Any
 from urllib.parse import urlparse
@@ -63,6 +64,8 @@ _ARCHIVE_CSP = (
     "font-src https: data:; frame-src 'none'; form-action 'none'; base-uri 'none'; "
     "frame-ancestors 'self'"
 )
+_ARCHIVE_DISPLAY_STYLES = "<style>img{max-width:100%!important;height:auto!important}</style>"
+_DOCTYPE_RE = re.compile(r"^(<!doctype[^>]*>)", re.IGNORECASE | re.DOTALL)
 
 _SELECT_PDF_ARCHIVE_SQL = """
 SELECT a.html, j.normalized_url AS gcs_key
@@ -435,8 +438,14 @@ async def _revalidate_archive_final_url(
 
 
 def _archive_response(html: str) -> Response:
+    m = _DOCTYPE_RE.match(html)
+    content = (
+        m.group(1) + _ARCHIVE_DISPLAY_STYLES + html[m.end() :]
+        if m
+        else _ARCHIVE_DISPLAY_STYLES + html
+    )
     return Response(
-        content=html,
+        content=content,
         headers={
             "content-type": "text/html; charset=utf-8",
             "cache-control": "no-store, private",
@@ -543,8 +552,11 @@ async def archive_preview(
         await _revalidate_archive_final_url(
             cached, original_url=url, scrape_cache=scrape_cache, tier=cached_tier or "scrape"
         )
+        display_html = strip_for_display(cached.html)
+        if not display_html:
+            raise HTTPException(status_code=502, detail="Archive unavailable")
         html = await _annotate_archive_html(
-            cached.html,
+            display_html,
             request=request,
             job_id=parsed_job_id,
             requested_url=url,
