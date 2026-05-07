@@ -154,10 +154,26 @@ async def _assert_sweeper_functions_owned_by_postgres(conn: asyncpg.Connection) 
         )
 
 
+async def _assert_weather_report_column_exists(conn: asyncpg.Connection) -> None:
+    row = await conn.fetchrow(
+        """
+        SELECT is_nullable, column_default
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'vibecheck_jobs'
+          AND column_name = 'weather_report'
+        """
+    )
+    assert row is not None, "weather_report column missing from public.vibecheck_jobs"
+    assert row["is_nullable"] == "YES"
+    assert row["column_default"] is None
+
+
 async def test_full_schema_apply_first_seed(full_schema_conn: asyncpg.Connection) -> None:
     await _apply_full_schema_as_superuser(full_schema_conn)
 
     await _assert_vibecheck_tables_exist(full_schema_conn)
+    await _assert_weather_report_column_exists(full_schema_conn)
 
     for table in (
         "vibecheck_analyses",
@@ -210,6 +226,7 @@ async def test_full_schema_reapply_via_exec_sql_idempotent(
     await _apply_full_schema_via_exec_sql(full_schema_conn)
 
     await _assert_vibecheck_tables_exist(full_schema_conn)
+    await _assert_weather_report_column_exists(full_schema_conn)
 
     for table in (
         "vibecheck_analyses",
@@ -233,6 +250,7 @@ async def test_full_schema_reapply_twice_idempotent(
     await _apply_full_schema_via_exec_sql(full_schema_conn)
 
     await _assert_vibecheck_tables_exist(full_schema_conn)
+    await _assert_weather_report_column_exists(full_schema_conn)
 
     for table in (
         "vibecheck_analyses",

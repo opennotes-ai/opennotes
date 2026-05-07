@@ -229,6 +229,11 @@ ALTER TABLE public.vibecheck_jobs
 ALTER TABLE public.vibecheck_jobs
     ADD COLUMN IF NOT EXISTS headline_summary JSONB;
 
+-- TASK-1508.19.04: persisted weather report for weather-augmented
+-- analyses. Nullable JSONB for backward compatibility on pre-existing rows.
+ALTER TABLE public.vibecheck_jobs
+    ADD COLUMN IF NOT EXISTS weather_report JSONB;
+
 -- TASK-1474.23.02: post-Gemini stage breadcrumb. The orchestrator updates
 -- `last_stage` synchronously at each stage boundary (persist_utterances,
 -- set_analyzing, run_sections, safety_recommendation, finalize) so a
