@@ -9,7 +9,7 @@ from uuid import UUID
 from pydantic import ValidationError
 
 from src.analyses.claims._claims_schemas import ClaimCategory, ClaimsReport
-from src.analyses.claims.evidence import build_supporting_facts_by_claim
+from src.analyses.claims.evidence import _UtteranceMeta, build_supporting_facts_by_claim
 from src.analyses.slot_utterances import load_job_utterances
 from src.config import Settings
 
@@ -108,9 +108,13 @@ async def run_claims_evidence(
         return {"claims_report": _empty_report().model_dump(mode="json")}
 
     utterances = await load_job_utterances(pool, job_id)
-    utterance_text_by_id = {str(utterance.utterance_id): utterance.text for utterance in utterances}
+    utterance_meta_by_id = {
+        str(u.utterance_id): _UtteranceMeta(text=u.text, kind=u.kind)
+        for u in utterances
+        if u.utterance_id is not None
+    }
     supporting_facts_by_claim = await build_supporting_facts_by_claim(
-        claims_report.deduped_claims, utterance_text_by_id, settings
+        claims_report.deduped_claims, utterance_meta_by_id, settings
     )
 
     claims = []

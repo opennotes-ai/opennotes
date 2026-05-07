@@ -15,6 +15,7 @@ from src.analyses.claims._claims_schemas import (
     DedupedClaim,
     SourceKind,
 )
+from src.analyses.claims.evidence import _UtteranceMeta
 from src.analyses.claims.evidence_slot import run_claims_evidence
 from src.config import Settings
 from src.utterances.schema import Utterance
@@ -144,7 +145,10 @@ async def test_build_supporting_facts_only_includes_potentially_factual_claims(
 
     facts = await evidence.build_supporting_facts_by_claim(
         claims,
-        {"u-1": "First sentence", "u-2": "Second"},
+        {
+            "u-1": _UtteranceMeta(text="First sentence", kind="comment"),
+            "u-2": _UtteranceMeta(text="Second", kind="comment"),
+        },
         settings,
         external_fetcher=_no_external_fetcher,
     )
@@ -212,7 +216,7 @@ async def test_build_supporting_facts_adds_external_facts_even_with_inline_facts
 
     facts = await evidence.build_supporting_facts_by_claim(
         _claims_report("The moon is round.").deduped_claims,
-        {"u-1": "The moon is round and glows."},
+        {"u-1": _UtteranceMeta(text="The moon is round and glows.", kind="comment")},
         settings,
         external_fetcher=fake_external_fetcher,
     )
@@ -239,7 +243,7 @@ async def test_build_supporting_facts_filters_inline_self_references(
 ) -> None:
     facts = await evidence.build_supporting_facts_by_claim(
         _claims_report("The moon is round.").deduped_claims,
-        {"u-1": utterance_text},
+        {"u-1": _UtteranceMeta(text=utterance_text, kind="comment")},
         settings,
         external_fetcher=_no_external_fetcher,
     )
@@ -253,7 +257,12 @@ async def test_build_supporting_facts_keeps_inline_statements_with_context(
 ) -> None:
     facts = await evidence.build_supporting_facts_by_claim(
         _claims_report("The moon is round.").deduped_claims,
-        {"u-1": "The moon is round because its gravity pulls it into hydrostatic equilibrium."},
+        {
+            "u-1": _UtteranceMeta(
+                text="The moon is round because its gravity pulls it into hydrostatic equilibrium.",
+                kind="comment",
+            )
+        },
         settings,
         external_fetcher=_no_external_fetcher,
     )
@@ -525,3 +534,22 @@ async def test_run_claims_evidence_sets_zero_facts_to_verify_for_subjective_clai
     claim_payload = result["claims_report"]["deduped_claims"][0]
     assert claim_payload["supporting_facts"] == []
     assert claim_payload["facts_to_verify"] == 0
+
+
+@pytest.mark.asyncio
+async def test_utterance_meta_text_and_kind_propagate_through_supporting_facts(
+    no_external_settings: Settings,
+) -> None:
+    meta = _UtteranceMeta(text="Scientists confirm the moon is round.", kind="comment")
+
+    facts = await evidence.build_supporting_facts_by_claim(
+        _claims_report("The moon is round.").deduped_claims,
+        {"u-1": meta},
+        no_external_settings,
+        external_fetcher=_no_external_fetcher,
+    )
+
+    assert meta.text == "Scientists confirm the moon is round."
+    assert meta.kind == "comment"
+    assert facts["The moon is round."][0].statement == meta.text
+    assert facts["The moon is round."][0].source_ref == "u-1"
