@@ -6,14 +6,15 @@ at job-completion time so the Recently Vibe Checked gallery never recomputes
 on poll.
 
 Priority order (parent-defined; first branch with usable signal wins):
-1. SafetyRecommendation rationale (level + rationale)
-2. Top harmful_content_match (max_score DESC)
-3. Top FlashpointMatch (derailment_score DESC)
-4. Top DedupedClaim (occurrence_count DESC, author_count DESC)
-5. Dominant sentiment (largest pct)
-6. page_title (from DerivationContext)
-7. first_utterance_text (from DerivationContext)
-8. Last-resort placeholder so the column is never empty.
+1. HeadlineSummary text
+2. SafetyRecommendation rationale (level + rationale)
+3. Top harmful_content_match (max_score DESC)
+4. Top FlashpointMatch (derailment_score DESC)
+5. Top DedupedClaim (occurrence_count DESC, author_count DESC)
+6. Dominant sentiment (largest pct)
+7. page_title (from DerivationContext)
+8. first_utterance_text (from DerivationContext)
+9. Last-resort placeholder so the column is never empty.
 
 Output is always non-empty and hard-capped at 140 chars (truncate with `…`).
 """
@@ -56,6 +57,13 @@ def _from_safety_recommendation(payload: SidebarPayload) -> str | None:
         return None
     level = rec.level.value.capitalize()
     return f"{level}: {rec.rationale}"
+
+
+def _from_headline_summary(payload: SidebarPayload) -> str | None:
+    headline = payload.headline
+    if headline is None or not headline.text.strip():
+        return None
+    return headline.text
 
 
 def _from_harmful_content(payload: SidebarPayload) -> str | None:
@@ -114,6 +122,7 @@ def derive_preview_description(
     len <= PREVIEW_MAX_LEN.
     """
     candidates = (
+        _from_headline_summary(payload),
         _from_safety_recommendation(payload),
         _from_harmful_content(payload),
         _from_flashpoint(payload),

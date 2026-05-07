@@ -951,6 +951,9 @@ export interface components {
              * @description Short blurb (~140 chars) summarizing the most interesting finding. Non-null at the API boundary.
              */
             preview_description: string;
+            /** Headline Summary */
+            headline_summary?: string | null;
+            weather_report?: components["schemas"]["WeatherReport"] | null;
             /**
              * Completed At
              * Format: date-time

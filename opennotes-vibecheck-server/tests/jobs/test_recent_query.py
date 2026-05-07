@@ -305,6 +305,26 @@ def _partial_sections(done: int, total: int) -> dict[str, dict[str, str]]:
     return sections
 
 
+def _weather_report() -> dict[str, Any]:
+    return {
+        "truth": {
+            "label": "sourced",
+            "logprob": None,
+            "alternatives": [],
+        },
+        "relevance": {
+            "label": "on_topic",
+            "logprob": None,
+            "alternatives": [],
+        },
+        "sentiment": {
+            "label": "engaged",
+            "logprob": None,
+            "alternatives": [],
+        },
+    }
+
+
 async def _seed_job(
     pool: Any,
     *,
@@ -315,6 +335,7 @@ async def _seed_job(
     preview: str | None = "preview blurb",
     finished_at: datetime | None = None,
     expired_at: datetime | None = None,
+    sidebar_payload: dict[str, Any] | None = None,
 ) -> UUID:
     sections = sections if sections is not None else _full_sections()
     if finished_at is None and status in ("done", "partial", "failed"):
@@ -324,8 +345,8 @@ async def _seed_job(
             """
             INSERT INTO vibecheck_jobs
                 (url, normalized_url, host, status, sections, finished_at,
-                 preview_description, source_type, expired_at)
-            VALUES ($1, $1, 'example.com', $2, $3::jsonb, $4, $5, $6, $7)
+                 preview_description, source_type, expired_at, sidebar_payload)
+            VALUES ($1, $1, 'example.com', $2, $3::jsonb, $4, $5, $6, $7, $8::jsonb)
             RETURNING job_id
             """,
             url,
@@ -335,6 +356,7 @@ async def _seed_job(
             preview,
             source_type,
             expired_at,
+            json.dumps(sidebar_payload) if sidebar_payload is not None else None,
         )
 
 
@@ -387,6 +409,48 @@ class TestListRecentDoneJobs:
         assert result[0].job_id == job_id
         assert result[0].source_url == url
         assert result[0].screenshot_url.startswith("https://signed.example/")
+
+    async def test_done_job_surfaces_headline_and_weather_report(
+        self, db_pool: Any
+    ) -> None:
+        url = "https://example.com/with-sidebar-payload"
+        await _seed_job(
+            db_pool,
+            url=url,
+            sidebar_payload={
+                "headline": {
+                    "text": "Readers want clearer evidence for the central claim.",
+                    "kind": "synthesized",
+                    "unavailable_inputs": [],
+                },
+                "weather_report": _weather_report(),
+            },
+        )
+        await _seed_scrape(db_pool, url=url)
+
+        result = await list_recent(db_pool, limit=5, signer=_StubSigner())
+
+        assert len(result) == 1
+        assert result[0].headline_summary == (
+            "Readers want clearer evidence for the central claim."
+        )
+        assert result[0].weather_report is not None
+        assert result[0].weather_report.truth.label == "sourced"
+        assert result[0].weather_report.relevance.label == "on_topic"
+        assert result[0].weather_report.sentiment.label == "engaged"
+
+    async def test_missing_sidebar_payload_leaves_headline_and_weather_null(
+        self, db_pool: Any
+    ) -> None:
+        url = "https://example.com/no-sidebar-payload"
+        await _seed_job(db_pool, url=url)
+        await _seed_scrape(db_pool, url=url)
+
+        result = await list_recent(db_pool, limit=5, signer=_StubSigner())
+
+        assert len(result) == 1
+        assert result[0].headline_summary is None
+        assert result[0].weather_report is None
 
     async def test_truncates_to_limit(self, db_pool: Any) -> None:
         for i in range(7):

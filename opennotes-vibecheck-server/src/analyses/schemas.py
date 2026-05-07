@@ -379,6 +379,8 @@ class RecentAnalysis(BaseModel):
     preview_description: str = Field(
         description="Short blurb (~140 chars) summarizing the most interesting finding. Non-null at the API boundary.",
     )
+    headline_summary: str | None = None
+    weather_report: WeatherReport | None = None
     completed_at: datetime
 
 

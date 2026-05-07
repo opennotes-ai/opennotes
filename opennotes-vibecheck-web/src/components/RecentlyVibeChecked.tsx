@@ -5,6 +5,8 @@
 
 import { For, Show } from "solid-js";
 import type { RecentAnalysis } from "~/lib/api-client.server";
+import { formatWeatherReadout } from "~/lib/weather-labels";
+import GalleryHoverCard from "./GalleryHoverCard";
 
 interface RecentlyVibeCheckedProps {
   analyses: RecentAnalysis[];
@@ -42,10 +44,11 @@ export default function RecentlyVibeChecked(props: RecentlyVibeCheckedProps) {
         <div class="grid grid-cols-2 gap-4 sm:grid-cols-3">
           <For each={props.analyses}>
             {(item) => (
-              <a
+              <GalleryHoverCard
+                item={item}
                 data-testid="recent-analysis-card"
                 href={`/analyze?job=${item.job_id}`}
-                class="group overflow-hidden rounded-lg border border-border transition-colors hover:border-foreground/30"
+                class="group block overflow-hidden rounded-lg border border-border transition-colors hover:border-foreground/30"
               >
                 <div
                   role="img"
@@ -65,8 +68,18 @@ export default function RecentlyVibeChecked(props: RecentlyVibeCheckedProps) {
                   <p class="line-clamp-2 text-xs text-muted-foreground">
                     {item.preview_description}
                   </p>
+                  <Show when={item.weather_report}>
+                    {(weatherReport) => (
+                      <p
+                        data-testid="recent-analysis-weather"
+                        class="truncate text-[11px] text-muted-foreground"
+                      >
+                        {formatWeatherReadout(weatherReport())}
+                      </p>
+                    )}
+                  </Show>
                 </div>
-              </a>
+              </GalleryHoverCard>
             )}
           </For>
         </div>
