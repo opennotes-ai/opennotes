@@ -1260,6 +1260,7 @@ export interface components {
             image_moderation?: components["schemas"]["ImageModerationSection"];
             video_moderation?: components["schemas"]["VideoModerationSection"];
             headline?: components["schemas"]["HeadlineSummary"] | null;
+            weather_report?: components["schemas"]["WeatherReport"] | null;
             /**
              * Utterances
              * @description Minimal position-to-id anchors used by sidebar controls to jump into the archived transcript.
@@ -1413,6 +1414,12 @@ export interface components {
             /** Matches */
             matches?: components["schemas"]["VideoModerationMatch"][];
         };
+        /** WeatherReport */
+        WeatherReport: {
+            truth: components["schemas"]["WeatherAxisTruth"];
+            relevance: components["schemas"]["WeatherAxisRelevance"];
+            sentiment: components["schemas"]["WeatherAxisSentiment"];
+        };
         /**
          * WebRiskFinding
          * @description A URL flagged by GCP Web Risk.
@@ -1436,6 +1443,66 @@ export interface components {
              * @default 0
              */
             urls_checked: number;
+        };
+        /** WeatherAxisAlternativeRelevance */
+        WeatherAxisAlternativeRelevance: {
+            /**
+             * Label
+             * @enum {string}
+             */
+            label: "insightful" | "on_topic" | "chatty" | "drifting" | "off_topic";
+            /** Logprob */
+            logprob?: number | null;
+        };
+        /** WeatherAxisAlternativeTruth */
+        WeatherAxisAlternativeTruth: {
+            /**
+             * Label
+             * @enum {string}
+             */
+            label: "sourced" | "mostly_factual" | "self_reported" | "hearsay" | "misleading";
+            /** Logprob */
+            logprob?: number | null;
+        };
+        /** WeatherAxisAlternativeSentiment */
+        WeatherAxisAlternativeSentiment: {
+            /** Label */
+            label: string;
+            /** Logprob */
+            logprob?: number | null;
+        };
+        /** WeatherAxisRelevance */
+        WeatherAxisRelevance: {
+            /**
+             * Label
+             * @enum {string}
+             */
+            label: "insightful" | "on_topic" | "chatty" | "drifting" | "off_topic";
+            /** Logprob */
+            logprob?: number | null;
+            /** Alternatives */
+            alternatives?: components["schemas"]["WeatherAxisAlternativeRelevance"][];
+        };
+        /** WeatherAxisTruth */
+        WeatherAxisTruth: {
+            /**
+             * Label
+             * @enum {string}
+             */
+            label: "sourced" | "mostly_factual" | "self_reported" | "hearsay" | "misleading";
+            /** Logprob */
+            logprob?: number | null;
+            /** Alternatives */
+            alternatives?: components["schemas"]["WeatherAxisAlternativeTruth"][];
+        };
+        /** WeatherAxisSentiment */
+        WeatherAxisSentiment: {
+            /** Label */
+            label: string;
+            /** Logprob */
+            logprob?: number | null;
+            /** Alternatives */
+            alternatives?: components["schemas"]["WeatherAxisAlternativeSentiment"][];
         };
     };
     responses: never;

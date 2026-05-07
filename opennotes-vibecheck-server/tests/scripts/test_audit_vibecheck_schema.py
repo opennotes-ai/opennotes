@@ -66,6 +66,7 @@ def test_extract_expected_schema_finds_multiline_table_symbols() -> None:
         job_id UUID PRIMARY KEY,
         status TEXT NOT NULL,
         payload JSONB NOT NULL,
+        weather_report JSONB,
         CONSTRAINT vibecheck_jobs_status_check
             CHECK (status IN ('pending', 'done'))
     )
@@ -84,6 +85,7 @@ def test_extract_expected_schema_finds_multiline_table_symbols() -> None:
         "job_id",
         "status",
         "payload",
+        "weather_report",
         "headline_summary",
     ]
     assert table.columns_by_name["payload"].definition == "JSONB NOT NULL"

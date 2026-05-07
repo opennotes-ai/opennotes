@@ -104,6 +104,42 @@ def _minimal_done_sections() -> dict[SectionSlug, SectionSlot]:
                 }
             }
         ),
+        SectionSlug.OPINIONS_SENTIMENTS_HIGHLIGHTS: _done_slot(
+            {
+                "highlights_report": {
+                    "highlights": [],
+                    "threshold": {
+                        "total_authors": 0,
+                        "total_utterances": 0,
+                        "min_authors_required": 0,
+                        "min_occurrences_required": 0,
+                    },
+                    "fallback_engaged": False,
+                    "floor_eligible_count": 0,
+                    "total_input_count": 0,
+                }
+            }
+        ),
+    }
+
+
+def _weather_report_dict() -> dict[str, Any]:
+    return {
+        "truth": {
+            "label": "sourced",
+            "alternatives": [{"label": "mostly_factual", "logprob": 0.05}],
+            "logprob": 0.82,
+        },
+        "relevance": {
+            "label": "insightful",
+            "alternatives": [{"label": "on_topic", "logprob": 0.1}],
+            "logprob": 0.76,
+        },
+        "sentiment": {
+            "label": "supportive",
+            "alternatives": [{"label": "positive", "logprob": 0.18}],
+            "logprob": 0.93,
+        },
     }
 
 
@@ -140,6 +176,7 @@ class TestAssembleSidebarPayload:
 
     def test_no_highlights_slot_returns_none(self):
         sections = _minimal_done_sections()
+        sections.pop(SectionSlug.OPINIONS_SENTIMENTS_HIGHLIGHTS)
 
         sidebar = assemble_sidebar_payload("https://example.com", sections)
 
@@ -348,6 +385,33 @@ class TestAssembleSidebarPayload:
             "https://example.com", _minimal_done_sections(), headline_summary=None
         )
         assert sidebar.headline is None
+
+    def test_weather_report_dict_parses(self):
+        sidebar = assemble_sidebar_payload(
+            "https://example.com",
+            _minimal_done_sections(),
+            weather_report=_weather_report_dict(),
+        )
+
+        assert sidebar.weather_report is not None
+        assert sidebar.weather_report.truth.label == "sourced"
+        assert sidebar.weather_report.relevance.logprob == 0.76
+
+    def test_weather_report_json_string_parses(self):
+        sidebar = assemble_sidebar_payload(
+            "https://example.com",
+            _minimal_done_sections(),
+            weather_report=json.dumps(_weather_report_dict()),
+        )
+
+        assert sidebar.weather_report is not None
+        assert sidebar.weather_report.sentiment.label == "supportive"
+
+    def test_null_weather_report_stays_none(self):
+        sidebar = assemble_sidebar_payload(
+            "https://example.com", _minimal_done_sections(), weather_report=None
+        )
+        assert sidebar.weather_report is None
 
     def test_utterances_default_to_empty_list(self):
         sidebar = assemble_sidebar_payload("https://example.com", _minimal_done_sections())

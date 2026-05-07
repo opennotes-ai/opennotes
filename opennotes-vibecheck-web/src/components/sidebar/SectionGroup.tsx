@@ -36,6 +36,7 @@ export interface SectionGroupProps {
   slugs: SectionSlugLiteral[];
   sections: SlugToSlots;
   render: Partial<Record<SectionSlugLiteral, (data: unknown) => JSX.Element>>;
+  defaultOpen?: boolean;
   summary?: {
     label?: string;
     content: () => JSX.Element;
@@ -222,7 +223,8 @@ export default function SectionGroup(props: SectionGroupProps): JSX.Element {
   let announcedJobId = props.jobId ?? "";
   let initializedAnnouncements = false;
   const [announcement, setAnnouncement] = createSignal("");
-  const [groupOpen, setGroupOpen] = createSignal(true);
+  const [groupOpen, setGroupOpen] = createSignal(props.defaultOpen !== false);
+  const [userToggledGroupOpen, setUserToggledGroupOpen] = createSignal(false);
   const labelSlug = slugify(props.label);
   const groupBodyId = `section-group-body-${labelSlug}`;
   const sectionToggleLabel = () =>
@@ -239,6 +241,7 @@ export default function SectionGroup(props: SectionGroupProps): JSX.Element {
       announcedJobId = jobId;
       initializedAnnouncements = false;
       setAnnouncement("");
+      setUserToggledGroupOpen(false);
     }
 
     for (const slug of props.slugs) {
@@ -281,6 +284,11 @@ export default function SectionGroup(props: SectionGroupProps): JSX.Element {
     initializedAnnouncements = true;
   });
 
+  createEffect(() => {
+    if (userToggledGroupOpen()) return;
+    setGroupOpen(props.defaultOpen !== false);
+  });
+
   return (
     <section
       data-testid={`section-group-${props.label}`}
@@ -295,7 +303,10 @@ export default function SectionGroup(props: SectionGroupProps): JSX.Element {
               aria-label={sectionToggleLabel()}
               aria-expanded={groupOpen() ? "true" : "false"}
               aria-controls={groupBodyId}
-              onClick={() => setGroupOpen((current) => !current)}
+              onClick={() => {
+                setUserToggledGroupOpen(true);
+                setGroupOpen((current) => !current);
+              }}
               class="flex min-w-0 items-center gap-1.5 rounded-sm outline-none hover:opacity-80 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
             >
               <ChevronIcon expanded={groupOpen()} testId="section-group-chevron" />

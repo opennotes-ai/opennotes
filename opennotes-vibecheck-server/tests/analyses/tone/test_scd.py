@@ -333,6 +333,16 @@ class TestPromptVendored:
         assert "narrative" in prompt
         assert "speaker_arcs" in prompt
         assert "FEELS" in prompt
+        assert "monologue" in prompt
+        assert "many-voiced" in prompt
+        assert "brigaded" in prompt
+        assert "coordinated" in prompt
+        assert "promotional" in prompt
+        assert "critical" in prompt
+        assert "analytical" in prompt
+        assert "Goffman 1981 participation framework" in prompt
+        assert "Bell 1984 audience design" in prompt
+        assert "Biber & Finegan 1989 evaluative stance" in prompt
 
 
 class TestSCDReportSchemaShape:

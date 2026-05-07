@@ -12,7 +12,9 @@ WHAT TO DESCRIBE
 - Energy and shifts: where does it come in hot, where does it cool, where does someone pivot or soften, where does it harden.
 - Alignment and conflict: who's with whom, where the fault lines are, whether anyone tries to bridge.
 - Stance moves: hedging, doubling down, conceding a narrow point, dodging, asking real questions versus rhetorical ones.
+- Optional lineage lensing (for vocabulary calibration): Goffman 1981 participation framework, Bell 1984 audience design, and Biber & Finegan 1989 evaluative stance can be useful for shaping how you read speaker dynamics.
 - Texture: is it brisk, sprawling, performative, intimate, scrappy, careful?
+- Vocabulary palette (optional nudge): terms like monologue, many-voiced, brigaded, coordinated, promotional, critical, and analytical are good anchors when they fit the observed dynamics.
 
 STREAM TYPE SELF-CHECK
 You will be told the upstream-claimed utterance_stream_type. Treat it as advisory, not binding. Always emit:

@@ -27,7 +27,7 @@ import type {
   ResolvedPreviewMode,
 } from "~/components/PageFrame";
 import Sidebar from "~/components/sidebar/Sidebar";
-import { HeadlineSummaryReport } from "~/components/sidebar/reports";
+import { HeadlineLeadIn } from "~/components/sidebar/reports";
 import type {
   JobState,
   PublicErrorCode,
@@ -512,6 +512,45 @@ function AnalyzePageContent(props: { initialJobState: JobState | null }) {
   const cachedAt = () => sidebarPayload()?.cached_at ?? null;
   const hasCurrentUtteranceAnchors = () =>
     (sidebarPayload()?.utterances?.length ?? 0) > 0;
+  const isActivePolling = () => {
+    const status = jobStatus();
+    return status === "extracting" || status === "analyzing" || status === "partial";
+  };
+  const rawHeadline = () => sidebarPayload()?.headline;
+  const hasServerHeadline = () => rawHeadline() != null;
+  const canResolveFallbackHeadline = () =>
+    sidebarPayloadComplete() && sidebarPayload() != null;
+  const hasHeadlineLeadInValue = () =>
+    hasServerHeadline() || canResolveFallbackHeadline();
+  const hasWeatherPayload = () =>
+    sidebarPayload()?.weather_report != null;
+  const headline = () =>
+    hasHeadlineLeadInValue()
+      ? resolveHeadline(rawHeadline() ?? null, {
+          url: jobUrl(),
+          pageTitle: jobState()?.page_title,
+          recommendation: sidebarPayload()?.safety?.recommendation ?? null,
+        })
+      : null;
+  const weatherReport = () =>
+    sidebarPayload()?.weather_report ?? null;
+  const showHeadlineLeadIn = () => {
+    if (isExpired() || showFailure()) return false;
+    if (hasHeadlineLeadInValue() || hasWeatherPayload()) return true;
+    return isActivePolling() && sidebarPayload() !== null && !sidebarPayloadComplete();
+  };
+  const showHeadlineSkeleton = () =>
+    isActivePolling() &&
+    !hasHeadlineLeadInValue() &&
+    showHeadlineLeadIn() &&
+    !sidebarPayloadComplete();
+  const showWeatherSkeleton = () =>
+    isActivePolling() &&
+    !hasWeatherPayload() &&
+    showHeadlineLeadIn() &&
+    !sidebarPayloadComplete();
+  const shouldCollapseSidebarGroups = () =>
+    hasHeadlineLeadInValue() || hasWeatherPayload();
 
   const selectPreviewSize = (size: PreviewSize) => {
     setPreviewSize(size);
@@ -672,28 +711,24 @@ function AnalyzePageContent(props: { initialJobState: JobState | null }) {
                 when={showFailure()}
                 fallback={
                   <>
-                    <Show when={sidebarPayloadComplete()}>
-                      <HeadlineSummaryReport
-                        headline={resolveHeadline(
-                          sidebarPayload()?.headline ?? null,
-                          {
-                            url: jobUrl(),
-                            pageTitle: jobState()?.page_title,
-                            recommendation:
-                              sidebarPayload()?.safety?.recommendation ?? null,
-                          },
-                        )}
+                    <Show when={showHeadlineLeadIn()}>
+                      <HeadlineLeadIn
+                        headline={headline()}
+                        weatherReport={weatherReport()}
+                        showHeadlineSkeleton={showHeadlineSkeleton()}
+                        showWeatherSkeleton={showWeatherSkeleton()}
+                        class="mb-0"
                       />
                     </Show>
                     <div
-                    data-testid="analyze-layout"
-                    data-preview-size={previewSize()}
-                    class={layoutClass()}
-                  >
-                    <div
-                      data-testid="analyze-left-column"
-                      class="order-2 flex min-w-0 flex-col gap-4 lg:order-1"
+                      data-testid="analyze-layout"
+                      data-preview-size={previewSize()}
+                      class={layoutClass()}
                     >
+                      <div
+                        data-testid="analyze-left-column"
+                        class="order-2 flex min-w-0 flex-col gap-4 lg:order-1"
+                      >
                         <div class="flex flex-wrap items-center justify-between gap-2">
                           <div
                             data-testid="preview-mode-selector"
@@ -763,7 +798,9 @@ function AnalyzePageContent(props: { initialJobState: JobState | null }) {
                                       onBlur={() => {
                                         setIsOriginalBlockedTipFocused(false);
                                       }}
-                                      onClick={() => selectPreviewMode(option.value)}
+                                      onClick={() =>
+                                        selectPreviewMode(option.value)
+                                      }
                                     >
                                       {option.label}
                                     </button>
@@ -808,7 +845,9 @@ function AnalyzePageContent(props: { initialJobState: JobState | null }) {
                                       ),
                                     )}
                                     aria-pressed={previewSize() === option.value}
-                                    onClick={() => selectPreviewSize(option.value)}
+                                    onClick={() =>
+                                      selectPreviewSize(option.value)
+                                    }
                                   >
                                     {option.label}
                                   </button>
@@ -862,6 +901,7 @@ function AnalyzePageContent(props: { initialJobState: JobState | null }) {
                         payloadComplete={sidebarPayloadComplete()}
                         jobId={jobId() || undefined}
                         jobStatus={jobStatus()}
+                        collapseTopLevelByDefault={shouldCollapseSidebarGroups()}
                         onRetry={handleRetry}
                         cachedHint={cachedHint()}
                         onUtteranceClick={handleUtteranceClick}
@@ -873,7 +913,7 @@ function AnalyzePageContent(props: { initialJobState: JobState | null }) {
                         activityAt={jobState()?.activity_at}
                         class="order-1 lg:order-2"
                       />
-                  </div>
+                    </div>
                   </>
                 }
               >

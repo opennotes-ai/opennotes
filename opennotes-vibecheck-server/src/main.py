@@ -1,9 +1,12 @@
+from typing import Any
+
 from fastapi import Depends, FastAPI, Response
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 
+from src.analyses.synthesis._weather_schemas import _normalize_weather_schema_names
 from src.auth.cloud_tasks_oidc import verify_cloud_tasks_oidc
 from src.monitoring import get_logger
 from src.routes import _schema_anchor, analyze, analyze_pdf, frame, internal_jobs, scrape
@@ -21,6 +24,17 @@ app.include_router(scrape.router)
 app.include_router(analyze_pdf.router)
 app.include_router(internal_jobs.router)
 app.include_router(_schema_anchor.router)
+
+_original_openapi = app.openapi
+
+
+def _normalize_weather_openapi() -> dict[str, Any]:
+    if app.openapi_schema is None:
+        app.openapi_schema = _normalize_weather_schema_names(_original_openapi())
+    return app.openapi_schema
+
+
+app.openapi = _normalize_weather_openapi
 
 
 @app.get("/metrics", dependencies=[Depends(verify_cloud_tasks_oidc)])

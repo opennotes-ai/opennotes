@@ -110,6 +110,10 @@ from src.analyses.synthesis.headline_summary_agent import (
     HeadlineSummaryInputs,
     run_headline_summary,
 )
+from src.analyses.synthesis.weather_report_agent import (
+    WeatherInputs,
+    evaluate_weather,
+)
 from src.analyses.tone._flashpoint_schemas import FlashpointMatch
 from src.analyses.tone._scd_schemas import SCDReport
 from src.analyses.tone.flashpoint_slot import run_flashpoint
@@ -424,6 +428,14 @@ WHERE job_id = $1
   AND attempt_id = $3
 """
 
+_WRITE_WEATHER_REPORT_SQL = """
+UPDATE vibecheck_jobs
+SET weather_report = $2::jsonb,
+    updated_at = now()
+WHERE job_id = $1
+  AND attempt_id = $3
+"""
+
 # TASK-1474.23.02: post-Gemini stage breadcrumb. CAS on attempt_id so a
 # stale worker can't overwrite the marker after a fresh attempt rotated.
 _SET_LAST_STAGE_SQL = """
@@ -455,6 +467,7 @@ _STAGE_SET_ANALYZING = "set_analyzing"
 _STAGE_RUN_SECTIONS = "run_sections"
 _STAGE_SAFETY_RECOMMENDATION = "safety_recommendation"
 _STAGE_HEADLINE_SUMMARY = "headline_summary"
+_STAGE_WEATHER_REPORT = "weather_report"
 _STAGE_FINALIZE = "finalize"
 
 
@@ -1978,6 +1991,159 @@ def _parse_sections(raw: Any) -> dict[str, Any]:
     return dict(raw)
 
 
+def _coerce_page_kind(page_kind_raw: str | None) -> PageKind:
+    try:
+        return PageKind(page_kind_raw) if page_kind_raw else PageKind.OTHER
+    except ValueError:
+        return PageKind.OTHER
+
+
+def _headline_and_weather_slot_inputs(
+    sections: dict[str, Any],
+    unavailable_inputs: list[str],
+) -> dict[str, dict[str, Any]]:
+    return {
+        "moderation_data": _done_slot_data(
+            sections, SectionSlug.SAFETY_MODERATION, unavailable_inputs, "moderation"
+        ),
+        "web_risk_data": _done_slot_data(
+            sections, SectionSlug.SAFETY_WEB_RISK, unavailable_inputs, "web_risk"
+        ),
+        "image_data": _done_slot_data(
+            sections,
+            SectionSlug.SAFETY_IMAGE_MODERATION,
+            unavailable_inputs,
+            "image_moderation",
+        ),
+        "video_data": _done_slot_data(
+            sections,
+            SectionSlug.SAFETY_VIDEO_MODERATION,
+            unavailable_inputs,
+            "video_moderation",
+        ),
+        "flashpoint_data": _done_slot_data(
+            sections,
+            SectionSlug.TONE_DYNAMICS_FLASHPOINT,
+            unavailable_inputs,
+            "flashpoint",
+        ),
+        "scd_data": _done_slot_data(
+            sections,
+            SectionSlug.TONE_DYNAMICS_SCD,
+            unavailable_inputs,
+            "scd",
+        ),
+        "dedup_data": _done_slot_data(
+            sections,
+            SectionSlug.FACTS_CLAIMS_DEDUP,
+            unavailable_inputs,
+            "claims_dedup",
+        ),
+        "known_data": _done_slot_data(
+            sections,
+            SectionSlug.FACTS_CLAIMS_KNOWN_MISINFO,
+            unavailable_inputs,
+            "known_misinformation",
+        ),
+        "sentiment_data": _done_slot_data(
+            sections,
+            SectionSlug.OPINIONS_SENTIMENTS_SENTIMENT,
+            unavailable_inputs,
+            "sentiment",
+        ),
+        "subjective_data": _done_slot_data(
+            sections,
+            SectionSlug.OPINIONS_SENTIMENTS_SUBJECTIVE,
+            unavailable_inputs,
+            "subjective",
+        ),
+        "trends_data": _done_slot_data(
+            sections,
+            SectionSlug.OPINIONS_SENTIMENTS_TRENDS_OPPOSITIONS,
+            unavailable_inputs,
+            "trends_oppositions",
+        ),
+        "highlights_data": _done_slot_data(
+            sections,
+            SectionSlug.OPINIONS_SENTIMENTS_HIGHLIGHTS,
+            unavailable_inputs,
+            "highlights",
+        ),
+    }
+
+
+def _weather_transcript_excerpt(  # noqa: PLR0912
+    claims_data: dict[str, Any],
+    subjective_data: dict[str, Any],
+    flashpoint_data: dict[str, Any],
+    trends_data: dict[str, Any],
+    highlights_data: dict[str, Any],
+    scd_data: dict[str, Any],
+) -> str:
+    snippets: list[str] = []
+
+    raw_highlights = highlights_data.get("highlights_report", {}).get("highlights")
+    if isinstance(raw_highlights, list):
+        for raw in raw_highlights:
+            if len(snippets) >= 6:
+                break
+            if not isinstance(raw, dict):
+                continue
+            cluster = raw.get("cluster")
+            if isinstance(cluster, dict):
+                canonical = cluster.get("canonical_text")
+                if isinstance(canonical, str) and canonical:
+                    snippets.append(canonical)
+
+    if trends_payload := trends_data.get("trends_oppositions_report"):
+        raw_trends = trends_payload.get("trends")
+        if isinstance(raw_trends, list):
+            for trend in raw_trends:
+                if len(snippets) >= 6:
+                    break
+                if isinstance(trend, dict):
+                    summary = trend.get("summary")
+                    if isinstance(summary, str) and summary:
+                        snippets.append(summary)
+
+    if (
+        claims_payload := claims_data.get("claims_report")
+    ) and isinstance(claims_payload, dict) and isinstance(
+        claims_data_entries := claims_payload.get("deduped_claims", []),
+        list,
+    ):
+        for claim in claims_data_entries:
+            if len(snippets) >= 6:
+                break
+            if isinstance(claim, dict):
+                text = claim.get("canonical_text")
+                if isinstance(text, str) and text:
+                    snippets.append(text)
+
+    for subjective_claim in subjective_data.get("subjective_claims", []):
+        if len(snippets) >= 6:
+            break
+        if isinstance(subjective_claim, dict):
+            claim_text = subjective_claim.get("claim_text")
+            if isinstance(claim_text, str) and claim_text:
+                snippets.append(claim_text)
+
+    for match in flashpoint_data.get("flashpoint_matches", []):
+        if len(snippets) >= 6:
+            break
+        if isinstance(match, dict):
+            reasoning = match.get("reasoning")
+            if isinstance(reasoning, str) and reasoning:
+                snippets.append(reasoning)
+
+    if isinstance(scd_data, dict):
+        scd_summary = scd_data.get("summary")
+        if isinstance(scd_summary, str) and scd_summary:
+            snippets.append(scd_summary)
+
+    return " ".join(snippets)
+
+
 def _done_slot_data(
     sections: dict[str, Any],
     slug: SectionSlug,
@@ -2083,63 +2249,20 @@ def _build_headline_summary_inputs(
     page_kind_raw: str | None,
 ) -> HeadlineSummaryInputs:
     unavailable_inputs: list[str] = []
-    moderation_data = _done_slot_data(
-        sections, SectionSlug.SAFETY_MODERATION, unavailable_inputs, "moderation"
-    )
-    web_risk_data = _done_slot_data(
-        sections, SectionSlug.SAFETY_WEB_RISK, unavailable_inputs, "web_risk"
-    )
-    image_data = _done_slot_data(
-        sections,
-        SectionSlug.SAFETY_IMAGE_MODERATION,
-        unavailable_inputs,
-        "image_moderation",
-    )
-    video_data = _done_slot_data(
-        sections,
-        SectionSlug.SAFETY_VIDEO_MODERATION,
-        unavailable_inputs,
-        "video_moderation",
-    )
-    flashpoint_data = _done_slot_data(
-        sections, SectionSlug.TONE_DYNAMICS_FLASHPOINT, unavailable_inputs, "flashpoint"
-    )
-    scd_data = _done_slot_data(
-        sections, SectionSlug.TONE_DYNAMICS_SCD, unavailable_inputs, "scd"
-    )
-    dedup_data = _done_slot_data(
-        sections, SectionSlug.FACTS_CLAIMS_DEDUP, unavailable_inputs, "claims_dedup"
-    )
-    known_data = _done_slot_data(
-        sections,
-        SectionSlug.FACTS_CLAIMS_KNOWN_MISINFO,
-        unavailable_inputs,
-        "known_misinformation",
-    )
-    sentiment_data = _done_slot_data(
-        sections,
-        SectionSlug.OPINIONS_SENTIMENTS_SENTIMENT,
-        unavailable_inputs,
-        "sentiment",
-    )
-    subjective_data = _done_slot_data(
-        sections,
-        SectionSlug.OPINIONS_SENTIMENTS_SUBJECTIVE,
-        unavailable_inputs,
-        "subjective",
-    )
-    trends_data = _done_slot_data(
-        sections,
-        SectionSlug.OPINIONS_SENTIMENTS_TRENDS_OPPOSITIONS,
-        unavailable_inputs,
-        "trends_oppositions",
-    )
-    highlights_data = _done_slot_data(
-        sections,
-        SectionSlug.OPINIONS_SENTIMENTS_HIGHLIGHTS,
-        unavailable_inputs,
-        "highlights",
-    )
+    slot_inputs = _headline_and_weather_slot_inputs(sections, unavailable_inputs)
+
+    moderation_data = slot_inputs["moderation_data"]
+    web_risk_data = slot_inputs["web_risk_data"]
+    image_data = slot_inputs["image_data"]
+    video_data = slot_inputs["video_data"]
+    flashpoint_data = slot_inputs["flashpoint_data"]
+    scd_data = slot_inputs["scd_data"]
+    dedup_data = slot_inputs["dedup_data"]
+    known_data = slot_inputs["known_data"]
+    sentiment_data = slot_inputs["sentiment_data"]
+    subjective_data = slot_inputs["subjective_data"]
+    trends_data = slot_inputs["trends_data"]
+    highlights_data = slot_inputs["highlights_data"]
 
     safety_recommendation: SafetyRecommendation | None = None
     if safety_recommendation_raw is not None:
@@ -2180,10 +2303,7 @@ def _build_headline_summary_inputs(
         else None
     )
 
-    try:
-        page_kind = PageKind(page_kind_raw) if page_kind_raw else PageKind.OTHER
-    except ValueError:
-        page_kind = PageKind.OTHER
+    page_kind = _coerce_page_kind(page_kind_raw)
 
     return HeadlineSummaryInputs(
         safety_recommendation=safety_recommendation,
@@ -2224,6 +2344,194 @@ def _build_headline_summary_inputs(
         page_kind=page_kind,
         unavailable_inputs=unavailable_inputs,
     )
+
+
+def _build_weather_report_inputs(
+    sections: dict[str, Any],
+    page_title: str | None,
+    page_kind_raw: str | None,
+) -> WeatherInputs:
+    unavailable_inputs: list[str] = []
+    slot_inputs = _headline_and_weather_slot_inputs(sections, unavailable_inputs)
+
+    flashpoint_data = slot_inputs["flashpoint_data"]
+    scd_data = slot_inputs["scd_data"]
+    dedup_data = slot_inputs["dedup_data"]
+    trends_data = slot_inputs["trends_data"]
+    highlights_data = slot_inputs["highlights_data"]
+    sentiment_data = slot_inputs["sentiment_data"]
+    subjective_data = slot_inputs["subjective_data"]
+
+    scd_report = (
+        SCDReport.model_validate(scd_data["scd"])
+        if scd_data and "scd" in scd_data
+        else None
+    )
+    claims_report = (
+        ClaimsReport.model_validate(dedup_data["claims_report"])
+        if dedup_data and "claims_report" in dedup_data
+        else None
+    )
+    sentiment_stats = (
+        SentimentStatsReport.model_validate(sentiment_data["sentiment_stats"])
+        if sentiment_data and "sentiment_stats" in sentiment_data
+        else None
+    )
+    trends_oppositions = (
+        TrendsOppositionsReport.model_validate(
+            trends_data["trends_oppositions_report"]
+        )
+        if trends_data and "trends_oppositions_report" in trends_data
+        else None
+    )
+    highlights = (
+        OpinionsHighlightsReport.model_validate(highlights_data["highlights_report"])
+        if highlights_data and "highlights_report" in highlights_data
+        else None
+    )
+
+    transcript_excerpt = _weather_transcript_excerpt(
+        dedup_data,
+        subjective_data,
+        flashpoint_data,
+        trends_data,
+        highlights_data,
+        scd_data,
+    )
+
+    return WeatherInputs(
+        page_title=page_title,
+        page_kind=_coerce_page_kind(page_kind_raw),
+        transcript_excerpt=transcript_excerpt,
+        claims_report=claims_report,
+        highlights=highlights,
+        trends_oppositions=trends_oppositions,
+        sentiment_stats=sentiment_stats,
+        subjective_claims=[
+            SubjectiveClaim.model_validate(claim)
+            for claim in subjective_data.get("subjective_claims", [])
+        ],
+        flashpoint_matches=[
+            FlashpointMatch.model_validate(match)
+            for match in flashpoint_data.get("flashpoint_matches", [])
+        ],
+        scd=scd_report,
+        unavailable_inputs=unavailable_inputs,
+    )
+
+
+async def _run_weather_report_step(
+    pool: Any,
+    job_id: UUID,
+    task_attempt: UUID,
+    settings: Settings,
+) -> None:
+    """Synthesize the weather report and persist it to vibecheck_jobs.
+
+    Like headline summary, this is best-effort: agent failure logs and
+    returns without raising so a bad weather synthesis never fails the
+    job — finalize will continue with `weather_report = null`.
+    """
+    try:
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(_LOAD_HEADLINE_INPUTS_SQL, job_id, task_attempt)
+        if row is None:
+            return
+
+        inputs = _build_weather_report_inputs(
+            _parse_sections(row["sections"]),
+            row["page_title"],
+            row["page_kind"],
+        )
+        report = await evaluate_weather(
+            inputs,
+            settings,
+            job_id=job_id,
+        )
+        report_json = json.dumps(report.model_dump(mode="json"))
+        async with pool.acquire() as conn:
+            await conn.execute(
+                _WRITE_WEATHER_REPORT_SQL,
+                job_id,
+                report_json,
+                task_attempt,
+            )
+    except Exception:
+        logger.exception(
+            "weather report step failed for job %s attempt %s",
+            job_id,
+            task_attempt,
+        )
+        return
+
+
+async def _run_headline_weather_steps(
+    pool: Any,
+    job_id: UUID,
+    task_attempt: UUID,
+    settings: Settings,
+    *,
+    stage_prefix: str,
+    slug: SectionSlug | None = None,
+) -> None:
+    """Run headline + weather synthesis in parallel and update stages.
+
+    Both steps are best-effort (see their individual implementations). This
+    helper keeps the post-Gemini and section-retry orchestration shapes
+    consistent and avoids duplicated span wiring.
+    """
+
+    async def _run_headline_stage() -> None:
+        if slug is None:
+            with logfire.span(
+                f"{stage_prefix}.headline_summary",
+                job_id=str(job_id),
+                attempt_id=str(task_attempt),
+            ):
+                await _set_last_stage(
+                    pool, job_id, task_attempt, _STAGE_HEADLINE_SUMMARY
+                )
+                await _run_headline_summary_step(
+                    pool, job_id, task_attempt, settings
+                )
+        else:
+            with logfire.span(
+                f"{stage_prefix}.headline_summary",
+                job_id=str(job_id),
+                attempt_id=str(task_attempt),
+                slug=slug.value,
+            ):
+                await _set_last_stage(
+                    pool, job_id, task_attempt, _STAGE_HEADLINE_SUMMARY
+                )
+                await _run_headline_summary_step(
+                    pool, job_id, task_attempt, settings
+                )
+
+    async def _run_weather_stage() -> None:
+        if slug is None:
+            with logfire.span(
+                f"{stage_prefix}.weather_report",
+                job_id=str(job_id),
+                attempt_id=str(task_attempt),
+            ):
+                await _set_last_stage(
+                    pool, job_id, task_attempt, _STAGE_WEATHER_REPORT
+                )
+                await _run_weather_report_step(pool, job_id, task_attempt, settings)
+        else:
+            with logfire.span(
+                f"{stage_prefix}.weather_report",
+                job_id=str(job_id),
+                attempt_id=str(task_attempt),
+                slug=slug.value,
+            ):
+                await _set_last_stage(
+                    pool, job_id, task_attempt, _STAGE_WEATHER_REPORT
+                )
+                await _run_weather_report_step(pool, job_id, task_attempt, settings)
+
+    await asyncio.gather(_run_headline_stage(), _run_weather_stage())
 
 
 async def _run_headline_summary_step(
@@ -2568,17 +2876,9 @@ async def _run_pipeline(  # noqa: PLR0912
                     pool, job_id, task_attempt, settings
                 )
 
-            with logfire.span(
-                "vibecheck.post_gemini.headline_summary",
-                job_id=str(job_id),
-                attempt_id=str(task_attempt),
-            ):
-                await _set_last_stage(
-                    pool, job_id, task_attempt, _STAGE_HEADLINE_SUMMARY
-                )
-                await _run_headline_summary_step(
-                    pool, job_id, task_attempt, settings
-                )
+            await _run_headline_weather_steps(
+                pool, job_id, task_attempt, settings, stage_prefix="vibecheck.post_gemini"
+            )
 
             with logfire.span(
                 "vibecheck.post_gemini.finalize",
@@ -2917,20 +3217,18 @@ async def run_section_retry(  # noqa: PLR0911, PLR0912
                         pool, job_id, task_attempt, settings
                     )
 
-                with logfire.span(
-                    "vibecheck.section_retry.headline_summary",
-                    job_id=str(job_id),
-                    attempt_id=str(task_attempt),
-                    slug=slug.value,
-                ):
-                    await _set_last_stage(
-                        pool, job_id, task_attempt, _STAGE_HEADLINE_SUMMARY
-                    )
-                    await _run_headline_summary_step(
-                        pool, job_id, task_attempt, settings
-                    )
+                await _run_headline_weather_steps(
+                    pool,
+                    job_id,
+                    task_attempt,
+                    settings,
+                    stage_prefix="vibecheck.section_retry",
+                    slug=slug,
+                )
 
-                await _set_last_stage(pool, job_id, task_attempt, _STAGE_FINALIZE)
+                await _set_last_stage(
+                    pool, job_id, task_attempt, _STAGE_FINALIZE
+                )
                 await maybe_finalize_job(
                     pool, job_id, expected_task_attempt=task_attempt
                 )

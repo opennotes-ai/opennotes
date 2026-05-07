@@ -625,6 +625,44 @@ def test_headline_summary_system_prompt_requires_pithy_one_sentence_by_default()
     assert "distinct high-signal point" in lowered
 
 
+def test_headline_summary_system_prompt_includes_vocabulary_palette_terms():
+    lowered = HEADLINE_SUMMARY_SYSTEM_PROMPT.lower()
+    assert "vocabulary palette" in lowered
+    assert "voice dynamics" in lowered
+    assert "evaluative stance" in lowered
+
+    terms = (
+        "monologue",
+        "many-voiced",
+        "brigaded",
+        "coordinated",
+        "ghostwritten",
+        "one-sided",
+        "polarized",
+        "promotional",
+        "critical",
+        "analytical",
+        "mixed",
+        "advocacy-flavored",
+    )
+    for term in terms:
+        assert term in lowered, f"HEADLINE_SUMMARY_SYSTEM_PROMPT missing term: {term}"
+
+
+def test_headline_summary_system_prompt_cites_terminology_lineage():
+    lowered = HEADLINE_SUMMARY_SYSTEM_PROMPT.lower()
+    assert "goffman 1981 participation framework" in lowered
+    assert "bell 1984 audience design" in lowered
+    assert "biber & finegan 1989" in lowered
+
+
+def test_headline_summary_system_prompt_discourages_default_vocabulary_injection():
+    lowered = HEADLINE_SUMMARY_SYSTEM_PROMPT.lower()
+    assert "only when clearly present or strongly signaled" in lowered
+    assert "do not" in lowered
+    assert "insert them as defaults" in lowered
+
+
 def test_headline_summary_system_prompt_does_not_add_hard_length_caps():
     lowered = HEADLINE_SUMMARY_SYSTEM_PROMPT.lower()
     banned_caps = ("max length", "maximum length", "character limit", "limit this to")

@@ -63,6 +63,7 @@ const LONG_FALLBACK_HEADLINE_TITLE =
   "The fallback title pathway must preserve long article names across normalization and punctuation while still being surfaced as a stock headline in the sidebar alongside the safety recommendation card and with full contextual fidelity";
 const LONG_FALLBACK_HEADLINE_TEXT =
   `news.example.com — ${LONG_FALLBACK_HEADLINE_TITLE}`;
+type WeatherReportData = NonNullable<SidebarPayload["weather_report"]>;
 
 const { pollingHandles, refetchSpy } = vi.hoisted(() => ({
   pollingHandles: [] as Array<{
@@ -358,6 +359,34 @@ function makeSidebarPayload(
     headline: null,
     ...overrides,
   } as SidebarPayload;
+}
+
+function makeSidebarPayloadWithoutHeadline(
+  overrides: Partial<SidebarPayload> = {},
+): SidebarPayload {
+  const payload = makeSidebarPayload(overrides);
+  delete (payload as { headline?: SidebarPayload["headline"] }).headline;
+  return payload;
+}
+
+function makeWeatherReport(
+  overrides: Partial<WeatherReportData> = {},
+): WeatherReportData {
+  return {
+    truth: {
+      label: "sourced",
+      alternatives: [],
+    },
+    relevance: {
+      label: "on_topic",
+      alternatives: [],
+    },
+    sentiment: {
+      label: "open sentiment",
+      alternatives: [],
+    },
+    ...overrides,
+  };
 }
 
 describe("AnalyzePage route", () => {
@@ -1702,7 +1731,7 @@ describe("AnalyzePage headline summary mount (TASK-1483.13.10)", () => {
     expect(screen.queryByTestId("headline-summary")).toBeNull();
   });
 
-  it("does not render headline summary when sidebar_payload_complete is false even if payload is present", async () => {
+  it("renders server headline summary from a partial payload before sidebar_payload_complete", async () => {
     renderAt("/analyze?job=job-partial-payload&url=https://news.example.com/a");
 
     await waitFor(() => {
@@ -1714,7 +1743,7 @@ describe("AnalyzePage headline summary mount (TASK-1483.13.10)", () => {
         status: "analyzing",
         sidebar_payload: makeSidebarPayload({
           headline: {
-            text: "Should not appear yet",
+            text: "Partial headline text.",
             kind: "synthesized",
             unavailable_inputs: [],
           },
@@ -1723,10 +1752,101 @@ describe("AnalyzePage headline summary mount (TASK-1483.13.10)", () => {
       } as unknown as Partial<JobState>),
     );
 
+    const headline = await screen.findByTestId("headline-summary");
+    expect(headline.getAttribute("data-headline-source")).toBe("server");
+    expect(screen.getByTestId("headline-summary-text").textContent).toBe(
+      "Partial headline text.",
+    );
+  });
+
+  it("renders extra-shimmery headline and weather skeletons during partial polling", async () => {
+    renderAt("/analyze?job=job-lead-in-skeleton&url=https://news.example.com/a");
+
     await waitFor(() => {
-      expect(screen.queryByTestId("preview-mode-selector")).not.toBeNull();
+      expect(pollingHandles.length).toBeGreaterThan(0);
     });
-    expect(screen.queryByTestId("headline-summary")).toBeNull();
+
+    setPolledJobState(
+      makeJobState({
+        status: "analyzing",
+        sidebar_payload: makeSidebarPayloadWithoutHeadline(),
+        sidebar_payload_complete: false,
+      } as unknown as Partial<JobState>),
+    );
+
+    expect(await screen.findByTestId("headline-lead-in")).toBeDefined();
+    expect(screen.getByTestId("headline-summary-skeleton")).toBeDefined();
+    expect(screen.getByTestId("weather-report-skeleton")).toBeDefined();
+    expect(
+      screen
+        .getByTestId("headline-summary-skeleton")
+        .querySelector(".skeleton-pulse-extra"),
+    ).toBeTruthy();
+  });
+
+  it("renders weather badges beside the headline when payload has a report", async () => {
+    renderAt("/analyze?job=job-weather-complete&url=https://news.example.com/a");
+
+    await waitFor(() => {
+      expect(pollingHandles.length).toBeGreaterThan(0);
+    });
+
+    setPolledJobState(
+      makeJobState({
+        status: "done",
+        sidebar_payload: makeSidebarPayload({
+          headline: {
+            text: "Complete headline text.",
+            kind: "synthesized",
+            unavailable_inputs: [],
+          },
+          weather_report: makeWeatherReport({
+            truth: { label: "self_reported", alternatives: [] },
+            relevance: { label: "insightful", alternatives: [] },
+            sentiment: { label: "warm but skeptical", alternatives: [] },
+          }),
+        }),
+        sidebar_payload_complete: true,
+      } as unknown as Partial<JobState>),
+    );
+
+    expect(await screen.findByTestId("headline-lead-in")).toBeDefined();
+    expect(screen.getByTestId("weather-truth-value").textContent).toBe(
+      "Self-reported",
+    );
+    expect(screen.getByTestId("weather-relevance-value").textContent).toBe(
+      "Insightful",
+    );
+    expect(screen.getByTestId("weather-sentiment-value").textContent).toBe(
+      "warm but skeptical",
+    );
+    expect(screen.getByTestId("headline-summary-text").textContent).toBe(
+      "Complete headline text.",
+    );
+  });
+
+  it("collapses top-level sidebar groups by default once weather is available", async () => {
+    renderAt("/analyze?job=job-weather-collapse&url=https://news.example.com/a");
+
+    await waitFor(() => {
+      expect(pollingHandles.length).toBeGreaterThan(0);
+    });
+
+    setPolledJobState(
+      makeJobState({
+        status: "analyzing",
+        sidebar_payload: makeSidebarPayloadWithoutHeadline({
+          weather_report: makeWeatherReport(),
+        }),
+        sidebar_payload_complete: false,
+      } as unknown as Partial<JobState>),
+    );
+
+    const safetyToggle = await screen.findByTestId("section-toggle-Safety");
+    expect(safetyToggle.getAttribute("aria-expanded")).toBe("false");
+
+    fireEvent.click(safetyToggle);
+    expect(safetyToggle.getAttribute("aria-expanded")).toBe("true");
   });
 
   it("renders headline summary when sidebar_payload_complete is true", async () => {

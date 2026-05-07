@@ -545,6 +545,7 @@ SELECT
     j.updated_at,
     j.safety_recommendation,
     j.headline_summary,
+    j.weather_report,
     j.last_stage,
     j.heartbeat_at,
     j.expired_at,
@@ -623,6 +624,7 @@ def _row_to_job_state(row: Any) -> JobState:
             sections,
             safety_recommendation=row.get("safety_recommendation", None),
             headline_summary=row.get("headline_summary", None),
+            weather_report=row.get("weather_report", None),
             utterances=[],
             page_title=row.get("page_title", None),
             page_kind=PageKind(row["page_kind"]) if row.get("page_kind", None) else PageKind.OTHER,
@@ -691,6 +693,7 @@ _STAGE_LABEL_MAP: dict[str, str] = {
     "run_sections": "Running section analyses",
     "safety_recommendation": "Computing safety guidance",
     "headline_summary": "Writing summary",
+    "weather_report": "Writing weather report",
     "finalize": "Finalizing results",
 }
 

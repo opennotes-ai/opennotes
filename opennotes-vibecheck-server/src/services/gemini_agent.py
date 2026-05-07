@@ -11,15 +11,15 @@ from __future__ import annotations
 
 import asyncio
 import random
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from functools import lru_cache
-from typing import Any, Final, Literal, TypeVar, overload
+from typing import Any, Final, Literal, TypedDict, TypeVar, overload
 
 import logfire
 from pydantic import BaseModel
 from pydantic_ai import Agent, AgentRunResult
 from pydantic_ai.exceptions import ModelHTTPError
-from pydantic_ai.models.google import GoogleModel
+from pydantic_ai.models.google import GoogleModel, GoogleModelSettings
 from pydantic_ai.providers.google import GoogleProvider
 
 from src.config import Settings
@@ -71,6 +71,8 @@ def build_agent(
     name: str | None = None,
     tier: GeminiTier = "fast",
     builtin_tools: Sequence[Any] = (),
+    logprobs: bool = False,
+    top_logprobs: int | None = None,
 ) -> Agent[None, T]: ...
 
 
@@ -83,6 +85,8 @@ def build_agent(
     name: str | None = None,
     tier: GeminiTier = "fast",
     builtin_tools: Sequence[Any] = (),
+    logprobs: bool = False,
+    top_logprobs: int | None = None,
 ) -> Agent[None, str]: ...
 
 
@@ -94,6 +98,8 @@ def build_agent(
     name: str | None = None,
     tier: GeminiTier = "fast",
     builtin_tools: Sequence[Any] = (),
+    logprobs: bool = False,
+    top_logprobs: int | None = None,
 ) -> Agent[None, T] | Agent[None, str]:
     """Construct a pydantic-ai Agent bound to Vertex Gemini.
 
@@ -116,7 +122,48 @@ def build_agent(
         kwargs["builtin_tools"] = builtin_tools
     if name is not None:
         kwargs["name"] = name
+    if logprobs or top_logprobs is not None:
+        model_settings: GoogleModelSettings = {"google_logprobs": True}
+        if top_logprobs is not None:
+            model_settings["google_top_logprobs"] = top_logprobs
+        kwargs["model_settings"] = model_settings
     return Agent(model, **kwargs)
+
+
+class GoogleLogprobs(TypedDict, total=False):
+    """Best-effort view of Google model response metadata."""
+
+    logprobs: Mapping[str, Any]
+    avg_logprobs: float | None
+
+
+def extract_google_logprobs(
+    result: Any,
+) -> GoogleLogprobs | None:
+    """Extract best-effort logprob data from a pydantic-ai AgentRunResult.
+
+    Returns ``None`` when provider details are absent or malformed.
+    """
+    try:
+        response = result.response
+    except Exception:
+        return None
+    provider_details = getattr(response, "provider_details", None) if response is not None else None
+
+    if not isinstance(provider_details, Mapping):
+        return None
+
+    raw_logprobs = provider_details.get("logprobs")
+    if not isinstance(raw_logprobs, Mapping):
+        return None
+
+    payload: GoogleLogprobs = {"logprobs": raw_logprobs}
+    avg_logprobs = provider_details.get("avg_logprobs")
+    if avg_logprobs is not None:
+        if isinstance(avg_logprobs, bool) or not isinstance(avg_logprobs, (int, float)):
+            return None
+        payload["avg_logprobs"] = float(avg_logprobs)
+    return payload
 
 
 async def run_vertex_agent_with_retry(

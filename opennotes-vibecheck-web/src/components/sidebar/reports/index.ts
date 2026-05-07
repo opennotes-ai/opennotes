@@ -1,4 +1,6 @@
 export { default as HeadlineSummaryReport } from "./HeadlineSummaryReport";
+export { default as HeadlineLeadIn } from "./HeadlineLeadIn";
+export { default as WeatherReport } from "./WeatherReport";
 export { default as SafetyModerationReport } from "./SafetyModerationReport";
 export { default as SafetyRecommendationReport } from "./SafetyRecommendationReport";
 export { default as WebRiskReport } from "./WebRiskReport";

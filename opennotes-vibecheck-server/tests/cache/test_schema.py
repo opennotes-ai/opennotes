@@ -375,6 +375,12 @@ class TestIdempotency:
             "ALTER TABLE public.vibecheck_jobs\n    ADD COLUMN IF NOT EXISTS headline_summary JSONB"
         ) in schema_sql
 
+    def test_weather_report_column_is_added_idempotently(self, schema_sql: str) -> None:
+        # TASK-1508.19.04: weather report persisted for weather-aware analyses.
+        assert (
+            "ALTER TABLE public.vibecheck_jobs\n    ADD COLUMN IF NOT EXISTS weather_report JSONB"
+        ) in schema_sql
+
 
 class TestWebRiskLookupsTable:
     def test_create_table_if_not_exists(self, schema_sql: str) -> None:
