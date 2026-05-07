@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { devices, expect, test } from "@playwright/test";
 import { spawn, type ChildProcess } from "node:child_process";
 import { createServer, type Server } from "node:http";
 import { once } from "node:events";
@@ -11,6 +11,12 @@ const FIXTURE_ANALYSES = [
     page_title: "Example Article 1",
     screenshot_url: "https://placehold.co/800x600",
     preview_description: "A short blurb about article 1.",
+    headline_summary: "Readers are weighing the evidence behind article 1.",
+    weather_report: {
+      truth: { label: "sourced", logprob: null, alternatives: [] },
+      relevance: { label: "on_topic", logprob: null, alternatives: [] },
+      sentiment: { label: "engaged", logprob: null, alternatives: [] },
+    },
     completed_at: "2026-01-01T00:00:00Z",
   },
   {
@@ -19,6 +25,8 @@ const FIXTURE_ANALYSES = [
     page_title: "Example Article 2",
     screenshot_url: "https://placehold.co/800x600",
     preview_description: "A short blurb about article 2.",
+    headline_summary: null,
+    weather_report: null,
     completed_at: "2026-01-02T00:00:00Z",
   },
   {
@@ -27,6 +35,8 @@ const FIXTURE_ANALYSES = [
     page_title: "Example Article 3",
     screenshot_url: "https://placehold.co/800x600",
     preview_description: "A short blurb about article 3.",
+    headline_summary: null,
+    weather_report: null,
     completed_at: "2026-01-03T00:00:00Z",
   },
   {
@@ -35,6 +45,8 @@ const FIXTURE_ANALYSES = [
     page_title: "Example Article 4",
     screenshot_url: "https://placehold.co/800x600",
     preview_description: "A short blurb about article 4.",
+    headline_summary: null,
+    weather_report: null,
     completed_at: "2026-01-04T00:00:00Z",
   },
   {
@@ -43,6 +55,8 @@ const FIXTURE_ANALYSES = [
     page_title: "Example Article 5",
     screenshot_url: "https://placehold.co/800x600",
     preview_description: "A short blurb about article 5.",
+    headline_summary: null,
+    weather_report: null,
     completed_at: "2026-01-05T00:00:00Z",
   },
   {
@@ -51,6 +65,8 @@ const FIXTURE_ANALYSES = [
     page_title: "Example Article 6",
     screenshot_url: "https://placehold.co/800x600",
     preview_description: "A short blurb about article 6.",
+    headline_summary: null,
+    weather_report: null,
     completed_at: "2026-01-06T00:00:00Z",
   },
 ];
@@ -190,6 +206,65 @@ test("card href navigates to /analyze?job=<id>", async ({ page }) => {
         "aaaaaaaa-aaaa-7aaa-8aaa-aaaaaaaaaaaa",
     { timeout: 10_000 },
   );
+});
+
+test("desktop hover shows weather and headline preview", async ({ page }) => {
+  await page.goto(webBaseUrl, { waitUntil: "networkidle" });
+  const firstCard = page
+    .locator('[data-testid="recent-analysis-card"]')
+    .first();
+
+  await firstCard.hover();
+
+  const hoverCard = page.locator('[data-testid="gallery-hover-card"]');
+  await expect(hoverCard).toBeVisible();
+  await expect(hoverCard).toContainText("Truth");
+  await expect(hoverCard).toContainText("Sourced");
+  await expect(hoverCard).toContainText("Readers are weighing the evidence");
+});
+
+test("keyboard focus shows weather and headline preview", async ({ page }) => {
+  await page.goto(webBaseUrl, { waitUntil: "networkidle" });
+  const firstCard = page
+    .locator('[data-testid="recent-analysis-card"]')
+    .first();
+
+  for (let i = 0; i < 6; i += 1) {
+    await page.keyboard.press("Tab");
+    if (await firstCard.evaluate((el) => el === document.activeElement)) {
+      break;
+    }
+  }
+
+  await expect(firstCard).toBeFocused();
+  await expect(page.locator('[data-testid="gallery-hover-card"]')).toBeVisible();
+});
+
+test.describe("mobile gallery card", () => {
+  test.use({
+    viewport: devices["iPhone 13"].viewport,
+    isMobile: devices["iPhone 13"].isMobile,
+    hasTouch: devices["iPhone 13"].hasTouch,
+    userAgent: devices["iPhone 13"].userAgent,
+  });
+
+  test("tap navigates without opening the hover preview", async ({ page }) => {
+    await page.goto(webBaseUrl, { waitUntil: "networkidle" });
+    const firstCard = page
+      .locator('[data-testid="recent-analysis-card"]')
+      .first();
+
+    await firstCard.tap();
+
+    await page.waitForURL(
+      (url) =>
+        url.pathname === "/analyze" &&
+        url.searchParams.get("job") ===
+          "aaaaaaaa-aaaa-7aaa-8aaa-aaaaaaaaaaaa",
+      { timeout: 10_000 },
+    );
+    await expect(page.locator('[data-testid="gallery-hover-card"]')).toHaveCount(0);
+  });
 });
 
 test("empty fixture: no gallery section rendered", async ({ page }) => {

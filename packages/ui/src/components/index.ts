@@ -5,6 +5,7 @@ export * from "./ui/checkbox";
 export * from "./ui/dropdown-menu";
 export * from "./ui/echart";
 export { default as EmptyState } from "./ui/empty-state";
+export * from "./ui/hover-card";
 export * from "./ui/icons";
 export { default as IdBadge } from "./ui/id-badge";
 export { default as InlineHistogram, CHART_COLORS } from "./ui/inline-histogram";
