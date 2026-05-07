@@ -111,6 +111,11 @@ def test_extract_google_logprobs_returns_none_when_avg_logprobs_non_numeric() ->
     assert extract_google_logprobs(result) is None
 
 
+def test_extract_google_logprobs_returns_none_when_avg_logprobs_boolean() -> None:
+    result = _result_with_provider_details({"logprobs": {"token_count": 3}, "avg_logprobs": True})
+    assert extract_google_logprobs(result) is None
+
+
 def test_extract_google_logprobs_returns_data_when_present() -> None:
     expected = {
         "logprobs": {"token_count": 3},

@@ -159,11 +159,10 @@ def extract_google_logprobs(
 
     payload: GoogleLogprobs = {"logprobs": raw_logprobs}
     avg_logprobs = provider_details.get("avg_logprobs")
-    if avg_logprobs is None:
-        return payload
-    if not isinstance(avg_logprobs, (int, float)):
-        return None
-    payload["avg_logprobs"] = float(avg_logprobs)
+    if avg_logprobs is not None:
+        if isinstance(avg_logprobs, bool) or not isinstance(avg_logprobs, (int, float)):
+            return None
+        payload["avg_logprobs"] = float(avg_logprobs)
     return payload
 
 
