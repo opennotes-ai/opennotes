@@ -509,6 +509,11 @@ export interface components {
             supporting_facts?: components["schemas"]["SupportingFact"][];
             /** Premise Ids */
             premise_ids?: string[];
+            /**
+             * Facts To Verify
+             * @default 0
+             */
+            facts_to_verify: number;
         };
         /**
          * ErrorCode

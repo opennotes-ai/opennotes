@@ -949,6 +949,7 @@ describe("<ClaimsDedupReport />", () => {
           author_count: 1,
           utterance_ids: ["u-1"],
           representative_authors: ["@a"],
+          facts_to_verify: 0,
         },
         {
           canonical_text: "often said",
@@ -957,6 +958,7 @@ describe("<ClaimsDedupReport />", () => {
           author_count: 3,
           utterance_ids: ["u-2", "u-3"],
           representative_authors: ["@b", "@c"],
+          facts_to_verify: 0,
         },
       ],
       total_claims: 6,
@@ -979,6 +981,7 @@ describe("<ClaimsDedupReport />", () => {
           author_count: 2,
           utterance_ids: ["u-1", "u-2"],
           representative_authors: ["@a", "@b"],
+          facts_to_verify: 0,
         },
         {
           canonical_text: "I dislike the proposal",
@@ -987,6 +990,7 @@ describe("<ClaimsDedupReport />", () => {
           author_count: 1,
           utterance_ids: ["u-3"],
           representative_authors: ["@c"],
+          facts_to_verify: 0,
         },
       ],
       total_claims: 3,
@@ -1024,6 +1028,7 @@ describe("<ClaimsDedupReport />", () => {
           author_count: 2,
           utterance_ids: ["u-1", "u-2", "u-3"],
           representative_authors: ["@a", "@b"],
+          facts_to_verify: 0,
         },
       ],
       total_claims: 3,
@@ -1058,6 +1063,7 @@ describe("<ClaimsDedupReport />", () => {
           author_count: 2,
           utterance_ids: ["a-1", "a-2", "a-3"],
           representative_authors: ["@a"],
+          facts_to_verify: 0,
         },
         {
           canonical_text: "claim beta",
@@ -1066,6 +1072,7 @@ describe("<ClaimsDedupReport />", () => {
           author_count: 2,
           utterance_ids: ["b-1", "b-2", "b-3", "b-4"],
           representative_authors: ["@b"],
+          facts_to_verify: 0,
         },
       ],
       total_claims: 7,
@@ -1118,6 +1125,7 @@ describe("<ClaimsDedupReport />", () => {
           author_count: 1,
           utterance_ids: [],
           representative_authors: ["@a"],
+          facts_to_verify: 0,
         },
       ],
       total_claims: 1,
@@ -1140,6 +1148,7 @@ describe("<ClaimsDedupReport />", () => {
           author_count: 2,
           utterance_ids: ["u-1"],
           representative_authors: ["@a"],
+          facts_to_verify: 0,
           supporting_facts: [
             {
               statement: "The proposal names a $5 million grant.",
@@ -1165,8 +1174,61 @@ describe("<ClaimsDedupReport />", () => {
     expect(screen.getByTestId("deduped-claim-supporting-fact").textContent).toContain(
       "The proposal names a $5 million grant.",
     );
+    expect(screen.queryByTestId("deduped-claim-facts-to-verify")).toBeNull();
+    expect(screen.queryByTestId("deduped-claim-no-sources")).toBeNull();
     fireEvent.click(screen.getByTestId("deduped-claim-supporting-fact-ref"));
     expect(onUtteranceClick).toHaveBeenCalledWith("u-1");
+  });
+
+  it("renders plural facts-to-verify copy for factual claims without supporting facts", () => {
+    const claimsReport: ClaimsReport = {
+      deduped_claims: [
+        {
+          canonical_text: "source missing",
+          category: "potentially_factual",
+          occurrence_count: 1,
+          author_count: 1,
+          utterance_ids: ["u-1"],
+          representative_authors: ["@a"],
+          facts_to_verify: 3,
+          supporting_facts: [],
+        },
+      ],
+      total_claims: 1,
+      total_unique: 1,
+    };
+
+    render(() => <ClaimsDedupReport claimsReport={claimsReport} />);
+
+    expect(screen.getByTestId("deduped-claim-facts-to-verify").textContent).toContain(
+      "3 facts to verify",
+    );
+    expect(screen.queryByTestId("deduped-claim-no-sources")).toBeNull();
+  });
+
+  it("renders singular facts-to-verify copy for one factual item", () => {
+    const claimsReport: ClaimsReport = {
+      deduped_claims: [
+        {
+          canonical_text: "single source missing",
+          category: "potentially_factual",
+          occurrence_count: 1,
+          author_count: 1,
+          utterance_ids: ["u-1"],
+          representative_authors: ["@a"],
+          facts_to_verify: 1,
+          supporting_facts: [],
+        },
+      ],
+      total_claims: 1,
+      total_unique: 1,
+    };
+
+    render(() => <ClaimsDedupReport claimsReport={claimsReport} />);
+
+    expect(screen.getByTestId("deduped-claim-facts-to-verify").textContent).toContain(
+      "1 fact to verify",
+    );
   });
 
   it("renders a no-sources state for factual claims without supporting facts", () => {
@@ -1179,6 +1241,7 @@ describe("<ClaimsDedupReport />", () => {
           author_count: 1,
           utterance_ids: ["u-1"],
           representative_authors: ["@a"],
+          facts_to_verify: 0,
         },
       ],
       total_claims: 1,
@@ -1192,6 +1255,55 @@ describe("<ClaimsDedupReport />", () => {
     );
   });
 
+  it("renders no-sources copy when facts-to-verify is absent", () => {
+    const claimsReport = {
+      deduped_claims: [
+        {
+          canonical_text: "source missing before enrichment",
+          category: "potentially_factual",
+          occurrence_count: 1,
+          author_count: 1,
+          utterance_ids: ["u-1"],
+          representative_authors: ["@a"],
+          supporting_facts: [],
+        },
+      ],
+      total_claims: 1,
+      total_unique: 1,
+    } as unknown as ClaimsReport;
+
+    render(() => <ClaimsDedupReport claimsReport={claimsReport} />);
+
+    expect(screen.getByTestId("deduped-claim-no-sources").textContent).toContain(
+      "No sources extracted",
+    );
+    expect(screen.queryByTestId("deduped-claim-facts-to-verify")).toBeNull();
+  });
+
+  it("does not render facts-to-verify copy for non-factual claims", () => {
+    const claimsReport: ClaimsReport = {
+      deduped_claims: [
+        {
+          canonical_text: "this will make rents worse",
+          category: "predictions",
+          occurrence_count: 2,
+          author_count: 2,
+          utterance_ids: ["u-1"],
+          representative_authors: ["@a"],
+          facts_to_verify: 3,
+          supporting_facts: [],
+        },
+      ],
+      total_claims: 2,
+      total_unique: 1,
+    };
+
+    render(() => <ClaimsDedupReport claimsReport={claimsReport} />);
+
+    expect(screen.queryByTestId("deduped-claim-facts-to-verify")).toBeNull();
+    expect(screen.queryByTestId("deduped-claim-no-sources")).toBeNull();
+  });
+
   it("renders premises attached to non-factual claims", () => {
     const claimsReport: ClaimsReport = {
       deduped_claims: [
@@ -1202,6 +1314,7 @@ describe("<ClaimsDedupReport />", () => {
           author_count: 2,
           utterance_ids: ["u-2"],
           representative_authors: ["@b"],
+          facts_to_verify: 0,
           premise_ids: ["premise-1"],
         },
       ],

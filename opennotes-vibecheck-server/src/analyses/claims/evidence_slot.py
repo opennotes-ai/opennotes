@@ -1,4 +1,5 @@
 """Slot worker to enrich deduped claims with supporting facts."""
+
 from __future__ import annotations
 
 import json
@@ -7,7 +8,7 @@ from uuid import UUID
 
 from pydantic import ValidationError
 
-from src.analyses.claims._claims_schemas import ClaimsReport
+from src.analyses.claims._claims_schemas import ClaimCategory, ClaimsReport
 from src.analyses.claims.evidence import build_supporting_facts_by_claim
 from src.analyses.slot_utterances import load_job_utterances
 from src.config import Settings
@@ -81,6 +82,16 @@ def _empty_report() -> ClaimsReport:
     return ClaimsReport(deduped_claims=[], total_claims=0, total_unique=0)
 
 
+def _unique_items_in_order(values: list[str]) -> list[str]:
+    seen: set[str] = set()
+    out: list[str] = []
+    for value in values:
+        if value and value not in seen:
+            seen.add(value)
+            out.append(value)
+    return out
+
+
 async def run_claims_evidence(
     pool: Any,
     job_id: UUID,
@@ -97,28 +108,31 @@ async def run_claims_evidence(
         return {"claims_report": _empty_report().model_dump(mode="json")}
 
     utterances = await load_job_utterances(pool, job_id)
-    utterance_text_by_id = {
-        str(utterance.utterance_id): utterance.text for utterance in utterances
-    }
+    utterance_text_by_id = {str(utterance.utterance_id): utterance.text for utterance in utterances}
     supporting_facts_by_claim = await build_supporting_facts_by_claim(
         claims_report.deduped_claims, utterance_text_by_id, settings
     )
 
     claims = []
     for claim in claims_report.deduped_claims:
+        supporting_facts = supporting_facts_by_claim.get(claim.canonical_text, [])
+        facts_to_verify = (
+            len(_unique_items_in_order(claim.utterance_ids))
+            if not supporting_facts and claim.category == ClaimCategory.POTENTIALLY_FACTUAL
+            else 0
+        )
         updated = claim.model_copy(
             update={
-                "supporting_facts": supporting_facts_by_claim.get(
-                    claim.canonical_text, []
-                )
+                "supporting_facts": supporting_facts,
+                "facts_to_verify": facts_to_verify,
             }
         )
         claims.append(updated)
 
     return {
-        "claims_report": claims_report.model_copy(
-            update={"deduped_claims": claims}
-        ).model_dump(mode="json")
+        "claims_report": claims_report.model_copy(update={"deduped_claims": claims}).model_dump(
+            mode="json"
+        )
     }
 
 

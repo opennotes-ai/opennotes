@@ -136,6 +136,7 @@ export default function ClaimsDedupReport(props: ClaimsDedupReportProps) {
                       const remainingIds = () => utteranceIds().slice(1);
                       const supportingFacts = () =>
                         claim.supporting_facts ?? [];
+                      const factsToVerify = () => claim.facts_to_verify ?? 0;
                       const isFactual = () =>
                         (claim.category ?? "potentially_factual") ===
                         "potentially_factual";
@@ -283,12 +284,25 @@ export default function ClaimsDedupReport(props: ClaimsDedupReportProps) {
                               supportingFacts().length === 0
                             }
                           >
-                            <p
-                              data-testid="deduped-claim-no-sources"
-                              class="mt-2 rounded-md bg-muted/50 px-2 py-1.5 text-[11px] text-muted-foreground"
+                            <Show
+                              when={factsToVerify() > 0}
+                              fallback={
+                                <p
+                                  data-testid="deduped-claim-no-sources"
+                                  class="mt-2 rounded-md bg-muted/50 px-2 py-1.5 text-[11px] text-muted-foreground"
+                                >
+                                  No sources extracted.
+                                </p>
+                              }
                             >
-                              No sources extracted.
-                            </p>
+                              <p
+                                data-testid="deduped-claim-facts-to-verify"
+                                class="mt-2 inline-flex rounded-full bg-accent/10 px-2 py-0.5 text-[10px] text-muted-foreground"
+                              >
+                                {factsToVerify()} fact
+                                {factsToVerify() === 1 ? "" : "s"} to verify
+                              </p>
+                            </Show>
                           </Show>
                           <Show when={premises().length > 0}>
                             <div

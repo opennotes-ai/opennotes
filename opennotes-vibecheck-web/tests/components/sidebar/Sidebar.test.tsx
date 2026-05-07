@@ -247,6 +247,7 @@ describe("<Sidebar /> payload synthesis fallback", () => {
                 author_count: 2,
                 utterance_ids: ["u-1"],
                 representative_authors: ["@a"],
+                facts_to_verify: 0,
                 supporting_facts: [
                   {
                     statement: "The project budget names a $5 million cost.",
@@ -307,6 +308,99 @@ describe("<Sidebar /> payload synthesis fallback", () => {
     );
   });
 
+  it("merges evidence facts-to-verify counts into the rendered claims report", () => {
+    const sections = {
+      facts_claims__dedup: {
+        state: "done",
+        attempt_id: "dedup-attempt",
+        data: {
+          claims_report: {
+            deduped_claims: [
+              {
+                canonical_text: "the project costs $5 million",
+                category: "potentially_factual",
+                occurrence_count: 2,
+                author_count: 2,
+                utterance_ids: ["u-1"],
+                representative_authors: ["@a"],
+                supporting_facts: [],
+                facts_to_verify: 0,
+              },
+            ],
+            total_claims: 2,
+            total_unique: 1,
+          },
+        },
+      },
+      facts_claims__evidence: {
+        state: "done",
+        attempt_id: "evidence-attempt",
+        data: {
+          claims_report: {
+            deduped_claims: [
+              {
+                canonical_text: "the project costs $5 million",
+                category: "potentially_factual",
+                occurrence_count: 2,
+                author_count: 2,
+                utterance_ids: ["u-1"],
+                representative_authors: ["@a"],
+                supporting_facts: [],
+                facts_to_verify: 2,
+              },
+            ],
+            total_claims: 2,
+            total_unique: 1,
+          },
+        },
+      },
+    } as unknown as JobState["sections"];
+
+    render(() => <Sidebar sections={sections} payload={makePayload()} />);
+
+    expect(screen.getByTestId("deduped-claim-facts-to-verify").textContent).toContain(
+      "2 facts to verify",
+    );
+    expect(screen.queryByTestId("deduped-claim-no-sources")).toBeNull();
+  });
+
+  it("keeps evidence slots open with nonzero facts-to-verify counts", () => {
+    const sections = {
+      facts_claims__evidence: {
+        state: "done",
+        attempt_id: "evidence-attempt",
+        data: {
+          claims_report: {
+            deduped_claims: [
+              {
+                canonical_text: "the project costs $5 million",
+                category: "potentially_factual",
+                occurrence_count: 2,
+                author_count: 2,
+                utterance_ids: ["u-1"],
+                representative_authors: ["@a"],
+                supporting_facts: [],
+                facts_to_verify: 4,
+              },
+            ],
+            total_claims: 2,
+            total_unique: 1,
+          },
+        },
+      },
+    } as unknown as JobState["sections"];
+
+    render(() => <Sidebar sections={sections} payload={makePayload()} />);
+
+    expect(
+      screen.getByTestId("slot-toggle-facts_claims__evidence").getAttribute("aria-expanded"),
+    ).toBe("true");
+    expect(screen.getByTestId("slot-count-facts_claims__evidence").textContent).toBe(
+      "4 results",
+    );
+    expect(screen.getByTestId("report-facts_claims__evidence")).toBeDefined();
+  });
+
   it("synthesizes evidence slot as failed when payload.evidence_status is 'failed' and suppresses 'No sources extracted'", () => {
     render(() => (
       <Sidebar
@@ -325,6 +419,7 @@ describe("<Sidebar /> payload synthesis fallback", () => {
                   representative_authors: ["@a"],
                   supporting_facts: [],
                   premise_ids: [],
+                  facts_to_verify: 0,
                 },
               ],
               total_claims: 1,

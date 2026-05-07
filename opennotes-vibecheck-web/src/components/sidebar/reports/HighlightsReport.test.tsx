@@ -17,6 +17,7 @@ const makeHighlight = (
     author_count: 3,
     utterance_ids: ["u-1", "u-2"],
     representative_authors: ["author-a"],
+    facts_to_verify: 0,
   },
   crossed_scaled_threshold: true,
   ...overrides,

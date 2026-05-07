@@ -8,9 +8,11 @@ Inline evidence is derived from source utterance text where possible.
 External evidence is currently seam-driven and budgeted; the default seam returns
 no external facts so tests never hit a network call unless explicitly patched.
 """
+
 from __future__ import annotations
 
 import logging
+import re
 from collections.abc import Awaitable, Callable
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
@@ -29,6 +31,16 @@ from src.services.gemini_agent import build_agent, run_vertex_agent_with_retry
 from src.services.vertex_limiter import vertex_slot
 
 logger = logging.getLogger(__name__)
+_INLINE_TAUTOLOGY_PADDING_WORDS = {
+    "claim",
+    "claims",
+    "fact",
+    "statement",
+    "says",
+    "said",
+    "that",
+    "this",
+}
 
 ExternalEvidenceFetcher = Callable[
     [list[str], Settings], Awaitable[dict[str, list[dict[str, Any]]]]
@@ -156,6 +168,33 @@ def _unique_items_in_order(values: list[str]) -> list[str]:
     return out
 
 
+def _normalize_for_similarity(text: str) -> str:
+    normalized = re.sub(r"[^a-z0-9]+", " ", text.lower())
+    return " ".join(normalized.split())
+
+
+def _is_inline_tautology(statement: str, claim_text: str) -> bool:
+    normalized_statement = _normalize_for_similarity(statement)
+    normalized_claim = _normalize_for_similarity(claim_text)
+    if not normalized_statement or not normalized_claim:
+        return False
+    if normalized_statement == normalized_claim:
+        return True
+
+    extra_text = ""
+    if normalized_statement.startswith(f"{normalized_claim} "):
+        extra_text = normalized_statement[len(normalized_claim) :].strip()
+    elif normalized_statement.endswith(f" {normalized_claim}"):
+        extra_text = normalized_statement[: -len(normalized_claim)].strip()
+    else:
+        return False
+
+    extra_words = extra_text.split()
+    return bool(extra_words) and all(
+        word in _INLINE_TAUTOLOGY_PADDING_WORDS for word in extra_words
+    )
+
+
 def _inline_supporting_facts(
     claim: DedupedClaim,
     utterance_text_by_id: dict[str, str],
@@ -165,9 +204,11 @@ def _inline_supporting_facts(
         statement = utterance_text_by_id.get(utterance_id)
         if not statement:
             continue
+        if _is_inline_tautology(statement, claim.canonical_text):
+            continue
         facts.append(
             SupportingFact(
-                statement=claim.canonical_text,
+                statement=statement,
                 source_kind=SourceKind.UTTERANCE,
                 source_ref=utterance_id,
             )
@@ -228,7 +269,8 @@ async def build_supporting_facts_by_claim(
     for canonical_text in claim_texts:
         external_facts = [
             converted
-            for raw in raw_external.get(canonical_text, []) if (converted := _coerce_supporting_fact(raw))
+            for raw in raw_external.get(canonical_text, [])
+            if (converted := _coerce_supporting_fact(raw))
         ]
         if canonical_text in facts_by_claim:
             facts_by_claim[canonical_text].extend(external_facts)
