@@ -693,6 +693,7 @@ _STAGE_LABEL_MAP: dict[str, str] = {
     "run_sections": "Running section analyses",
     "safety_recommendation": "Computing safety guidance",
     "headline_summary": "Writing summary",
+    "weather_report": "Writing weather report",
     "finalize": "Finalizing results",
 }
 

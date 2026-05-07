@@ -738,6 +738,7 @@ async def test_terminal_job_has_no_activity_fields(client: httpx.AsyncClient, db
         ("extracting", "Extracting page content"),
         ("run_sections", "Running section analyses"),
         ("headline_summary", "Writing summary"),
+        ("weather_report", "Writing weather report"),
         ("persist_utterances", "Saving page content"),
         ("set_analyzing", "Preparing analysis"),
         ("safety_recommendation", "Computing safety guidance"),

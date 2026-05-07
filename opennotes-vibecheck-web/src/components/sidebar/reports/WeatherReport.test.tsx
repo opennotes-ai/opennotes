@@ -1,5 +1,6 @@
+import { createSignal } from "solid-js";
 import { afterEach, describe, expect, it } from "vitest";
-import { cleanup, render, screen } from "@solidjs/testing-library";
+import { cleanup, render, screen, waitFor } from "@solidjs/testing-library";
 import type { components } from "~/lib/generated-types";
 import WeatherReport from "./WeatherReport";
 
@@ -98,5 +99,73 @@ describe("WeatherReport", () => {
 
     expect(screen.getByTestId("weather-truth-alternatives")).toBeDefined();
     expect(screen.queryByTestId("weather-relevance-alternatives")).toBeNull();
+  });
+
+  it("updates from skeletons to real weather data after polling", async () => {
+    const [report, setReport] = createSignal<WeatherReportData | null>(null);
+    render(() => <WeatherReport report={report()} />);
+
+    expect(screen.getByTestId("weather-report-skeleton")).toBeDefined();
+
+    setReport(makeWeatherReport());
+
+    await waitFor(() => {
+      expect(screen.queryByTestId("weather-report-skeleton")).toBeNull();
+      expect(screen.getByTestId("weather-truth-value").textContent).toBe(
+        "Self-reported",
+      );
+    });
+  });
+
+  it("updates mapped label text when a non-null report changes", async () => {
+    const [report, setReport] = createSignal<WeatherReportData | null>(
+      makeWeatherReport({
+        truth: {
+          label: "sourced",
+          logprob: null,
+          alternatives: [],
+        },
+      }),
+    );
+    render(() => <WeatherReport report={report()} />);
+
+    expect(screen.getByTestId("weather-truth-value").textContent).toBe("Sourced");
+
+    setReport(
+      makeWeatherReport({
+        truth: {
+          label: "misleading",
+          logprob: null,
+          alternatives: [],
+        },
+      }),
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId("weather-truth-value").textContent).toBe(
+        "Misleading",
+      );
+    });
+  });
+
+  it("renders logprob metadata as logprob, not a clamped percentage", () => {
+    render(() => (
+      <WeatherReport
+        report={makeWeatherReport({
+          truth: {
+            label: "sourced",
+            logprob: -0.12,
+            alternatives: [{ label: "mostly_factual", logprob: -1.25 }],
+          },
+        })}
+      />
+    ));
+
+    expect(screen.getByTestId("weather-truth-confidence").textContent).toBe(
+      "logp -0.12",
+    );
+    expect(screen.getByTestId("weather-truth-alternatives").textContent).toContain(
+      "Mostly factual (logp -1.25)",
+    );
   });
 });

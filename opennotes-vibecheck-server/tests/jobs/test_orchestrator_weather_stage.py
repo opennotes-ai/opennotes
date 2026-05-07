@@ -43,12 +43,14 @@ class WeatherReportConnection:
         page_title: str | None = None,
         page_kind: str | None = "other",
         attempt_matches: bool = True,
+        fail_execute: bool = False,
     ) -> None:
         self.sections = sections
         self.safety_recommendation = safety_recommendation
         self.page_title = page_title
         self.page_kind = page_kind
         self.attempt_matches = attempt_matches
+        self.fail_execute = fail_execute
         self.written: dict[str, Any] | None = None
 
     async def fetchrow(self, query: str, _job_id: UUID, task_attempt: UUID) -> dict[str, Any] | None:
@@ -69,6 +71,8 @@ class WeatherReportConnection:
         weather_json: str,
         task_attempt: UUID,
     ) -> str:
+        if self.fail_execute:
+            raise RuntimeError("weather column unavailable")
         self.written = {
             "query": query,
             "job_id": job_id,
@@ -241,6 +245,27 @@ async def test_weather_report_step_swallow_agent_exception(
 
     monkeypatch.setattr(orchestrator, "evaluate_weather", fake_evaluate_weather)
     conn = WeatherReportConnection(_complete_sections())
+
+    await orchestrator._run_weather_report_step(
+        FakePool(conn),
+        uuid4(),
+        uuid4(),
+        MagicMock(),
+    )
+
+    assert conn.written is None
+
+
+@pytest.mark.asyncio
+async def test_weather_report_step_swallow_persistence_exception(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def fake_evaluate_weather(*args: Any, **kwargs: Any) -> WeatherReport:
+        del args, kwargs
+        return _report_json()
+
+    monkeypatch.setattr(orchestrator, "evaluate_weather", fake_evaluate_weather)
+    conn = WeatherReportConnection(_complete_sections(), fail_execute=True)
 
     await orchestrator._run_weather_report_step(
         FakePool(conn),

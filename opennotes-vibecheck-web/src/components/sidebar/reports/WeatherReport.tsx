@@ -54,11 +54,11 @@ const AXES: AxisDefinition[] = [
   },
 ];
 
-function toPercent(value: number | null | undefined): string | null {
+function formatLogprob(value: number | null | undefined): string | null {
   if (value == null || !Number.isFinite(value)) {
     return null;
   }
-  return `${Math.round(Math.max(0, Math.min(value, 1)) * 100)}%`;
+  return `logp ${value.toFixed(2)}`;
 }
 
 function mapTruthLabel(value: WeatherAxisLabel): string {
@@ -167,7 +167,7 @@ function AxisCard(props: AxisCardProps): JSX.Element {
     }
   };
 
-  const confidence = () => toPercent(axis()?.logprob);
+  const confidence = () => formatLogprob(axis()?.logprob);
   const alternatives = () => safeAlternatives(axis());
 
   return (
@@ -188,7 +188,7 @@ function AxisCard(props: AxisCardProps): JSX.Element {
         }
       >
         {(axisValue) => {
-          const label = props.mapLabel(axisValue().label);
+          const label = () => props.mapLabel(axisValue().label);
           return (
             <div class="space-y-2">
               <p
@@ -196,7 +196,7 @@ function AxisCard(props: AxisCardProps): JSX.Element {
                 class={props.valueClass(axisValue().label)}
                 title={axisValue().label}
               >
-                {label}
+                {label()}
               </p>
 
               <Show when={confidence() !== null || alternatives().length > 0}>
@@ -221,7 +221,9 @@ function AxisCard(props: AxisCardProps): JSX.Element {
                       const alternativeLabel = props.mapLabel(
                         alternative.label as WeatherAxisLabel,
                       );
-                      const alternativeConfidence = toPercent(alternative.logprob);
+                      const alternativeConfidence = formatLogprob(
+                        alternative.logprob,
+                      );
                       return (
                         <li
                           class="inline-flex rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground"
@@ -291,26 +293,29 @@ function WeatherReportSkeleton(props: { class?: string }): JSX.Element {
 }
 
 export default function WeatherReport(props: WeatherReportProps): JSX.Element {
-  if (props.report === null) {
-    return <WeatherReportSkeleton class={props.class} />;
-  }
-
   return (
-    <div
-      data-testid="weather-report"
-      class={`grid h-full min-h-[110px] grid-cols-3 gap-2 ${props.class ?? ""}`.trim()}
+    <Show
+      when={props.report}
+      fallback={<WeatherReportSkeleton class={props.class} />}
     >
-      <For each={AXES}>
-        {(axis) => (
-          <AxisCard
-            report={props.report}
-            axisType={axis.axisType}
-            heading={axis.heading}
-            mapLabel={axis.mapLabel}
-            valueClass={axis.valueClass}
-          />
-        )}
-      </For>
-    </div>
+      {(report) => (
+        <div
+          data-testid="weather-report"
+          class={`grid h-full min-h-[110px] grid-cols-3 gap-2 ${props.class ?? ""}`.trim()}
+        >
+          <For each={AXES}>
+            {(axis) => (
+              <AxisCard
+                report={report()}
+                axisType={axis.axisType}
+                heading={axis.heading}
+                mapLabel={axis.mapLabel}
+                valueClass={axis.valueClass}
+              />
+            )}
+          </For>
+        </div>
+      )}
+    </Show>
   );
 }

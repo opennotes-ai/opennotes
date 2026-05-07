@@ -2448,6 +2448,14 @@ async def _run_weather_report_step(
             settings,
             job_id=job_id,
         )
+        report_json = json.dumps(report.model_dump(mode="json"))
+        async with pool.acquire() as conn:
+            await conn.execute(
+                _WRITE_WEATHER_REPORT_SQL,
+                job_id,
+                report_json,
+                task_attempt,
+            )
     except Exception:
         logger.exception(
             "weather report step failed for job %s attempt %s",
@@ -2455,15 +2463,6 @@ async def _run_weather_report_step(
             task_attempt,
         )
         return
-
-    report_json = json.dumps(report.model_dump(mode="json"))
-    async with pool.acquire() as conn:
-        await conn.execute(
-            _WRITE_WEATHER_REPORT_SQL,
-            job_id,
-            report_json,
-            task_attempt,
-        )
 
 
 async def _run_headline_weather_steps(
