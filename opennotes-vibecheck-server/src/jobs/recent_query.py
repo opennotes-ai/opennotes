@@ -37,6 +37,7 @@ from typing import Any, Protocol
 from urllib.parse import parse_qs, urlsplit
 
 from src.analyses.schemas import RecentAnalysis
+from src.analyses.synthesis._weather_schemas import WeatherReport
 from src.utils.url_security import InvalidURL, validate_public_http_url
 
 _SECRET_QUERY_PARAM_KEYS = frozenset(
@@ -76,6 +77,8 @@ SELECT
     j.url AS source_url,
     j.finished_at,
     j.preview_description,
+    j.sidebar_payload->'headline'->>'text' AS headline_summary_text,
+    j.sidebar_payload->'weather_report' AS weather_report_json,
     j.sections,
     j.status,
     s.page_title,
@@ -218,6 +221,13 @@ def _passes_partial_threshold(sections_raw: Any, status: str) -> bool:
     return done * 10 >= total * 9
 
 
+def _weather_report_from_row(value: Any) -> WeatherReport | None:
+    if value is None:
+        return None
+    data = json.loads(value) if isinstance(value, str) else value
+    return WeatherReport.model_validate(data)
+
+
 async def list_recent(
     pool: Any,
     *,
@@ -273,6 +283,8 @@ async def list_recent(
                 page_title=row["page_title"],
                 screenshot_url=signed,
                 preview_description=row["preview_description"],
+                headline_summary=row["headline_summary_text"],
+                weather_report=_weather_report_from_row(row["weather_report_json"]),
                 completed_at=row["finished_at"],
             )
         )
