@@ -280,17 +280,20 @@ function mergeClaimsReportEnrichments(
   );
   return {
     ...base,
-    deduped_claims: (base.deduped_claims ?? []).map((claim) => ({
-      ...claim,
-      supporting_facts:
-        evidenceByText.get(claim.canonical_text)?.supporting_facts ??
-        claim.supporting_facts ??
-        [],
-      premise_ids:
-        premisesByText.get(claim.canonical_text)?.premise_ids ??
-        claim.premise_ids ??
-        [],
-    })),
+    deduped_claims: (base.deduped_claims ?? []).map((claim) => {
+      const evidenceClaim = evidenceByText.get(claim.canonical_text);
+      return {
+        ...claim,
+        supporting_facts:
+          evidenceClaim?.supporting_facts ?? claim.supporting_facts ?? [],
+        facts_to_verify:
+          evidenceClaim?.facts_to_verify ?? claim.facts_to_verify ?? 0,
+        premise_ids:
+          premisesByText.get(claim.canonical_text)?.premise_ids ??
+          claim.premise_ids ??
+          [],
+      };
+    }),
     premises: premises.premises ?? base.premises,
   };
 }
@@ -459,7 +462,9 @@ const FACTS_EMPTINESS: Partial<
   facts_claims__dedup: (data) => extractClaimsReport(data).deduped_claims.length === 0,
   facts_claims__evidence: (data) =>
     extractClaimsReport(data).deduped_claims.every(
-      (claim) => (claim.supporting_facts ?? []).length === 0,
+      (claim) =>
+        (claim.supporting_facts ?? []).length === 0 &&
+        (claim.facts_to_verify ?? 0) === 0,
     ),
   facts_claims__premises: (data) =>
     extractClaimsReport(data).deduped_claims.every(
@@ -477,7 +482,10 @@ const FACTS_COUNTS: Partial<
   },
   facts_claims__evidence: (data) => {
     const total = extractClaimsReport(data).deduped_claims.reduce(
-      (count, claim) => count + (claim.supporting_facts ?? []).length,
+      (count, claim) =>
+        count +
+        (claim.supporting_facts ?? []).length +
+        (claim.facts_to_verify ?? 0),
       0,
     );
     return { total };
