@@ -16,6 +16,7 @@ import {
   PopoverTrigger,
 } from "@opennotes/ui/components/ui/popover";
 import { Button } from "@opennotes/ui/components/ui/button";
+import { Link } from "@opennotes/ui/components/ui/link";
 import type { SectionSlot } from "~/lib/api-client.server";
 import type {
   PartialSectionSlots,
@@ -504,14 +505,15 @@ export default function SectionGroup(props: SectionGroupProps): JSX.Element {
                           <Show
                             when={props.jobId}
                             fallback={
-                              <button
-                                type="button"
+                              <Link
+                                size="sm"
+                                variant="default"
                                 data-testid={`retry-${slug}`}
                                 onClick={() => props.onRetry?.(slug)}
-                                class="self-start text-[11px] font-medium text-primary underline-offset-2 hover:underline"
+                                class="self-start"
                               >
                                 Retry
-                              </button>
+                              </Link>
                             }
                           >
                             {(jobId) => (
