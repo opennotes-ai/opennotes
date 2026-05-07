@@ -1460,7 +1460,7 @@ export interface components {
              * Label
              * @enum {string}
              */
-            label: "sourced" | "mostly_factual" | "self_reported" | "hearsay" | "misleading";
+            label: "sourced" | "factual_claims" | "first_person" | "hearsay" | "misleading";
             /** Logprob */
             logprob?: number | null;
         };
@@ -1489,7 +1489,7 @@ export interface components {
              * Label
              * @enum {string}
              */
-            label: "sourced" | "mostly_factual" | "self_reported" | "hearsay" | "misleading";
+            label: "sourced" | "factual_claims" | "first_person" | "hearsay" | "misleading";
             /** Logprob */
             logprob?: number | null;
             /** Alternatives */

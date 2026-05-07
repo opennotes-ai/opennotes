@@ -93,7 +93,7 @@ def _weather_report_dict() -> dict[str, Any]:
     return {
         "truth": {
             "label": "sourced",
-            "alternatives": [{"label": "mostly_factual", "logprob": 0.05}],
+            "alternatives": [{"label": "factual_claims", "logprob": 0.05}],
             "logprob": 0.82,
         },
         "relevance": {

@@ -1471,9 +1471,12 @@ class TestArchivePreview:
             resp = client.get(
                 "/api/archive-preview",
                 params={"url": "https://example.com/fresh", "generate": "1"},
-            )
+        )
         assert resp.status_code == 200
-        assert resp.text == "<article>Fresh archive</article>"
+        assert resp.text == (
+            "<style>img{max-width:100%!important;height:auto!important}</style>"
+            "<article>Fresh archive</article>"
+        )
         assert cache.put_url == "https://example.com/fresh"
         assert cache.get_calls == ["interact", "scrape"]
 
