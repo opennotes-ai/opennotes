@@ -701,6 +701,17 @@ export interface components {
             /** Unavailable Inputs */
             unavailable_inputs?: string[];
         };
+        /** HighlightsThresholdInfo */
+        HighlightsThresholdInfo: {
+            /** Total Authors */
+            total_authors: number;
+            /** Total Utterances */
+            total_utterances: number;
+            /** Min Authors Required */
+            min_authors_required: number;
+            /** Min Occurrences Required */
+            min_occurrences_required: number;
+        };
         /**
          * ImageModerationMatch
          * @description GCP Vision SafeSearch result for a single image.
@@ -842,6 +853,24 @@ export interface components {
          * @enum {string}
          */
         JobStatus: "pending" | "extracting" | "analyzing" | "done" | "partial" | "failed";
+        /** OpinionsHighlight */
+        OpinionsHighlight: {
+            cluster: components["schemas"]["DedupedClaim"];
+            /** Crossed Scaled Threshold */
+            crossed_scaled_threshold: boolean;
+        };
+        /** OpinionsHighlightsReport */
+        OpinionsHighlightsReport: {
+            /** Highlights */
+            highlights: components["schemas"]["OpinionsHighlight"][];
+            threshold: components["schemas"]["HighlightsThresholdInfo"];
+            /** Fallback Engaged */
+            fallback_engaged: boolean;
+            /** Floor Eligible Count */
+            floor_eligible_count: number;
+            /** Total Input Count */
+            total_input_count: number;
+        };
         /** OpinionsReport */
         OpinionsReport: {
             sentiment_stats: components["schemas"]["SentimentStatsReport"];
@@ -855,6 +884,7 @@ export interface components {
         OpinionsSection: {
             opinions_report: components["schemas"]["OpinionsReport"];
             trends_oppositions?: components["schemas"]["TrendsOppositionsReport"] | null;
+            highlights?: components["schemas"]["OpinionsHighlightsReport"] | null;
         };
         /**
          * PageKind
@@ -1155,7 +1185,7 @@ export interface components {
          * @description The sidebar slots the async pipeline fills independently.
          * @enum {string}
          */
-        SectionSlug: "safety__moderation" | "safety__web_risk" | "safety__image_moderation" | "safety__video_moderation" | "tone_dynamics__flashpoint" | "tone_dynamics__scd" | "facts_claims__dedup" | "facts_claims__evidence" | "facts_claims__premises" | "facts_claims__known_misinfo" | "opinions_sentiments__sentiment" | "opinions_sentiments__subjective" | "opinions_sentiments__trends_oppositions";
+        SectionSlug: "safety__moderation" | "safety__web_risk" | "safety__image_moderation" | "safety__video_moderation" | "tone_dynamics__flashpoint" | "tone_dynamics__scd" | "facts_claims__dedup" | "facts_claims__evidence" | "facts_claims__premises" | "facts_claims__known_misinfo" | "opinions_sentiments__sentiment" | "opinions_sentiments__subjective" | "opinions_sentiments__trends_oppositions" | "opinions_sentiments__highlights";
         /**
          * SectionState
          * @description Lifecycle of a single sidebar slot during a job.

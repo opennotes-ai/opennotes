@@ -1358,6 +1358,34 @@
         "title": "HeadlineSummary",
         "description": "1-2 sentence synthesis rendered above the safety recommendation.\n\n`kind` discriminates the deterministic stock-phrase short-circuit (when\nevery input section is empty/clear/neutral) from the model-generated\nsynthesis path. `unavailable_inputs` mirrors the SafetyRecommendation\npattern so the UI can later annotate degraded coverage."
       },
+      "HighlightsThresholdInfo": {
+        "properties": {
+          "total_authors": {
+            "type": "integer",
+            "title": "Total Authors"
+          },
+          "total_utterances": {
+            "type": "integer",
+            "title": "Total Utterances"
+          },
+          "min_authors_required": {
+            "type": "integer",
+            "title": "Min Authors Required"
+          },
+          "min_occurrences_required": {
+            "type": "integer",
+            "title": "Min Occurrences Required"
+          }
+        },
+        "type": "object",
+        "required": [
+          "total_authors",
+          "total_utterances",
+          "min_authors_required",
+          "min_occurrences_required"
+        ],
+        "title": "HighlightsThresholdInfo"
+      },
       "ImageModerationMatch": {
         "properties": {
           "utterance_id": {
@@ -1649,6 +1677,58 @@
         "title": "JobStatus",
         "description": "Lifecycle of a vibecheck job from POST to terminal state."
       },
+      "OpinionsHighlight": {
+        "properties": {
+          "cluster": {
+            "$ref": "#/components/schemas/DedupedClaim"
+          },
+          "crossed_scaled_threshold": {
+            "type": "boolean",
+            "title": "Crossed Scaled Threshold"
+          }
+        },
+        "type": "object",
+        "required": [
+          "cluster",
+          "crossed_scaled_threshold"
+        ],
+        "title": "OpinionsHighlight"
+      },
+      "OpinionsHighlightsReport": {
+        "properties": {
+          "highlights": {
+            "items": {
+              "$ref": "#/components/schemas/OpinionsHighlight"
+            },
+            "type": "array",
+            "title": "Highlights"
+          },
+          "threshold": {
+            "$ref": "#/components/schemas/HighlightsThresholdInfo"
+          },
+          "fallback_engaged": {
+            "type": "boolean",
+            "title": "Fallback Engaged"
+          },
+          "floor_eligible_count": {
+            "type": "integer",
+            "title": "Floor Eligible Count"
+          },
+          "total_input_count": {
+            "type": "integer",
+            "title": "Total Input Count"
+          }
+        },
+        "type": "object",
+        "required": [
+          "highlights",
+          "threshold",
+          "fallback_engaged",
+          "floor_eligible_count",
+          "total_input_count"
+        ],
+        "title": "OpinionsHighlightsReport"
+      },
       "OpinionsReport": {
         "properties": {
           "sentiment_stats": {
@@ -1678,6 +1758,16 @@
             "anyOf": [
               {
                 "$ref": "#/components/schemas/TrendsOppositionsReport"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "highlights": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OpinionsHighlightsReport"
               },
               {
                 "type": "null"
@@ -2212,7 +2302,8 @@
           "facts_claims__known_misinfo",
           "opinions_sentiments__sentiment",
           "opinions_sentiments__subjective",
-          "opinions_sentiments__trends_oppositions"
+          "opinions_sentiments__trends_oppositions",
+          "opinions_sentiments__highlights"
         ],
         "title": "SectionSlug",
         "description": "The sidebar slots the async pipeline fills independently."

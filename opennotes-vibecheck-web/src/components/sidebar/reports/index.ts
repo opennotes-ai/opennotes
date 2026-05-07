@@ -12,3 +12,4 @@ export { default as SentimentReport } from "./SentimentReport";
 export { default as SubjectiveReport } from "./SubjectiveReport";
 export { default as TrendsOppositionsReport } from "./TrendsOppositionsReport";
 export { EMPTY_TRENDS_OPPOSITIONS_REPORT } from "./TrendsOppositionsReport";
+export { default as HighlightsReport } from "./HighlightsReport";

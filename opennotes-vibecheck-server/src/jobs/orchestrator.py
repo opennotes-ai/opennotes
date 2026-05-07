@@ -74,6 +74,7 @@ from src.analyses.claims.evidence_slot import run_claims_evidence
 from src.analyses.claims.facts_agent import run_facts_claims_known_misinfo
 from src.analyses.claims.premises_slot import run_claims_premises
 from src.analyses.opinions._schemas import SentimentStatsReport, SubjectiveClaim
+from src.analyses.opinions.highlights_slot import run_highlights
 from src.analyses.opinions.sentiment_slot import run_sentiment
 from src.analyses.opinions.subjective_slot import run_subjective
 from src.analyses.opinions.trends_oppositions_slot import (
@@ -1865,6 +1866,7 @@ _SECTION_HANDLERS: dict[SectionSlug, Any] = {
     SectionSlug.OPINIONS_SENTIMENTS_SENTIMENT: run_sentiment,
     SectionSlug.OPINIONS_SENTIMENTS_SUBJECTIVE: run_subjective,
     SectionSlug.OPINIONS_SENTIMENTS_TRENDS_OPPOSITIONS: run_trends_oppositions,
+    SectionSlug.OPINIONS_SENTIMENTS_HIGHLIGHTS: run_highlights,
 }
 
 
@@ -1916,6 +1918,7 @@ async def _run_all_sections(
         SectionSlug.FACTS_CLAIMS_PREMISES,
         SectionSlug.FACTS_CLAIMS_KNOWN_MISINFO,
         SectionSlug.OPINIONS_SENTIMENTS_TRENDS_OPPOSITIONS,
+        SectionSlug.OPINIONS_SENTIMENTS_HIGHLIGHTS,
     )
     dedup_dependent_set = set(dedup_dependent_slugs)
     independent_slugs: list[SectionSlug] = [
@@ -2130,6 +2133,12 @@ def _build_headline_summary_inputs(
         SectionSlug.OPINIONS_SENTIMENTS_TRENDS_OPPOSITIONS,
         unavailable_inputs,
         "trends_oppositions",
+    )
+    _done_slot_data(
+        sections,
+        SectionSlug.OPINIONS_SENTIMENTS_HIGHLIGHTS,
+        unavailable_inputs,
+        "highlights",
     )
 
     safety_recommendation: SafetyRecommendation | None = None
@@ -2870,6 +2879,7 @@ async def run_section_retry(  # noqa: PLR0911, PLR0912
                         SectionSlug.FACTS_CLAIMS_PREMISES,
                         SectionSlug.FACTS_CLAIMS_KNOWN_MISINFO,
                         SectionSlug.OPINIONS_SENTIMENTS_TRENDS_OPPOSITIONS,
+                        SectionSlug.OPINIONS_SENTIMENTS_HIGHLIGHTS,
                     ):
                         await _run_section(
                             pool,

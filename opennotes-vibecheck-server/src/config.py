@@ -121,6 +121,12 @@ class Settings(BaseSettings):
     # revision uses a different concurrency setting.
     VIBECHECK_CONTAINER_CONCURRENCY: int = 80
 
+    # TASK-1508.10: opinion highlights floor/scale coefficients for the
+    # sidebar. Both are configurable to tune sensitivity of influence
+    # filtering in production without code changes.
+    VIBECHECK_OPINIONS_HIGHLIGHTS_AUTHOR_DIVISOR: float = 2.0
+    VIBECHECK_OPINIONS_HIGHLIGHTS_OCCURRENCE_MULTIPLIER: float = 1.5
+
     @field_validator("VIBECHECK_RECENT_ANALYSES_CACHE_TTL_SECONDS")
     @classmethod
     def _recent_cache_ttl_under_signed_url_validity(cls, value: int) -> int:
@@ -138,6 +144,16 @@ class Settings(BaseSettings):
     def _vertex_max_concurrency_positive(cls, value: int) -> int:
         if value <= 0:
             raise ValueError("VERTEX_MAX_CONCURRENCY must be > 0")
+        return value
+
+    @field_validator(
+        "VIBECHECK_OPINIONS_HIGHLIGHTS_AUTHOR_DIVISOR",
+        "VIBECHECK_OPINIONS_HIGHLIGHTS_OCCURRENCE_MULTIPLIER",
+    )
+    @classmethod
+    def _opinion_highlights_scaling_factors_positive(cls, value: float) -> float:
+        if value <= 0:
+            raise ValueError("opinion highlights scaling factors must be > 0")
         return value
 
 

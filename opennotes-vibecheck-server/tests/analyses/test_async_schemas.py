@@ -86,6 +86,7 @@ class TestSectionSlug:
             "opinions_sentiments__sentiment",
             "opinions_sentiments__subjective",
             "opinions_sentiments__trends_oppositions",
+            "opinions_sentiments__highlights",
         }
 
     def test_round_trip_through_string(self) -> None:

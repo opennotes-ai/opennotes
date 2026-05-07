@@ -1442,7 +1442,24 @@ describe("Sidebar", () => {
   });
 
   it("synthesizes a fully-done sections map from payload when sections is absent", () => {
-    const payload = makeTonePayload();
+    const payload: SidebarPayload = {
+      ...makeTonePayload(),
+      opinions_sentiments: {
+        ...makeTonePayload().opinions_sentiments,
+        highlights: {
+          highlights: [],
+          threshold: {
+            total_authors: 0,
+            total_utterances: 0,
+            min_authors_required: 0,
+            min_occurrences_required: 0,
+          },
+          fallback_engaged: false,
+          floor_eligible_count: 0,
+          total_input_count: 0,
+        },
+      },
+    };
     render(() => <Sidebar payload={payload} payloadComplete={true} />);
 
     const byLabel = (label: string) =>
@@ -1452,7 +1469,7 @@ describe("Sidebar", () => {
     expect(byLabel("Safety")?.textContent).toBe("4/4");
     expect(byLabel("Tone/dynamics")?.textContent).toBe("2/2");
     expect(byLabel("Facts/claims")?.textContent).toBe("4/4");
-    expect(byLabel("Opinions/sentiments")?.textContent).toBe("3/3");
+    expect(byLabel("Opinions/sentiments")?.textContent).toBe("4/4");
 
     const ALL_SLUGS = [
       "safety__moderation",
@@ -1466,8 +1483,9 @@ describe("Sidebar", () => {
       "facts_claims__premises",
       "facts_claims__known_misinfo",
       "opinions_sentiments__sentiment",
-      "opinions_sentiments__subjective",
       "opinions_sentiments__trends_oppositions",
+      "opinions_sentiments__highlights",
+      "opinions_sentiments__subjective",
     ] as const;
 
     for (const slug of ALL_SLUGS) {
@@ -1552,6 +1570,10 @@ describe("Sidebar", () => {
             state: "running",
             attempt_id: "a8",
           },
+          opinions_sentiments__highlights: {
+            state: "running",
+            attempt_id: "a9",
+          },
         }}
       />
     ));
@@ -1564,6 +1586,9 @@ describe("Sidebar", () => {
     ).toBe("running");
     expect(
       screen.getByTestId("slot-opinions_sentiments__trends_oppositions").getAttribute("data-slot-state"),
+    ).toBe("running");
+    expect(
+      screen.getByTestId("slot-opinions_sentiments__highlights").getAttribute("data-slot-state"),
     ).toBe("running");
   });
 });
@@ -1839,6 +1864,129 @@ describe("Sidebar (done slots, per-slug reports)", () => {
     expect(trendsReport.textContent).toContain("Recurring patterns");
     expect(trendsReport.textContent).toContain("Policy trend");
     expect(trendsReport.textContent).toContain("Counter-positions");
+  });
+
+  it("suppresses stale subjective output when current highlights arrive after section data", async () => {
+    const sections: SlugToSlots = {
+      opinions_sentiments__subjective: {
+        state: "done",
+        attempt_id: "s-subj",
+        data: {
+          subjective_claims: [
+            { claim_text: "legacy subjective dump", stance: "evaluates" },
+          ],
+        },
+      },
+      opinions_sentiments__highlights: {
+        state: "done",
+        attempt_id: "s-highlights",
+        data: {
+          highlights_report: {
+            highlights: [
+              {
+                cluster: {
+                  canonical_text: "current curated highlight",
+                  category: "subjective",
+                  occurrence_count: 3,
+                  author_count: 2,
+                  utterance_ids: ["u-highlight"],
+                  representative_authors: ["author-a"],
+                },
+                crossed_scaled_threshold: true,
+              },
+            ],
+            threshold: {
+              total_authors: 2,
+              total_utterances: 3,
+              min_authors_required: 2,
+              min_occurrences_required: 2,
+            },
+            fallback_engaged: false,
+            floor_eligible_count: 1,
+            total_input_count: 1,
+          },
+        },
+      },
+    };
+    const initialPayload = makeTonePayload();
+    const currentPayload: SidebarPayload = {
+      ...makeTonePayload(),
+      opinions_sentiments: {
+        ...makeTonePayload().opinions_sentiments,
+        highlights: {
+          highlights: [
+            {
+              cluster: {
+                canonical_text: "current curated highlight",
+                category: "subjective",
+                occurrence_count: 3,
+                author_count: 2,
+                utterance_ids: ["u-highlight"],
+                representative_authors: ["author-a"],
+              },
+              crossed_scaled_threshold: true,
+            },
+          ],
+          threshold: {
+            total_authors: 2,
+            total_utterances: 3,
+            min_authors_required: 2,
+            min_occurrences_required: 2,
+          },
+          fallback_engaged: false,
+          floor_eligible_count: 1,
+          total_input_count: 1,
+        },
+      },
+    };
+    const [payload, setPayload] = createSignal<SidebarPayload>(initialPayload);
+
+    render(() => (
+      <Sidebar
+        sections={sections}
+        payload={payload()}
+        payloadComplete={true}
+      />
+    ));
+
+    expect(screen.queryByText("legacy subjective dump")).toBeNull();
+    expect(screen.getByText("current curated highlight")).toBeDefined();
+
+    setPayload(currentPayload);
+
+    await waitFor(() => {
+      expect(screen.queryByText("legacy subjective dump")).toBeNull();
+    });
+    expect(
+      screen.getByTestId("report-opinions_sentiments__highlights"),
+    ).toBeDefined();
+    expect(screen.getByText("current curated highlight")).toBeDefined();
+  });
+
+  it("keeps legacy subjective fallback for completed payloads without highlights", () => {
+    const payload: SidebarPayload = {
+      ...makeTonePayload(),
+      opinions_sentiments: {
+        ...makeTonePayload().opinions_sentiments,
+        opinions_report: {
+          ...makeTonePayload().opinions_sentiments.opinions_report,
+          subjective_claims: [
+            {
+              claim_text: "legacy subjective dump",
+              stance: "evaluates",
+              utterance_id: "u-legacy",
+            },
+          ],
+        },
+      },
+    };
+
+    render(() => <Sidebar payload={payload} payloadComplete={true} />);
+
+    expect(screen.getByText("legacy subjective dump")).toBeDefined();
+    expect(
+      screen.queryByTestId("report-opinions_sentiments__highlights"),
+    ).toBeNull();
   });
 
   it("shows explicit provider names and hides non-harm confidence numbers", () => {
@@ -2226,8 +2374,9 @@ describe("Sidebar (extracting-phase indicator)", () => {
     "facts_claims__premises",
     "facts_claims__known_misinfo",
     "opinions_sentiments__sentiment",
-    "opinions_sentiments__subjective",
     "opinions_sentiments__trends_oppositions",
+    "opinions_sentiments__highlights",
+    "opinions_sentiments__subjective",
   ] as const;
 
   it("renders the extracting indicator and per-slug skeletons when jobStatus is extracting and sections is empty", () => {

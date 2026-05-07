@@ -141,6 +141,8 @@ function slugHeadingLabel(slug: SectionSlugLiteral): string {
       return "Subjective claims";
     case "opinions_sentiments__trends_oppositions":
       return "Trends/oppositions";
+    case "opinions_sentiments__highlights":
+      return "Highlights";
   }
 }
 

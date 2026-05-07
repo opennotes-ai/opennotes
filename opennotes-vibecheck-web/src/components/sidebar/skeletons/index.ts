@@ -32,4 +32,5 @@ export const SKELETONS: Record<SectionSlug, () => JSX.Element> = {
   opinions_sentiments__sentiment: SentimentSkeleton,
   opinions_sentiments__subjective: SubjectiveSkeleton,
   opinions_sentiments__trends_oppositions: SentimentSkeleton,
+  opinions_sentiments__highlights: SentimentSkeleton,
 };
