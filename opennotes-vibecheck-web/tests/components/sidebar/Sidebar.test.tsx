@@ -325,6 +325,7 @@ describe("<Sidebar /> payload synthesis fallback", () => {
                   representative_authors: ["@a"],
                   supporting_facts: [],
                   premise_ids: [],
+                  facts_to_verify: 0,
                 },
               ],
               total_claims: 1,
