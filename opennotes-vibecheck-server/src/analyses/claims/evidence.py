@@ -32,6 +32,19 @@ from src.services.vertex_limiter import vertex_slot
 
 logger = logging.getLogger(__name__)
 
+INLINE_FACT_MAX_CHARS = 600
+_INLINE_FACT_ELLIPSIS = "…"
+
+
+def _truncate_for_inline_fact(text: str) -> str:
+    if len(text) <= INLINE_FACT_MAX_CHARS:
+        return text
+    budget = INLINE_FACT_MAX_CHARS - len(_INLINE_FACT_ELLIPSIS)
+    cut = text.rfind(" ", 0, budget)
+    if cut <= 0:
+        cut = budget
+    return text[:cut].rstrip() + _INLINE_FACT_ELLIPSIS
+
 
 class _UtteranceMeta(NamedTuple):
     text: str
@@ -228,9 +241,9 @@ def _inline_supporting_facts(
             continue
         if meta.kind == "post":
             continue
-        statement = meta.text
-        if _is_inline_tautology(statement, claim.canonical_text):
+        if _is_inline_tautology(meta.text, claim.canonical_text):
             continue
+        statement = _truncate_for_inline_fact(meta.text)
         facts.append(
             SupportingFact(
                 statement=statement,
@@ -308,4 +321,8 @@ async def build_supporting_facts_by_claim(
     }
 
 
-__all__ = ["build_supporting_facts_by_claim", "fetch_external_evidence_batch"]
+__all__ = [
+    "INLINE_FACT_MAX_CHARS",
+    "build_supporting_facts_by_claim",
+    "fetch_external_evidence_batch",
+]

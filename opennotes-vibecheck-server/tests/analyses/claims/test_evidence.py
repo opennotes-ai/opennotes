@@ -678,7 +678,8 @@ async def test_inline_facts_skip_long_post_containing_claim_verbatim(
     long_post = (
         "This is a very long post about various topics. " * 100
         + claim_text
-        + " " + "More unrelated content follows. " * 100
+        + " "
+        + "More unrelated content follows. " * 100
     )
     assert len(long_post) > 5000
 
@@ -699,3 +700,127 @@ async def test_inline_facts_skip_long_post_containing_claim_verbatim(
     )
 
     assert facts == {}
+
+
+@pytest.mark.asyncio
+async def test_inline_fact_truncates_long_utterance(
+    no_external_settings: Settings,
+) -> None:
+    long_text = "word " * 300
+    assert len(long_text) > 600
+
+    claim = DedupedClaim(
+        canonical_text="Mars has two moons.",
+        category=ClaimCategory.POTENTIALLY_FACTUAL,
+        occurrence_count=1,
+        author_count=1,
+        utterance_ids=["u-long"],
+        representative_authors=["alice"],
+    )
+
+    facts = await evidence.build_supporting_facts_by_claim(
+        [claim],
+        {"u-long": _UtteranceMeta(text=long_text, kind="comment")},
+        no_external_settings,
+        external_fetcher=_no_external_fetcher,
+    )
+
+    statement = facts["Mars has two moons."][0].statement
+    assert len(statement) <= 600
+    assert statement.endswith("…")
+    assert not statement[-2].isspace()
+
+
+@pytest.mark.asyncio
+async def test_inline_fact_preserves_short_utterance(
+    no_external_settings: Settings,
+) -> None:
+    short_text = "Scientists have confirmed this finding through multiple studies."
+    assert len(short_text) <= 200
+
+    claim = DedupedClaim(
+        canonical_text="Mars has two moons.",
+        category=ClaimCategory.POTENTIALLY_FACTUAL,
+        occurrence_count=1,
+        author_count=1,
+        utterance_ids=["u-short"],
+        representative_authors=["alice"],
+    )
+
+    facts = await evidence.build_supporting_facts_by_claim(
+        [claim],
+        {"u-short": _UtteranceMeta(text=short_text, kind="comment")},
+        no_external_settings,
+        external_fetcher=_no_external_fetcher,
+    )
+
+    assert facts["Mars has two moons."][0].statement == short_text
+
+
+@pytest.mark.asyncio
+async def test_inline_fact_truncation_cap_is_module_constant(
+    monkeypatch: pytest.MonkeyPatch,
+    no_external_settings: Settings,
+) -> None:
+    monkeypatch.setattr(evidence, "INLINE_FACT_MAX_CHARS", 50)
+
+    text_200 = "word " * 40
+    assert len(text_200) == 200
+
+    claim = DedupedClaim(
+        canonical_text="Mars has two moons.",
+        category=ClaimCategory.POTENTIALLY_FACTUAL,
+        occurrence_count=1,
+        author_count=1,
+        utterance_ids=["u-mid"],
+        representative_authors=["alice"],
+    )
+
+    facts = await evidence.build_supporting_facts_by_claim(
+        [claim],
+        {"u-mid": _UtteranceMeta(text=text_200, kind="comment")},
+        no_external_settings,
+        external_fetcher=_no_external_fetcher,
+    )
+
+    statement = facts["Mars has two moons."][0].statement
+    assert len(statement) <= 50
+    assert statement.endswith("…")
+
+
+@pytest.mark.asyncio
+async def test_external_supporting_facts_are_not_truncated() -> None:
+    long_statement = "x" * 1000
+
+    async def fake_external_fetcher(
+        claim_texts: list[str], _settings: Settings
+    ) -> dict[str, list[dict[str, Any]]]:
+        return {
+            claim_texts[0]: [
+                {
+                    "statement": long_statement,
+                    "source_kind": SourceKind.EXTERNAL.value,
+                    "source_ref": "https://example.com/source",
+                }
+            ]
+        }
+
+    claim = DedupedClaim(
+        canonical_text="Mars has two moons.",
+        category=ClaimCategory.POTENTIALLY_FACTUAL,
+        occurrence_count=1,
+        author_count=1,
+        utterance_ids=[],
+        representative_authors=["alice"],
+    )
+
+    settings = Settings(EVIDENCE_MAX_EXTERNAL_RETRIEVALS=1)
+
+    facts = await evidence.build_supporting_facts_by_claim(
+        [claim],
+        {},
+        settings,
+        external_fetcher=fake_external_fetcher,
+    )
+
+    assert facts["Mars has two moons."][0].statement == long_statement
