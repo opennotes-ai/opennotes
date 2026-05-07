@@ -54,11 +54,12 @@ const AXES: AxisDefinition[] = [
   },
 ];
 
-function formatLogprob(value: number | null | undefined): string | null {
+function formatLogprobProbability(value: number | null | undefined): string | null {
   if (value == null || !Number.isFinite(value)) {
     return null;
   }
-  return `logp ${value.toFixed(2)}`;
+  const probability = Math.exp(value) * 100;
+  return `${Math.round(probability * 100) / 100}%`;
 }
 
 function mapTruthLabel(value: WeatherAxisLabel): string {
@@ -167,7 +168,7 @@ function AxisCard(props: AxisCardProps): JSX.Element {
     }
   };
 
-  const confidence = () => formatLogprob(axis()?.logprob);
+  const confidence = () => formatLogprobProbability(axis()?.logprob);
   const alternatives = () => safeAlternatives(axis());
 
   return (
@@ -221,7 +222,7 @@ function AxisCard(props: AxisCardProps): JSX.Element {
                       const alternativeLabel = props.mapLabel(
                         alternative.label as WeatherAxisLabel,
                       );
-                      const alternativeConfidence = formatLogprob(
+                      const alternativeConfidence = formatLogprobProbability(
                         alternative.logprob,
                       );
                       return (

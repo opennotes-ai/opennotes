@@ -148,7 +148,7 @@ describe("WeatherReport", () => {
     });
   });
 
-  it("renders logprob metadata as logprob, not a clamped percentage", () => {
+  it("renders logprob metadata as linear probability percentages", () => {
     render(() => (
       <WeatherReport
         report={makeWeatherReport({
@@ -162,10 +162,10 @@ describe("WeatherReport", () => {
     ));
 
     expect(screen.getByTestId("weather-truth-confidence").textContent).toBe(
-      "logp -0.12",
+      "88.69%",
     );
     expect(screen.getByTestId("weather-truth-alternatives").textContent).toContain(
-      "Mostly factual (logp -1.25)",
+      "Mostly factual (28.65%)",
     );
   });
 });
