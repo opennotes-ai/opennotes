@@ -708,6 +708,7 @@ function AnalyzePageContent(props: { initialJobState: JobState | null }) {
       <Meta property="og:description" content={ogDescription()} />
       <Meta property="og:url" content={ogUrl()} />
       <Meta property="og:image" content={ogImage()} />
+      <Meta name="twitter:image" content={ogImage()} />
       <main
         data-testid="analyze-main"
         data-archive-probe-state={archiveProbeState()}

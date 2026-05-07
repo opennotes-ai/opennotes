@@ -56,6 +56,8 @@ export default function HomePage() {
       <Meta property="og:title" content="vibecheck — URL and PDF analysis" />
       <Meta property="og:description" content="Analyze URLs and PDFs for tone, claims, safety, and opinions." />
       <Meta property="og:url" content={siteUrl("/")} />
+      <Meta property="og:image" content={siteUrl("/api/og")} />
+      <Meta name="twitter:image" content={siteUrl("/api/og")} />
       <main class="mx-auto flex min-h-screen max-w-2xl flex-col items-center justify-center gap-10 px-4 py-16 text-center">
         <header class="space-y-4">
           <h1 class="text-5xl font-semibold tracking-tight sm:text-6xl">
