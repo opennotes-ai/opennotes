@@ -59,7 +59,17 @@ describe("<NavBar /> source contract", () => {
   it("dropdown branch is present for NavBarDropdownItem entries", () => {
     expect(navBarSource).toContain("isDropdown");
     expect(navBarSource).toContain("NavBarDropdownItem");
-    expect(navBarSource).toContain("DropdownMenuPrimitive");
+    expect(navBarSource).toContain("DropdownMenuTrigger");
+    expect(navBarSource).toContain("DropdownMenuContent");
+  });
+
+  it("uses wrapped DropdownMenu exports, not @kobalte/core directly", () => {
+    expect(navBarSource).not.toContain("@kobalte/core");
+    expect(navBarSource).toContain('from "./ui/dropdown-menu"');
+  });
+
+  it("preserves gutter={8} on the wrapped DropdownMenu (default is 4)", () => {
+    expect(navBarSource).toContain("gutter={8}");
   });
 
   it("nav element has aria-label for accessibility", () => {
