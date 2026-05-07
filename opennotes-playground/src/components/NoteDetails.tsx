@@ -3,6 +3,7 @@ import type { components } from "~/lib/generated-types";
 import { cn } from "@opennotes/ui/utils";
 import { formatDate, humanizeLabel } from "~/lib/format";
 import { Badge, type BadgeVariant } from "@opennotes/ui/components/ui/badge";
+import { Card } from "@opennotes/ui/components/ui/card";
 import IdBadge from "@opennotes/ui/components/ui/id-badge";
 import { getHelpfulnessTooltip, TERM_DESCRIPTIONS } from "@opennotes/ui/palettes";
 import NoteFilter, { type NoteFilterValues } from "~/components/ui/note-filter";
@@ -189,7 +190,7 @@ export default function NoteDetails(props: {
                     {(note) => {
                       const attrs = note.attributes;
                       return (
-                        <div id={`note-${note.attributes.note_id}`} class="rounded-lg border border-border bg-card p-4" data-testid="note-card">
+                        <Card id={`note-${note.attributes.note_id}`} class="border-border p-4 shadow-none" data-testid="note-card">
                           <div class="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-start sm:justify-between">
                             <div class="min-w-0 flex-1" data-testid="note-summary">
                               <div class="font-normal leading-snug">{attrs.summary}</div>
@@ -252,7 +253,7 @@ export default function NoteDetails(props: {
                               </div>
                             </details>
                           </Show>
-                        </div>
+                        </Card>
                       );
                     }}
                   </For>

@@ -1,6 +1,11 @@
 import type { JSX } from "solid-js";
 import { For, splitProps } from "solid-js";
-import * as DropdownMenuPrimitive from "@kobalte/core/dropdown-menu";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "./ui/dropdown-menu";
 import { cn } from "../utils";
 
 export type NavBarItem = {
@@ -51,8 +56,8 @@ export function NavBar(props: NavBarProps): JSX.Element {
           {(entry) => (
             <li>
               {isDropdown(entry) ? (
-                <DropdownMenuPrimitive.Root gutter={8}>
-                  <DropdownMenuPrimitive.Trigger
+                <DropdownMenu gutter={8}>
+                  <DropdownMenuTrigger
                     class={cn(linkClass, "flex items-center gap-1 outline-none")}
                   >
                     {entry.label}
@@ -68,36 +73,34 @@ export function NavBar(props: NavBarProps): JSX.Element {
                     >
                       <path d="M6 9l6 6 6-6" />
                     </svg>
-                  </DropdownMenuPrimitive.Trigger>
-                  <DropdownMenuPrimitive.Portal>
-                    <DropdownMenuPrimitive.Content class="z-50 min-w-[10rem] origin-[var(--kb-menu-content-transform-origin)] overflow-hidden rounded-md border border-border bg-background/95 backdrop-blur-lg p-1 shadow-md animate-in data-[expanded]:animate-content-show data-[closed]:animate-content-hide">
-                      <For each={entry.items}>
-                        {(item) => (
-                          <DropdownMenuPrimitive.Item
-                            class="rounded-sm outline-none focus:bg-accent data-[highlighted]:bg-accent"
-                            onSelect={() => {
-                              window.open(
-                                item.href,
-                                item.external ? "_blank" : "_self",
-                                item.external ? "noopener,noreferrer" : "",
-                              );
-                            }}
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent class="z-50 min-w-[10rem] origin-[var(--kb-menu-content-transform-origin)] overflow-hidden rounded-md border border-border bg-background/95 backdrop-blur-lg p-1 shadow-md animate-in data-[expanded]:animate-content-show data-[closed]:animate-content-hide">
+                    <For each={entry.items}>
+                      {(item) => (
+                        <DropdownMenuItem
+                          class="gap-0 p-0 rounded-sm transition-none outline-none focus:bg-accent data-[highlighted]:bg-accent"
+                          onSelect={() => {
+                            window.open(
+                              item.href,
+                              item.external ? "_blank" : "_self",
+                              item.external ? "noopener,noreferrer" : "",
+                            );
+                          }}
+                        >
+                          <a
+                            href={item.href}
+                            target={item.external ? "_blank" : undefined}
+                            rel={item.external ? "noopener noreferrer" : undefined}
+                            class="flex w-full px-3 py-2 text-sm text-foreground transition-colors hover:text-primary"
+                            onClick={(e) => e.stopPropagation()}
                           >
-                            <a
-                              href={item.href}
-                              target={item.external ? "_blank" : undefined}
-                              rel={item.external ? "noopener noreferrer" : undefined}
-                              class="flex w-full px-3 py-2 text-sm text-foreground transition-colors hover:text-primary"
-                              onClick={(e) => e.stopPropagation()}
-                            >
-                              {item.label}
-                            </a>
-                          </DropdownMenuPrimitive.Item>
-                        )}
-                      </For>
-                    </DropdownMenuPrimitive.Content>
-                  </DropdownMenuPrimitive.Portal>
-                </DropdownMenuPrimitive.Root>
+                            {item.label}
+                          </a>
+                        </DropdownMenuItem>
+                      )}
+                    </For>
+                  </DropdownMenuContent>
+                </DropdownMenu>
               ) : (
                 <a
                   href={entry.href}

@@ -1,5 +1,6 @@
 import { Show, createSignal, type JSX } from "solid-js";
 import { useAction } from "@solidjs/router";
+import { Link } from "@opennotes/ui/components/ui/link";
 import type { SectionSlug } from "~/lib/api-client.server";
 import { retrySectionAction } from "~/routes/analyze.data";
 import { sectionDisplayName } from "./display";
@@ -42,17 +43,18 @@ export default function RetryButton(props: RetryButtonProps): JSX.Element {
 
   return (
     <div class="flex flex-col gap-1">
-      <button
-        type="button"
+      <Link
+        size="sm"
+        variant="default"
         data-testid={`retry-${props.slug}`}
         data-in-flight={inFlight() ? "true" : "false"}
         aria-label={`Retry ${sectionDisplayName(props.slug)}`}
         disabled={disabled()}
         onClick={handleClick}
-        class="self-start text-[11px] font-medium text-primary underline-offset-2 hover:underline disabled:cursor-not-allowed disabled:opacity-50"
+        class="self-start"
       >
         {inFlight() ? "Retrying..." : "Retry"}
-      </button>
+      </Link>
       <Show when={inlineError()}>
         {(msg) => (
           <p

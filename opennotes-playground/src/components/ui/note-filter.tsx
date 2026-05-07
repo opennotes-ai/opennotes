@@ -1,5 +1,6 @@
 import { For, Show } from "solid-js";
 import { cn } from "@opennotes/ui/utils";
+import { Button } from "@opennotes/ui/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -93,9 +94,15 @@ export default function NoteFilter(props: {
         <div class="mb-1 flex items-center justify-between px-2 py-1">
           <span class="text-xs font-semibold text-muted-foreground">Filters</span>
           <Show when={activeCount() > 0}>
-            <button class="text-xs text-primary hover:underline" onClick={clearAll}>
+            <Button
+              variant="link"
+              size="sm"
+              class="h-auto p-0 text-xs"
+              onClick={clearAll}
+              aria-label="Clear all filters"
+            >
               Clear all
-            </button>
+            </Button>
           </Show>
         </div>
         <For each={FILTER_GROUPS}>

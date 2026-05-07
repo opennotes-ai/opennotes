@@ -78,6 +78,21 @@ describe("<JobFailureCard />", () => {
     expect(suggestion).toBeTruthy();
     const link = suggestion.querySelector("a");
     expect(link?.getAttribute("href")).toBe("/#pdf-upload");
+    expect(link?.getAttribute("data-slot")).toBe("link");
+  });
+
+  it("renders Back to home anchor as Link with data-slot", () => {
+    render(() => (
+      <JobFailureCard
+        url="https://example.com/article"
+        errorCode="upstream_error"
+      />
+    ));
+
+    const home = screen.getByTestId("job-failure-home");
+    expect(home.tagName.toLowerCase()).toBe("a");
+    expect(home.getAttribute("href")).toBe("/");
+    expect(home.getAttribute("data-slot")).toBe("link");
   });
 
   it("shows PDF suggestion for extraction_failed with link to /#pdf-upload", () => {
