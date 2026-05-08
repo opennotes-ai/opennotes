@@ -149,3 +149,72 @@ describe("formatWeatherExpansion — unknown labels", () => {
     expect(formatWeatherExpansion("not_a_real_label" as Parameters<typeof formatWeatherExpansion>[0])).toBeNull();
   });
 });
+
+import { VARIANT_CLASSES } from "./weather-labels";
+
+describe("palette — no classic primary colors in VARIANT_CLASSES", () => {
+  it("does not contain a 'blue' key in VARIANT_CLASSES", () => {
+    expect(Object.keys(VARIANT_CLASSES)).not.toContain("blue");
+  });
+
+  it("does not contain a 'green' key in VARIANT_CLASSES", () => {
+    expect(Object.keys(VARIANT_CLASSES)).not.toContain("green");
+  });
+
+  it("does not contain a 'rose' key in VARIANT_CLASSES", () => {
+    expect(Object.keys(VARIANT_CLASSES)).not.toContain("rose");
+  });
+
+  it("does not produce a text-blue-700 class string from any variant", () => {
+    for (const cls of Object.values(VARIANT_CLASSES)) {
+      expect(cls).not.toContain("blue-700");
+    }
+  });
+
+  it("does not produce a text-green-700 class string from any variant", () => {
+    for (const cls of Object.values(VARIANT_CLASSES)) {
+      expect(cls).not.toContain("green-700");
+    }
+  });
+
+  it("does not produce a text-rose-700 class string from any variant", () => {
+    for (const cls of Object.values(VARIANT_CLASSES)) {
+      expect(cls).not.toContain("rose-700");
+    }
+  });
+
+  it("contains 'lime' and 'fuchsia' keys in VARIANT_CLASSES", () => {
+    expect(Object.keys(VARIANT_CLASSES)).toContain("lime");
+    expect(Object.keys(VARIANT_CLASSES)).toContain("fuchsia");
+  });
+});
+
+describe("palette — every JSON entry's variant is present in VARIANT_CLASSES", () => {
+  it("each weather label variant key resolves to a class in VARIANT_CLASSES", () => {
+    const entries = Object.entries(weatherLabelsJson) as [string, WeatherLabelEntry][];
+    for (const [key, entry] of entries) {
+      expect(
+        Object.keys(VARIANT_CLASSES),
+        `entry "${key}" has variant "${entry.variant}" which is not in VARIANT_CLASSES`,
+      ).toContain(entry.variant);
+    }
+  });
+});
+
+describe("palette — specific JSON migrations applied", () => {
+  it("factual_claims uses cyan (not blue)", () => {
+    expect(weatherLabelsJson.factual_claims.variant).toBe("cyan");
+  });
+
+  it("on_topic uses lime (not green)", () => {
+    expect(weatherLabelsJson.on_topic.variant).toBe("lime");
+  });
+
+  it("misleading uses fuchsia (not rose)", () => {
+    expect(weatherLabelsJson.misleading.variant).toBe("fuchsia");
+  });
+
+  it("off_topic uses fuchsia (not rose)", () => {
+    expect(weatherLabelsJson.off_topic.variant).toBe("fuchsia");
+  });
+});
