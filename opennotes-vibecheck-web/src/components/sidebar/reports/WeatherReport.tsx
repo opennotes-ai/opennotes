@@ -206,7 +206,7 @@ function WeatherReportSkeleton(props: { class?: string }): JSX.Element {
       data-testid="weather-report-skeleton"
       class={`relative border border-border/50 ${props.class ?? ""}`.trim()}
     >
-      <CardContent class="p-2">
+      <CardContent class="p-2" aria-hidden="true">
         <Table>
           <TableBody>
             <For each={AXES}>

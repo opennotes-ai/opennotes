@@ -555,4 +555,39 @@ describe("WeatherReport", () => {
     });
     expect(helpButton).toBeDefined();
   });
+
+  it("skeleton CardContent wrapping placeholder rows has aria-hidden='true'", () => {
+    render(() => <WeatherReport report={null} />);
+
+    const skeletonCard = screen.getByTestId("weather-report-skeleton");
+    const tbody = skeletonCard.querySelector('[data-slot="table-body"]');
+    expect(tbody).not.toBeNull();
+
+    let node: Element | null = tbody!;
+    let foundAriaHidden = false;
+    while (node && node !== skeletonCard) {
+      if (node.getAttribute("aria-hidden") === "true") {
+        foundAriaHidden = true;
+        break;
+      }
+      node = node.parentElement;
+    }
+    expect(foundAriaHidden).toBe(true);
+  });
+
+  it("skeleton help button is NOT inside the aria-hidden region", () => {
+    render(() => <WeatherReport report={null} />);
+
+    const helpButton = screen.getByRole("button", {
+      name: /explain.*weather/i,
+    });
+    expect(helpButton).toBeDefined();
+
+    let node: Element | null = helpButton.parentElement;
+    while (node) {
+      expect(node.getAttribute("aria-hidden")).not.toBe("true");
+      if (node.getAttribute("data-testid") === "weather-report-skeleton") break;
+      node = node.parentElement;
+    }
+  });
 });
