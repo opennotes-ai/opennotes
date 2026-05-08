@@ -43,17 +43,18 @@ describe("SimulationCard", () => {
     expect(anchor?.getAttribute("href")).toBe("/simulations/sim-123");
   });
 
-  it("renders Card from @opennotes/ui inside the anchor", () => {
+  it("renders Card from @opennotes/ui as the anchor element", () => {
     const sim = makeSimulation();
     const { container } = renderWithRouter(sim);
 
     const anchor = container.querySelector("a");
-    const card = anchor?.querySelector("div");
-    expect(card).not.toBeNull();
-    expect(card?.className).toContain("rounded-lg");
-    expect(card?.className).toContain("border");
-    expect(card?.className).toContain("bg-card");
-    expect(card?.className).toContain("p-4");
+    expect(anchor).not.toBeNull();
+    expect(anchor?.className).toContain("bg-card");
+    expect(anchor?.className).toContain("rounded-md");
+    expect(anchor?.className).not.toContain("rounded-lg");
+    expect(anchor?.className).not.toContain("shadow-sm");
+    expect(anchor?.className).not.toContain("border-border");
+    expect(anchor?.className).not.toContain("hover:border-primary/40");
   });
 
   it("displays simulation status and turns", () => {

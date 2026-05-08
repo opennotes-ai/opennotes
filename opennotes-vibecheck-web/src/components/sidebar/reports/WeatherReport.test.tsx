@@ -168,13 +168,12 @@ describe("WeatherReport", () => {
     expect(root.className).not.toContain("min-h-[110px]");
   });
 
-  it("populated container keeps Card-style chrome (border + bg-card)", () => {
+  it("populated container keeps Card-style chrome (bg-card)", () => {
     render(() => <WeatherReport report={makeWeatherReport()} />);
     const root = screen.getByTestId("weather-report");
     const cls = root.className;
-    expect(cls).toContain("border");
     expect(cls).toContain("bg-card");
-    expect(cls).toContain("rounded-lg");
+    expect(cls).toContain("rounded-md");
   });
 
   it("renders first-person truth in indigo, not amber or destructive", () => {
