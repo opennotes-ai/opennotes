@@ -15,6 +15,7 @@ from pydantic import BaseModel, Field
 
 class SafetyLevel(StrEnum):
     SAFE = "safe"
+    MILD = "mild"
     CAUTION = "caution"
     UNSAFE = "unsafe"
 

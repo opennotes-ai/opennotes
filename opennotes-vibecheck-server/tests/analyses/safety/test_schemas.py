@@ -113,6 +113,14 @@ class TestHarmfulContentMatch:
 
 
 class TestSafetyRecommendation:
+    def test_safety_level_order_includes_mild_between_safe_and_caution(self) -> None:
+        assert list(SafetyLevel) == [
+            SafetyLevel.SAFE,
+            SafetyLevel.MILD,
+            SafetyLevel.CAUTION,
+            SafetyLevel.UNSAFE,
+        ]
+
     def test_safety_recommendation_accepts_level_rationale_and_signal_lists(self) -> None:
         recommendation = SafetyRecommendation(
             level=SafetyLevel.CAUTION,
@@ -140,6 +148,19 @@ class TestSafetyRecommendation:
 
         assert recommendation.top_signals == []
         assert recommendation.unavailable_inputs == []
+
+    def test_safety_recommendation_round_trips_mild_level(self) -> None:
+        recommendation = SafetyRecommendation(
+            level=SafetyLevel.MILD,
+            rationale="One minor verified safety signal.",
+        )
+
+        serialized = recommendation.model_dump_json()
+        restored = SafetyRecommendation.model_validate_json(serialized)
+
+        assert recommendation.model_dump()["level"] == SafetyLevel.MILD
+        assert restored.level == SafetyLevel.MILD
+        assert restored.rationale == "One minor verified safety signal."
 
     def test_safety_section_recommendation_defaults_to_none(self) -> None:
         section = SafetySection.model_validate({"harmful_content_matches": []})
