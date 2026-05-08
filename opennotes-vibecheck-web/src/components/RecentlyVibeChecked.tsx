@@ -84,6 +84,7 @@ export default function RecentlyVibeChecked(props: RecentlyVibeCheckedProps) {
                 </GalleryHoverCard>
                 <FeedbackBell
                   bell_location={`home:recently-vibe-checked:${item.job_id}`}
+                  ariaContext={item.page_title ?? item.source_url}
                 />
               </div>
             )}
