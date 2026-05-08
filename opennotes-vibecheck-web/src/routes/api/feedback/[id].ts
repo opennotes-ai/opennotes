@@ -5,7 +5,7 @@ export async function PATCH(event: APIEvent): Promise<Response> {
   let response: Response;
   try {
     const backendBase = resolveBaseUrl();
-    const id = event.params.id;
+    const id = event.params.id as string;
     const backendUrl = new URL(`/api/feedback/${id}`, backendBase);
 
     const headers = new Headers();
@@ -30,14 +30,11 @@ export async function PATCH(event: APIEvent): Promise<Response> {
     );
   }
 
-  const responseHeaders = new Headers();
-  responseHeaders.set(
-    "content-type",
-    response.headers.get("content-type") ?? "application/json",
-  );
-  const setCookie = response.headers.get("set-cookie");
-  if (setCookie) responseHeaders.set("set-cookie", setCookie);
-
+  const contentType = response.headers.get("content-type") ?? "application/json";
+  const responseHeaders = new Headers({ "content-type": contentType });
+  for (const value of response.headers.getSetCookie()) {
+    responseHeaders.append("set-cookie", value);
+  }
   return new Response(response.body, {
     status: response.status,
     headers: responseHeaders,
