@@ -274,6 +274,29 @@ async def test_claim_fails_when_expected_attempt_id_stale(
     assert row["attempt_id"] == current_attempt
 
 
+async def test_convert_images_endpoint_delegates_to_conversion_worker(
+    client: httpx.AsyncClient,
+    db_pool: Any,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.jobs.orchestrator import RunResult
+    from src.routes import internal_jobs
+
+    job_id, attempt = await _insert_pending_job(db_pool)
+    run_mock = AsyncMock(return_value=RunResult(status_code=200))
+    monkeypatch.setattr(internal_jobs, "run_image_conversion", run_mock)
+
+    resp = await client.post(
+        f"/_internal/jobs/{job_id}/convert-images",
+        json={"job_id": str(job_id), "expected_attempt_id": str(attempt)},
+        headers={"Authorization": "Bearer fake.jwt.token"},
+    )
+
+    assert resp.status_code == 200
+    assert resp.json() == {"status_code": 200}
+    run_mock.assert_awaited_once()
+
+
 async def test_claim_succeeds_and_handler_runs_pipeline(
     client: httpx.AsyncClient,
     db_pool: Any,

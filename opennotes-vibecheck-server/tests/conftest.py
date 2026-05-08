@@ -93,6 +93,9 @@ CREATE TABLE vibecheck_jobs (
                 'invalid_url', 'unsafe_url', 'unsupported_site', 'upstream_error',
                 'extraction_failed', 'section_failure', 'timeout',
                 'pdf_too_large', 'pdf_extraction_failed',
+                'upload_key_invalid', 'upload_not_found', 'invalid_pdf_type',
+                'image_count_too_large', 'image_aggregate_too_large', 'invalid_image_type',
+                'image_conversion_failed',
                 'rate_limited', 'internal'
             )
         ),

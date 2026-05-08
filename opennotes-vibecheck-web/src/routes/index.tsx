@@ -31,6 +31,14 @@ function errorLabelFor(
       return "Upload may not have completed. Please try uploading the PDF again.";
     case "invalid_pdf_type":
       return "Only PDF files are accepted.";
+    case "image_count_too_large":
+      return "Image upload is limited to 100 files.";
+    case "image_aggregate_too_large":
+      return "Image upload is limited to 45 MB total.";
+    case "invalid_image_type":
+      return "Use PNG, JPEG, TIFF, or BMP images.";
+    case "image_conversion_failed":
+      return "We couldn't convert those images to a PDF. Try different images.";
     case "upstream_error":
       return "The analyzer couldn't reach that page. Try again in a moment.";
     default:

@@ -13,11 +13,28 @@ export type JobStatus = components["schemas"]["JobStatus"];
 export type ErrorCode = components["schemas"]["ErrorCode"];
 export type RetryResponse = components["schemas"]["RetryResponse"];
 export type RecentAnalysis = components["schemas"]["RecentAnalysis"];
-export type PublicErrorCode = ErrorCode | "pdf_too_large" | "pdf_extraction_failed" | "upload_key_invalid" | "upload_not_found" | "invalid_pdf_type";
+export type PublicErrorCode = ErrorCode | "pdf_too_large" | "pdf_extraction_failed" | "upload_key_invalid" | "upload_not_found" | "invalid_pdf_type" | "image_count_too_large" | "image_aggregate_too_large" | "invalid_image_type" | "image_conversion_failed";
 
 export interface UploadPdfResponse {
   gcs_key: string;
   upload_url: string;
+}
+
+export interface ImageUploadRequestItem {
+  filename?: string;
+  content_type: string;
+  size_bytes: number;
+}
+
+export interface ImageUploadUrl {
+  ordinal: number;
+  gcs_key: string;
+  upload_url: string;
+}
+
+export interface UploadImagesResponse {
+  job_id: string;
+  images: ImageUploadUrl[];
 }
 
 export interface ApiErrorBody {
@@ -41,6 +58,10 @@ export const PUBLIC_ERROR_CODES: readonly PublicErrorCode[] = [
   "upload_key_invalid",
   "upload_not_found",
   "invalid_pdf_type",
+  "image_count_too_large",
+  "image_aggregate_too_large",
+  "invalid_image_type",
+  "image_conversion_failed",
 ];
 
 export function clampErrorCode(raw: unknown): PublicErrorCode | undefined {
@@ -69,7 +90,9 @@ function timeoutForRequest(request: Request): number {
   }
   if (
     request.method === "POST" &&
-    (pathname === "/api/analyze" || pathname === "/api/analyze-pdf")
+    (pathname === "/api/analyze" ||
+      pathname === "/api/analyze-pdf" ||
+      pathname === "/api/analyze-images")
   ) {
     return ANALYZE_SUBMIT_TIMEOUT_MS;
   }
@@ -362,6 +385,62 @@ export async function requestPdfAnalysis(
   ) {
     throw new VibecheckApiError(
       "vibecheck /api/analyze-pdf returned malformed payload",
+      response.status,
+      { error_code: "upstream_error", message: "Malformed analyze response" },
+      response.headers,
+    );
+  }
+  return responsePayload as AnalyzeResponse;
+}
+
+export async function requestImageUploadUrls(
+  images: ImageUploadRequestItem[],
+): Promise<UploadImagesResponse> {
+  const { data, response } = await requestBackendJson<UploadImagesResponse>(
+    "/api/upload-images",
+    {
+      method: "POST",
+      body: { images },
+    },
+  );
+  const responsePayload = data as Partial<UploadImagesResponse>;
+  if (
+    typeof responsePayload.job_id !== "string" ||
+    !Array.isArray(responsePayload.images) ||
+    responsePayload.images.some(
+      (image) =>
+        typeof image.ordinal !== "number" ||
+        typeof image.gcs_key !== "string" ||
+        typeof image.upload_url !== "string",
+    )
+  ) {
+    throw new VibecheckApiError(
+      "vibecheck /api/upload-images returned malformed payload",
+      response.status,
+      { error_code: "upstream_error", message: "Malformed image upload response" },
+      response.headers,
+    );
+  }
+  return responsePayload as UploadImagesResponse;
+}
+
+export async function requestImageAnalysis(
+  jobId: string,
+): Promise<AnalyzeResponse> {
+  const { data, response } = await requestBackendJson<AnalyzeResponse>(
+    "/api/analyze-images",
+    {
+      method: "POST",
+      body: { job_id: jobId },
+    },
+  );
+  const responsePayload = data as Partial<AnalyzeResponse>;
+  if (
+    typeof responsePayload.job_id !== "string" ||
+    typeof responsePayload.status !== "string"
+  ) {
+    throw new VibecheckApiError(
+      "vibecheck /api/analyze-images returned malformed payload",
       response.status,
       { error_code: "upstream_error", message: "Malformed analyze response" },
       response.headers,

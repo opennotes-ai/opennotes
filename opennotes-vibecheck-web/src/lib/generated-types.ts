@@ -151,6 +151,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/upload-images": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Upload Images
+         * @description Create a pending job and return signed PUT URLs for ordered source images.
+         */
+        post: operations["upload_images_api_upload_images_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/analyze-images": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Analyze Images
+         * @description Validate uploaded source images and enqueue image-to-PDF conversion.
+         */
+        post: operations["analyze_images_api_analyze_images_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/analyze-pdf": {
         parameters: {
             query?: never;
@@ -294,6 +334,26 @@ export interface paths {
          *     Response body is intentionally minimal — Cloud Tasks ignores it.
          */
         post: operations["run__internal_jobs__job_id__run_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/_internal/jobs/{job_id}/convert-images": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Convert Images
+         * @description Drive one Cloud Tasks delivery through image-to-PDF conversion.
+         */
+        post: operations["convert_images__internal_jobs__job_id__convert_images_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -449,6 +509,14 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** AnalyzeImagesRequest */
+        AnalyzeImagesRequest: {
+            /**
+             * Job Id
+             * Format: uuid
+             */
+            job_id: string;
+        };
         /** AnalyzePDFRequest */
         AnalyzePDFRequest: {
             /** Gcs Key */
@@ -554,7 +622,7 @@ export interface components {
          * @description Stable error codes the frontend branches on for inline copy + retry UX.
          * @enum {string}
          */
-        ErrorCode: "invalid_url" | "unsafe_url" | "unsupported_site" | "upstream_error" | "extraction_failed" | "section_failure" | "pdf_too_large" | "pdf_extraction_failed" | "upload_key_invalid" | "upload_not_found" | "invalid_pdf_type" | "timeout" | "rate_limited" | "internal";
+        ErrorCode: "invalid_url" | "unsafe_url" | "unsupported_site" | "upstream_error" | "extraction_failed" | "section_failure" | "pdf_too_large" | "pdf_extraction_failed" | "upload_key_invalid" | "upload_not_found" | "invalid_pdf_type" | "image_count_too_large" | "image_aggregate_too_large" | "invalid_image_type" | "image_conversion_failed" | "timeout" | "rate_limited" | "internal";
         /**
          * FactCheckMatch
          * @description A single fact-check article surfaced by the Google Fact Check Tools API.
@@ -861,6 +929,24 @@ export interface components {
         ImageModerationSection: {
             /** Matches */
             matches?: components["schemas"]["ImageModerationMatch"][];
+        };
+        /** ImageUploadItem */
+        ImageUploadItem: {
+            /** Filename */
+            filename?: string | null;
+            /** Content Type */
+            content_type: string;
+            /** Size Bytes */
+            size_bytes: number;
+        };
+        /** ImageUploadUrl */
+        ImageUploadUrl: {
+            /** Ordinal */
+            ordinal: number;
+            /** Gcs Key */
+            gcs_key: string;
+            /** Upload Url */
+            upload_url: string;
         };
         /**
          * JobState
@@ -1459,6 +1545,21 @@ export interface components {
             /** Skipped For Cap */
             skipped_for_cap: number;
         };
+        /** UploadImagesRequest */
+        UploadImagesRequest: {
+            /** Images */
+            images: components["schemas"]["ImageUploadItem"][];
+        };
+        /** UploadImagesResponse */
+        UploadImagesResponse: {
+            /**
+             * Job Id
+             * Format: uuid
+             */
+            job_id: string;
+            /** Images */
+            images: components["schemas"]["ImageUploadUrl"][];
+        };
         /** UploadPDFResponse */
         UploadPDFResponse: {
             /** Gcs Key */
@@ -1765,6 +1866,72 @@ export interface operations {
             };
         };
     };
+    upload_images_api_upload_images_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UploadImagesRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UploadImagesResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    analyze_images_api_analyze_images_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AnalyzeImagesRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AnalyzeResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     analyze_pdf_api_analyze_pdf_post: {
         parameters: {
             query?: never;
@@ -2007,6 +2174,41 @@ export interface operations {
         };
     };
     run__internal_jobs__job_id__run_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RunJobBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    convert_images__internal_jobs__job_id__convert_images_post: {
         parameters: {
             query?: never;
             header?: never;

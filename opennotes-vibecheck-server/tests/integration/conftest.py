@@ -116,6 +116,9 @@ CREATE TABLE IF NOT EXISTS vibecheck_jobs (
                 'invalid_url', 'unsafe_url', 'unsupported_site', 'upstream_error',
                 'extraction_failed', 'section_failure', 'timeout',
                 'pdf_too_large', 'pdf_extraction_failed',
+                'upload_key_invalid', 'upload_not_found', 'invalid_pdf_type',
+                'image_count_too_large', 'image_aggregate_too_large',
+                'invalid_image_type', 'image_conversion_failed',
                 'rate_limited', 'internal'
             )
         ),
@@ -140,6 +143,17 @@ CREATE UNIQUE INDEX IF NOT EXISTS
     vibecheck_jobs_unique_done_cached_normalized_url
     ON vibecheck_jobs(normalized_url)
     WHERE status = 'done' AND cached = true;
+
+CREATE TABLE IF NOT EXISTS vibecheck_image_upload_batches (
+    job_id UUID PRIMARY KEY REFERENCES vibecheck_jobs(job_id) ON DELETE CASCADE,
+    images JSONB NOT NULL,
+    conversion_status TEXT NOT NULL DEFAULT 'awaiting_upload',
+    generated_pdf_gcs_key TEXT,
+    error_code TEXT,
+    error_message TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
 
 CREATE TABLE IF NOT EXISTS vibecheck_scrapes (
     scrape_id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),

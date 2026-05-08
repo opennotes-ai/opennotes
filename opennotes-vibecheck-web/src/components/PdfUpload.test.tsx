@@ -1,19 +1,35 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen, fireEvent, waitFor } from "@solidjs/testing-library";
 import PdfUpload from "./PdfUpload";
-import { MAX_PDF_BYTES } from "~/lib/pdf-constraints";
+import { MAX_IMAGE_BATCH_BYTES, MAX_PDF_BYTES } from "~/lib/pdf-constraints";
 
-const { requestUploadUrlMock, submitPdfAnalysisMock, useActionMock } =
+const {
+  requestUploadUrlMock,
+  requestImageUploadUrlsMock,
+  submitPdfAnalysisMock,
+  submitImageAnalysisMock,
+  useActionMock,
+} =
   vi.hoisted(() => {
     const requestUploadUrlMock = vi.fn();
+    const requestImageUploadUrlsMock = vi.fn();
     const submitPdfAnalysisMock = vi.fn();
+    const submitImageAnalysisMock = vi.fn();
     const useActionMock = vi.fn((action: unknown) => {
-      if (action === requestUploadUrlMock || (action as { toString?: () => string })?.toString?.()?.includes?.("upload-url")) {
+      if (action === requestUploadUrlMock) {
         return requestUploadUrlMock;
       }
+      if (action === requestImageUploadUrlsMock) return requestImageUploadUrlsMock;
+      if (action === submitImageAnalysisMock) return submitImageAnalysisMock;
       return submitPdfAnalysisMock;
     });
-    return { requestUploadUrlMock, submitPdfAnalysisMock, useActionMock };
+    return {
+      requestUploadUrlMock,
+      requestImageUploadUrlsMock,
+      submitPdfAnalysisMock,
+      submitImageAnalysisMock,
+      useActionMock,
+    };
   });
 
 vi.mock("@solidjs/router", async () => {
@@ -28,30 +44,38 @@ vi.mock("@solidjs/router", async () => {
 
 vi.mock("~/routes/analyze.data", () => ({
   requestUploadUrlAction: requestUploadUrlMock,
+  requestImageUploadUrlsAction: requestImageUploadUrlsMock,
   submitPdfAnalysisAction: submitPdfAnalysisMock,
+  submitImageAnalysisAction: submitImageAnalysisMock,
 }));
 
 vi.mock("~/lib/pdf-upload", () => ({
   uploadPdfToSignedUrl: vi.fn().mockResolvedValue(undefined),
+  uploadFileToSignedUrl: vi.fn().mockResolvedValue(undefined),
 }));
 
 afterEach(() => {
   cleanup();
   requestUploadUrlMock.mockReset();
+  requestImageUploadUrlsMock.mockReset();
   submitPdfAnalysisMock.mockReset();
+  submitImageAnalysisMock.mockReset();
 });
 
 describe("<PdfUpload />", () => {
   it("renders a PDF input, submit button, and copy that states the 50 MB limit", () => {
     render(() => <PdfUpload />);
 
-    expect(screen.getByLabelText("PDF to analyze")).toBeTruthy();
+    expect(screen.getByLabelText("PDF or images to analyze")).toBeTruthy();
     expect(screen.getByTestId("pdf-upload-copy").textContent).toContain("50 MB");
     expect(
       (screen.getByTestId("vibecheck-pdf-input") as HTMLInputElement).accept,
     ).toContain("application/pdf");
     expect(
-      screen.getByRole("button", { name: "Upload PDF" }),
+      (screen.getByTestId("vibecheck-pdf-input") as HTMLInputElement).accept,
+    ).toContain("image/png");
+    expect(
+      screen.getByRole("button", { name: "Upload" }),
     ).toBeTruthy();
   });
 
@@ -96,21 +120,21 @@ describe("<PdfUpload />", () => {
 
     expect(requestUploadUrlMock).not.toHaveBeenCalled();
     expect((await screen.findByRole("alert")).textContent).toMatch(
-      /choose a pdf/i,
+      /image type is not supported/i,
     );
   });
 
   it("prevents submit when no file is selected", async () => {
     render(() => <PdfUpload />);
     const form = screen
-      .getByRole("button", { name: "Upload PDF" })
+      .getByRole("button", { name: "Upload" })
       .closest("form") as HTMLFormElement;
 
     fireEvent.submit(form);
 
     expect(requestUploadUrlMock).not.toHaveBeenCalled();
     expect((await screen.findByRole("alert")).textContent).toMatch(
-      /choose a pdf file/i,
+      /choose a pdf or image files/i,
     );
   });
 
@@ -144,7 +168,7 @@ describe("<PdfUpload />", () => {
 
     await waitFor(() => {
       expect(screen.getByTestId("vibecheck-pdf-submit").textContent).toBe(
-        "Preparing...",
+        "Preparing upload",
       );
     });
 
@@ -162,6 +186,78 @@ describe("<PdfUpload />", () => {
       expect(screen.getByTestId("vibecheck-pdf-submit").textContent).toBe(
         "Analyzing...",
       );
+    });
+  });
+
+  it("shows selected image count and rejects image batches over 45 MB", async () => {
+    render(() => <PdfUpload />);
+    const input = screen.getByTestId(
+      "vibecheck-pdf-input",
+    ) as HTMLInputElement;
+    fireEvent.change(input, {
+      target: {
+        files: [
+          new File([new Uint8Array(MAX_IMAGE_BATCH_BYTES + 1)], "scan.png", {
+            type: "image/png",
+          }),
+        ],
+      },
+    });
+
+    expect(screen.getByTestId("upload-selection-copy").textContent).toContain(
+      "1 images selected",
+    );
+    fireEvent.submit(input.closest("form") as HTMLFormElement);
+
+    expect(requestImageUploadUrlsMock).not.toHaveBeenCalled();
+    expect((await screen.findByRole("alert")).textContent).toContain("45 MB");
+  });
+
+  it("uploads image files in selected order and submits conversion", async () => {
+    requestImageUploadUrlsMock.mockResolvedValue({
+      job_id: "job-images",
+      images: [
+        { ordinal: 0, gcs_key: "k0", upload_url: "https://storage.example/0" },
+        { ordinal: 1, gcs_key: "k1", upload_url: "https://storage.example/1" },
+      ],
+    });
+    submitImageAnalysisMock.mockResolvedValue(undefined);
+
+    render(() => <PdfUpload />);
+    const input = screen.getByTestId(
+      "vibecheck-pdf-input",
+    ) as HTMLInputElement;
+    fireEvent.change(input, {
+      target: {
+        files: [
+          new File([new Uint8Array(8)], "first.png", { type: "image/png" }),
+          new File([new Uint8Array(8)], "second.jpg", { type: "image/jpeg" }),
+        ],
+      },
+    });
+    fireEvent.submit(input.closest("form") as HTMLFormElement);
+
+    await waitFor(() => {
+      expect(requestImageUploadUrlsMock).toHaveBeenCalledWith([
+        { filename: "first.png", content_type: "image/png", size_bytes: 8 },
+        { filename: "second.jpg", content_type: "image/jpeg", size_bytes: 8 },
+      ]);
+    });
+    const { uploadFileToSignedUrl } = await import("~/lib/pdf-upload");
+    await waitFor(() => {
+      expect(uploadFileToSignedUrl).toHaveBeenNthCalledWith(
+        1,
+        "https://storage.example/0",
+        expect.objectContaining({ name: "first.png" }),
+        "image/png",
+      );
+      expect(uploadFileToSignedUrl).toHaveBeenNthCalledWith(
+        2,
+        "https://storage.example/1",
+        expect.objectContaining({ name: "second.jpg" }),
+        "image/jpeg",
+      );
+      expect(submitImageAnalysisMock).toHaveBeenCalled();
     });
   });
 });

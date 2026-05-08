@@ -84,6 +84,12 @@ def _target_url(settings: Settings, job_id: UUID) -> str:
     return f"{base}/_internal/jobs/{job_id}/run"
 
 
+def _image_conversion_target_url(settings: Settings, job_id: UUID) -> str:
+    """Compose the internal image-conversion worker URL Cloud Tasks POSTs to."""
+    base = settings.VIBECHECK_SERVER_URL.rstrip("/")
+    return f"{base}/_internal/jobs/{job_id}/convert-images"
+
+
 def _require_settings(settings: Settings) -> None:
     """Fail loudly when Cloud Tasks settings are missing.
 
@@ -173,6 +179,68 @@ async def enqueue_job(
 
     logger.info(
         "enqueue_job publishing task_name=%s job_id=%s attempt_id=%s target=%s",
+        task_name,
+        job_id,
+        expected_attempt_id,
+        target_url,
+    )
+
+    await client.create_task(request={"parent": parent, "task": task})
+
+
+def build_image_conversion_task_name(job_id: UUID, expected_attempt_id: UUID) -> str:
+    """Compose the Cloud Tasks name for image-to-PDF conversion."""
+    return f"vibecheck-image-convert-{job_id}-{expected_attempt_id}"
+
+
+async def enqueue_image_conversion(
+    job_id: UUID,
+    expected_attempt_id: UUID,
+    settings: Settings,
+) -> None:
+    """Publish a Cloud Task that converts uploaded images into a generated PDF."""
+    _require_settings(settings)
+
+    try:
+        client = _get_async_client()
+    except ImportError as exc:  # pragma: no cover — prod-only path
+        raise RuntimeError(
+            "google-cloud-tasks is not installed; enqueue_image_conversion cannot publish"
+        ) from exc
+
+    parent = client.queue_path(
+        settings.VIBECHECK_TASKS_PROJECT,
+        settings.VIBECHECK_TASKS_LOCATION,
+        settings.VIBECHECK_TASKS_QUEUE,
+    )
+    task_name = build_image_conversion_task_name(job_id, expected_attempt_id)
+    fq_name = f"{parent}/tasks/{task_name}"
+    target_url = _image_conversion_target_url(settings, job_id)
+
+    body = json.dumps(
+        {
+            "job_id": str(job_id),
+            "expected_attempt_id": str(expected_attempt_id),
+        }
+    ).encode("utf-8")
+
+    task: dict[str, Any] = {
+        "name": fq_name,
+        "dispatch_deadline": {"seconds": _DISPATCH_DEADLINE_SECONDS},
+        "http_request": {
+            "http_method": "POST",
+            "url": target_url,
+            "headers": {"Content-Type": "application/json"},
+            "body": body,
+            "oidc_token": {
+                "service_account_email": settings.VIBECHECK_TASKS_ENQUEUER_SA,
+                "audience": settings.VIBECHECK_SERVER_URL,
+            },
+        },
+    }
+
+    logger.info(
+        "enqueue_image_conversion publishing task_name=%s job_id=%s attempt_id=%s target=%s",
         task_name,
         job_id,
         expected_attempt_id,
