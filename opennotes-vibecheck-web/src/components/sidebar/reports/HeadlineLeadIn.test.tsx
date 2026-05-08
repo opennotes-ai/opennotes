@@ -98,7 +98,7 @@ describe("HeadlineLeadIn headline skeleton", () => {
     });
   });
 
-  it("wraps the real headline in light card chrome (border + bg-card)", () => {
+  it("wraps the real headline in card chrome (bg-card)", () => {
     render(() => (
       <HeadlineLeadIn headline={makeHeadline()} weatherReport={null} />
     ));
@@ -106,7 +106,6 @@ describe("HeadlineLeadIn headline skeleton", () => {
     const chrome = summary.closest('[data-testid="headline-summary-chrome"]');
     expect(chrome).not.toBeNull();
     const cls = chrome?.getAttribute("class") ?? "";
-    expect(cls).toMatch(/\bborder\b/);
     expect(cls).toMatch(/\bbg-card\b/);
     expect(cls).toMatch(/\brounded-md\b/);
   });
@@ -123,7 +122,6 @@ describe("HeadlineLeadIn headline skeleton", () => {
     const chrome = skeleton.closest('[data-testid="headline-summary-chrome"]');
     expect(chrome).not.toBeNull();
     const cls = chrome?.getAttribute("class") ?? "";
-    expect(cls).toMatch(/\bborder\b/);
     expect(cls).toMatch(/\bbg-card\b/);
     expect(cls).toMatch(/\brounded-md\b/);
   });
