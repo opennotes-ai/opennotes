@@ -37,7 +37,7 @@ async def open_or_combined_feedback(
                 INSERT INTO vibecheck_feedback
                     (id, page_path, user_agent, referrer, uid, bell_location,
                      initial_type, email, message, final_type, submitted_at)
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, now())
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, pg_catalog.now())
                 """,
                 feedback_id,
                 payload.page_path,
@@ -84,7 +84,7 @@ async def submit_feedback(
             SET email = $1,
                 message = $2,
                 final_type = $3,
-                submitted_at = now()
+                submitted_at = pg_catalog.now()
             WHERE id = $4
             """,
             payload.email,

@@ -88,10 +88,12 @@ def test_malformed_cookie_regenerates_uuid7(client: TestClient) -> None:
 def test_concurrent_requests_have_independent_uids() -> None:
     app = _make_app()
 
-    with TestClient(app, raise_server_exceptions=True) as c1:
-        with TestClient(app, raise_server_exceptions=True) as c2:
-            r1 = c1.get("/uid", cookies={})
-            r2 = c2.get("/uid", cookies={})
+    with (
+        TestClient(app, raise_server_exceptions=True) as c1,
+        TestClient(app, raise_server_exceptions=True) as c2,
+    ):
+        r1 = c1.get("/uid", cookies={})
+        r2 = c2.get("/uid", cookies={})
 
     uid1 = UUID(r1.cookies[UID_COOKIE_NAME])
     uid2 = UUID(r2.cookies[UID_COOKIE_NAME])

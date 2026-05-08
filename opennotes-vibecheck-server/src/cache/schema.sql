@@ -1051,7 +1051,7 @@ $$;
 
 CREATE TABLE IF NOT EXISTS public.vibecheck_feedback (
   id              uuid PRIMARY KEY,
-  created_at      timestamptz NOT NULL DEFAULT now(),
+  created_at      timestamptz NOT NULL DEFAULT pg_catalog.now(),
   page_path       text NOT NULL,
   user_agent      text NOT NULL,
   referrer        text NOT NULL DEFAULT '',
