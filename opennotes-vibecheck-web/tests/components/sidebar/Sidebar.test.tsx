@@ -205,6 +205,50 @@ describe("<Sidebar /> payload synthesis fallback", () => {
     ).toContain("1.0s");
   });
 
+  it("renders legacy section-slot video moderation frame findings", () => {
+    render(() => (
+      <Sidebar
+        payload={null}
+        sections={
+          {
+            safety__video_moderation: {
+              state: "done",
+              attempt_id: "legacy-attempt",
+              data: {
+                matches: [
+                  {
+                    utterance_id: "utt-video",
+                    video_url: "https://video.example.test/legacy.mp4",
+                    flagged: true,
+                    max_likelihood: 1,
+                    frame_findings: [
+                      {
+                        start_offset_ms: 2500,
+                        end_offset_ms: 2500,
+                        adult: 0,
+                        violence: 1,
+                        racy: 0,
+                        medical: 0,
+                        spoof: 0,
+                        flagged: true,
+                        max_likelihood: 1,
+                      },
+                    ],
+                  },
+                ],
+              },
+            },
+          } as unknown as JobState["sections"]
+        }
+      />
+    ));
+
+    expect(getSlotState("safety__video_moderation")).toBe("done");
+    expect(
+      screen.getByTestId("report-safety__video_moderation").textContent,
+    ).toContain("2.5s");
+  });
+
   it("merges evidence and premises slots into the rendered claims report", () => {
     const sections = {
       facts_claims__dedup: {

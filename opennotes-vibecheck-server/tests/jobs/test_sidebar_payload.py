@@ -588,6 +588,43 @@ class TestAssembleSidebarPayload:
         assert len(sidebar.video_moderation.matches) == 1
         assert sidebar.video_moderation.matches[0].flagged is True
 
+    def test_legacy_video_moderation_frame_findings_flow_through(self):
+        sections = _minimal_done_sections()
+        sections[SectionSlug.SAFETY_VIDEO_MODERATION] = _done_slot(
+            {
+                "matches": [
+                    {
+                        "utterance_id": "u2",
+                        "video_url": "https://example.com/legacy.mp4",
+                        "frame_findings": [
+                            {
+                                "start_offset_ms": 1250,
+                                "end_offset_ms": 1250,
+                                "adult": 0.0,
+                                "violence": 1.0,
+                                "racy": 0.0,
+                                "medical": 0.0,
+                                "spoof": 0.0,
+                                "flagged": True,
+                                "max_likelihood": 1.0,
+                            }
+                        ],
+                        "flagged": True,
+                        "max_likelihood": 1.0,
+                    }
+                ]
+            }
+        )
+
+        sidebar = assemble_sidebar_payload("https://example.com", sections)
+        payload = SidebarPayload.model_validate(sidebar.model_dump(mode="json"))
+
+        assert len(payload.video_moderation.matches) == 1
+        match = payload.video_moderation.matches[0]
+        assert match.flagged is True
+        assert len(match.segment_findings) == 1
+        assert match.segment_findings[0].start_offset_ms == 1250
+
 
 class TestPayloadForUrlCache:
     def test_strips_utterance_anchors(self):

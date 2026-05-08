@@ -10,7 +10,7 @@ from __future__ import annotations
 from enum import StrEnum
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 
 
 class SafetyLevel(StrEnum):
@@ -91,6 +91,10 @@ class VideoModerationMatch(BaseModel):
 
     utterance_id: str
     video_url: str
-    segment_findings: list[VideoSegmentFinding]
+    segment_findings: list[VideoSegmentFinding] = Field(
+        validation_alias=AliasChoices("segment_findings", "frame_findings")
+    )
     flagged: bool
     max_likelihood: float
+
+    model_config = ConfigDict(populate_by_name=True)

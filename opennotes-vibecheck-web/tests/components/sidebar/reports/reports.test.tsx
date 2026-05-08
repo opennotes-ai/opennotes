@@ -377,6 +377,42 @@ describe("<VideoModerationReport />", () => {
     );
   });
 
+  it("renders legacy video findings that still use frame_findings", () => {
+    const matches = [
+      {
+        utterance_id: "utt-legacy",
+        video_url: "https://video.example.test/legacy.mp4",
+        flagged: true,
+        max_likelihood: 1,
+        frame_findings: [
+          {
+            start_offset_ms: 2500,
+            end_offset_ms: 2500,
+            adult: 0,
+            violence: 1,
+            racy: 0,
+            medical: 0,
+            spoof: 0,
+            flagged: true,
+            max_likelihood: 1,
+          },
+        ],
+      },
+    ] as unknown as VideoModerationMatch[];
+
+    render(() => <VideoModerationReport matches={matches} />);
+
+    expect(screen.getByTestId("video-moderation-match").textContent).toContain(
+      "https://video.example.test/legacy.mp4",
+    );
+    expect(screen.getByTestId("video-frame-finding").textContent).toContain(
+      "2.5s",
+    );
+    expect(screen.getByTestId("video-frame-category").textContent).toBe(
+      "violence",
+    );
+  });
+
   it("colors video frame SafeSearch categories by harm and sensitive rules", () => {
     const matches: VideoModerationMatch[] = [
       {
