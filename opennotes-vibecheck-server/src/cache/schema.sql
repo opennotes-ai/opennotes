@@ -104,6 +104,10 @@ GRANT EXECUTE ON FUNCTION public.exec_sql(text) TO service_role;
 CREATE EXTENSION IF NOT EXISTS pg_cron;
 CREATE SCHEMA IF NOT EXISTS extensions;
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp" WITH SCHEMA extensions;
+-- TASK-1588.17 AC#7: pgcrypto provides gen_random_bytes() used by the
+-- extensions.uuidv7() generator below. Supabase installs pgcrypto by
+-- default; the IF NOT EXISTS keeps re-apply idempotent on dev/test.
+CREATE EXTENSION IF NOT EXISTS pgcrypto WITH SCHEMA extensions;
 
 -- =========================================================================
 -- vibecheck_analyses (legacy 72h cache, locked down)
@@ -1049,8 +1053,49 @@ $$;
 
 -- ============= VIBECHECK FEEDBACK =============
 
+-- TASK-1588.17 AC#7: UUID v7 generator for the feedback id default. Postgres
+-- 16 (Supabase) does not ship native uuidv7(); pgcrypto's gen_random_uuid()
+-- emits v4. We define a small SQL function in the `extensions` schema so the
+-- DEFAULT clause below can omit explicit id generation in the route. Bytes:
+-- 48-bit unix-ms timestamp || 12 random bits || version=7 || 2 bits || 62
+-- random bits, packed into the 128-bit UUID layout. The function is
+-- IMMUTABLE-incompatible (uses now() + random()) so no IMMUTABLE marker.
+CREATE OR REPLACE FUNCTION extensions.uuidv7()
+RETURNS uuid
+LANGUAGE plpgsql
+VOLATILE
+PARALLEL SAFE
+AS $$
+DECLARE
+    unix_ms     bigint;
+    ts_bytes    bytea;
+    rand_bytes  bytea;
+    out_bytes   bytea;
+    byte6       int;
+    byte8       int;
+BEGIN
+    unix_ms := (extract(epoch from clock_timestamp()) * 1000)::bigint;
+    -- 8-byte big-endian; the low 6 bytes hold the 48-bit ms timestamp.
+    ts_bytes := substring(int8send(unix_ms) FROM 3 FOR 6);
+    rand_bytes := extensions.gen_random_bytes(10);
+    out_bytes := ts_bytes || rand_bytes;
+
+    -- Byte 6 (0-indexed): set high nibble to 0x7 (UUID version=7),
+    -- preserve low nibble of the random byte so it stays random.
+    byte6 := get_byte(out_bytes, 6);
+    out_bytes := set_byte(out_bytes, 6, (byte6 & 15) | 112);
+
+    -- Byte 8 (0-indexed): set top two bits to 10b (RFC 4122 variant),
+    -- preserve low six bits.
+    byte8 := get_byte(out_bytes, 8);
+    out_bytes := set_byte(out_bytes, 8, (byte8 & 63) | 128);
+
+    RETURN encode(out_bytes, 'hex')::uuid;
+END;
+$$;
+
 CREATE TABLE IF NOT EXISTS public.vibecheck_feedback (
-  id              uuid PRIMARY KEY,
+  id              uuid PRIMARY KEY DEFAULT extensions.uuidv7(),
   created_at      timestamptz NOT NULL DEFAULT pg_catalog.now(),
   page_path       text NOT NULL,
   user_agent      text NOT NULL,
@@ -1063,6 +1108,14 @@ CREATE TABLE IF NOT EXISTS public.vibecheck_feedback (
   final_type      text CHECK (final_type IN ('thumbs_up','thumbs_down','message')),
   submitted_at    timestamptz
 );
+
+-- TASK-1588.17 AC#7: idempotent re-apply on a pre-existing table where the
+-- DEFAULT clause above was missing. CREATE TABLE IF NOT EXISTS leaves an
+-- existing column shape untouched, so the SET DEFAULT must be applied
+-- explicitly so legacy rows can omit `id` from INSERT statements.
+ALTER TABLE public.vibecheck_feedback
+  ALTER COLUMN id SET DEFAULT extensions.uuidv7();
+
 ALTER TABLE public.vibecheck_feedback ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.vibecheck_feedback FORCE ROW LEVEL SECURITY;
 -- TASK-1588.13: anon is strictly write-only. The earlier GRANT included

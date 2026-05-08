@@ -800,3 +800,32 @@ async def test_vibecheck_feedback_check_constraint_rejects_invalid_initial_type(
                  'bottom-right', 'lol')
             """
         )
+
+
+async def test_vibecheck_feedback_id_default_emits_uuid_v7(
+    full_schema_conn: asyncpg.Connection,
+) -> None:
+    """TASK-1588.17 AC#7: vibecheck_feedback.id DEFAULT generates a UUID v7
+    so the INSERT path can omit explicit id generation. Asserts both that
+    INSERT-without-id succeeds AND that the version nibble is 7 (orderable).
+    """
+    await _apply_full_schema_as_superuser(full_schema_conn)
+
+    feedback_id = await full_schema_conn.fetchval(
+        """
+        INSERT INTO public.vibecheck_feedback
+            (page_path, user_agent, uid, bell_location, initial_type)
+        VALUES
+            ('/page', 'ua', '00000000-0000-0000-0000-000000000040',
+             'bottom-right', 'thumbs_up')
+        RETURNING id
+        """
+    )
+    assert feedback_id is not None
+    from uuid import UUID as _UUID
+
+    parsed = _UUID(str(feedback_id))
+    assert parsed.version == 7, (
+        f"Expected vibecheck_feedback.id DEFAULT to emit UUID v7; "
+        f"got version {parsed.version} from id={feedback_id}"
+    )

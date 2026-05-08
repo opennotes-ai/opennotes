@@ -1,6 +1,5 @@
 from uuid import UUID
 
-import uuid_utils
 from fastapi import APIRouter, Body, HTTPException, Request
 from slowapi import Limiter
 from slowapi.util import get_remote_address
@@ -42,21 +41,24 @@ async def open_or_combined_feedback(
     request: Request,
     payload: FeedbackRequest = Body(...),
 ) -> FeedbackOpenResponse:
+    # TASK-1588.17 AC#7 + AC#20: id generation lives on the DB
+    # (DEFAULT extensions.uuidv7() in schema.sql) so the route doesn't pay
+    # the UUID(str(uuid_utils.uuid7())) round-trip and a cross-driver UUID
+    # type conversion. RETURNING id reads the server-generated value back.
     uid = get_uid(request)
-    feedback_id = UUID(str(uuid_utils.uuid7()))
     pool = _get_db_pool(request)
 
     if payload.kind == "combined":
         assert isinstance(payload, FeedbackCombinedRequest)
         async with pool.acquire() as conn:
-            await conn.execute(
+            feedback_id = await conn.fetchval(
                 """
                 INSERT INTO vibecheck_feedback
-                    (id, page_path, user_agent, referrer, uid, bell_location,
+                    (page_path, user_agent, referrer, uid, bell_location,
                      initial_type, email, message, final_type, submitted_at)
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, pg_catalog.now())
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, pg_catalog.now())
+                RETURNING id
                 """,
-                feedback_id,
                 payload.page_path,
                 payload.user_agent,
                 payload.referrer,
@@ -69,13 +71,13 @@ async def open_or_combined_feedback(
             )
     else:
         async with pool.acquire() as conn:
-            await conn.execute(
+            feedback_id = await conn.fetchval(
                 """
                 INSERT INTO vibecheck_feedback
-                    (id, page_path, user_agent, referrer, uid, bell_location, initial_type)
-                VALUES ($1, $2, $3, $4, $5, $6, $7)
+                    (page_path, user_agent, referrer, uid, bell_location, initial_type)
+                VALUES ($1, $2, $3, $4, $5, $6)
+                RETURNING id
                 """,
-                feedback_id,
                 payload.page_path,
                 payload.user_agent,
                 payload.referrer,
@@ -84,6 +86,7 @@ async def open_or_combined_feedback(
                 payload.initial_type,
             )
 
+    assert isinstance(feedback_id, UUID)
     return FeedbackOpenResponse(id=feedback_id)
 
 
