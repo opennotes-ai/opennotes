@@ -166,7 +166,7 @@ function HelpPopover(props: {
             type="button"
             data-testid={props.triggerTestId}
             aria-label={`What does ${props.label} mean?`}
-            class="size-6 shrink-0 text-muted-foreground"
+            class="size-6 shrink-0 text-muted-foreground hover:bg-muted/60 dark:hover:bg-muted hover:text-foreground"
           >
             <CircleHelp
               aria-hidden="true"
