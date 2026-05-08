@@ -1,6 +1,7 @@
 import { For, Show, createMemo } from "solid-js";
 import type { components } from "~/lib/generated-types";
 import ExpandableText from "../ExpandableText";
+import { FeedbackBell } from "../../feedback/FeedbackBell";
 
 type FactCheckMatch = components["schemas"]["FactCheckMatch"];
 
@@ -22,7 +23,7 @@ export default function KnownMisinfoReport(props: KnownMisinfoReportProps) {
   });
 
   return (
-    <div data-testid="report-facts_claims__known_misinfo" class="space-y-2">
+    <div data-testid="report-facts_claims__known_misinfo" class="relative space-y-2">
       <p class="text-[11px] text-muted-foreground">
         {grouped().length} claim{grouped().length === 1 ? "" : "s"}
       </p>
@@ -76,6 +77,7 @@ export default function KnownMisinfoReport(props: KnownMisinfoReportProps) {
           </For>
         </ul>
       </Show>
+      <FeedbackBell bell_location="card:known-misinfo" />
     </div>
   );
 }

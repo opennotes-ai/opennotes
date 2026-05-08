@@ -1,5 +1,6 @@
 import { Show, type JSX } from "solid-js";
 import type { ResolvedHeadline } from "~/lib/headline-fallback";
+import { FeedbackBell } from "../../feedback/FeedbackBell";
 
 export interface HeadlineSummaryReportProps {
   headline: ResolvedHeadline | null;
@@ -15,7 +16,7 @@ export default function HeadlineSummaryReport(
           data-testid="headline-summary"
           data-headline-kind={h().kind}
           data-headline-source={h().source}
-          class="w-full space-y-1"
+          class="relative w-full space-y-1"
         >
           <p
             data-testid="headline-summary-text"
@@ -23,6 +24,7 @@ export default function HeadlineSummaryReport(
           >
             {h().text}
           </p>
+          <FeedbackBell bell_location="card:headline-summary" />
         </section>
       )}
     </Show>

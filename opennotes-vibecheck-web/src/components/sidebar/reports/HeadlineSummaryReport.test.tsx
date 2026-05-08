@@ -127,7 +127,11 @@ describe("HeadlineSummaryReport", () => {
 
   it("renders no role='button' (no ExpandableText affordance)", () => {
     render(() => <HeadlineSummaryReport headline={makeHeadline()} />);
-    expect(screen.queryAllByRole("button").length).toBe(0);
+    const buttons = screen.queryAllByRole("button");
+    const nonBellButtons = buttons.filter(
+      (btn) => !btn.getAttribute("aria-label")?.startsWith("Send feedback about"),
+    );
+    expect(nonBellButtons.length).toBe(0);
   });
 
   it("renders no element with data-truncated (no read-more chrome)", () => {

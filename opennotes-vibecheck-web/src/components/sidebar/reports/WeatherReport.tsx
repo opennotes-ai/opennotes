@@ -1,5 +1,6 @@
 import { For, Show, type JSX } from "solid-js";
 import { Card, CardContent } from "@opennotes/ui/components/ui/card";
+import { FeedbackBell } from "../../feedback/FeedbackBell";
 import {
   Table,
   TableBody,
@@ -233,7 +234,7 @@ export default function WeatherReport(props: WeatherReportProps): JSX.Element {
       fallback={<WeatherReportSkeleton class={props.class} />}
     >
       {(report) => (
-        <Card data-testid="weather-report" class={props.class}>
+        <Card data-testid="weather-report" class={`relative ${props.class ?? ""}`}>
           <CardContent class="p-2">
             <Table>
               <TableBody>
@@ -243,6 +244,7 @@ export default function WeatherReport(props: WeatherReportProps): JSX.Element {
               </TableBody>
             </Table>
           </CardContent>
+          <FeedbackBell bell_location="card:weather" />
         </Card>
       )}
     </Show>

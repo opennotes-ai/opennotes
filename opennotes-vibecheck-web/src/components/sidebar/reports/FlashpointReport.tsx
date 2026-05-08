@@ -2,6 +2,7 @@ import { For, Show, type JSX } from "solid-js";
 import type { components } from "~/lib/generated-types";
 import ExpandableText from "../ExpandableText";
 import UtteranceRef from "../UtteranceRef";
+import { FeedbackBell } from "../../feedback/FeedbackBell";
 
 type FlashpointMatch = components["schemas"]["FlashpointMatch"];
 type RiskLevel = components["schemas"]["RiskLevel"];
@@ -47,7 +48,7 @@ export default function FlashpointReport(
   const matches = (): FlashpointMatch[] => props.matches ?? [];
 
   return (
-    <div data-testid="report-tone_dynamics__flashpoint" class="space-y-3">
+    <div data-testid="report-tone_dynamics__flashpoint" class="relative space-y-3">
       <Show
         when={matches().length > 0}
         fallback={
@@ -94,6 +95,7 @@ export default function FlashpointReport(
           </For>
         </ul>
       </Show>
+      <FeedbackBell bell_location="card:flashpoint" />
     </div>
   );
 }

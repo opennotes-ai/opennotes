@@ -2,6 +2,7 @@ import { For, Show } from "solid-js";
 import type { components } from "~/lib/generated-types";
 import ExpandableText from "../ExpandableText";
 import UtteranceRef from "../UtteranceRef";
+import { FeedbackBell } from "../../feedback/FeedbackBell";
 
 type SubjectiveClaim = components["schemas"]["SubjectiveClaim"];
 
@@ -17,7 +18,7 @@ export default function SubjectiveReport(props: SubjectiveReportProps) {
   return (
     <div
       data-testid="report-opinions_sentiments__subjective"
-      class="space-y-2"
+      class="relative space-y-2"
     >
       <p class="text-[11px] text-muted-foreground">
         {claims().length} claim{claims().length === 1 ? "" : "s"}
@@ -67,6 +68,7 @@ export default function SubjectiveReport(props: SubjectiveReportProps) {
           </For>
         </ul>
       </Show>
+      <FeedbackBell bell_location="card:subjective" />
     </div>
   );
 }

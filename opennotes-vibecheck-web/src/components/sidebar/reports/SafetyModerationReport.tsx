@@ -3,6 +3,7 @@ import type { components } from "~/lib/generated-types";
 import { categoryColor, categoryColorClasses } from "~/lib/category-colors";
 import ExpandableText from "../ExpandableText";
 import UtteranceRef from "../UtteranceRef";
+import { FeedbackBell } from "../../feedback/FeedbackBell";
 
 type HarmfulContentMatch = components["schemas"]["HarmfulContentMatch"];
 type HarmfulContentSource = HarmfulContentMatch["source"];
@@ -49,7 +50,7 @@ export default function SafetyModerationReport(
   });
 
   return (
-    <div data-testid="report-safety__moderation" class="space-y-2">
+    <div data-testid="report-safety__moderation" class="relative space-y-2">
       <p class="text-[11px] text-muted-foreground">
         <span data-testid="safety-count">{matches().length} flagged</span>
       </p>
@@ -166,6 +167,7 @@ export default function SafetyModerationReport(
           </For>
         </div>
       </Show>
+      <FeedbackBell bell_location="card:safety-moderation" />
     </div>
   );
 }

@@ -4,6 +4,7 @@ import { Link } from "@opennotes/ui/components/ui/link";
 import type { PublicErrorCode } from "~/lib/api-client.server";
 import type { components } from "~/lib/generated-types";
 import { analyzeAction } from "~/routes/analyze.data";
+import { FeedbackBell } from "./feedback/FeedbackBell";
 
 type WebRiskFinding = components["schemas"]["WebRiskFinding"];
 
@@ -128,7 +129,7 @@ export default function JobFailureCard(props: JobFailureCardProps): JSX.Element 
       role="alert"
       data-testid="job-failure-card"
       data-error-code={props.errorCode ?? "internal"}
-      class="flex w-full flex-col gap-4 rounded-lg border border-destructive/40 bg-destructive/5 p-6"
+      class="relative flex w-full flex-col gap-4 rounded-lg border border-destructive/40 bg-destructive/5 p-6"
     >
       <header class="flex flex-col gap-1">
         <p class="text-sm font-semibold text-destructive">
@@ -209,6 +210,7 @@ export default function JobFailureCard(props: JobFailureCardProps): JSX.Element 
           Back to home
         </Link>
       </div>
+      <FeedbackBell bell_location="card:job-failure" />
     </section>
   );
 }

@@ -7,6 +7,7 @@ import { For, Show } from "solid-js";
 import type { RecentAnalysis } from "~/lib/api-client.server";
 import { formatWeatherReadout } from "~/lib/weather-labels";
 import GalleryHoverCard from "./GalleryHoverCard";
+import { FeedbackBell } from "./feedback/FeedbackBell";
 
 interface RecentlyVibeCheckedProps {
   analyses: RecentAnalysis[];
@@ -44,42 +45,45 @@ export default function RecentlyVibeChecked(props: RecentlyVibeCheckedProps) {
         <div class="grid grid-cols-2 gap-4 sm:grid-cols-3">
           <For each={props.analyses}>
             {(item) => (
-              <GalleryHoverCard
-                item={item}
-                data-testid="recent-analysis-card"
-                href={`/analyze?job=${item.job_id}`}
-                class="group block overflow-hidden rounded-lg border border-border transition-colors hover:border-foreground/30"
-              >
-                <div
-                  role="img"
-                  aria-label={item.page_title ?? item.source_url}
-                  class="h-28 w-full"
-                  style={{
-                    "background-image": `url(${item.screenshot_url})`,
-                    "background-size": "200%",
-                    "background-position": "top center",
-                    "background-repeat": "no-repeat",
-                  }}
-                />
-                <div class="space-y-1 p-3">
-                  <p class="line-clamp-2 text-sm font-medium leading-snug">
-                    {item.page_title ?? item.source_url}
-                  </p>
-                  <p class="line-clamp-2 text-xs text-muted-foreground">
-                    {item.preview_description}
-                  </p>
-                  <Show when={item.weather_report}>
-                    {(weatherReport) => (
-                      <p
-                        data-testid="recent-analysis-weather"
-                        class="truncate text-[11px] text-muted-foreground"
-                      >
-                        {formatWeatherReadout(weatherReport())}
-                      </p>
-                    )}
-                  </Show>
-                </div>
-              </GalleryHoverCard>
+              <div class="relative">
+                <GalleryHoverCard
+                  item={item}
+                  data-testid="recent-analysis-card"
+                  href={`/analyze?job=${item.job_id}`}
+                  class="group block overflow-hidden rounded-lg border border-border transition-colors hover:border-foreground/30"
+                >
+                  <div
+                    role="img"
+                    aria-label={item.page_title ?? item.source_url}
+                    class="h-28 w-full"
+                    style={{
+                      "background-image": `url(${item.screenshot_url})`,
+                      "background-size": "200%",
+                      "background-position": "top center",
+                      "background-repeat": "no-repeat",
+                    }}
+                  />
+                  <div class="space-y-1 p-3">
+                    <p class="line-clamp-2 text-sm font-medium leading-snug">
+                      {item.page_title ?? item.source_url}
+                    </p>
+                    <p class="line-clamp-2 text-xs text-muted-foreground">
+                      {item.preview_description}
+                    </p>
+                    <Show when={item.weather_report}>
+                      {(weatherReport) => (
+                        <p
+                          data-testid="recent-analysis-weather"
+                          class="truncate text-[11px] text-muted-foreground"
+                        >
+                          {formatWeatherReadout(weatherReport())}
+                        </p>
+                      )}
+                    </Show>
+                  </div>
+                </GalleryHoverCard>
+                <FeedbackBell bell_location="home:recently-vibe-checked" />
+              </div>
             )}
           </For>
         </div>

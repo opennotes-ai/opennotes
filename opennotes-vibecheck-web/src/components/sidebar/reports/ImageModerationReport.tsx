@@ -1,6 +1,7 @@
 import { For, Show, type JSX } from "solid-js";
 import type { components } from "~/lib/generated-types";
 import { categoryColor, categoryColorClasses } from "~/lib/category-colors";
+import { FeedbackBell } from "../../feedback/FeedbackBell";
 
 type ImageModerationMatch = components["schemas"]["ImageModerationMatch"];
 
@@ -93,7 +94,7 @@ export default function ImageModerationReport(
     `${clearMatches().length} clear image${clearMatches().length === 1 ? "" : "s"}`;
 
   return (
-    <div data-testid="report-safety__image_moderation" class="space-y-2">
+    <div data-testid="report-safety__image_moderation" class="relative space-y-2">
       <p class="text-[11px] text-muted-foreground">
         {matches().length} image{matches().length === 1 ? "" : "s"} checked
       </p>
@@ -136,6 +137,7 @@ export default function ImageModerationReport(
           </Show>
         </div>
       </Show>
+      <FeedbackBell bell_location="card:image-moderation" />
     </div>
   );
 }
