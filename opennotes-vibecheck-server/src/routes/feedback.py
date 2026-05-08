@@ -97,9 +97,20 @@ async def submit_feedback(
     feedback_id: UUID,
     payload: FeedbackSubmitRequest,
 ) -> dict:
+    # TASK-1588.17 AC#8: use RETURNING id rather than parsing the asyncpg
+    # command tag ("UPDATE 0") string. fetchval returns the id of the
+    # updated row or None when zero rows match — driver-shape agnostic.
+    #
+    # TASK-1588.17 AC#9: bind the row uid against the cookie uid. The
+    # backend already runs on service_role (RLS bypass), but a scripted
+    # client on the same browser session could otherwise PATCH any row
+    # whose id leaked to it. Adding `AND uid = $5` makes the WHERE clause
+    # an authorization check, not just a row lookup; mismatched uids
+    # collapse to "not found" so we don't leak existence either.
+    uid = get_uid(request)
     pool = _get_db_pool(request)
     async with pool.acquire() as conn:
-        result = await conn.execute(
+        updated_id = await conn.fetchval(
             """
             UPDATE vibecheck_feedback
             SET email = $1,
@@ -107,12 +118,15 @@ async def submit_feedback(
                 final_type = $3,
                 submitted_at = pg_catalog.now()
             WHERE id = $4
+              AND uid = $5
+            RETURNING id
             """,
             payload.email,
             payload.message,
             payload.final_type,
             feedback_id,
+            uid,
         )
-    if result == "UPDATE 0":
+    if updated_id is None:
         raise HTTPException(status_code=404, detail="feedback not found")
     return {}
