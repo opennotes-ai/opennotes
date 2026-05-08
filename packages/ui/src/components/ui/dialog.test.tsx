@@ -43,9 +43,9 @@ describe("<Dialog /> source contract", () => {
     expect(dialogSource).toContain("bg-background")
   })
 
-  it("includes data-[expanded] animate-in and data-[closed] animate-out transitions", () => {
-    expect(dialogSource).toContain("data-[expanded]")
-    expect(dialogSource).toContain("data-[closed]")
+  it("includes data-[expanded=] animate-in and data-[closed=] animate-out transitions (matches sheet's modifier syntax)", () => {
+    expect(dialogSource).toContain("data-[expanded=]")
+    expect(dialogSource).toContain("data-[closed=]")
     expect(dialogSource).toContain("animate-in")
     expect(dialogSource).toContain("animate-out")
   })

@@ -38,9 +38,9 @@ describe("<Drawer /> source contract", () => {
     expect(drawerSource).toContain("slide-out-to-bottom")
   })
 
-  it("includes data-[expanded] animate-in and data-[closed] animate-out transitions", () => {
-    expect(drawerSource).toContain("data-[expanded]")
-    expect(drawerSource).toContain("data-[closed]")
+  it("includes data-[expanded=] animate-in and data-[closed=] animate-out transitions (matches sheet's modifier syntax)", () => {
+    expect(drawerSource).toContain("data-[expanded=]")
+    expect(drawerSource).toContain("data-[closed=]")
     expect(drawerSource).toContain("animate-in")
     expect(drawerSource).toContain("animate-out")
   })

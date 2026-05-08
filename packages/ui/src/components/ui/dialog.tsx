@@ -21,7 +21,7 @@ const DialogOverlay = <T extends ValidComponent = "div">(
   return (
     <DialogPrimitive.Overlay
       class={cn(
-        "fixed inset-0 z-50 bg-black/80 data-[expanded]:animate-in data-[closed]:animate-out data-[closed]:fade-out-0 data-[expanded]:fade-in-0",
+        "fixed inset-0 z-50 bg-black/80 data-[expanded=]:animate-in data-[closed=]:animate-out data-[closed=]:fade-out-0 data-[expanded=]:fade-in-0",
         local.class
       )}
       {...others}
@@ -45,7 +45,7 @@ const DialogContent = <T extends ValidComponent = "div">(
         <DialogPrimitive.Content
           data-slot="dialog-content"
           class={cn(
-            "relative z-50 grid w-full gap-4 bg-background p-6 shadow-lg duration-200 data-[expanded]:animate-in data-[closed]:animate-out data-[closed]:fade-out-0 data-[expanded]:fade-in-0 data-[closed]:zoom-out-95 data-[expanded]:zoom-in-95 sm:rounded-lg sm:max-w-[425px]",
+            "relative z-50 grid w-full gap-4 bg-background p-6 shadow-lg duration-200 data-[expanded=]:animate-in data-[closed=]:animate-out data-[closed=]:fade-out-0 data-[expanded=]:fade-in-0 data-[closed=]:zoom-out-95 data-[expanded=]:zoom-in-95 sm:rounded-lg sm:max-w-[425px]",
             local.class
           )}
           {...others}

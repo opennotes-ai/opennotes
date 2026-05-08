@@ -21,7 +21,7 @@ const DrawerOverlay = <T extends ValidComponent = "div">(
   return (
     <DialogPrimitive.Overlay
       class={cn(
-        "fixed inset-0 z-50 bg-black/80 data-[expanded]:animate-in data-[closed]:animate-out data-[closed]:fade-out-0 data-[expanded]:fade-in-0",
+        "fixed inset-0 z-50 bg-black/80 data-[expanded=]:animate-in data-[closed=]:animate-out data-[closed=]:fade-out-0 data-[expanded=]:fade-in-0",
         local.class
       )}
       {...others}
@@ -44,7 +44,7 @@ const DrawerContent = <T extends ValidComponent = "div">(
       <DialogPrimitive.Content
         data-slot="drawer-content"
         class={cn(
-          "fixed inset-x-0 bottom-0 z-50 flex flex-col gap-4 bg-background p-6 shadow-lg border-t max-h-[90vh] overflow-y-auto data-[expanded]:animate-in data-[closed]:animate-out data-[closed]:slide-out-to-bottom data-[expanded]:slide-in-from-bottom duration-300",
+          "fixed inset-x-0 bottom-0 z-50 flex flex-col gap-4 bg-background p-6 shadow-lg border-t max-h-[90vh] overflow-y-auto data-[expanded=]:animate-in data-[closed=]:animate-out data-[closed=]:slide-out-to-bottom data-[expanded=]:slide-in-from-bottom duration-300",
           local.class
         )}
         {...others}
