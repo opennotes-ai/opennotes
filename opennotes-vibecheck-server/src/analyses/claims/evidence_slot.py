@@ -9,7 +9,11 @@ from uuid import UUID
 from pydantic import ValidationError
 
 from src.analyses.claims._claims_schemas import ClaimCategory, ClaimsReport
-from src.analyses.claims.evidence import ExternalEvidenceFetcher, _UtteranceMeta, build_supporting_facts_by_claim
+from src.analyses.claims.evidence import (
+    ExternalEvidenceFetcher,
+    _UtteranceMeta,
+    build_supporting_facts_by_claim,
+)
 from src.analyses.slot_utterances import load_job_utterances
 from src.config import Settings
 

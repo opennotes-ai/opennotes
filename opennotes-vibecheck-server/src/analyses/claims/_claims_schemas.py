@@ -7,6 +7,7 @@ stays self-contained and parallel agents can land sibling modules
 from __future__ import annotations
 
 from enum import StrEnum
+
 from pydantic import BaseModel, Field
 
 

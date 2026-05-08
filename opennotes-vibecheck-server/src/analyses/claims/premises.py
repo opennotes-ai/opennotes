@@ -126,6 +126,31 @@ def _unique_items_in_order(values: list[str]) -> list[str]:
     return out
 
 
+async def _extract_premises_in_chunks(
+    eligible_texts: list[str],
+    settings: Settings,
+    extractor: PremiseSeam,
+) -> dict[str, list[Any]]:
+    batch_size = max(1, settings.PREMISES_MAX_CLAIMS_PER_BATCH)
+    raw_output: dict[str, list[Any]] = {}
+    for start in range(0, len(eligible_texts), batch_size):
+        chunk = eligible_texts[start : start + batch_size]
+        try:
+            chunk_output = await extractor(chunk, settings)
+        except Exception as exc:
+            logger.warning(
+                "premise batch extraction failed for %d claims: %s",
+                len(chunk),
+                exc,
+            )
+            continue
+        if isinstance(chunk_output, dict):
+            raw_output.update(chunk_output)
+        else:
+            logger.warning("premise seam returned non-dict payload for chunk: %r", chunk_output)
+    return raw_output
+
+
 async def build_premises_by_claim(
     claims: list[DedupedClaim],
     settings: Settings,
@@ -147,26 +172,10 @@ async def build_premises_by_claim(
     if not eligible_texts:
         return PremisesRegistry(), {}
 
-    premise_texts_by_claim: dict[str, list[str]] = {}
     extractor = premise_extractor or infer_premises_batch
-    batch_size = max(1, settings.PREMISES_MAX_CLAIMS_PER_BATCH)
-    raw_output: dict[str, list[Any]] = {}
-    for start in range(0, len(eligible_texts), batch_size):
-        chunk = eligible_texts[start : start + batch_size]
-        try:
-            chunk_output = await extractor(chunk, settings)
-        except Exception as exc:
-            logger.warning(
-                "premise batch extraction failed for %d claims: %s",
-                len(chunk),
-                exc,
-            )
-            continue
-        if isinstance(chunk_output, dict):
-            raw_output.update(chunk_output)
-        else:
-            logger.warning("premise seam returned non-dict payload for chunk: %r", chunk_output)
+    raw_output = await _extract_premises_in_chunks(eligible_texts, settings, extractor)
 
+    premise_texts_by_claim: dict[str, list[str]] = {}
     for canonical in eligible_texts:
         raw_values = raw_output.get(canonical, [])
         if not isinstance(raw_values, list):
