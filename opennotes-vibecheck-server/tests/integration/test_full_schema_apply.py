@@ -676,7 +676,7 @@ async def test_vibecheck_feedback_anon_can_insert_valid_row(
     assert count == 1
 
 
-async def test_vibecheck_feedback_anon_can_update_row(
+async def test_vibecheck_feedback_anon_cannot_update_row(
     full_schema_conn: asyncpg.Connection,
 ) -> None:
     await _apply_full_schema_as_superuser(full_schema_conn)
@@ -692,33 +692,14 @@ async def test_vibecheck_feedback_anon_can_update_row(
         """
     )
 
-    now = datetime.now(UTC)
     await full_schema_conn.execute("SET ROLE anon")
     try:
-        await full_schema_conn.execute(
-            """
-            UPDATE public.vibecheck_feedback
-            SET email = $1,
-                message = $2,
-                final_type = $3,
-                submitted_at = $4
-            WHERE id = '00000000-0000-0000-0000-000000000010'
-            """,
-            "user@example.com",
-            "Great site!",
-            "thumbs_up",
-            now,
-        )
+        with pytest.raises(asyncpg.InsufficientPrivilegeError):
+            await full_schema_conn.execute(
+                "UPDATE public.vibecheck_feedback SET final_type = 'thumbs_up'"
+            )
     finally:
         await full_schema_conn.execute("RESET ROLE")
-
-    row = await full_schema_conn.fetchrow(
-        "SELECT email, message, final_type FROM public.vibecheck_feedback WHERE id = '00000000-0000-0000-0000-000000000010'"
-    )
-    assert row is not None
-    assert row["email"] == "user@example.com"
-    assert row["message"] == "Great site!"
-    assert row["final_type"] == "thumbs_up"
 
 
 async def test_vibecheck_feedback_no_dedicated_select_policy_for_anon(
@@ -737,8 +718,8 @@ async def test_vibecheck_feedback_no_dedicated_select_policy_for_anon(
         """
     )
     assert rows == [], (
-        "no dedicated SELECT-only policy should exist for anon on vibecheck_feedback; "
-        "row visibility is granted via the write policy FOR ALL"
+        "no SELECT policy should exist for anon on vibecheck_feedback; "
+        "anon is INSERT-only (TASK-1588.18 dropped the anon UPDATE policy)"
     )
 
 
@@ -758,3 +739,80 @@ async def test_vibecheck_feedback_check_constraint_rejects_invalid_initial_type(
                  'bottom-right', 'lol')
             """
         )
+
+
+async def _assert_uuid_is_v7_shaped(uuid_value) -> None:
+    # RFC 9562 v7: version nibble = 7 (byte 6 high nibble),
+    # variant bits = 10b (byte 8 top two bits).
+    assert uuid_value is not None
+    hex_str = str(uuid_value).replace("-", "")
+    assert len(hex_str) == 32
+    version_nibble = int(hex_str[12], 16)
+    assert version_nibble == 7, f"expected v7, got version nibble {version_nibble:x}"
+    variant_byte = int(hex_str[16:18], 16)
+    assert variant_byte >> 6 == 0b10, f"expected RFC 4122 variant 10b, got {variant_byte:08b}"
+
+
+async def test_uuidv7_resolves_when_pgcrypto_is_preinstalled_in_public_schema(
+    full_schema_conn: asyncpg.Connection,
+) -> None:
+    # TASK-1588.24: on older Supabase projects pgcrypto historically lives in
+    # `public` rather than `extensions`. CREATE EXTENSION IF NOT EXISTS won't
+    # relocate it, so any reference to extensions.gen_random_bytes() inside
+    # uuidv7() would fail. uuidv7() must call gen_random_bytes UNQUALIFIED
+    # with an explicit search_path that covers both placements.
+    await full_schema_conn.execute("DROP EXTENSION IF EXISTS pgcrypto CASCADE")
+    await full_schema_conn.execute("CREATE SCHEMA IF NOT EXISTS extensions")
+    await full_schema_conn.execute("CREATE EXTENSION pgcrypto WITH SCHEMA public")
+
+    await _apply_full_schema_as_superuser(full_schema_conn)
+
+    # pgcrypto must NOT have been silently relocated.
+    pgcrypto_schema = await full_schema_conn.fetchval(
+        """
+        SELECT n.nspname
+        FROM pg_extension e
+        JOIN pg_namespace n ON n.oid = e.extnamespace
+        WHERE e.extname = 'pgcrypto'
+        """
+    )
+    assert pgcrypto_schema == "public", (
+        f"test precondition: pgcrypto should remain in public, got {pgcrypto_schema!r}"
+    )
+
+    generated = await full_schema_conn.fetchval("SELECT extensions.uuidv7()")
+    await _assert_uuid_is_v7_shaped(generated)
+
+    # The DEFAULT clause on vibecheck_feedback.id must also resolve through
+    # the same search_path when an INSERT omits id.
+    inserted = await full_schema_conn.fetchval(
+        """
+        INSERT INTO public.vibecheck_feedback
+            (page_path, user_agent, uid, bell_location, initial_type)
+        VALUES ('/p', 'ua', '00000000-0000-0000-0000-000000000099',
+                'bottom-right', 'thumbs_up')
+        RETURNING id
+        """
+    )
+    await _assert_uuid_is_v7_shaped(inserted)
+
+
+async def test_uuidv7_default_emits_v7_uuid_when_pgcrypto_in_extensions(
+    full_schema_conn: asyncpg.Connection,
+) -> None:
+    # TASK-1588.17 AC#7 / TASK-1588.24 AC2: the column DEFAULT must produce a
+    # v7-shaped UUID under the canonical Supabase placement (pgcrypto in
+    # `extensions`). This guards the happy path that Option A also has to
+    # keep working.
+    await _apply_full_schema_as_superuser(full_schema_conn)
+
+    inserted = await full_schema_conn.fetchval(
+        """
+        INSERT INTO public.vibecheck_feedback
+            (page_path, user_agent, uid, bell_location, initial_type)
+        VALUES ('/p', 'ua', '00000000-0000-0000-0000-000000000098',
+                'bottom-right', 'thumbs_down')
+        RETURNING id
+        """
+    )
+    await _assert_uuid_is_v7_shaped(inserted)

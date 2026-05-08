@@ -25,6 +25,7 @@ from testcontainers.postgres import PostgresContainer
 
 from src.main import app
 from src.middleware.uid_cookie import UID_COOKIE_NAME
+from src.routes import feedback as feedback_route
 
 _REAL_GETADDRINFO = socket.getaddrinfo
 
@@ -81,12 +82,15 @@ async def db_pool(
 @pytest.fixture
 async def http_client(db_pool: Any) -> AsyncIterator[httpx.AsyncClient]:
     app.state.db_pool = db_pool
+    app.state.limiter = feedback_route.limiter
+    feedback_route.limiter.reset()
     transport = httpx.ASGITransport(app=app)
     try:
         async with httpx.AsyncClient(transport=transport, base_url="http://test") as c:
             yield c
     finally:
         app.state.db_pool = None
+        feedback_route.limiter.reset()
 
 
 async def _fetch_feedback_row(pool: Any, feedback_id: UUID) -> dict[str, Any]:
@@ -138,22 +142,38 @@ async def test_post_open_returns_201_and_uuid(
     assert row["submitted_at"] is None
 
 
-async def test_post_open_body_uid_field_is_ignored(
+async def test_post_open_body_uid_field_is_rejected(
     http_client: httpx.AsyncClient,
     db_pool: Any,
 ) -> None:
+    """A `uid` field in the request body must NOT be honored.
+
+    The cookie is the sole source of truth for the row's uid. Because
+    `FeedbackOpenRequest` is configured with `extra="forbid"`, a body with
+    a `uid` field is rejected outright (422) — which is strictly stronger
+    than silently ignoring it. The previous test name was misleading: the
+    body never actually included `uid`. This rewrite both adds the
+    forged uid to the body AND asserts the server refuses to honor it.
+    """
     cookie_uid = str(uuid4())
-    body_with_fake_uid = {**_OPEN_BODY}
+    forged_body_uid = str(uuid4())
+    assert cookie_uid != forged_body_uid
+    body_with_fake_uid = {**_OPEN_BODY, "uid": forged_body_uid}
     resp = await http_client.post(
         "/api/feedback",
         json=body_with_fake_uid,
         cookies={UID_COOKIE_NAME: cookie_uid},
     )
-    assert resp.status_code == 201
-    feedback_id = UUID(resp.json()["id"])
+    assert resp.status_code == 422, (
+        f"expected body-uid to be rejected, got {resp.status_code}: {resp.text}"
+    )
 
-    row = await _fetch_feedback_row(db_pool, feedback_id)
-    assert str(row["uid"]) == cookie_uid
+    async with db_pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT id FROM vibecheck_feedback WHERE uid = $1",
+            forged_body_uid,
+        )
+    assert row is None, "no feedback row should be created for the forged uid"
 
 
 async def test_post_combined_sets_all_fields(
@@ -238,3 +258,153 @@ async def test_patch_invalid_email_returns_422(
         cookies={UID_COOKIE_NAME: uid},
     )
     assert patch_resp.status_code == 422
+
+
+async def test_post_open_without_kind_field_infers_open_shape(
+    http_client: httpx.AsyncClient,
+    db_pool: Any,
+) -> None:
+    """AC3: legacy client posts old open-shape body (no 'kind') — must not 422."""
+    uid = str(uuid4())
+    legacy_body = {
+        "page_path": "/analyze",
+        "user_agent": "Mozilla/5.0",
+        "referrer": "https://example.com",
+        "bell_location": "bottom-right",
+        "initial_type": "thumbs_down",
+    }
+    resp = await http_client.post(
+        "/api/feedback",
+        json=legacy_body,
+        cookies={UID_COOKIE_NAME: uid},
+    )
+    assert resp.status_code == 201
+    feedback_id = UUID(resp.json()["id"])
+
+    row = await _fetch_feedback_row(db_pool, feedback_id)
+    assert row["initial_type"] == "thumbs_down"
+    assert row["final_type"] is None
+    assert row["submitted_at"] is None
+
+
+async def test_post_combined_without_kind_field_infers_combined_shape(
+    http_client: httpx.AsyncClient,
+    db_pool: Any,
+) -> None:
+    """AC3: legacy client posts old combined-shape body (no 'kind') — must not 422."""
+    uid = str(uuid4())
+    legacy_combined_body = {
+        "page_path": "/analyze",
+        "user_agent": "Mozilla/5.0",
+        "referrer": "https://example.com",
+        "bell_location": "bottom-right",
+        "initial_type": "thumbs_up",
+        "final_type": "thumbs_up",
+        "email": "legacy@example.com",
+        "message": "Sent without kind field",
+    }
+    resp = await http_client.post(
+        "/api/feedback",
+        json=legacy_combined_body,
+        cookies={UID_COOKIE_NAME: uid},
+    )
+    assert resp.status_code == 201
+    feedback_id = UUID(resp.json()["id"])
+
+    row = await _fetch_feedback_row(db_pool, feedback_id)
+    assert row["final_type"] == "thumbs_up"
+    assert row["email"] == "legacy@example.com"
+    assert row["submitted_at"] is not None
+
+
+async def test_post_rate_limit_by_ip_with_rotating_uids(
+    db_pool: Any,
+) -> None:
+    """AC3 (TASK-1588.19): 100 POSTs from the same IP with rotating uid cookies
+    must trigger 429 well before 100 requests, even though each request has a
+    distinct uid cookie. The IP bucket (10/hour) must fire regardless of uid.
+
+    We send POST_RATE_LIMIT+1 requests (11), all from the same IP (ASGITransport
+    default: 127.0.0.1), each with a freshly generated uid cookie. Requests
+    1-10 must succeed (201); request 11 must be 429.
+    """
+    app.state.db_pool = db_pool
+    app.state.limiter = feedback_route.limiter
+    feedback_route.limiter.reset()
+    transport = httpx.ASGITransport(app=app, client=("10.0.0.1", 9999))
+    limit = 10
+    try:
+        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+            for i in range(limit):
+                uid = str(uuid4())
+                resp = await client.post(
+                    "/api/feedback",
+                    json=_OPEN_BODY,
+                    cookies={UID_COOKIE_NAME: uid},
+                )
+                assert resp.status_code == 201, (
+                    f"request {i + 1} should succeed but got {resp.status_code}: {resp.text}"
+                )
+            uid = str(uuid4())
+            over_limit = await client.post(
+                "/api/feedback",
+                json=_OPEN_BODY,
+                cookies={UID_COOKIE_NAME: uid},
+            )
+            assert over_limit.status_code == 429, (
+                f"request {limit + 1} with rotating uid should be 429 (IP limit) "
+                f"but got {over_limit.status_code}: {over_limit.text}"
+            )
+    finally:
+        app.state.db_pool = None
+        feedback_route.limiter.reset()
+
+
+async def test_post_rate_limit_ip_buckets_are_independent(
+    db_pool: Any,
+) -> None:
+    """AC4 (TASK-1588.19): distinct client IPs have independent rate-limit buckets.
+
+    IP-A exhausts its quota (10/hour). IP-B has made 0 requests and must still
+    get a successful 201. The two buckets must not interfere.
+    """
+    app.state.db_pool = db_pool
+    app.state.limiter = feedback_route.limiter
+    feedback_route.limiter.reset()
+    limit = 10
+    transport_a = httpx.ASGITransport(app=app, client=("10.1.1.1", 9001))
+    transport_b = httpx.ASGITransport(app=app, client=("10.2.2.2", 9002))
+    try:
+        async with (
+            httpx.AsyncClient(transport=transport_a, base_url="http://test") as client_a,
+            httpx.AsyncClient(transport=transport_b, base_url="http://test") as client_b,
+        ):
+            for _ in range(limit):
+                r = await client_a.post(
+                    "/api/feedback",
+                    json=_OPEN_BODY,
+                    cookies={UID_COOKIE_NAME: str(uuid4())},
+                )
+                assert r.status_code == 201, r.text
+
+            blocked_a = await client_a.post(
+                "/api/feedback",
+                json=_OPEN_BODY,
+                cookies={UID_COOKIE_NAME: str(uuid4())},
+            )
+            assert blocked_a.status_code == 429, (
+                f"IP-A over limit should be 429 but got {blocked_a.status_code}"
+            )
+
+            allowed_b = await client_b.post(
+                "/api/feedback",
+                json=_OPEN_BODY,
+                cookies={UID_COOKIE_NAME: str(uuid4())},
+            )
+            assert allowed_b.status_code == 201, (
+                f"IP-B should not be rate-limited by IP-A's exhausted bucket "
+                f"but got {allowed_b.status_code}: {allowed_b.text}"
+            )
+    finally:
+        app.state.db_pool = None
+        feedback_route.limiter.reset()

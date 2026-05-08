@@ -28,8 +28,9 @@ describe("<Drawer /> source contract", () => {
     expect(drawerSource).toContain("border-t")
   })
 
-  it("has a drag handle visual indicator (data-drag-handle or .drag-handle class)", () => {
-    expect(drawerSource).toMatch(/drag-handle|drag_handle/)
+  it("constrains height with max-h-[90vh] and enables vertical scroll for tall content", () => {
+    expect(drawerSource).toContain("max-h-[90vh]")
+    expect(drawerSource).toContain("overflow-y-auto")
   })
 
   it("uses slide-in-from-bottom and slide-out-to-bottom transition classes", () => {
@@ -37,9 +38,9 @@ describe("<Drawer /> source contract", () => {
     expect(drawerSource).toContain("slide-out-to-bottom")
   })
 
-  it("includes data-[expanded] animate-in and data-[closed] animate-out transitions", () => {
-    expect(drawerSource).toContain("data-[expanded]")
-    expect(drawerSource).toContain("data-[closed]")
+  it("includes data-[expanded=] animate-in and data-[closed=] animate-out transitions (matches sheet's modifier syntax)", () => {
+    expect(drawerSource).toContain("data-[expanded=]")
+    expect(drawerSource).toContain("data-[closed=]")
     expect(drawerSource).toContain("animate-in")
     expect(drawerSource).toContain("animate-out")
   })
@@ -58,6 +59,15 @@ describe("<Drawer /> source contract", () => {
 
   it("DrawerContent embeds a close button with sr-only label", () => {
     expect(drawerSource).toContain("sr-only")
+  })
+
+  it("DrawerContent exposes a showCloseButton prop and gates the close button on it", () => {
+    expect(drawerSource).toContain("showCloseButton")
+    expect(drawerSource).toMatch(/Show\s+when=\{showCloseButton\(\)\}/)
+  })
+
+  it("DrawerContent defaults showCloseButton to true so existing call sites keep their close button", () => {
+    expect(drawerSource).toMatch(/local\.showCloseButton\s*\?\?\s*true/)
   })
 
   it("uses splitProps to extract class so arbitrary props forward to the primitive", () => {

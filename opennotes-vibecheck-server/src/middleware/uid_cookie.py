@@ -4,6 +4,8 @@ import uuid_utils
 from fastapi import Request
 from starlette.middleware.base import BaseHTTPMiddleware
 
+from src.config import get_settings
+
 UID_COOKIE_NAME = "vibecheck_uid"
 UID_COOKIE_MAX_AGE = 60 * 60 * 24 * 365 * 2
 
@@ -19,8 +21,7 @@ class UidCookieMiddleware(BaseHTTPMiddleware):
                 uid = None
 
         if uid is None:
-            fresh = uuid_utils.uuid7()
-            uid = UUID(str(fresh))
+            uid = UUID(int=int(uuid_utils.uuid7()))
             request.state.uid = uid
             request.state.uid_to_set = uid
         else:
@@ -34,7 +35,7 @@ class UidCookieMiddleware(BaseHTTPMiddleware):
                 value=str(request.state.uid_to_set),
                 max_age=UID_COOKIE_MAX_AGE,
                 httponly=True,
-                secure=True,
+                secure=get_settings().VIBECHECK_COOKIE_SECURE,
                 samesite="lax",
             )
         return response

@@ -43,9 +43,9 @@ describe("<Dialog /> source contract", () => {
     expect(dialogSource).toContain("bg-background")
   })
 
-  it("includes data-[expanded] animate-in and data-[closed] animate-out transitions", () => {
-    expect(dialogSource).toContain("data-[expanded]")
-    expect(dialogSource).toContain("data-[closed]")
+  it("includes data-[expanded=] animate-in and data-[closed=] animate-out transitions (matches sheet's modifier syntax)", () => {
+    expect(dialogSource).toContain("data-[expanded=]")
+    expect(dialogSource).toContain("data-[closed=]")
     expect(dialogSource).toContain("animate-in")
     expect(dialogSource).toContain("animate-out")
   })
@@ -56,6 +56,15 @@ describe("<Dialog /> source contract", () => {
 
   it("DialogContent embeds a close button with sr-only label for screen readers", () => {
     expect(dialogSource).toContain("sr-only")
+  })
+
+  it("DialogContent exposes a showCloseButton prop and gates the close button on it", () => {
+    expect(dialogSource).toContain("showCloseButton")
+    expect(dialogSource).toMatch(/Show\s+when=\{showCloseButton\(\)\}/)
+  })
+
+  it("DialogContent defaults showCloseButton to true so existing call sites keep their close button", () => {
+    expect(dialogSource).toMatch(/local\.showCloseButton\s*\?\?\s*true/)
   })
 
   it("uses splitProps to extract class so arbitrary props forward to the primitive", () => {

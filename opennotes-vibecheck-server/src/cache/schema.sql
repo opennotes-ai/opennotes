@@ -104,6 +104,14 @@ GRANT EXECUTE ON FUNCTION public.exec_sql(text) TO service_role;
 CREATE EXTENSION IF NOT EXISTS pg_cron;
 CREATE SCHEMA IF NOT EXISTS extensions;
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp" WITH SCHEMA extensions;
+-- TASK-1588.17 AC#7 / TASK-1588.24: pgcrypto provides gen_random_bytes(),
+-- used by extensions.uuidv7() below. Older Supabase projects historically
+-- installed pgcrypto in `public` rather than `extensions`; CREATE EXTENSION
+-- IF NOT EXISTS will NOT relocate an already-present extension. So this
+-- statement is intentionally schema-agnostic — uuidv7() resolves the call
+-- through its own SET search_path and works whether pgcrypto landed in
+-- `extensions` (canonical, current Supabase default) or `public` (legacy).
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
 -- =========================================================================
 -- vibecheck_analyses (legacy 72h cache, locked down)
@@ -1049,8 +1057,66 @@ $$;
 
 -- ============= VIBECHECK FEEDBACK =============
 
+-- TASK-1588.17 AC#7 / TASK-1588.24 AC2: UUID v7 generator for the feedback
+-- id default. Postgres 16 (Supabase) does not ship native uuidv7();
+-- pgcrypto's gen_random_uuid() emits v4. We define a small plpgsql function
+-- in the `extensions` schema so the DEFAULT clause below can omit explicit
+-- id generation in the route. Bytes: 48-bit unix-ms timestamp || 16 random
+-- bits (with version=7 packed into the high nibble of byte 6) || 2 variant
+-- bits (10b) || 62 random bits, packed into the 128-bit UUID layout. The
+-- function is VOLATILE (uses clock_timestamp() + gen_random_bytes()).
+--
+-- Resilience to pgcrypto schema placement (TASK-1588.24, Codex H8): on older
+-- Supabase projects pgcrypto historically lives in `public` rather than
+-- `extensions`. Calling `extensions.gen_random_bytes(...)` would then fail
+-- at runtime with `function extensions.gen_random_bytes(int) does not exist`
+-- because CREATE EXTENSION IF NOT EXISTS does not relocate. Option A:
+--   * call `gen_random_bytes(...)` UNQUALIFIED, and
+--   * `SET search_path = extensions, public` on the function so the call
+--     resolves regardless of which schema pgcrypto landed in. pg_catalog is
+--     always implicit at the head of the search path, so int8send/get_byte/
+--     set_byte/encode/substring still resolve. SECURITY: this function is
+--     not SECURITY DEFINER, so search_path cannot be abused for privilege
+--     escalation; the SET clause is purely a resolution helper.
+CREATE OR REPLACE FUNCTION extensions.uuidv7()
+RETURNS uuid
+LANGUAGE plpgsql
+VOLATILE
+PARALLEL SAFE
+SET search_path = extensions, public
+AS $$
+DECLARE
+    unix_ms     bigint;
+    ts_bytes    bytea;
+    rand_bytes  bytea;
+    out_bytes   bytea;
+    byte6       int;
+    byte8       int;
+BEGIN
+    unix_ms := (extract(epoch from clock_timestamp()) * 1000)::bigint;
+    -- 8-byte big-endian; the low 6 bytes hold the 48-bit ms timestamp.
+    ts_bytes := substring(int8send(unix_ms) FROM 3 FOR 6);
+    -- Unqualified: resolves via search_path to either extensions.pgcrypto
+    -- (canonical) or public.pgcrypto (legacy Supabase placement).
+    rand_bytes := gen_random_bytes(10);
+    out_bytes := ts_bytes || rand_bytes;
+
+    -- Byte 6 (0-indexed): set high nibble to 0x7 (UUID version=7),
+    -- preserve low nibble of the random byte so it stays random.
+    byte6 := get_byte(out_bytes, 6);
+    out_bytes := set_byte(out_bytes, 6, (byte6 & 15) | 112);
+
+    -- Byte 8 (0-indexed): set top two bits to 10b (RFC 4122 variant),
+    -- preserve low six bits.
+    byte8 := get_byte(out_bytes, 8);
+    out_bytes := set_byte(out_bytes, 8, (byte8 & 63) | 128);
+
+    RETURN encode(out_bytes, 'hex')::uuid;
+END;
+$$;
+
 CREATE TABLE IF NOT EXISTS public.vibecheck_feedback (
-  id              uuid PRIMARY KEY,
+  id              uuid PRIMARY KEY DEFAULT extensions.uuidv7(),
   created_at      timestamptz NOT NULL DEFAULT pg_catalog.now(),
   page_path       text NOT NULL,
   user_agent      text NOT NULL,
@@ -1063,18 +1129,28 @@ CREATE TABLE IF NOT EXISTS public.vibecheck_feedback (
   final_type      text CHECK (final_type IN ('thumbs_up','thumbs_down','message')),
   submitted_at    timestamptz
 );
+
+-- TASK-1588.17 AC#7 / TASK-1588.24: idempotent re-apply on a pre-existing
+-- table where the DEFAULT clause above was missing. CREATE TABLE IF NOT
+-- EXISTS leaves an existing column shape untouched, so the SET DEFAULT must
+-- be applied explicitly so legacy rows can omit `id` from INSERT statements.
+ALTER TABLE public.vibecheck_feedback
+  ALTER COLUMN id SET DEFAULT extensions.uuidv7();
+
 ALTER TABLE public.vibecheck_feedback ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.vibecheck_feedback FORCE ROW LEVEL SECURITY;
-GRANT INSERT, UPDATE, SELECT ON public.vibecheck_feedback TO anon;
+REVOKE UPDATE, SELECT ON public.vibecheck_feedback FROM anon;
+GRANT INSERT ON public.vibecheck_feedback TO anon;
 
 DROP POLICY IF EXISTS vibecheck_feedback_anon_insert ON public.vibecheck_feedback;
 DROP POLICY IF EXISTS vibecheck_feedback_anon_update ON public.vibecheck_feedback;
 DROP POLICY IF EXISTS vibecheck_feedback_anon_write ON public.vibecheck_feedback;
-CREATE POLICY vibecheck_feedback_anon_write ON public.vibecheck_feedback
-  FOR ALL TO anon USING (true) WITH CHECK (true);
+CREATE POLICY vibecheck_feedback_anon_insert ON public.vibecheck_feedback
+  FOR INSERT TO anon WITH CHECK (true);
 
--- No DELETE policy for anon; no separate SELECT policy needed — FOR ALL covers
--- row visibility for UPDATE USING evaluation. service_role bypasses RLS.
+-- No DELETE, SELECT, or UPDATE policy for anon. PATCH /api/feedback/{id}
+-- runs through service_role (bypasses RLS) with WHERE id=$4 AND uid=$5.
+-- An anon UPDATE policy is exploitable dead code — drop it entirely.
 
 CREATE INDEX IF NOT EXISTS vibecheck_feedback_uid_created_idx
   ON public.vibecheck_feedback (uid, created_at DESC);

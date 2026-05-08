@@ -607,6 +607,12 @@ export interface components {
         };
         /** FeedbackCombinedRequest */
         FeedbackCombinedRequest: {
+            /**
+             * Kind
+             * @default combined
+             * @constant
+             */
+            kind: "combined";
             /** Page Path */
             page_path: string;
             /** User Agent */
@@ -635,6 +641,12 @@ export interface components {
         };
         /** FeedbackOpenRequest */
         FeedbackOpenRequest: {
+            /**
+             * Kind
+             * @default open
+             * @constant
+             */
+            kind: "open";
             /** Page Path */
             page_path: string;
             /** User Agent */
@@ -1795,7 +1807,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["FeedbackCombinedRequest"] | components["schemas"]["FeedbackOpenRequest"];
+                "application/json": components["schemas"]["FeedbackOpenRequest"] | components["schemas"]["FeedbackCombinedRequest"];
             };
         };
         responses: {

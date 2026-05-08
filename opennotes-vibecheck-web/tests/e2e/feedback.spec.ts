@@ -28,6 +28,10 @@ let apiBaseUrl = "";
 let webBaseUrl = "";
 let webProcess: ChildProcess | null = null;
 let webLogs = "";
+let setUidCookieOnOpenPost = false;
+const patchUidHeaderObservations: string[] = [];
+
+const FAKE_UID = "11111111-1111-7111-8111-111111111111";
 
 async function listenOnRandomPort(server: Server): Promise<number> {
   server.listen(0, "127.0.0.1");
@@ -100,7 +104,16 @@ test.beforeAll(async () => {
         requestUrl.pathname === "/api/feedback"
       ) {
         await readBody(request);
-        writeJson(response, 201, { id: FEEDBACK_ID });
+        const headers: Record<string, string | string[]> = {
+          "content-type": "application/json",
+        };
+        if (setUidCookieOnOpenPost) {
+          headers["set-cookie"] = [
+            `VIBECHECK_UID=${FAKE_UID}; Path=/; HttpOnly; SameSite=Lax; Max-Age=31536000`,
+          ];
+        }
+        response.writeHead(201, headers);
+        response.end(JSON.stringify({ id: FEEDBACK_ID }));
         return;
       }
 
@@ -109,6 +122,8 @@ test.beforeAll(async () => {
         requestUrl.pathname === `/api/feedback/${FEEDBACK_ID}`
       ) {
         await readBody(request);
+        const cookieHeader = request.headers.cookie ?? "";
+        patchUidHeaderObservations.push(cookieHeader);
         writeJson(response, 200, {});
         return;
       }
@@ -189,7 +204,9 @@ test("AC1: happy path — bell → popover → thumbs up → dialog → send →
   await expect(messageBtn).toBeVisible({ timeout: 3_000 });
 
   const openResponsePromise = page.waitForResponse(
-    (r) => r.url().includes("/api/feedback") && r.request().method() === "POST",
+    (r) =>
+      /\/api\/feedback$/.test(new URL(r.url()).pathname) &&
+      r.request().method() === "POST",
     { timeout: 10_000 },
   );
 
@@ -207,7 +224,8 @@ test("AC1: happy path — bell → popover → thumbs up → dialog → send →
 
   const patchPromise = page.waitForResponse(
     (r) =>
-      r.url().includes("/api/feedback") && r.request().method() === "PATCH",
+      /\/api\/feedback\/[^/]+$/.test(new URL(r.url()).pathname) &&
+      r.request().method() === "PATCH",
     { timeout: 10_000 },
   );
 
@@ -256,7 +274,8 @@ test("AC2: send-gating — message type requires 5+ chars", async ({ page }) => 
 
   const patchPromise = page.waitForResponse(
     (r) =>
-      r.url().includes("/api/feedback") && r.request().method() === "PATCH",
+      /\/api\/feedback\/[^/]+$/.test(new URL(r.url()).pathname) &&
+      r.request().method() === "PATCH",
     { timeout: 10_000 },
   );
 
@@ -288,7 +307,10 @@ test("AC3: open-POST failure triggers combined fallback POST on send", async ({
 
   const capturedRequests: Array<{ method: string; body: string }> = [];
   page.on("request", (req: PwRequest) => {
-    if (req.url().includes("/api/feedback") && req.method() === "POST") {
+    if (
+      /\/api\/feedback$/.test(new URL(req.url()).pathname) &&
+      req.method() === "POST"
+    ) {
       capturedRequests.push({ method: req.method(), body: req.postData() ?? "" });
     }
   });
@@ -319,7 +341,7 @@ test("AC3: open-POST failure triggers combined fallback POST on send", async ({
 
   const combinedPostPromise = page.waitForResponse(
     (r) =>
-      r.url().includes("/api/feedback") &&
+      /\/api\/feedback$/.test(new URL(r.url()).pathname) &&
       r.request().method() === "POST" &&
       r.status() !== 500,
     { timeout: 10_000 },
@@ -342,4 +364,85 @@ test("AC3: open-POST failure triggers combined fallback POST on send", async ({
   expect(parsed).toHaveProperty("final_type");
 
   await expect(dialog).toHaveCount(0, { timeout: 5_000 });
+});
+
+test("AC4: Set-Cookie from open POST roundtrips and is sent on subsequent PATCH", async ({
+  page,
+  context,
+}) => {
+  setUidCookieOnOpenPost = true;
+  patchUidHeaderObservations.length = 0;
+
+  try {
+    const cookiesBefore = await context.cookies();
+    expect(
+      cookiesBefore.some((c) => c.name === "VIBECHECK_UID"),
+      "browser must start with no VIBECHECK_UID cookie",
+    ).toBe(false);
+
+    await page.goto(webBaseUrl, { waitUntil: "networkidle" });
+
+    const section = page.locator('[data-testid="recently-vibe-checked"]');
+    await expect(section).toBeVisible({ timeout: 10_000 });
+
+    const bell = page
+      .locator('[aria-label*="Send feedback about"]')
+      .first();
+    await bell.hover();
+
+    const thumbsUpBtn = page.locator('[aria-label="Thumbs up"]').first();
+    await expect(thumbsUpBtn).toBeVisible({ timeout: 5_000 });
+
+    const openResponsePromise = page.waitForResponse(
+      (r) =>
+        /\/api\/feedback$/.test(new URL(r.url()).pathname) &&
+        r.request().method() === "POST",
+      { timeout: 10_000 },
+    );
+
+    await thumbsUpBtn.click();
+
+    const dialog = page.getByRole("dialog", { name: "Send feedback" });
+    await expect(dialog).toBeVisible({ timeout: 5_000 });
+
+    await openResponsePromise;
+
+    await expect
+      .poll(
+        async () => {
+          const cookies = await context.cookies();
+          return cookies.find((c) => c.name === "VIBECHECK_UID")?.value;
+        },
+        { timeout: 5_000 },
+      )
+      .toBe(FAKE_UID);
+
+    const patchPromise = page.waitForResponse(
+      (r) =>
+        /\/api\/feedback\/[^/]+$/.test(new URL(r.url()).pathname) &&
+        r.request().method() === "PATCH",
+      { timeout: 10_000 },
+    );
+
+    const sendButton = dialog.locator('button[type="submit"]');
+    await expect(sendButton).toBeEnabled({ timeout: 3_000 });
+    await sendButton.click();
+
+    await patchPromise;
+
+    expect(
+      patchUidHeaderObservations.length,
+      "fake server should have received at least one PATCH",
+    ).toBeGreaterThan(0);
+    const observed = patchUidHeaderObservations[0];
+    expect(
+      observed.includes(`VIBECHECK_UID=${FAKE_UID}`),
+      `expected upstream PATCH cookie header to include VIBECHECK_UID=${FAKE_UID}, got: ${observed}`,
+    ).toBe(true);
+
+    await expect(dialog).toHaveCount(0, { timeout: 5_000 });
+  } finally {
+    setUidCookieOnOpenPost = false;
+    await context.clearCookies();
+  }
 });

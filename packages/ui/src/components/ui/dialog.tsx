@@ -1,5 +1,5 @@
 import type { Component, ComponentProps, JSX, ValidComponent } from "solid-js"
-import { splitProps } from "solid-js"
+import { Show, splitProps } from "solid-js"
 
 import * as DialogPrimitive from "@kobalte/core/dialog"
 import type { PolymorphicProps } from "@kobalte/core/polymorphic"
@@ -21,7 +21,7 @@ const DialogOverlay = <T extends ValidComponent = "div">(
   return (
     <DialogPrimitive.Overlay
       class={cn(
-        "fixed inset-0 z-50 bg-black/80 data-[expanded]:animate-in data-[closed]:animate-out data-[closed]:fade-out-0 data-[expanded]:fade-in-0",
+        "fixed inset-0 z-50 bg-black/80 data-[expanded=]:animate-in data-[closed=]:animate-out data-[closed=]:fade-out-0 data-[expanded=]:fade-in-0",
         local.class
       )}
       {...others}
@@ -32,12 +32,18 @@ const DialogOverlay = <T extends ValidComponent = "div">(
 type DialogContentProps<T extends ValidComponent = "div"> = DialogPrimitive.DialogContentProps<T> & {
   class?: string | undefined
   children?: JSX.Element
+  showCloseButton?: boolean
 }
 
 const DialogContent = <T extends ValidComponent = "div">(
   props: PolymorphicProps<T, DialogContentProps<T>>
 ) => {
-  const [local, others] = splitProps(props as DialogContentProps, ["class", "children"])
+  const [local, others] = splitProps(props as DialogContentProps, [
+    "class",
+    "children",
+    "showCloseButton",
+  ])
+  const showCloseButton = () => local.showCloseButton ?? true
   return (
     <DialogPrimitive.Portal>
       <DialogOverlay />
@@ -45,28 +51,30 @@ const DialogContent = <T extends ValidComponent = "div">(
         <DialogPrimitive.Content
           data-slot="dialog-content"
           class={cn(
-            "relative z-50 grid w-full gap-4 bg-background p-6 shadow-lg duration-200 data-[expanded]:animate-in data-[closed]:animate-out data-[closed]:fade-out-0 data-[expanded]:fade-in-0 data-[closed]:zoom-out-95 data-[expanded]:zoom-in-95 sm:rounded-lg sm:max-w-[425px]",
+            "relative z-50 grid w-full gap-4 bg-background p-6 shadow-lg duration-200 data-[expanded=]:animate-in data-[closed=]:animate-out data-[closed=]:fade-out-0 data-[expanded=]:fade-in-0 data-[closed=]:zoom-out-95 data-[expanded=]:zoom-in-95 sm:rounded-lg sm:max-w-[425px]",
             local.class
           )}
           {...others}
         >
           {local.children}
-          <DialogPrimitive.CloseButton class="absolute right-4 top-4 rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none data-[expanded]:bg-accent data-[expanded]:text-muted-foreground">
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              class="size-4"
-            >
-              <path d="M18 6l-12 12" />
-              <path d="M6 6l12 12" />
-            </svg>
-            <span class="sr-only">Close</span>
-          </DialogPrimitive.CloseButton>
+          <Show when={showCloseButton()}>
+            <DialogPrimitive.CloseButton class="absolute right-4 top-4 rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none data-[expanded]:bg-accent data-[expanded]:text-muted-foreground">
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                class="size-4"
+              >
+                <path d="M18 6l-12 12" />
+                <path d="M6 6l12 12" />
+              </svg>
+              <span class="sr-only">Close</span>
+            </DialogPrimitive.CloseButton>
+          </Show>
         </DialogPrimitive.Content>
       </div>
     </DialogPrimitive.Portal>

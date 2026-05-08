@@ -80,6 +80,42 @@ describe("<RecentlyVibeChecked />", () => {
     expect(links).toHaveLength(1);
   });
 
+  it("feedback bell aria-label uses human-readable ariaContext (page_title) and does not leak job_id or bell_location", () => {
+    const analyses = [
+      makeAnalysis({
+        job_id: "job-aria-1",
+        page_title: "How vaccines work",
+        source_url: "https://example.com/vaccines",
+      }),
+    ];
+
+    render(() => <RecentlyVibeChecked analyses={analyses} />);
+
+    const bell = screen.getByLabelText(/Send feedback about/i);
+    const label = bell.getAttribute("aria-label") ?? "";
+    expect(label).toBe("Send feedback about How vaccines work");
+    expect(label).not.toContain("job-aria-1");
+    expect(label).not.toContain("home:recently-vibe-checked");
+  });
+
+  it("feedback bell aria-label falls back to source_url when page_title is null (still no job_id)", () => {
+    const analyses = [
+      makeAnalysis({
+        job_id: "job-aria-2",
+        page_title: null,
+        source_url: "https://example.com/no-title",
+      }),
+    ];
+
+    render(() => <RecentlyVibeChecked analyses={analyses} />);
+
+    const bell = screen.getByLabelText(/Send feedback about/i);
+    const label = bell.getAttribute("aria-label") ?? "";
+    expect(label).toBe("Send feedback about https://example.com/no-title");
+    expect(label).not.toContain("job-aria-2");
+    expect(label).not.toContain("home:recently-vibe-checked");
+  });
+
   it("renders weather readout only for cards with a weather report", () => {
     const analyses = [
       makeAnalysis({
