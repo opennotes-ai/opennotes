@@ -228,6 +228,33 @@ def test_row_to_job_state_preserves_valid_weather_report() -> None:
     assert job.sidebar_payload_complete is True
 
 
+def test_row_to_job_state_strips_invalid_inflight_weather_report() -> None:
+    """In-flight (non-terminal) jobs with at least one DONE section assemble
+    a partial sidebar via assemble_sidebar_payload, which validates
+    WeatherReport directly. Legacy/invalid labels on the standalone
+    vibecheck_jobs.weather_report column must be salvaged so the poll
+    doesn't 500 mid-flight."""
+    row = _mock_poll_row(status="analyzing")
+    row["sections"] = {
+        SectionSlug.SAFETY_MODERATION.value: {
+            "state": SectionState.DONE.value,
+            "attempt_id": str(uuid4()),
+            "data": {"harmful_content_matches": []},
+        }
+    }
+    row["weather_report"] = {
+        "truth": {"label": "mostly_factual", "alternatives": [], "logprob": 0.5},
+        "relevance": {"label": "insightful", "alternatives": [], "logprob": 0.7},
+        "sentiment": {"label": "supportive", "alternatives": [], "logprob": 0.8},
+    }
+
+    job = _row_to_job_state(row)
+
+    assert job.sidebar_payload is not None
+    assert job.sidebar_payload.weather_report is None
+    assert job.sidebar_payload_complete is False
+
+
 def test_row_to_job_state_falls_back_when_payload_unrecoverable() -> None:
     """If validation fails for reasons unrelated to weather_report (e.g.
     a required section is structurally invalid), drop sidebar_payload

@@ -56,6 +56,7 @@ from src.analyses.schemas import (
     SidebarPayload,
     UtteranceStreamType,
 )
+from src.analyses.synthesis._weather_schemas import WeatherReport
 from src.cache.scrape_cache import canonical_cache_key
 from src.config import Settings, get_settings
 from src.jobs import submit as submit_job
@@ -600,6 +601,13 @@ def _parse_sections(raw: Any) -> dict[SectionSlug, SectionSlot]:
 _NON_TERMINAL_STATUSES_POLL = frozenset({"pending", "extracting", "analyzing"})
 
 
+def _safe_validation_error_summary(exc: ValidationError) -> Any:
+    """Pydantic ValidationError.__str__ includes input_value snippets that
+    may contain user/article text from a stored sidebar section. Strip the
+    inputs before logging so warnings stay PII-clean."""
+    return exc.errors(include_input=False, include_url=False, include_context=False)
+
+
 def _validate_sidebar_payload_with_weather_salvage(
     sidebar_raw: Any, *, job_id: Any
 ) -> SidebarPayload | None:
@@ -627,21 +635,42 @@ def _validate_sidebar_payload_with_weather_salvage(
                 logger.warning(
                     "SidebarPayload validation failed even after stripping weather_report; dropping payload (job_id=%s): %s",
                     job_id,
-                    retry_exc,
+                    _safe_validation_error_summary(retry_exc),
                 )
                 return None
             logger.warning(
                 "SidebarPayload weather_report validation failed; stripping weather and continuing (job_id=%s): %s",
                 job_id,
-                exc,
+                _safe_validation_error_summary(exc),
             )
             return salvaged
         logger.warning(
             "SidebarPayload validation failed and no weather_report to strip; dropping payload (job_id=%s): %s",
             job_id,
-            exc,
+            _safe_validation_error_summary(exc),
         )
         return None
+
+
+def _safe_weather_report_dict(weather_raw: Any, *, job_id: Any) -> Any:
+    """Pre-validate the standalone vibecheck_jobs.weather_report column for
+    the non-terminal in-flight assembly path. assemble_sidebar_payload
+    calls WeatherReport.model_validate directly; legacy/invalid labels
+    would otherwise 500 polls of pending/extracting/analyzing jobs that
+    happen to have at least one DONE section."""
+    if weather_raw is None:
+        return None
+    decoded = json.loads(weather_raw) if isinstance(weather_raw, str) else weather_raw
+    try:
+        WeatherReport.model_validate(decoded)
+    except ValidationError as exc:
+        logger.warning(
+            "in-flight weather_report failed validation; dropping (job_id=%s): %s",
+            job_id,
+            _safe_validation_error_summary(exc),
+        )
+        return None
+    return decoded
 
 
 def _row_to_job_state(row: Any) -> JobState:
@@ -672,7 +701,9 @@ def _row_to_job_state(row: Any) -> JobState:
             sections,
             safety_recommendation=row.get("safety_recommendation", None),
             headline_summary=row.get("headline_summary", None),
-            weather_report=row.get("weather_report", None),
+            weather_report=_safe_weather_report_dict(
+                row.get("weather_report", None), job_id=row["job_id"]
+            ),
             utterances=[],
             page_title=row.get("page_title", None),
             page_kind=PageKind(row["page_kind"]) if row.get("page_kind", None) else PageKind.OTHER,
