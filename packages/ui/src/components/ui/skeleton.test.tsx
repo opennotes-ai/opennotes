@@ -31,4 +31,19 @@ describe("<Skeleton /> shimmer primitive", () => {
   it("ships shimmer keyframes from packages/ui (not from vibecheck-web)", () => {
     expect(skeletonSource).toMatch(/@keyframes\s+[A-Za-z_-]*[Ss]himmer/);
   });
+
+  it("does not wrap css variables in hsl() (theme tokens are oklch — wrapping makes them invalid)", () => {
+    expect(skeletonSource).not.toMatch(/hsl\(\s*var\(--muted/);
+    expect(skeletonSource).not.toMatch(/hsl\(\s*var\(--card/);
+  });
+
+  it("keeps bg-muted in the Skeleton root default class — removing it would render the box transparent", () => {
+    expect(skeletonSource).toMatch(/cn\([^)]*bg-muted/);
+  });
+
+  it("uses color-mix on var(--card) for the shimmer overlay (theme-aware, oklch-safe)", () => {
+    expect(skeletonSource).toMatch(
+      /color-mix\(\s*in\s+oklab\s*,\s*var\(--card[^)]*\)\s+\d+%\s*,\s*transparent\s*\)/,
+    );
+  });
 });

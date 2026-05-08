@@ -205,21 +205,21 @@ function WeatherReportSkeleton(props: { class?: string }): JSX.Element {
       <CardContent class="p-2">
         <Table>
           <TableBody>
-            <TableRow data-testid="weather-skeleton-truth">
-              <TableCell>
-                <Skeleton class="h-4 w-20 rounded-full" />
-              </TableCell>
-            </TableRow>
-            <TableRow data-testid="weather-skeleton-relevance">
-              <TableCell>
-                <Skeleton class="h-4 w-20 rounded-full" />
-              </TableCell>
-            </TableRow>
-            <TableRow data-testid="weather-skeleton-sentiment">
-              <TableCell>
-                <Skeleton class="h-4 w-20 rounded-full" />
-              </TableCell>
-            </TableRow>
+            <For each={AXES}>
+              {(axis) => (
+                <TableRow data-testid={`weather-skeleton-${axis.axisType}`}>
+                  <TableCell
+                    data-testid={`weather-skeleton-${axis.axisType}-label`}
+                    class="whitespace-nowrap pr-3 text-xs font-semibold uppercase tracking-[0.06em] text-muted-foreground"
+                  >
+                    {axis.heading.toUpperCase()}
+                  </TableCell>
+                  <TableCell class="w-full">
+                    <Skeleton class="h-4 w-20 rounded-full" />
+                  </TableCell>
+                </TableRow>
+              )}
+            </For>
           </TableBody>
         </Table>
       </CardContent>

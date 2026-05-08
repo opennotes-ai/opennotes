@@ -384,6 +384,39 @@ test("AC1+AC2+AC3: skeletons appear, shimmer animates, then resolve to real head
     headlineSkeleton.locator("[data-opennotes-skeleton]").first(),
   ).toBeAttached();
 
+  // TASK-1569.07 regression: skeleton box must have a visible
+  // (non-transparent) computed background. Earlier the primitive's CSS used
+  // `hsl(var(--muted))` against oklch theme tokens, which makes the
+  // declaration invalid and falls back to transparent — the headline area
+  // then renders as an empty box on the live site.
+  const skeletonBg = await headlineSkeleton
+    .locator("[data-opennotes-skeleton]")
+    .first()
+    .evaluate((el) => window.getComputedStyle(el).backgroundColor);
+  expect(skeletonBg).not.toBe("rgba(0, 0, 0, 0)");
+  expect(skeletonBg).not.toBe("transparent");
+
+  // TASK-1569.07: weather skeleton shows literal axis labels (TRUTH /
+  // RELEVANCE / SENTIMENT) statically — only the value pill on the right
+  // shimmers. The label cell must NOT contain a Skeleton primitive.
+  await expect(
+    weatherSkeleton.locator('[data-testid="weather-skeleton-truth-label"]'),
+  ).toHaveText("TRUTH");
+  await expect(
+    weatherSkeleton.locator('[data-testid="weather-skeleton-relevance-label"]'),
+  ).toHaveText("RELEVANCE");
+  await expect(
+    weatherSkeleton.locator('[data-testid="weather-skeleton-sentiment-label"]'),
+  ).toHaveText("SENTIMENT");
+  for (const axis of ["truth", "relevance", "sentiment"] as const) {
+    const labelCell = weatherSkeleton.locator(
+      `[data-testid="weather-skeleton-${axis}-label"]`,
+    );
+    await expect(
+      labelCell.locator("[data-opennotes-skeleton]"),
+    ).toHaveCount(0);
+  }
+
   // AC3: Once sidebar_payload arrives, skeletons must disappear and the
   // real headline-summary testid renders.
   const headlineSummary = page.locator('[data-testid="headline-summary"]');
