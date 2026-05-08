@@ -11,6 +11,7 @@ type WeatherLabelEntry = {
   axis: "truth" | "relevance" | "sentiment";
   label: string;
   variant: WeatherVariant;
+  expansion: string;
 };
 
 type WeatherVariant = keyof typeof VARIANT_CLASSES;
@@ -57,6 +58,12 @@ export function formatWeatherVariant(value: WeatherAxisLabel): WeatherVariant {
 
 export function formatWeatherBadgeClass(value: WeatherAxisLabel): string {
   return VARIANT_CLASSES[formatWeatherVariant(value)] ?? VARIANT_CLASSES[DEFAULT_VARIANT];
+}
+
+export function formatWeatherExpansion(value: WeatherAxisLabel): string | null {
+  const entry = WEATHER_LABELS[value as string];
+  if (entry) return entry.expansion;
+  return null;
 }
 
 export function formatWeatherReadout(report: WeatherReport): string {
