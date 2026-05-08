@@ -532,4 +532,27 @@ describe("WeatherReport", () => {
     const trigger = screen.getByTestId("weather-axis-card-truth");
     expect(trigger.className).toContain("hover:bg-muted/40");
   });
+
+  it("renders a WeatherHelpButton (aria-label /explain.*weather/i) and no FeedbackBell (bell_location=card:weather)", () => {
+    render(() => <WeatherReport report={makeWeatherReport()} />);
+
+    const helpButton = screen.getByRole("button", {
+      name: /explain.*weather/i,
+    });
+    expect(helpButton).toBeDefined();
+
+    const bellButton = screen.queryByRole("button", {
+      name: /send feedback.*card:weather/i,
+    });
+    expect(bellButton).toBeNull();
+  });
+
+  it("renders the help button (aria-label /explain.*weather/i) in the skeleton (null report) path", () => {
+    render(() => <WeatherReport report={null} />);
+
+    const helpButton = screen.getByRole("button", {
+      name: /explain.*weather/i,
+    });
+    expect(helpButton).toBeDefined();
+  });
 });

@@ -1,6 +1,6 @@
 import { For, Show, type JSX } from "solid-js";
 import { Card, CardContent } from "@opennotes/ui/components/ui/card";
-import { FeedbackBell } from "../../feedback/FeedbackBell";
+import { WeatherHelpButton } from "./WeatherHelpButton";
 import {
   Table,
   TableBody,
@@ -47,33 +47,20 @@ export interface WeatherReportProps {
 interface AxisDefinition {
   axisType: AxisType;
   heading: string;
-  tooltip: string;
 }
-
-const TOOLTIP_COPY: Record<AxisType, string> = {
-  truth:
-    "Truth — Epistemic stance, not verdict. Whether claims are sourced, first-person, second-hand, or actively misleading — how the knowledge is held, regardless of whether it's ultimately right.",
-  relevance:
-    "Relevance — How tightly the discussion is tethered to the source. Insightful engagement, on-topic chatter, drift, or full topic abandonment.",
-  sentiment:
-    "Sentiment — The emotional register of the conversation. Read alongside the other axes; tone alone doesn't tell you much.",
-};
 
 const AXES: AxisDefinition[] = [
   {
     axisType: "truth",
     heading: "Truth",
-    tooltip: TOOLTIP_COPY.truth,
   },
   {
     axisType: "relevance",
     heading: "Relevance",
-    tooltip: TOOLTIP_COPY.relevance,
   },
   {
     axisType: "sentiment",
     heading: "Sentiment",
-    tooltip: TOOLTIP_COPY.sentiment,
   },
 ];
 
@@ -217,8 +204,7 @@ function WeatherReportSkeleton(props: { class?: string }): JSX.Element {
   return (
     <Card
       data-testid="weather-report-skeleton"
-      class={`border border-border/50 ${props.class ?? ""}`.trim()}
-      aria-hidden="true"
+      class={`relative border border-border/50 ${props.class ?? ""}`.trim()}
     >
       <CardContent class="p-2">
         <Table>
@@ -241,6 +227,7 @@ function WeatherReportSkeleton(props: { class?: string }): JSX.Element {
           </TableBody>
         </Table>
       </CardContent>
+      <WeatherHelpButton />
     </Card>
   );
 }
@@ -262,7 +249,7 @@ export default function WeatherReport(props: WeatherReportProps): JSX.Element {
               </TableBody>
             </Table>
           </CardContent>
-          <FeedbackBell bell_location="card:weather" />
+          <WeatherHelpButton />
         </Card>
       )}
     </Show>
