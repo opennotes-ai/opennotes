@@ -1,4 +1,4 @@
-import { For, Show, type JSX } from "solid-js";
+import { For, Show, createSignal, type JSX } from "solid-js";
 import { Card, CardContent } from "@opennotes/ui/components/ui/card";
 import {
   Table,
@@ -7,10 +7,10 @@ import {
   TableRow,
 } from "@opennotes/ui/components/ui/table";
 import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@opennotes/ui/components/ui/tooltip";
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@opennotes/ui/components/ui/popover";
 import { Skeleton } from "@opennotes/ui/components/ui/skeleton";
 import type { components } from "~/lib/generated-types";
 import {
@@ -112,12 +112,15 @@ function AxisRow(props: AxisRowProps): JSX.Element {
 
   const confidence = () => formatLogprobProbability(axisData()?.logprob);
   const alternatives = () => safeAlternatives(axisData());
+  const [open, setOpen] = createSignal(false);
 
   return (
-    <Tooltip>
-      <TooltipTrigger
+    <Popover open={open()} onOpenChange={setOpen}>
+      <PopoverTrigger
         as={TableRow}
         data-testid={`weather-axis-card-${props.axis.axisType}`}
+        onPointerEnter={() => setOpen(true)}
+        onPointerLeave={() => setOpen(false)}
       >
         <TableCell
           aria-hidden="true"
@@ -186,11 +189,11 @@ function AxisRow(props: AxisRowProps): JSX.Element {
             }}
           </Show>
         </TableCell>
-      </TooltipTrigger>
-      <TooltipContent class="max-w-xs text-xs leading-snug">
+      </PopoverTrigger>
+      <PopoverContent class="max-w-xs text-sm leading-snug">
         {props.axis.tooltip}
-      </TooltipContent>
-    </Tooltip>
+      </PopoverContent>
+    </Popover>
   );
 }
 

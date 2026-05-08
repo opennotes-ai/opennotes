@@ -7,11 +7,6 @@ import {
   screen,
   waitFor,
 } from "@solidjs/testing-library";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@opennotes/ui/components/ui/tooltip";
 import type { components } from "~/lib/generated-types";
 import WeatherReport from "./WeatherReport";
 
@@ -101,59 +96,75 @@ describe("WeatherReport", () => {
     }
   });
 
-  it("renders tooltip content with the axis interpretation hint when opened", async () => {
-    render(() => (
-      <Tooltip open>
-        <TooltipTrigger as="span">trigger</TooltipTrigger>
-        <TooltipContent>
-          Truth — Epistemic stance, not verdict. Whether claims are sourced,
-          first-person, second-hand, or actively misleading — how the knowledge
-          is held, regardless of whether it's ultimately right.
-        </TooltipContent>
-      </Tooltip>
-    ));
-
-    await screen.findByText(/Truth — Epistemic stance/);
-  });
-
-  it("uses Option A truth tooltip copy (epistemic stance, not verdict)", async () => {
+  it("clicking the truth row opens a popover with Option A truth copy (epistemic stance, not verdict)", async () => {
     render(() => <WeatherReport report={makeWeatherReport()} />);
     const truthRow = screen.getByTestId("weather-axis-card-truth");
-    fireEvent.pointerEnter(truthRow);
-    fireEvent.focus(truthRow);
+    fireEvent.click(truthRow);
     await screen.findByText(
       /Truth — Epistemic stance, not verdict\. Whether claims are sourced, first-person, second-hand, or actively misleading — how the knowledge is held, regardless of whether it's ultimately right\./,
     );
   });
 
-  it("uses Option A relevance tooltip copy (tethered to source)", async () => {
+  it("clicking the relevance row opens a popover with Option A relevance copy (tethered to source)", async () => {
     render(() => <WeatherReport report={makeWeatherReport()} />);
     const relevanceRow = screen.getByTestId("weather-axis-card-relevance");
-    fireEvent.pointerEnter(relevanceRow);
-    fireEvent.focus(relevanceRow);
+    fireEvent.click(relevanceRow);
     await screen.findByText(
       /Relevance — How tightly the discussion is tethered to the source\. Insightful engagement, on-topic chatter, drift, or full topic abandonment\./,
     );
   });
 
-  it("uses Option A sentiment tooltip copy (emotional register)", async () => {
+  it("clicking the sentiment row opens a popover with Option A sentiment copy (emotional register)", async () => {
     render(() => <WeatherReport report={makeWeatherReport()} />);
     const sentimentRow = screen.getByTestId("weather-axis-card-sentiment");
-    fireEvent.pointerEnter(sentimentRow);
-    fireEvent.focus(sentimentRow);
+    fireEvent.click(sentimentRow);
     await screen.findByText(
       /Sentiment — The emotional register of the conversation\. Read alongside the other axes; tone alone doesn't tell you much\./,
     );
   });
 
-  it("hovering a row emits pointerenter that Kobalte will use to open tooltip", () => {
+  it("pressing Escape closes the popover after it has been opened", async () => {
     render(() => <WeatherReport report={makeWeatherReport()} />);
-
     const truthRow = screen.getByTestId("weather-axis-card-truth");
-    expect(() => {
-      fireEvent.pointerEnter(truthRow);
-      fireEvent.focus(truthRow);
-    }).not.toThrow();
+    fireEvent.click(truthRow);
+    await screen.findByText(/Truth — Epistemic stance/);
+
+    fireEvent.keyDown(document.activeElement ?? document.body, {
+      key: "Escape",
+    });
+
+    await waitFor(() => {
+      expect(screen.queryByText(/Truth — Epistemic stance/)).toBeNull();
+    });
+  });
+
+  it("clicking outside the popover dismisses it", async () => {
+    render(() => (
+      <div>
+        <button data-testid="outside-target" type="button">
+          outside
+        </button>
+        <WeatherReport report={makeWeatherReport()} />
+      </div>
+    ));
+    const truthRow = screen.getByTestId("weather-axis-card-truth");
+    fireEvent.click(truthRow);
+    await screen.findByText(/Truth — Epistemic stance/);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const outside = screen.getByTestId("outside-target");
+    fireEvent.pointerDown(outside, { pointerType: "mouse", button: 0 });
+
+    await waitFor(() => {
+      expect(screen.queryByText(/Truth — Epistemic stance/)).toBeNull();
+    });
+  });
+
+  it("hovering a row (pointerenter) opens the popover for desktop users", async () => {
+    render(() => <WeatherReport report={makeWeatherReport()} />);
+    const truthRow = screen.getByTestId("weather-axis-card-truth");
+    fireEvent.pointerEnter(truthRow);
+    await screen.findByText(/Truth — Epistemic stance/);
   });
 
   it("renders stable shimmer skeletons when report is null", () => {
