@@ -55,7 +55,7 @@ def settings() -> Settings:
 
 @pytest.fixture
 def no_external_settings() -> Settings:
-    return Settings(EVIDENCE_MAX_EXTERNAL_RETRIEVALS=0)
+    return Settings(EVIDENCE_MAX_EXTERNAL_CLAIMS=0)
 
 
 def _claims_report(*texts: str) -> ClaimsReport:
@@ -94,6 +94,37 @@ class _Payload:
         self.claims_report = claims_report
 
 
+class _AgentCall:
+    def __init__(
+        self,
+        *,
+        name: str,
+        tier: str,
+        output_type: type[Any],
+        builtin_tools: list[Any],
+    ) -> None:
+        self.name = name
+        self.tier = tier
+        self.output_type = output_type
+        self.builtin_tools = builtin_tools
+
+
+class _Returned:
+    def __init__(self, content: list[dict[str, str]]) -> None:
+        self.content = content
+
+
+class _Response:
+    def __init__(self, urls: list[str]) -> None:
+        self.builtin_tool_calls = [(object(), _Returned([{"uri": url} for url in urls]))]
+
+
+class _RunResult:
+    def __init__(self, output: Any, urls: list[str] | None = None) -> None:
+        self.output = output
+        self.response = _Response(urls or [])
+
+
 async def _no_external_fetcher(
     claim_texts: list[str], _settings: Settings
 ) -> dict[str, list[dict[str, Any]]]:
@@ -118,6 +149,40 @@ def test_deduped_claim_round_trips_positive_facts_to_verify() -> None:
 def test_deduped_claim_rejects_negative_facts_to_verify() -> None:
     with pytest.raises(ValidationError):
         DedupedClaim(**_deduped_claim_payload(facts_to_verify=-1))
+
+
+def test_evidence_settings_default_external_claim_and_candidate_caps() -> None:
+    settings = Settings()
+
+    assert settings.EVIDENCE_MAX_EXTERNAL_CLAIMS == 10
+    assert settings.EVIDENCE_SYNTHESIS_CANDIDATE_CAP == 60
+
+
+def test_proportional_shrink_caps_counts_with_non_zero_floor() -> None:
+    allotments = evidence.proportional_shrink([8, 3, 1], 10)
+
+    assert sum(allotments) <= 10
+    assert all(allotment >= 1 for allotment in allotments)
+    assert allotments[0] >= allotments[1] >= allotments[2]
+
+
+def test_proportional_shrink_preserves_zero_entries_and_identity_when_under_cap() -> None:
+    assert evidence.proportional_shrink([2, 0, 3], 10) == [2, 0, 3]
+    assert evidence.proportional_shrink([8, 0, 3], 5)[1] == 0
+
+
+def test_external_evidence_candidate_carries_pipeline_fields() -> None:
+    candidate = evidence._ExternalEvidenceCandidate(
+        canonical_text="The moon is round.",
+        statement="NASA describes the moon as round.",
+        source_ref="https://science.example/moon",
+    )
+
+    assert candidate.model_dump() == {
+        "canonical_text": "The moon is round.",
+        "statement": "NASA describes the moon as round.",
+        "source_ref": "https://science.example/moon",
+    }
 
 
 @pytest.mark.asyncio
@@ -194,7 +259,7 @@ async def test_build_supporting_facts_budgets_external_batch(
         external_fetcher=fake_external_fetcher,
     )
 
-    assert calls == [[f"claim {i}" for i in range(5)]]
+    assert calls == [[f"claim {i}" for i in range(6)]]
 
 
 @pytest.mark.asyncio
@@ -310,22 +375,409 @@ async def test_build_supporting_facts_keeps_near_matching_external_facts(
 
 
 def test_grounded_urls_from_result_normalizes_search_result_urls() -> None:
-    class _Returned:
+    class _SearchReturned:
         content: ClassVar[list[dict[str, str]]] = [
             {"uri": "HTTPS://Example.Test/source/"},
             {"uri": "https://example.test/source?ref=search"},
         ]
 
-    class _Response:
-        builtin_tool_calls: ClassVar[list[tuple[object, _Returned]]] = [(object(), _Returned())]
+    class _SearchResponse:
+        builtin_tool_calls: ClassVar[list[tuple[object, _SearchReturned]]] = [
+            (object(), _SearchReturned())
+        ]
 
     class _Result:
-        response = _Response()
+        response = _SearchResponse()
 
     assert evidence._grounded_urls_from_result(_Result()) == {
         "https://example.test/source",
         "https://example.test/source?ref=search",
     }
+
+
+@pytest.mark.asyncio
+async def test_cluster_claims_shortcuts_empty_and_single_claim(
+    monkeypatch: pytest.MonkeyPatch,
+    settings: Settings,
+) -> None:
+    def fail_build_agent(*_args: object, **_kwargs: object) -> object:
+        raise AssertionError("single-claim clustering should not call the agent")
+
+    monkeypatch.setattr(evidence, "build_agent", fail_build_agent)
+
+    assert await evidence._cluster_claims_for_grounding([], settings) == []
+    assert await evidence._cluster_claims_for_grounding(["The moon is round."], settings) == [
+        ["The moon is round."]
+    ]
+
+
+@pytest.mark.asyncio
+async def test_cluster_claims_repairs_dropped_and_duplicated_claims(
+    monkeypatch: pytest.MonkeyPatch,
+    settings: Settings,
+) -> None:
+    def fake_build_agent(
+        _settings: Settings,
+        *,
+        output_type: type[Any],
+        system_prompt: str | None = None,
+        name: str | None = None,
+        tier: str = "fast",
+        builtin_tools: list[Any] | tuple[Any, ...] = (),
+        **_kwargs: object,
+    ) -> _AgentCall:
+        del system_prompt
+        return _AgentCall(
+            name=name or "",
+            tier=tier,
+            output_type=output_type,
+            builtin_tools=list(builtin_tools),
+        )
+
+    async def fake_run(_agent: _AgentCall, _prompt: str) -> _RunResult:
+        return _RunResult(
+            evidence._ClusterResponse(
+                groups=[
+                    evidence._ClaimGroup(claim_texts=["claim one", "claim one"]),
+                    evidence._ClaimGroup(claim_texts=["claim two"]),
+                ]
+            )
+        )
+
+    monkeypatch.setattr(evidence, "build_agent", fake_build_agent)
+    monkeypatch.setattr(evidence, "run_vertex_agent_with_retry", fake_run)
+
+    groups = await evidence._cluster_claims_for_grounding(
+        ["claim one", "claim two", "claim three"],
+        settings,
+    )
+
+    assert groups == [["claim one"], ["claim two"], ["claim three"]]
+
+
+@pytest.mark.asyncio
+async def test_fetch_grounded_candidates_keeps_successes_and_logs_drops(
+    monkeypatch: pytest.MonkeyPatch,
+    settings: Settings,
+) -> None:
+    calls: list[_AgentCall] = []
+    drop_events: list[dict[str, object]] = []
+
+    def fake_build_agent(
+        _settings: Settings,
+        *,
+        output_type: type[Any],
+        system_prompt: str | None = None,
+        name: str | None = None,
+        tier: str = "fast",
+        builtin_tools: list[Any] | tuple[Any, ...] = (),
+        **_kwargs: object,
+    ) -> _AgentCall:
+        del system_prompt, output_type
+        call = _AgentCall(
+            name=name or "",
+            tier=tier,
+            output_type=evidence._ExternalEvidenceResponse,
+            builtin_tools=list(builtin_tools),
+        )
+        calls.append(call)
+        return call
+
+    async def fake_run(_agent: _AgentCall, prompt: str) -> _RunResult:
+        if "bad group" in prompt:
+            raise RuntimeError("one group failed")
+        return _RunResult(
+            evidence._ExternalEvidenceResponse(
+                facts=[
+                    evidence._ExternalEvidenceItem(
+                        canonical_text="claim one",
+                        statement="Supported fact.",
+                        source_ref="https://example.test/source",
+                    ),
+                    evidence._ExternalEvidenceItem(
+                        canonical_text="claim one",
+                        statement="Dropped fact.",
+                        source_ref="https://example.test/missing",
+                    ),
+                ]
+            ),
+            urls=["https://example.test/source/"],
+        )
+
+    def fake_logfire_info(event_name: str, **kwargs: object) -> None:
+        if event_name == "vibecheck.evidence.grounded_url_filter_drop":
+            drop_events.append(kwargs)
+
+    monkeypatch.setattr(evidence, "build_agent", fake_build_agent)
+    monkeypatch.setattr(evidence, "run_vertex_agent_with_retry", fake_run)
+    monkeypatch.setattr(evidence.logfire, "info", fake_logfire_info)
+
+    candidates = await evidence._fetch_grounded_candidates_for_groups(
+        [["claim one"], ["bad group"]],
+        settings,
+    )
+
+    assert [candidate.model_dump() for candidate in candidates] == [
+        {
+            "canonical_text": "claim one",
+            "statement": "Supported fact.",
+            "source_ref": "https://example.test/source",
+        }
+    ]
+    assert [(call.name, call.tier) for call in calls] == [
+        ("vibecheck.claims_evidence_fetch", "fast"),
+        ("vibecheck.claims_evidence_fetch", "fast"),
+    ]
+    assert drop_events == [
+        {
+            "claim_text": "claim one",
+            "source_ref": "https://example.test/missing",
+            "reason": "not_in_grounded_metadata",
+        }
+    ]
+
+
+@pytest.mark.asyncio
+async def test_dedupe_and_sanity_check_candidates_returns_subset(
+    monkeypatch: pytest.MonkeyPatch,
+    settings: Settings,
+) -> None:
+    def fake_build_agent(
+        _settings: Settings,
+        *,
+        output_type: type[Any],
+        system_prompt: str | None = None,
+        name: str | None = None,
+        tier: str = "fast",
+        builtin_tools: list[Any] | tuple[Any, ...] = (),
+        **_kwargs: object,
+    ) -> _AgentCall:
+        del system_prompt
+        return _AgentCall(
+            name=name or "",
+            tier=tier,
+            output_type=output_type,
+            builtin_tools=list(builtin_tools),
+        )
+
+    async def fake_run(_agent: _AgentCall, _prompt: str) -> _RunResult:
+        return _RunResult(
+            evidence._SanityResponse(
+                candidates=[
+                    evidence._ExternalEvidenceCandidate(
+                        canonical_text="claim one",
+                        statement="Supported fact.",
+                        source_ref="https://example.test/source/",
+                    ),
+                    evidence._ExternalEvidenceCandidate(
+                        canonical_text="hallucinated claim",
+                        statement="Not allowed.",
+                        source_ref="https://example.test/other",
+                    ),
+                ]
+            )
+        )
+
+    monkeypatch.setattr(evidence, "build_agent", fake_build_agent)
+    monkeypatch.setattr(evidence, "run_vertex_agent_with_retry", fake_run)
+
+    candidates = [
+        evidence._ExternalEvidenceCandidate(
+            canonical_text="claim one",
+            statement="Supported fact.",
+            source_ref="https://example.test/source",
+        ),
+        evidence._ExternalEvidenceCandidate(
+            canonical_text="claim one",
+            statement="Supported fact.",
+            source_ref="https://example.test/source/",
+        ),
+        evidence._ExternalEvidenceCandidate(
+            canonical_text="claim two",
+            statement="Off topic.",
+            source_ref="https://example.test/off-topic",
+        ),
+    ]
+
+    clean = await evidence._dedupe_and_sanity_check_candidates(candidates, settings)
+
+    assert [candidate.model_dump() for candidate in clean] == [
+        {
+            "canonical_text": "claim one",
+            "statement": "Supported fact.",
+            "source_ref": "https://example.test/source/",
+        }
+    ]
+
+
+@pytest.mark.asyncio
+async def test_curate_supporting_facts_uses_one_synthesis_call_and_external_kind(
+    monkeypatch: pytest.MonkeyPatch,
+    settings: Settings,
+) -> None:
+    calls: list[_AgentCall] = []
+    telemetry: list[tuple[str, dict[str, object]]] = []
+
+    def fake_build_agent(
+        _settings: Settings,
+        *,
+        output_type: type[Any],
+        system_prompt: str | None = None,
+        name: str | None = None,
+        tier: str = "fast",
+        builtin_tools: list[Any] | tuple[Any, ...] = (),
+        **_kwargs: object,
+    ) -> _AgentCall:
+        del system_prompt
+        call = _AgentCall(
+            name=name or "",
+            tier=tier,
+            output_type=output_type,
+            builtin_tools=list(builtin_tools),
+        )
+        calls.append(call)
+        return call
+
+    async def fake_run(_agent: _AgentCall, _prompt: str) -> _RunResult:
+        return _RunResult(
+            evidence._CurateResponse(
+                facts=[
+                    evidence._CurateFact(
+                        canonical_text="claim one",
+                        statement="candidate 0",
+                        source_ref="https://example.test/0",
+                    ),
+                    evidence._CurateFact(
+                        canonical_text="hallucinated claim",
+                        statement="Dropped fact.",
+                        source_ref="https://example.test/other",
+                    ),
+                ]
+            )
+        )
+
+    def fake_logfire_info(event_name: str, **kwargs: object) -> None:
+        telemetry.append((event_name, kwargs))
+
+    monkeypatch.setattr(evidence, "build_agent", fake_build_agent)
+    monkeypatch.setattr(evidence, "run_vertex_agent_with_retry", fake_run)
+    monkeypatch.setattr(evidence.logfire, "info", fake_logfire_info)
+
+    candidates = [
+        evidence._ExternalEvidenceCandidate(
+            canonical_text="claim one",
+            statement=f"candidate {index}",
+            source_ref=f"https://example.test/{index}",
+        )
+        for index in range(12)
+    ]
+
+    facts = await evidence._curate_supporting_facts_synthesis(
+        candidates,
+        Settings(EVIDENCE_SYNTHESIS_CANDIDATE_CAP=10),
+    )
+
+    assert [(call.name, call.tier, call.builtin_tools) for call in calls] == [
+        ("vibecheck.claims_evidence_curate", "synthesis", [])
+    ]
+    assert facts["claim one"][0].model_dump(mode="json") == {
+        "statement": "candidate 0",
+        "source_kind": SourceKind.EXTERNAL.value,
+        "source_ref": "https://example.test/0",
+    }
+    assert "hallucinated claim" not in facts
+    assert [event_name for event_name, _kwargs in telemetry] == [
+        "vibecheck.evidence.synthesis_prompt_length",
+        "vibecheck.evidence.synthesis_curate",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_fetch_external_evidence_batch_runs_pipeline_with_one_synthesis_call(
+    monkeypatch: pytest.MonkeyPatch,
+    settings: Settings,
+) -> None:
+    calls: list[_AgentCall] = []
+
+    def fake_build_agent(
+        _settings: Settings,
+        *,
+        output_type: type[Any],
+        system_prompt: str | None = None,
+        name: str | None = None,
+        tier: str = "fast",
+        builtin_tools: list[Any] | tuple[Any, ...] = (),
+        **_kwargs: object,
+    ) -> _AgentCall:
+        del system_prompt
+        call = _AgentCall(
+            name=name or "",
+            tier=tier,
+            output_type=output_type,
+            builtin_tools=list(builtin_tools),
+        )
+        calls.append(call)
+        return call
+
+    async def fake_run(agent: _AgentCall, _prompt: str) -> _RunResult:
+        if agent.name == "vibecheck.claims_evidence_cluster":
+            return _RunResult(
+                evidence._ClusterResponse(
+                    groups=[evidence._ClaimGroup(claim_texts=["claim one", "claim two"])]
+                )
+            )
+        if agent.name == "vibecheck.claims_evidence_fetch":
+            return _RunResult(
+                evidence._ExternalEvidenceResponse(
+                    facts=[
+                        evidence._ExternalEvidenceItem(
+                            canonical_text="claim one",
+                            statement="Fetched fact.",
+                            source_ref="https://example.test/source",
+                        )
+                    ]
+                ),
+                urls=["https://example.test/source"],
+            )
+        if agent.name == "vibecheck.claims_evidence_sanity":
+            return _RunResult(
+                evidence._SanityResponse(
+                    candidates=[
+                        evidence._ExternalEvidenceCandidate(
+                            canonical_text="claim one",
+                            statement="Fetched fact.",
+                            source_ref="https://example.test/source",
+                        )
+                    ]
+                )
+            )
+        return _RunResult(
+            evidence._CurateResponse(
+                facts=[
+                    evidence._CurateFact(
+                        canonical_text="claim one",
+                        statement="Fetched fact.",
+                        source_ref="https://example.test/source",
+                    )
+                ]
+            )
+        )
+
+    monkeypatch.setattr(evidence, "build_agent", fake_build_agent)
+    monkeypatch.setattr(evidence, "run_vertex_agent_with_retry", fake_run)
+
+    facts = await evidence.fetch_external_evidence_batch(["claim one", "claim two"], settings)
+
+    assert facts == {
+        "claim one": [
+            {
+                "statement": "Fetched fact.",
+                "source_kind": SourceKind.EXTERNAL.value,
+                "source_ref": "https://example.test/source",
+            }
+        ]
+    }
+    assert sum(1 for call in calls if call.tier == "synthesis") == 1
 
 
 @pytest.mark.asyncio
@@ -910,7 +1362,7 @@ async def test_external_supporting_facts_are_not_truncated() -> None:
         representative_authors=["alice"],
     )
 
-    settings = Settings(EVIDENCE_MAX_EXTERNAL_RETRIEVALS=1)
+    settings = Settings(EVIDENCE_MAX_EXTERNAL_CLAIMS=1)
 
     facts = await evidence.build_supporting_facts_by_claim(
         [claim],

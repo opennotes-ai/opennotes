@@ -75,6 +75,11 @@ class Settings(BaseSettings):
     # the image cache TTL. Lower if videos at a stable URL get re-edited.
     VISION_VIDEO_CACHE_TTL_HOURS: int = 168
     EVIDENCE_MAX_EXTERNAL_RETRIEVALS: int = 5
+    EVIDENCE_MAX_EXTERNAL_CLAIMS: int = 10
+    # Starting synthesis cap; revisit after production telemetry shows typical
+    # candidate distributions and prompt lengths.
+    EVIDENCE_SYNTHESIS_CANDIDATE_CAP: int = 60
+    EVIDENCE_GROUNDED_FETCH_GROUPS_PER_CALL: int = 1
     PREMISES_MAX_CLAIMS_PER_BATCH: int = 30
 
     # --- Cloud Tasks + internal worker endpoint (TASK-1473.12) ---
