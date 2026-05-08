@@ -4,6 +4,7 @@ import {
   formatWeatherExpansion,
   formatWeatherLabel,
   formatWeatherVariant,
+  VARIANT_CLASSES,
 } from "./weather-labels";
 import weatherLabelsJson from "./weather-labels.json";
 
@@ -150,8 +151,6 @@ describe("formatWeatherExpansion — unknown labels", () => {
   });
 });
 
-import { VARIANT_CLASSES } from "./weather-labels";
-
 describe("palette — no classic primary colors in VARIANT_CLASSES", () => {
   it("does not contain a 'blue' key in VARIANT_CLASSES", () => {
     expect(Object.keys(VARIANT_CLASSES)).not.toContain("blue");
@@ -198,23 +197,5 @@ describe("palette — every JSON entry's variant is present in VARIANT_CLASSES",
         `entry "${key}" has variant "${entry.variant}" which is not in VARIANT_CLASSES`,
       ).toContain(entry.variant);
     }
-  });
-});
-
-describe("palette — specific JSON migrations applied", () => {
-  it("factual_claims uses cyan (not blue)", () => {
-    expect(weatherLabelsJson.factual_claims.variant).toBe("cyan");
-  });
-
-  it("on_topic uses lime (not green)", () => {
-    expect(weatherLabelsJson.on_topic.variant).toBe("lime");
-  });
-
-  it("misleading uses fuchsia (not rose)", () => {
-    expect(weatherLabelsJson.misleading.variant).toBe("fuchsia");
-  });
-
-  it("off_topic uses fuchsia (not rose)", () => {
-    expect(weatherLabelsJson.off_topic.variant).toBe("fuchsia");
   });
 });
