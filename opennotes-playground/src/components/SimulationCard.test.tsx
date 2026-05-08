@@ -57,6 +57,20 @@ describe("SimulationCard", () => {
     expect(anchor?.className).not.toContain("hover:border-primary/40");
   });
 
+  it("preserves native anchor a11y semantics: no role=button or synthetic tabindex on the link", () => {
+    // Regression guard: the polymorphic Card must NOT inject role="button" or
+    // tabindex="0" when rendered as a router link (Solid Router's <A> with href).
+    // Native <a href> already has role="link" and is focusable; overriding to
+    // role="button" mismatches AT semantics and keyboard activation expectations.
+    const sim = makeSimulation();
+    const { container } = renderWithRouter(sim);
+
+    const anchor = container.querySelector("a");
+    expect(anchor).not.toBeNull();
+    expect(anchor?.getAttribute("role")).toBeNull();
+    expect(anchor?.getAttribute("tabindex")).toBeNull();
+  });
+
   it("displays simulation status and turns", () => {
     const sim = makeSimulation({ status: "completed", cumulative_turns: 12 });
     const { getByText } = renderWithRouter(sim);

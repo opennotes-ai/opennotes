@@ -1,4 +1,4 @@
-import type { ComponentProps, ValidComponent } from "solid-js";
+import type { Component, ComponentProps, ValidComponent } from "solid-js";
 import { splitProps } from "solid-js";
 import { Dynamic } from "solid-js/web";
 import type { VariantProps } from "class-variance-authority";
@@ -29,11 +29,10 @@ export const Card = <T extends ValidComponent = "div">(props: CardProps<T>) => {
   const [, rest] = splitProps(props as CardProps, ["class", "variant", "as"]);
   const tag = (props.as ?? "div") as ValidComponent;
 
-  const isAnchorWithHref =
-    tag === "a" && (props as ComponentProps<"a">).href !== undefined;
+  const hasHref = (props as { href?: unknown }).href !== undefined;
   const isInteractive = props.variant === "interactive";
   const a11yProps =
-    isInteractive && !isAnchorWithHref ? { tabindex: 0, role: "button" } : {};
+    isInteractive && !hasHref ? { tabindex: 0, role: "button" } : {};
 
   return (
     <Dynamic
@@ -44,8 +43,6 @@ export const Card = <T extends ValidComponent = "div">(props: CardProps<T>) => {
     />
   );
 };
-
-import type { Component } from "solid-js";
 
 const CardHeader: Component<ComponentProps<"div">> = (props) => {
   const [local, others] = splitProps(props, ["class"]);

@@ -12,12 +12,13 @@ describe("<Card /> CVA variants + polymorphic", () => {
   });
 
   it("default variant base does NOT contain border or shadow- utilities", () => {
-    const cvaCall = cardSource.slice(
+    const interactiveStart = cardSource.indexOf("interactive:");
+    const defaultBase = cardSource.slice(
       cardSource.indexOf("cva("),
-      cardSource.indexOf("defaultVariants"),
+      interactiveStart,
     );
-    expect(cvaCall).not.toMatch(/\bborder\b/);
-    expect(cvaCall).not.toMatch(/shadow-/);
+    expect(defaultBase).not.toMatch(/\bborder\b/);
+    expect(defaultBase).not.toMatch(/shadow-/);
   });
 
   it("interactive variant contains motion-safe:transition and motion-safe:-translate-y-px", () => {
@@ -41,9 +42,21 @@ describe("<Card /> CVA variants + polymorphic", () => {
     expect(cardSource).toContain("solid-js/web");
   });
 
-  it("polymorphic logic: skips synthetic tabindex when as=a with href", () => {
-    expect(cardSource).toContain("tabindex");
-    expect(cardSource).toContain("isAnchorWithHref");
+  it("a11y guard uses href presence (not tag identity) so router link components are detected", () => {
+    // Regression guard for the bug where `tag === "a"` failed to match Solid Router's
+    // <A> component, causing role="button" to be injected onto a real <a href>.
+    // The check must rely on `href` presence so any link wrapper (string "a",
+    // SolidJS Router <A>, custom <Link>) is detected uniformly.
+    expect(cardSource).toContain("hasHref");
+    expect(cardSource).toMatch(/href\?:\s*unknown/);
+    // Negative: must NOT condition on tag identity.
+    expect(cardSource).not.toMatch(/tag\s*===\s*"a"/);
+  });
+
+  it("interactive a11yProps inject only when interactive AND no href", () => {
+    expect(cardSource).toMatch(/isInteractive\s*&&\s*!hasHref/);
+    expect(cardSource).toContain('tabindex: 0');
+    expect(cardSource).toContain('role: "button"');
   });
 
   it("sub-components still export and forward class via cn()", () => {
