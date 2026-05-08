@@ -1,4 +1,4 @@
-import { For, Show, type JSX } from "solid-js";
+import { For, Show, createSignal, type JSX } from "solid-js";
 import { Card, CardContent } from "@opennotes/ui/components/ui/card";
 import {
   Table,
@@ -7,10 +7,10 @@ import {
   TableRow,
 } from "@opennotes/ui/components/ui/table";
 import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@opennotes/ui/components/ui/tooltip";
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@opennotes/ui/components/ui/popover";
 import { Skeleton } from "@opennotes/ui/components/ui/skeleton";
 import type { components } from "~/lib/generated-types";
 import {
@@ -51,11 +51,11 @@ interface AxisDefinition {
 
 const TOOLTIP_COPY: Record<AxisType, string> = {
   truth:
-    "Truth — Epistemic stance, not verdict. Whether claims are sourced, factual claims, first-person, second-hand, or actively misleading.",
+    "Truth — Epistemic stance, not verdict. Whether claims are sourced, first-person, second-hand, or actively misleading — how the knowledge is held, regardless of whether it's ultimately right.",
   relevance:
-    "Relevance — Conversational stance, not score. Whether the content is insightful, on topic, chatty, drifting, or off topic.",
+    "Relevance — How tightly the discussion is tethered to the source. Insightful engagement, on-topic chatter, drift, or full topic abandonment.",
   sentiment:
-    "Sentiment — Emotional stance, not judgment. The tone is rendered as a free-form descriptor (commonly supportive, neutral, critical, or oppositional).",
+    "Sentiment — The emotional register of the conversation. Read alongside the other axes; tone alone doesn't tell you much.",
 };
 
 const AXES: AxisDefinition[] = [
@@ -112,13 +112,22 @@ function AxisRow(props: AxisRowProps): JSX.Element {
 
   const confidence = () => formatLogprobProbability(axisData()?.logprob);
   const alternatives = () => safeAlternatives(axisData());
+  const [open, setOpen] = createSignal(false);
 
   return (
-    <Tooltip>
-      <TooltipTrigger
+    <Popover open={open()} onOpenChange={setOpen}>
+      <PopoverTrigger
         as={TableRow}
         data-testid={`weather-axis-card-${props.axis.axisType}`}
+        onPointerEnter={() => setOpen(true)}
+        onPointerLeave={() => setOpen(false)}
       >
+        <TableCell
+          aria-hidden="true"
+          class="whitespace-nowrap pr-3 text-[12px] font-semibold uppercase tracking-[0.06em] text-muted-foreground"
+        >
+          {props.axis.heading.toUpperCase()}
+        </TableCell>
         <TableCell class="w-full">
           <Show
             when={axisData()}
@@ -146,7 +155,7 @@ function AxisRow(props: AxisRowProps): JSX.Element {
                   <Show when={confidence() !== null}>
                     <span
                       data-testid={`weather-${props.axis.axisType}-confidence`}
-                      class="text-[11px] text-muted-foreground"
+                      class="text-xs text-muted-foreground"
                     >
                       {confidence()}
                     </span>
@@ -164,7 +173,7 @@ function AxisRow(props: AxisRowProps): JSX.Element {
                           const alternativeConfidence =
                             formatLogprobProbability(alternative.logprob);
                           return (
-                            <li class="inline-flex rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+                            <li class="inline-flex rounded-md bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
                               {alternativeLabel}
                               <Show when={alternativeConfidence !== null}>
                                 <span> ({alternativeConfidence})</span>
@@ -180,11 +189,11 @@ function AxisRow(props: AxisRowProps): JSX.Element {
             }}
           </Show>
         </TableCell>
-      </TooltipTrigger>
-      <TooltipContent class="max-w-xs text-xs leading-snug">
+      </PopoverTrigger>
+      <PopoverContent class="max-w-xs text-sm leading-snug">
         {props.axis.tooltip}
-      </TooltipContent>
-    </Tooltip>
+      </PopoverContent>
+    </Popover>
   );
 }
 

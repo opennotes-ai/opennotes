@@ -49,7 +49,7 @@ export default function HeadlineLeadIn(props: HeadlineLeadInProps): JSX.Element 
 
   const gridClass = () =>
     weatherSlotVisible()
-      ? "grid grid-cols-1 gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]"
+      ? "grid grid-cols-1 gap-3 lg:grid-cols-[max-content_1fr]"
       : "grid grid-cols-1 gap-3";
 
   return (
@@ -60,7 +60,6 @@ export default function HeadlineLeadIn(props: HeadlineLeadInProps): JSX.Element 
       <Show when={weatherSlotVisible()}>
         <WeatherReport
           report={props.showWeatherSkeleton ? null : props.weatherReport}
-          class="grid-cols-3 lg:grid-cols-1"
         />
       </Show>
       <Show when={hasHeadline()}>

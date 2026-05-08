@@ -7,11 +7,6 @@ import {
   screen,
   waitFor,
 } from "@solidjs/testing-library";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@opennotes/ui/components/ui/tooltip";
 import type { components } from "~/lib/generated-types";
 import WeatherReport from "./WeatherReport";
 
@@ -101,28 +96,75 @@ describe("WeatherReport", () => {
     }
   });
 
-  it("renders tooltip content with the axis interpretation hint when opened", async () => {
-    render(() => (
-      <Tooltip open>
-        <TooltipTrigger as="span">trigger</TooltipTrigger>
-        <TooltipContent>
-          Truth — Epistemic stance, not verdict. Whether claims are sourced,
-          factual claims, first-person, second-hand, or actively misleading.
-        </TooltipContent>
-      </Tooltip>
-    ));
-
-    await screen.findByText(/Truth — Epistemic stance/);
+  it("clicking the truth row opens a popover with Option A truth copy (epistemic stance, not verdict)", async () => {
+    render(() => <WeatherReport report={makeWeatherReport()} />);
+    const truthRow = screen.getByTestId("weather-axis-card-truth");
+    fireEvent.click(truthRow);
+    await screen.findByText(
+      /Truth — Epistemic stance, not verdict\. Whether claims are sourced, first-person, second-hand, or actively misleading — how the knowledge is held, regardless of whether it's ultimately right\./,
+    );
   });
 
-  it("hovering a row emits pointerenter that Kobalte will use to open tooltip", () => {
+  it("clicking the relevance row opens a popover with Option A relevance copy (tethered to source)", async () => {
     render(() => <WeatherReport report={makeWeatherReport()} />);
+    const relevanceRow = screen.getByTestId("weather-axis-card-relevance");
+    fireEvent.click(relevanceRow);
+    await screen.findByText(
+      /Relevance — How tightly the discussion is tethered to the source\. Insightful engagement, on-topic chatter, drift, or full topic abandonment\./,
+    );
+  });
 
+  it("clicking the sentiment row opens a popover with Option A sentiment copy (emotional register)", async () => {
+    render(() => <WeatherReport report={makeWeatherReport()} />);
+    const sentimentRow = screen.getByTestId("weather-axis-card-sentiment");
+    fireEvent.click(sentimentRow);
+    await screen.findByText(
+      /Sentiment — The emotional register of the conversation\. Read alongside the other axes; tone alone doesn't tell you much\./,
+    );
+  });
+
+  it("pressing Escape closes the popover after it has been opened", async () => {
+    render(() => <WeatherReport report={makeWeatherReport()} />);
     const truthRow = screen.getByTestId("weather-axis-card-truth");
-    expect(() => {
-      fireEvent.pointerEnter(truthRow);
-      fireEvent.focus(truthRow);
-    }).not.toThrow();
+    fireEvent.click(truthRow);
+    await screen.findByText(/Truth — Epistemic stance/);
+
+    fireEvent.keyDown(document.activeElement ?? document.body, {
+      key: "Escape",
+    });
+
+    await waitFor(() => {
+      expect(screen.queryByText(/Truth — Epistemic stance/)).toBeNull();
+    });
+  });
+
+  it("clicking outside the popover dismisses it", async () => {
+    render(() => (
+      <div>
+        <button data-testid="outside-target" type="button">
+          outside
+        </button>
+        <WeatherReport report={makeWeatherReport()} />
+      </div>
+    ));
+    const truthRow = screen.getByTestId("weather-axis-card-truth");
+    fireEvent.click(truthRow);
+    await screen.findByText(/Truth — Epistemic stance/);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const outside = screen.getByTestId("outside-target");
+    fireEvent.pointerDown(outside, { pointerType: "mouse", button: 0 });
+
+    await waitFor(() => {
+      expect(screen.queryByText(/Truth — Epistemic stance/)).toBeNull();
+    });
+  });
+
+  it("hovering a row (pointerenter) opens the popover for desktop users", async () => {
+    render(() => <WeatherReport report={makeWeatherReport()} />);
+    const truthRow = screen.getByTestId("weather-axis-card-truth");
+    fireEvent.pointerEnter(truthRow);
+    await screen.findByText(/Truth — Epistemic stance/);
   });
 
   it("renders stable shimmer skeletons when report is null", () => {
@@ -315,5 +357,75 @@ describe("WeatherReport", () => {
     expect(screen.getByTestId("weather-truth-alternatives").textContent).toContain(
       "Factual Claims (28.65%)",
     );
+  });
+
+  it("renders a spaced-caps heading cell per row with aria-hidden", () => {
+    render(() => <WeatherReport report={makeWeatherReport()} />);
+
+    for (const axis of ["truth", "relevance", "sentiment"] as const) {
+      const row = screen.getByTestId(`weather-axis-card-${axis}`);
+      const cells = row.querySelectorAll('[data-slot="table-cell"]');
+      expect(cells.length).toBeGreaterThanOrEqual(2);
+      const headingCell = cells[0] as HTMLElement;
+      expect(headingCell.getAttribute("aria-hidden")).toBe("true");
+      expect(headingCell.textContent?.trim()).toMatch(/^TRUTH$|^RELEVANCE$|^SENTIMENT$/);
+      expect(headingCell.className).toContain("uppercase");
+      expect(headingCell.className).toContain("tracking-[0.06em]");
+      expect(headingCell.className).toContain("text-muted-foreground");
+    }
+  });
+
+  it("renders the value chip at text-lg with rounded-md (de-pilled)", () => {
+    render(() => <WeatherReport report={makeWeatherReport()} />);
+
+    const className = screen.getByTestId("weather-truth-value").className;
+    expect(className).toContain("text-lg");
+    expect(className).toContain("rounded-md");
+    expect(className).not.toContain("rounded-full");
+  });
+
+  it("value chip recipe drops tinted background (no bg- token)", () => {
+    render(() => <WeatherReport report={makeWeatherReport()} />);
+
+    const className = screen.getByTestId("weather-truth-value").className;
+    expect(className).not.toMatch(/(?:^|\s)bg-/);
+  });
+
+  it("renders confidence at text-xs (no arbitrary text-[11px])", () => {
+    render(() => (
+      <WeatherReport
+        report={makeWeatherReport({
+          truth: {
+            label: "sourced",
+            logprob: -0.12,
+            alternatives: [],
+          },
+        })}
+      />
+    ));
+
+    const confidence = screen.getByTestId("weather-truth-confidence");
+    expect(confidence.className).toContain("text-xs");
+    expect(confidence.className).not.toContain("text-[11px]");
+  });
+
+  it("renders alternative chips at text-xs (no arbitrary text-[10px])", () => {
+    render(() => (
+      <WeatherReport
+        report={makeWeatherReport({
+          truth: {
+            label: "sourced",
+            logprob: null,
+            alternatives: [{ label: "factual_claims", logprob: null }],
+          },
+        })}
+      />
+    ));
+
+    const list = screen.getByTestId("weather-truth-alternatives");
+    const item = list.querySelector("li");
+    expect(item).not.toBeNull();
+    expect(item!.className).toContain("text-xs");
+    expect(item!.className).not.toContain("text-[10px]");
   });
 });

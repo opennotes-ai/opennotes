@@ -140,7 +140,7 @@ describe("HeadlineLeadIn headline skeleton", () => {
 });
 
 describe("HeadlineLeadIn weather-column collapse", () => {
-  it("uses 2-column layout while weather is loading (skeleton case)", () => {
+  it("uses auto-fit 2-column layout while weather is loading (skeleton case)", () => {
     render(() => (
       <HeadlineLeadIn
         headline={null}
@@ -151,10 +151,11 @@ describe("HeadlineLeadIn weather-column collapse", () => {
     ));
     const root = screen.getByTestId("headline-lead-in");
     const cls = root.getAttribute("class") ?? "";
-    expect(cls).toMatch(/lg:grid-cols-\[minmax\(0,1fr\)_minmax\(0,2fr\)\]/);
+    expect(cls).toMatch(/lg:grid-cols-\[max-content_1fr\]/);
+    expect(cls).not.toMatch(/1fr\)_minmax\(0,2fr/);
   });
 
-  it("uses 2-column layout when both real headline and real weather are present", () => {
+  it("uses auto-fit 2-column layout when both real headline and real weather are present", () => {
     render(() => (
       <HeadlineLeadIn
         headline={makeHeadline()}
@@ -163,7 +164,8 @@ describe("HeadlineLeadIn weather-column collapse", () => {
     ));
     const root = screen.getByTestId("headline-lead-in");
     const cls = root.getAttribute("class") ?? "";
-    expect(cls).toMatch(/lg:grid-cols-\[minmax\(0,1fr\)_minmax\(0,2fr\)\]/);
+    expect(cls).toMatch(/lg:grid-cols-\[max-content_1fr\]/);
+    expect(cls).not.toMatch(/1fr\)_minmax\(0,2fr/);
   });
 
   it("collapses to single-column layout when weather is null and not loading (failure case)", () => {
@@ -175,7 +177,7 @@ describe("HeadlineLeadIn weather-column collapse", () => {
     ));
     const root = screen.getByTestId("headline-lead-in");
     const cls = root.getAttribute("class") ?? "";
-    expect(cls).not.toMatch(/lg:grid-cols-\[minmax\(0,1fr\)_minmax\(0,2fr\)\]/);
+    expect(cls).not.toMatch(/lg:grid-cols-\[max-content_1fr\]/);
     expect(cls).toMatch(/\bgrid-cols-1\b/);
   });
 
@@ -208,7 +210,19 @@ describe("HeadlineLeadIn weather-column collapse", () => {
         ?.getAttribute("class") ?? "";
 
     expect(failureCls).not.toEqual(twoColCls);
-    expect(twoColCls).toMatch(/lg:grid-cols-\[minmax\(0,1fr\)_minmax\(0,2fr\)\]/);
-    expect(failureCls).not.toMatch(/lg:grid-cols-\[minmax\(0,1fr\)_minmax\(0,2fr\)\]/);
+    expect(twoColCls).toMatch(/lg:grid-cols-\[max-content_1fr\]/);
+    expect(failureCls).not.toMatch(/lg:grid-cols-\[max-content_1fr\]/);
+  });
+
+  it("does not pass the vestigial grid-cols-3 lg:grid-cols-1 class to WeatherReport", () => {
+    render(() => (
+      <HeadlineLeadIn
+        headline={makeHeadline()}
+        weatherReport={makeWeatherReport()}
+      />
+    ));
+    const weather = screen.getByTestId("weather-report");
+    const cls = weather.getAttribute("class") ?? "";
+    expect(cls).not.toMatch(/\bgrid-cols-3\b/);
   });
 });
