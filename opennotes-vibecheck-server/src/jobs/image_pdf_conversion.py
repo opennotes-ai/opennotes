@@ -77,7 +77,13 @@ async def _claim_conversion(
               AND b.job_id = $1
               AND j.attempt_id = $2
               AND j.status = 'pending'
-              AND b.conversion_status = 'submitted'
+              AND (
+                  b.conversion_status = 'submitted'
+                  OR (
+                      b.conversion_status = 'converting'
+                      AND b.updated_at < now() - interval '5 minutes'
+                  )
+              )
             RETURNING b.images, b.generated_pdf_gcs_key
             """,
             job_id,
@@ -151,6 +157,20 @@ async def _mark_converted(
         )
 
 
+async def _reset_conversion_for_retry(pool: Any, job_id: UUID) -> None:
+    async with pool.acquire() as conn:
+        await conn.execute(
+            """
+            UPDATE vibecheck_image_upload_batches
+            SET conversion_status = 'submitted',
+                updated_at = now()
+            WHERE job_id = $1
+              AND conversion_status = 'converting'
+            """,
+            job_id,
+        )
+
+
 async def run_image_conversion(  # noqa: PLR0911
     pool: Any,
     job_id: UUID,
@@ -206,9 +226,14 @@ async def run_image_conversion(  # noqa: PLR0911
             store.write_pdf(generated_pdf_key, pdf_bytes)
         except Exception as exc:
             logger.warning("generated PDF upload failed for job %s: %s", job_id, exc)
+            await _reset_conversion_for_retry(pool, job_id)
             return RunResult(status_code=503)
 
-        await _mark_converted(pool, job_id, expected_attempt_id, generated_pdf_key)
+        try:
+            await _mark_converted(pool, job_id, expected_attempt_id, generated_pdf_key)
+        except Exception as exc:
+            logger.warning("image conversion commit failed for job %s: %s", job_id, exc)
+            return RunResult(status_code=503)
 
     try:
         await enqueue_job(job_id, expected_attempt_id, settings)

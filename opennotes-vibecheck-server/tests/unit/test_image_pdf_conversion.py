@@ -59,12 +59,15 @@ class _FakeStore:
     def __init__(self) -> None:
         self.read_keys: list[str] = []
         self.writes: dict[str, bytes] = {}
+        self.raise_on_write: BaseException | None = None
 
     def read_bytes(self, key: str) -> bytes:
         self.read_keys.append(key)
         return f"bytes:{key}".encode()
 
     def write_pdf(self, key: str, data: bytes) -> None:
+        if self.raise_on_write is not None:
+            raise self.raise_on_write
         self.writes[key] = data
 
 
@@ -229,3 +232,38 @@ async def test_run_image_conversion_reenqueues_already_converted_job(
     assert fake_store.read_keys == []
     assert fake_store.writes == {}
     enqueue_mock.assert_awaited_once_with(job_id, attempt_id, get_settings())
+
+
+async def test_run_image_conversion_resets_submitted_after_pdf_write_failure(
+    db_pool: Any,
+    fake_store: _FakeStore,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    job_id, attempt_id = await _insert_image_job(db_pool)
+    fake_store.raise_on_write = RuntimeError("gcs unavailable")
+    enqueue_mock = AsyncMock(return_value=None)
+    monkeypatch.setattr(image_pdf_conversion, "enqueue_job", enqueue_mock)
+    monkeypatch.setattr(
+        image_pdf_conversion,
+        "_convert_images_to_pdf",
+        lambda image_bytes: b"%PDF generated",
+    )
+
+    result = await image_pdf_conversion.run_image_conversion(
+        db_pool, job_id, attempt_id, get_settings()
+    )
+
+    assert result.status_code == 503
+    assert enqueue_mock.await_count == 0
+    async with db_pool.acquire() as conn:
+        row = await conn.fetchrow(
+            """
+            SELECT j.status, b.conversion_status
+            FROM vibecheck_jobs j
+            JOIN vibecheck_image_upload_batches b ON b.job_id = j.job_id
+            WHERE j.job_id = $1
+            """,
+            job_id,
+        )
+    assert row["status"] == "pending"
+    assert row["conversion_status"] == "submitted"
