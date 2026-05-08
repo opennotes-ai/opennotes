@@ -266,3 +266,157 @@ describe("FeedbackApiError", () => {
     expect(err.message).toContain("422");
   });
 });
+
+describe("submitFeedback — 204 / empty-body branch", () => {
+  it("treats a 204 response (no body) as success and resolves void without throwing JSON parse errors", async () => {
+    mockFetch(new Response(null, { status: 204 }));
+
+    await expect(
+      submitFeedback(FEEDBACK_ID, SUBMIT_REQ),
+    ).resolves.toBeUndefined();
+  });
+
+  it("treats a 200 response with empty body string as success", async () => {
+    mockFetch(new Response("", { status: 200 }));
+
+    await expect(
+      submitFeedback(FEEDBACK_ID, SUBMIT_REQ),
+    ).resolves.toBeUndefined();
+  });
+
+  it("does not throw when 204 body is empty (handleResponse returns null body)", async () => {
+    mockFetch(new Response(null, { status: 204 }));
+
+    let thrown: unknown = undefined;
+    try {
+      await submitFeedback(FEEDBACK_ID, SUBMIT_REQ);
+    } catch (err) {
+      thrown = err;
+    }
+    expect(thrown).toBeUndefined();
+  });
+});
+
+describe("feedback-client — 4xx vs 5xx wrapping", () => {
+  it.each([
+    { status: 400, body: { detail: "bad request" } },
+    { status: 401, body: { detail: "unauthorized" } },
+    { status: 403, body: { detail: "forbidden" } },
+    { status: 404, body: { detail: "not found" } },
+    { status: 409, body: { detail: "conflict" } },
+    { status: 422, body: { detail: [{ msg: "field required" }] } },
+    { status: 429, body: { detail: "rate limited" } },
+  ])(
+    "wraps 4xx ($status) from openFeedback as FeedbackApiError preserving status and body",
+    async ({ status, body }) => {
+      mockFetch(new Response(JSON.stringify(body), { status }));
+
+      let caught: unknown;
+      try {
+        await openFeedback(OPEN_REQ);
+      } catch (err) {
+        caught = err;
+      }
+
+      expect(caught).toBeInstanceOf(FeedbackApiError);
+      const apiErr = caught as FeedbackApiError;
+      expect(apiErr.status).toBe(status);
+      expect(apiErr.status).toBeGreaterThanOrEqual(400);
+      expect(apiErr.status).toBeLessThan(500);
+      expect(apiErr.body).toEqual(body);
+    },
+  );
+
+  it.each([
+    { status: 500, body: { detail: "internal server error" } },
+    { status: 502, body: { detail: "bad gateway" } },
+    { status: 503, body: { detail: "service unavailable" } },
+    { status: 504, body: { detail: "gateway timeout" } },
+  ])(
+    "wraps 5xx ($status) from openFeedback as FeedbackApiError preserving status and body",
+    async ({ status, body }) => {
+      mockFetch(new Response(JSON.stringify(body), { status }));
+
+      let caught: unknown;
+      try {
+        await openFeedback(OPEN_REQ);
+      } catch (err) {
+        caught = err;
+      }
+
+      expect(caught).toBeInstanceOf(FeedbackApiError);
+      const apiErr = caught as FeedbackApiError;
+      expect(apiErr.status).toBe(status);
+      expect(apiErr.status).toBeGreaterThanOrEqual(500);
+      expect(apiErr.body).toEqual(body);
+    },
+  );
+
+  it("wraps 4xx from submitFeedback (PATCH) preserving status and body", async () => {
+    const body = { detail: "validation failed" };
+    mockFetch(new Response(JSON.stringify(body), { status: 422 }));
+
+    let caught: unknown;
+    try {
+      await submitFeedback(FEEDBACK_ID, SUBMIT_REQ);
+    } catch (err) {
+      caught = err;
+    }
+
+    expect(caught).toBeInstanceOf(FeedbackApiError);
+    expect((caught as FeedbackApiError).status).toBe(422);
+    expect((caught as FeedbackApiError).body).toEqual(body);
+  });
+
+  it("wraps 5xx from submitFeedback (PATCH) preserving status and body", async () => {
+    const body = { detail: "internal" };
+    mockFetch(new Response(JSON.stringify(body), { status: 503 }));
+
+    let caught: unknown;
+    try {
+      await submitFeedback(FEEDBACK_ID, SUBMIT_REQ);
+    } catch (err) {
+      caught = err;
+    }
+
+    expect(caught).toBeInstanceOf(FeedbackApiError);
+    expect((caught as FeedbackApiError).status).toBe(503);
+    expect((caught as FeedbackApiError).body).toEqual(body);
+  });
+
+  it("falls back to plain-text body when error response is not JSON (4xx)", async () => {
+    mockFetch(
+      new Response("plain text error", {
+        status: 418,
+        headers: { "content-type": "text/plain" },
+      }),
+    );
+
+    let caught: unknown;
+    try {
+      await openFeedback(OPEN_REQ);
+    } catch (err) {
+      caught = err;
+    }
+
+    expect(caught).toBeInstanceOf(FeedbackApiError);
+    const apiErr = caught as FeedbackApiError;
+    expect(apiErr.status).toBe(418);
+    expect(apiErr.body).toBe("plain text error");
+  });
+
+  it("error body is null when 5xx response has no body at all", async () => {
+    mockFetch(new Response(null, { status: 500 }));
+
+    let caught: unknown;
+    try {
+      await openFeedback(OPEN_REQ);
+    } catch (err) {
+      caught = err;
+    }
+
+    expect(caught).toBeInstanceOf(FeedbackApiError);
+    expect((caught as FeedbackApiError).status).toBe(500);
+    expect((caught as FeedbackApiError).body).toBeNull();
+  });
+});
