@@ -5,18 +5,22 @@ Behavior tested:
 2. Second request reusing the cookie → no Set-Cookie header; route returns the same uid.
 3. Request with a malformed cookie → middleware regenerates a UUID v7 and sets Set-Cookie.
 4. Concurrent independent requests do not leak uid state across them.
+5. Set-Cookie Secure attribute is conditional on VIBECHECK_COOKIE_SECURE setting.
 
 All tests use a real TestClient against a minimal FastAPI app with the middleware
 mounted — no mocks for the middleware itself.
 """
 from __future__ import annotations
 
+import asyncio
 from uuid import UUID
 
+import httpx
 import pytest
 from fastapi import FastAPI, Request
 from fastapi.testclient import TestClient
 
+from src.config import get_settings
 from src.middleware.uid_cookie import (
     UID_COOKIE_MAX_AGE,
     UID_COOKIE_NAME,
@@ -86,24 +90,78 @@ def test_malformed_cookie_regenerates_uuid7(client: TestClient) -> None:
 
 
 def test_concurrent_requests_have_independent_uids() -> None:
+    """20 truly concurrent ASGI requests through one app instance must each
+    receive a unique uid. Sequential gets-with-fresh-clients can't catch a
+    request.state leak — only awaitable concurrency under the same loop can.
+    """
     app = _make_app()
 
-    with (
-        TestClient(app, raise_server_exceptions=True) as c1,
-        TestClient(app, raise_server_exceptions=True) as c2,
-    ):
-        r1 = c1.get("/uid", cookies={})
-        r2 = c2.get("/uid", cookies={})
+    async def _fire_n_requests(n: int) -> list[str]:
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(
+            transport=transport, base_url="http://test"
+        ) as client:
+            responses = await asyncio.gather(
+                *[client.get("/uid", cookies={}) for _ in range(n)]
+            )
+        return [r.cookies[UID_COOKIE_NAME] for r in responses]
 
-    uid1 = UUID(r1.cookies[UID_COOKIE_NAME])
-    uid2 = UUID(r2.cookies[UID_COOKIE_NAME])
+    n = 20
+    uids = asyncio.run(_fire_n_requests(n))
 
-    assert uid1 != uid2, "Independent requests must get independent uids"
-    assert uid1.version == 7
-    assert uid2.version == 7
+    assert len(uids) == n
+    assert len(set(uids)) == n, (
+        f"Expected {n} unique uids across concurrent requests, got "
+        f"{len(set(uids))} unique values: {uids}"
+    )
+    for raw in uids:
+        parsed = UUID(raw)
+        assert parsed.version == 7
 
 
 def test_cookie_max_age_is_two_years() -> None:
     resp = TestClient(_make_app()).get("/uid", cookies={})
     set_cookie = resp.headers.get("set-cookie", "")
     assert f"Max-Age={UID_COOKIE_MAX_AGE}" in set_cookie
+
+
+def test_set_cookie_omits_secure_when_setting_false(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """AC#6: cookie's `Secure` attribute is conditional on
+    VIBECHECK_COOKIE_SECURE so a dev session over plain http://localhost
+    actually persists the cookie — a hard-coded `Secure=True` is silently
+    dropped by the browser on non-HTTPS origins.
+    """
+    get_settings.cache_clear()
+    monkeypatch.setenv("VIBECHECK_COOKIE_SECURE", "false")
+
+    resp = TestClient(_make_app()).get("/uid", cookies={})
+    set_cookie = resp.headers.get("set-cookie", "")
+    assert UID_COOKIE_NAME in set_cookie
+    assert "Secure" not in set_cookie, (
+        "When VIBECHECK_COOKIE_SECURE is False, the Set-Cookie header must "
+        "not contain `Secure` so dev http://localhost can store the cookie"
+    )
+
+    get_settings.cache_clear()
+
+
+def test_set_cookie_includes_secure_when_setting_true(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """AC#6 (prod side): when VIBECHECK_COOKIE_SECURE=True (staging/prod),
+    the Set-Cookie header carries `Secure` so the cookie is HTTPS-only.
+    """
+    get_settings.cache_clear()
+    monkeypatch.setenv("VIBECHECK_COOKIE_SECURE", "true")
+
+    resp = TestClient(_make_app()).get("/uid", cookies={})
+    set_cookie = resp.headers.get("set-cookie", "")
+    assert UID_COOKIE_NAME in set_cookie
+    assert "Secure" in set_cookie, (
+        "When VIBECHECK_COOKIE_SECURE is True, the Set-Cookie header must "
+        "carry `Secure` to bind the cookie to HTTPS origins"
+    )
+
+    get_settings.cache_clear()

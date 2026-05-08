@@ -134,6 +134,13 @@ class Settings(BaseSettings):
     VIBECHECK_OPINIONS_HIGHLIGHTS_AUTHOR_DIVISOR: float = 2.0
     VIBECHECK_OPINIONS_HIGHLIGHTS_OCCURRENCE_MULTIPLIER: float = 1.5
 
+    # TASK-1588.17 AC#6: Set-Cookie's Secure attribute. Browsers silently drop
+    # `Secure` cookies on `http://localhost`, so a hard-coded True breaks the
+    # whole uid-bound rate limiting + feedback flow in dev. Default False so a
+    # plain `http://localhost:5173` dev session can persist the cookie; set to
+    # True in staging/prod env config (we ship over HTTPS there).
+    VIBECHECK_COOKIE_SECURE: bool = False
+
     @field_validator("VIBECHECK_RECENT_ANALYSES_CACHE_TTL_SECONDS")
     @classmethod
     def _recent_cache_ttl_under_signed_url_validity(cls, value: int) -> int:
