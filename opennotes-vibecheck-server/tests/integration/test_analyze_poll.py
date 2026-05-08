@@ -136,6 +136,113 @@ def test_row_to_job_state_defaults_url_for_missing_source_type() -> None:
     assert job.pdf_archive_url is None
 
 
+def _minimal_terminal_sidebar_payload(url: str) -> dict[str, Any]:
+    """Smallest valid SidebarPayload dict for a terminal (done) job row."""
+    now = datetime.now(UTC).isoformat()
+    return {
+        "source_url": url,
+        "page_title": "Example",
+        "page_kind": "other",
+        "scraped_at": now,
+        "cached": False,
+        "cached_at": None,
+        "safety": {"harmful_content_matches": []},
+        "tone_dynamics": {
+            "scd": {
+                "summary": "",
+                "tone_labels": [],
+                "per_speaker_notes": {},
+                "insufficient_conversation": True,
+            },
+            "flashpoint_matches": [],
+        },
+        "facts_claims": {
+            "claims_report": {
+                "deduped_claims": [],
+                "total_claims": 0,
+                "total_unique": 0,
+            },
+            "known_misinformation": [],
+        },
+        "opinions_sentiments": {
+            "opinions_report": {
+                "sentiment_stats": {
+                    "per_utterance": [],
+                    "positive_pct": 0.0,
+                    "negative_pct": 0.0,
+                    "neutral_pct": 0.0,
+                    "mean_valence": 0.0,
+                },
+                "subjective_claims": [],
+            }
+        },
+    }
+
+
+def test_row_to_job_state_strips_invalid_weather_report() -> None:
+    """A terminal job whose stored weather_report carries a label outside
+    the current TruthLabel set must not 500 the analyze poll. The route
+    must drop weather_report and return the rest of the sidebar payload."""
+    row = _mock_poll_row(status="done")
+    payload = _minimal_terminal_sidebar_payload(row["url"])
+    payload["weather_report"] = {
+        "truth": {
+            "label": "mostly_factual",
+            "alternatives": [],
+            "logprob": 0.5,
+        },
+        "relevance": {
+            "label": "insightful",
+            "alternatives": [],
+            "logprob": 0.7,
+        },
+        "sentiment": {
+            "label": "supportive",
+            "alternatives": [],
+            "logprob": 0.8,
+        },
+    }
+    row["sidebar_payload"] = payload
+
+    job = _row_to_job_state(row)
+
+    assert job.sidebar_payload is not None
+    assert job.sidebar_payload.weather_report is None
+    assert job.sidebar_payload.source_url == row["url"]
+    assert job.sidebar_payload.safety is not None
+    assert job.sidebar_payload_complete is True
+
+
+def test_row_to_job_state_preserves_valid_weather_report() -> None:
+    """Regression guard: valid weather_report must round-trip unchanged."""
+    row = _mock_poll_row(status="done")
+    payload = _minimal_terminal_sidebar_payload(row["url"])
+    payload["weather_report"] = _weather_report_dict()
+    row["sidebar_payload"] = payload
+
+    job = _row_to_job_state(row)
+
+    assert job.sidebar_payload is not None
+    assert job.sidebar_payload.weather_report is not None
+    assert job.sidebar_payload.weather_report.truth.label == "sourced"
+    assert job.sidebar_payload_complete is True
+
+
+def test_row_to_job_state_falls_back_when_payload_unrecoverable() -> None:
+    """If validation fails for reasons unrelated to weather_report (e.g.
+    a required section is structurally invalid), drop sidebar_payload
+    entirely rather than 500ing the poll."""
+    row = _mock_poll_row(status="done")
+    payload = _minimal_terminal_sidebar_payload(row["url"])
+    payload["safety"] = "not-a-dict"
+    row["sidebar_payload"] = payload
+
+    job = _row_to_job_state(row)
+
+    assert job.sidebar_payload is None
+    assert job.sidebar_payload_complete is False
+
+
 async def test_empty_utterances_gives_null_metadata(db_pool: Any) -> None:
     """A job with no utterance rows must surface NULL page_title / page_kind."""
     job_id, _ = await insert_pending_job(
