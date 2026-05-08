@@ -166,7 +166,7 @@ function HelpPopover(props: {
             type="button"
             data-testid={props.triggerTestId}
             aria-label={`What does ${props.label} mean?`}
-            class="size-6 shrink-0 text-muted-foreground"
+            class="size-6 shrink-0 text-muted-foreground hover:bg-muted/60 dark:hover:bg-muted hover:text-foreground"
           >
             <CircleHelp
               aria-hidden="true"
@@ -313,7 +313,7 @@ export default function SectionGroup(props: SectionGroupProps): JSX.Element {
                 setUserToggledGroupOpen(true);
                 setGroupOpen((current) => !current);
               }}
-              class="flex h-auto min-w-0 items-center gap-1.5 -mx-2 px-2 py-1 rounded-md text-sm font-semibold text-foreground hover:bg-muted/60 dark:hover:bg-muted/60 hover:text-foreground"
+              class="flex h-auto min-w-0 items-center gap-1.5 -mx-2 px-2 py-1 rounded-md text-sm font-semibold text-foreground hover:bg-muted/60 dark:hover:bg-muted hover:text-foreground"
             >
               <ChevronIcon expanded={groupOpen()} testId="section-group-chevron" />
               {props.label}
@@ -377,7 +377,7 @@ export default function SectionGroup(props: SectionGroupProps): JSX.Element {
                     aria-expanded={isOpen() ? "true" : "false"}
                     aria-controls={summaryId}
                     onClick={toggle}
-                    class="flex h-auto min-w-0 flex-1 items-center justify-between gap-2 -mx-2 px-2 py-1 rounded-md text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground hover:bg-muted/60 dark:hover:bg-muted/60 hover:text-foreground"
+                    class="flex h-auto min-w-0 flex-1 items-center justify-between gap-2 -mx-2 px-2 py-1 rounded-md text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground hover:bg-muted/60 dark:hover:bg-muted hover:text-foreground"
                   >
                     <span>{summary().label ?? "Summary"}</span>
                     <span class="ml-auto flex items-center gap-2">
@@ -434,8 +434,8 @@ export default function SectionGroup(props: SectionGroupProps): JSX.Element {
                     onClick={toggle}
                     class={
                       slot().state === "pending"
-                        ? "flex h-auto min-w-0 flex-1 items-center justify-between gap-2 -mx-2 px-2 py-1 rounded-md text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground opacity-60 hover:bg-muted/60 dark:hover:bg-muted/60 hover:text-foreground"
-                        : "flex h-auto min-w-0 flex-1 items-center justify-between gap-2 -mx-2 px-2 py-1 rounded-md text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground hover:bg-muted/60 dark:hover:bg-muted/60 hover:text-foreground"
+                        ? "flex h-auto min-w-0 flex-1 items-center justify-between gap-2 -mx-2 px-2 py-1 rounded-md text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground opacity-60 hover:bg-muted/60 dark:hover:bg-muted hover:text-foreground"
+                        : "flex h-auto min-w-0 flex-1 items-center justify-between gap-2 -mx-2 px-2 py-1 rounded-md text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground hover:bg-muted/60 dark:hover:bg-muted hover:text-foreground"
                     }
                   >
                     <span
