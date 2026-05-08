@@ -149,11 +149,15 @@ async def build_premises_by_claim(
 
     premise_texts_by_claim: dict[str, list[str]] = {}
     extractor = premise_extractor or infer_premises_batch
-    raw_output = await extractor(eligible_texts, settings)
-
-    if not isinstance(raw_output, dict):
-        logger.warning("premise seam returned non-dict payload: %r", raw_output)
-        raw_output = {}
+    batch_size = max(1, settings.PREMISES_MAX_CLAIMS_PER_BATCH)
+    raw_output: dict[str, list[Any]] = {}
+    for start in range(0, len(eligible_texts), batch_size):
+        chunk = eligible_texts[start : start + batch_size]
+        chunk_output = await extractor(chunk, settings)
+        if isinstance(chunk_output, dict):
+            raw_output.update(chunk_output)
+        else:
+            logger.warning("premise seam returned non-dict payload for chunk: %r", chunk_output)
 
     for canonical in eligible_texts:
         raw_values = raw_output.get(canonical, [])

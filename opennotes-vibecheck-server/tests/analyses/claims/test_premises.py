@@ -179,6 +179,33 @@ async def test_run_claims_premises_adds_premise_ids_and_registry_from_payload(
     )
 
 
+async def test_build_premises_by_claim_chunks_input_above_batch_size(
+    settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    settings = settings.model_copy(update={"PREMISES_MAX_CLAIMS_PER_BATCH": 10})
+    call_chunks: list[list[str]] = []
+
+    async def fake_infer_premises_batch(
+        claim_texts: list[str], _settings: Settings
+    ) -> dict[str, list[str]]:
+        call_chunks.append(list(claim_texts))
+        return {claim_text: [f"Premise for {claim_text}"] for claim_text in claim_texts}
+
+    monkeypatch.setattr(premises, "infer_premises_batch", fake_infer_premises_batch)
+
+    claim_texts = [f"Claim {i}." for i in range(105)]
+    claims = _claims_report(*claim_texts)
+    registry, premise_ids_by_claim = await premises.build_premises_by_claim(
+        claims.deduped_claims, settings
+    )
+
+    assert len(call_chunks) == 11
+    assert all(len(chunk) <= 10 for chunk in call_chunks)
+    flat = [text for chunk in call_chunks for text in chunk]
+    assert flat == claim_texts
+    assert len(premise_ids_by_claim) == 105
+
+
 async def test_run_claims_premises_falls_back_to_dedup_slot_when_payload_missing(
     monkeypatch: pytest.MonkeyPatch,
     settings: Settings,
