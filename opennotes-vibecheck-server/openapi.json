@@ -5,6 +5,337 @@
     "version": "0.1.0"
   },
   "paths": {
+    "/api/analyze": {
+      "post": {
+        "tags": [
+          "analyze"
+        ],
+        "summary": "Analyze",
+        "description": "Async handoff for `POST /api/analyze`.\n\nReturns `AnalyzeResponse` on the success path. On SSRF-guard failure,\nadvisory-lock contention, or a post-commit enqueue failure, returns a\n`JSONResponse` whose body shape is `{error_code, message}` and whose\nstatus mirrors the failure category (400, 503, 500 respectively). We\nreturn a response object (rather than raising HTTPException) so the\nbody has a stable top-level `error_code` slug \u2014 `{\"detail\": ...}`\nwould force the client to string-match.",
+        "operationId": "analyze_api_analyze_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AnalyzeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnalyzeResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/analyze/{job_id}": {
+      "get": {
+        "tags": [
+          "analyze"
+        ],
+        "summary": "Poll an async vibecheck job",
+        "description": "Read-only polling endpoint.\n\nReturns the current `JobState` including the `sections` dict (per-slot\nprogress), `sidebar_payload` once terminal, and a `next_poll_ms` hint.\n404 when `job_id` is not found. Rate-limited to\n`RATE_LIMIT_POLL_BURST` req/s + `RATE_LIMIT_POLL_SUSTAINED` req/min\nper `(ip, job_id)` tuple \u2014 exceeding either returns 429 with a\n`Retry-After` header.\n\nThe return type is `JobState | JSONResponse` because the 404 / 429 /\n503 error paths emit `_error_response(...)` whose body is the\ndocumented `{error_code, message}` shape rather than the FastAPI\ndefault `{\"detail\": ...}` (TASK-1473.38).",
+        "operationId": "poll_api_analyze__job_id__get",
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Job Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobState"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/analyze/{job_id}/retry/{slug}": {
+      "post": {
+        "tags": [
+          "analyze"
+        ],
+        "summary": "Retry Section",
+        "description": "Retry one failed slot of a terminal job.\n\nGate order (strict \u2014 each step assumes the prior one passed):\n  1. Job must exist (404 otherwise).\n  2. Utterances must have been extracted (409 otherwise \u2014 retry is\n     meaningless if extraction itself failed; the user should resubmit).\n  3. Job status must be terminal (`done`/`partial`/`failed`) \u2014 running phases\n     get 409 `cannot_retry_while_running`.\n  4. The requested slot must exist and be in `failed` state.\n  5. CAS on the slot's prior attempt_id; a concurrent click loses\n     with 409 `concurrent_retry_already_claimed`.\n  6. Post-CAS enqueue. On failure revert the slot to `failed` and\n     flip the job back to `failed/internal` \u2014 the user sees a stable\n     error card instead of a phantom `analyzing` state.",
+        "operationId": "retry_section_api_analyze__job_id__retry__slug__post",
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Job Id"
+            }
+          },
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/SectionSlug"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RetryResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/analyses/recent": {
+      "get": {
+        "tags": [
+          "analyze"
+        ],
+        "summary": "Recently vibe checked gallery",
+        "description": "Public, anon-accessible read of the latest qualifying analyses.\n\nEach card carries a 15-min signed screenshot URL, the page title (when\nextracted), a deterministic preview blurb, and the underlying job_id so\ncards link to /analyze?job=<id>. Inclusion: status='done', or\nstatus='partial' with >=90% of own-section keys done. Privacy defaults\ndrop URLs with secret-shaped query strings, loopback/private hosts, or\nexplicit non-80/443 ports \u2014 applied before cache so excluded rows\ncannot poison the cached payload.\n\nWrapped in an in-process TTL cache (default 60s, validated < 900s so\ncached signed URLs cannot outlive their signature).",
+        "operationId": "list_recent_analyses_api_analyses_recent_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/RecentAnalysis"
+                  },
+                  "type": "array",
+                  "title": "Response List Recent Analyses Api Analyses Recent Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/upload-pdf": {
+      "post": {
+        "tags": [
+          "analyze"
+        ],
+        "summary": "Upload Pdf",
+        "description": "Return `{ gcs_key, upload_url }` for a direct browser upload.\n\nReturns a stable 500 payload when configuration is missing or signing\nfails. We do not accept or buffer any PDF bytes in this path.",
+        "operationId": "upload_pdf_api_upload_pdf_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UploadPDFResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/analyze-pdf": {
+      "post": {
+        "tags": [
+          "analyze"
+        ],
+        "summary": "Analyze Pdf",
+        "operationId": "analyze_pdf_api_analyze_pdf_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AnalyzePDFRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnalyzeResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/feedback": {
+      "post": {
+        "tags": [
+          "feedback"
+        ],
+        "summary": "Open Or Combined Feedback",
+        "operationId": "open_or_combined_feedback_api_feedback_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/FeedbackCombinedRequest"
+                  },
+                  {
+                    "$ref": "#/components/schemas/FeedbackOpenRequest"
+                  }
+                ],
+                "title": "Payload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FeedbackOpenResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/feedback/{feedback_id}": {
+      "patch": {
+        "tags": [
+          "feedback"
+        ],
+        "summary": "Submit Feedback",
+        "operationId": "submit_feedback_api_feedback__feedback_id__patch",
+        "parameters": [
+          {
+            "name": "feedback_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Feedback Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FeedbackSubmitRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Submit Feedback Api Feedback  Feedback Id  Patch"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/frame-compat": {
       "get": {
         "tags": [
@@ -254,292 +585,6 @@
         }
       }
     },
-    "/api/analyze": {
-      "post": {
-        "tags": [
-          "analyze"
-        ],
-        "summary": "Analyze",
-        "description": "Async handoff for `POST /api/analyze`.\n\nReturns `AnalyzeResponse` on the success path. On SSRF-guard failure,\nadvisory-lock contention, or a post-commit enqueue failure, returns a\n`JSONResponse` whose body shape is `{error_code, message}` and whose\nstatus mirrors the failure category (400, 503, 500 respectively). We\nreturn a response object (rather than raising HTTPException) so the\nbody has a stable top-level `error_code` slug \u2014 `{\"detail\": ...}`\nwould force the client to string-match.",
-        "operationId": "analyze_api_analyze_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/AnalyzeRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "202": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AnalyzeResponse"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/analyze/{job_id}": {
-      "get": {
-        "tags": [
-          "analyze"
-        ],
-        "summary": "Poll an async vibecheck job",
-        "description": "Read-only polling endpoint.\n\nReturns the current `JobState` including the `sections` dict (per-slot\nprogress), `sidebar_payload` once terminal, and a `next_poll_ms` hint.\n404 when `job_id` is not found. Rate-limited to\n`RATE_LIMIT_POLL_BURST` req/s + `RATE_LIMIT_POLL_SUSTAINED` req/min\nper `(ip, job_id)` tuple \u2014 exceeding either returns 429 with a\n`Retry-After` header.\n\nThe return type is `JobState | JSONResponse` because the 404 / 429 /\n503 error paths emit `_error_response(...)` whose body is the\ndocumented `{error_code, message}` shape rather than the FastAPI\ndefault `{\"detail\": ...}` (TASK-1473.38).",
-        "operationId": "poll_api_analyze__job_id__get",
-        "parameters": [
-          {
-            "name": "job_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid",
-              "title": "Job Id"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/JobState"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/analyze/{job_id}/retry/{slug}": {
-      "post": {
-        "tags": [
-          "analyze"
-        ],
-        "summary": "Retry Section",
-        "description": "Retry one failed slot of a terminal job.\n\nGate order (strict \u2014 each step assumes the prior one passed):\n  1. Job must exist (404 otherwise).\n  2. Utterances must have been extracted (409 otherwise \u2014 retry is\n     meaningless if extraction itself failed; the user should resubmit).\n  3. Job status must be terminal (`done`/`partial`/`failed`) \u2014 running phases\n     get 409 `cannot_retry_while_running`.\n  4. The requested slot must exist and be in `failed` state.\n  5. CAS on the slot's prior attempt_id; a concurrent click loses\n     with 409 `concurrent_retry_already_claimed`.\n  6. Post-CAS enqueue. On failure revert the slot to `failed` and\n     flip the job back to `failed/internal` \u2014 the user sees a stable\n     error card instead of a phantom `analyzing` state.",
-        "operationId": "retry_section_api_analyze__job_id__retry__slug__post",
-        "parameters": [
-          {
-            "name": "job_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid",
-              "title": "Job Id"
-            }
-          },
-          {
-            "name": "slug",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "$ref": "#/components/schemas/SectionSlug"
-            }
-          }
-        ],
-        "responses": {
-          "202": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/RetryResponse"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/analyses/recent": {
-      "get": {
-        "tags": [
-          "analyze"
-        ],
-        "summary": "Recently vibe checked gallery",
-        "description": "Public, anon-accessible read of the latest qualifying analyses.\n\nEach card carries a 15-min signed screenshot URL, the page title (when\nextracted), a deterministic preview blurb, and the underlying job_id so\ncards link to /analyze?job=<id>. Inclusion: status='done', or\nstatus='partial' with >=90% of own-section keys done. Privacy defaults\ndrop URLs with secret-shaped query strings, loopback/private hosts, or\nexplicit non-80/443 ports \u2014 applied before cache so excluded rows\ncannot poison the cached payload.\n\nWrapped in an in-process TTL cache (default 60s, validated < 900s so\ncached signed URLs cannot outlive their signature).",
-        "operationId": "list_recent_analyses_api_analyses_recent_get",
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/RecentAnalysis"
-                  },
-                  "type": "array",
-                  "title": "Response List Recent Analyses Api Analyses Recent Get"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/scrape": {
-      "post": {
-        "tags": [
-          "scrape"
-        ],
-        "summary": "Submit Scrape",
-        "operationId": "submit_scrape_api_scrape_post",
-        "parameters": [
-          {
-            "name": "authorization",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Authorization"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ScrapeSubmitRequest"
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ScrapeSubmitResponse"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/upload-pdf": {
-      "post": {
-        "tags": [
-          "analyze"
-        ],
-        "summary": "Upload Pdf",
-        "description": "Return `{ gcs_key, upload_url }` for a direct browser upload.\n\nReturns a stable 500 payload when configuration is missing or signing\nfails. We do not accept or buffer any PDF bytes in this path.",
-        "operationId": "upload_pdf_api_upload_pdf_post",
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/UploadPDFResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/analyze-pdf": {
-      "post": {
-        "tags": [
-          "analyze"
-        ],
-        "summary": "Analyze Pdf",
-        "operationId": "analyze_pdf_api_analyze_pdf_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/AnalyzePDFRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "202": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AnalyzeResponse"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/_internal/jobs/{job_id}/run": {
       "post": {
         "tags": [
@@ -636,6 +681,65 @@
             "content": {
               "application/json": {
                 "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/scrape": {
+      "post": {
+        "tags": [
+          "scrape"
+        ],
+        "summary": "Submit Scrape",
+        "operationId": "submit_scrape_api_scrape_post",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ScrapeSubmitRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScrapeSubmitResponse"
+                }
               }
             }
           },
@@ -1127,6 +1231,170 @@
         ],
         "title": "FactsClaimsSection",
         "description": "Deduped verifiable claims and any matching published fact-checks.\n\n`evidence_status` and `premises_status` expose the terminal lifecycle\nof the two enrichment slots (`FACTS_CLAIMS_EVIDENCE` /\n`FACTS_CLAIMS_PREMISES`) at sidebar-payload assembly time. Frontend\nsurfaces use them to distinguish \"evidence ran and found nothing\" from\n\"evidence failed\" \u2014 without these, both paths render the same empty\n`supporting_facts` and the user sees a misleading \"No sources extracted\"\nplaceholder for sub-slots that actually errored."
+      },
+      "FeedbackCombinedRequest": {
+        "properties": {
+          "page_path": {
+            "type": "string",
+            "title": "Page Path"
+          },
+          "user_agent": {
+            "type": "string",
+            "title": "User Agent"
+          },
+          "referrer": {
+            "type": "string",
+            "title": "Referrer",
+            "default": ""
+          },
+          "bell_location": {
+            "type": "string",
+            "title": "Bell Location"
+          },
+          "initial_type": {
+            "type": "string",
+            "enum": [
+              "thumbs_up",
+              "thumbs_down",
+              "message"
+            ],
+            "title": "Initial Type"
+          },
+          "email": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "email"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          },
+          "final_type": {
+            "type": "string",
+            "enum": [
+              "thumbs_up",
+              "thumbs_down",
+              "message"
+            ],
+            "title": "Final Type"
+          }
+        },
+        "type": "object",
+        "required": [
+          "page_path",
+          "user_agent",
+          "bell_location",
+          "initial_type",
+          "final_type"
+        ],
+        "title": "FeedbackCombinedRequest"
+      },
+      "FeedbackOpenRequest": {
+        "properties": {
+          "page_path": {
+            "type": "string",
+            "title": "Page Path"
+          },
+          "user_agent": {
+            "type": "string",
+            "title": "User Agent"
+          },
+          "referrer": {
+            "type": "string",
+            "title": "Referrer",
+            "default": ""
+          },
+          "bell_location": {
+            "type": "string",
+            "title": "Bell Location"
+          },
+          "initial_type": {
+            "type": "string",
+            "enum": [
+              "thumbs_up",
+              "thumbs_down",
+              "message"
+            ],
+            "title": "Initial Type"
+          }
+        },
+        "type": "object",
+        "required": [
+          "page_path",
+          "user_agent",
+          "bell_location",
+          "initial_type"
+        ],
+        "title": "FeedbackOpenRequest"
+      },
+      "FeedbackOpenResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id"
+        ],
+        "title": "FeedbackOpenResponse"
+      },
+      "FeedbackSubmitRequest": {
+        "properties": {
+          "email": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "email"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          },
+          "final_type": {
+            "type": "string",
+            "enum": [
+              "thumbs_up",
+              "thumbs_down",
+              "message"
+            ],
+            "title": "Final Type"
+          }
+        },
+        "type": "object",
+        "required": [
+          "final_type"
+        ],
+        "title": "FeedbackSubmitRequest"
       },
       "FlashpointMatch": {
         "properties": {
