@@ -189,7 +189,9 @@ test("AC1: happy path — bell → popover → thumbs up → dialog → send →
   await expect(messageBtn).toBeVisible({ timeout: 3_000 });
 
   const openResponsePromise = page.waitForResponse(
-    (r) => r.url().includes("/api/feedback") && r.request().method() === "POST",
+    (r) =>
+      /\/api\/feedback$/.test(new URL(r.url()).pathname) &&
+      r.request().method() === "POST",
     { timeout: 10_000 },
   );
 
@@ -207,7 +209,8 @@ test("AC1: happy path — bell → popover → thumbs up → dialog → send →
 
   const patchPromise = page.waitForResponse(
     (r) =>
-      r.url().includes("/api/feedback") && r.request().method() === "PATCH",
+      /\/api\/feedback\/[^/]+$/.test(new URL(r.url()).pathname) &&
+      r.request().method() === "PATCH",
     { timeout: 10_000 },
   );
 
@@ -256,7 +259,8 @@ test("AC2: send-gating — message type requires 5+ chars", async ({ page }) => 
 
   const patchPromise = page.waitForResponse(
     (r) =>
-      r.url().includes("/api/feedback") && r.request().method() === "PATCH",
+      /\/api\/feedback\/[^/]+$/.test(new URL(r.url()).pathname) &&
+      r.request().method() === "PATCH",
     { timeout: 10_000 },
   );
 
@@ -288,7 +292,10 @@ test("AC3: open-POST failure triggers combined fallback POST on send", async ({
 
   const capturedRequests: Array<{ method: string; body: string }> = [];
   page.on("request", (req: PwRequest) => {
-    if (req.url().includes("/api/feedback") && req.method() === "POST") {
+    if (
+      /\/api\/feedback$/.test(new URL(req.url()).pathname) &&
+      req.method() === "POST"
+    ) {
       capturedRequests.push({ method: req.method(), body: req.postData() ?? "" });
     }
   });
@@ -319,7 +326,7 @@ test("AC3: open-POST failure triggers combined fallback POST on send", async ({
 
   const combinedPostPromise = page.waitForResponse(
     (r) =>
-      r.url().includes("/api/feedback") &&
+      /\/api\/feedback$/.test(new URL(r.url()).pathname) &&
       r.request().method() === "POST" &&
       r.status() !== 500,
     { timeout: 10_000 },

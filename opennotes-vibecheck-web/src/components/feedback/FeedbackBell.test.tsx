@@ -32,9 +32,8 @@ function setupDesktopViewport() {
       matches: query === "(min-width: 768px)",
       media: query,
       onchange: null,
-      addEventlistener: vi.fn(),
-      removeEventListener: vi.fn(),
       addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
       dispatchEvent: vi.fn(),
     }),
   });
@@ -47,9 +46,8 @@ function setupMobileViewport() {
       matches: false,
       media: query,
       onchange: null,
-      addEventlistener: vi.fn(),
-      removeEventListener: vi.fn(),
       addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
       dispatchEvent: vi.fn(),
     }),
   });
