@@ -676,9 +676,16 @@ async def test_vibecheck_feedback_anon_can_insert_valid_row(
     assert count == 1
 
 
-async def test_vibecheck_feedback_anon_can_update_row(
+async def test_vibecheck_feedback_anon_update_policy_applies_without_select(
     full_schema_conn: asyncpg.Connection,
 ) -> None:
+    # TASK-1588.13: anon has UPDATE privilege and an UPDATE policy
+    # (USING true / WITH CHECK true), but no SELECT privilege and no
+    # SELECT policy. An UPDATE without a row-id WHERE clause therefore
+    # exercises the policy and succeeds — proving the policy is wired
+    # correctly. The PATCH /api/feedback/{id} flow runs on service_role
+    # (RLS bypass) in production, so the lack of a SELECT policy does
+    # not break the user-facing follow-up update flow.
     await _apply_full_schema_as_superuser(full_schema_conn)
 
     await full_schema_conn.execute(
@@ -692,54 +699,89 @@ async def test_vibecheck_feedback_anon_can_update_row(
         """
     )
 
-    now = datetime.now(UTC)
     await full_schema_conn.execute("SET ROLE anon")
     try:
-        await full_schema_conn.execute(
-            """
-            UPDATE public.vibecheck_feedback
-            SET email = $1,
-                message = $2,
-                final_type = $3,
-                submitted_at = $4
-            WHERE id = '00000000-0000-0000-0000-000000000010'
-            """,
-            "user@example.com",
-            "Great site!",
-            "thumbs_up",
-            now,
+        result = await full_schema_conn.execute(
+            "UPDATE public.vibecheck_feedback SET final_type = 'thumbs_up'"
         )
     finally:
         await full_schema_conn.execute("RESET ROLE")
 
+    assert result == "UPDATE 1", (
+        f"anon UPDATE policy must apply without a SELECT policy; got {result!r}"
+    )
+
     row = await full_schema_conn.fetchrow(
-        "SELECT email, message, final_type FROM public.vibecheck_feedback WHERE id = '00000000-0000-0000-0000-000000000010'"
+        "SELECT final_type FROM public.vibecheck_feedback "
+        "WHERE id = '00000000-0000-0000-0000-000000000010'"
     )
     assert row is not None
-    assert row["email"] == "user@example.com"
-    assert row["message"] == "Great site!"
     assert row["final_type"] == "thumbs_up"
 
 
-async def test_vibecheck_feedback_no_dedicated_select_policy_for_anon(
+async def test_vibecheck_feedback_anon_cannot_update_by_id_without_select_policy(
     full_schema_conn: asyncpg.Connection,
 ) -> None:
+    # TASK-1588.13: with no anon SELECT privilege/policy, anon cannot
+    # filter rows by primary key. Document this explicitly so future
+    # contributors don't reintroduce a SELECT grant or policy by accident
+    # to "fix" the user-facing follow-up update path — that path runs on
+    # service_role through the backend.
     await _apply_full_schema_as_superuser(full_schema_conn)
 
-    rows = await full_schema_conn.fetch(
+    await full_schema_conn.execute(
         """
-        SELECT policyname, cmd
-        FROM pg_policies
-        WHERE schemaname = 'public'
-          AND tablename = 'vibecheck_feedback'
-          AND roles @> ARRAY['anon']::name[]
-          AND cmd = 'SELECT'
+        INSERT INTO public.vibecheck_feedback
+            (id, page_path, user_agent, uid, bell_location, initial_type)
+        VALUES
+            ('00000000-0000-0000-0000-000000000020',
+             '/page', 'ua', '00000000-0000-0000-0000-000000000021',
+             'top-left', 'thumbs_down')
         """
     )
-    assert rows == [], (
-        "no dedicated SELECT-only policy should exist for anon on vibecheck_feedback; "
-        "row visibility is granted via the write policy FOR ALL"
+
+    await full_schema_conn.execute("SET ROLE anon")
+    try:
+        with pytest.raises(asyncpg.InsufficientPrivilegeError):
+            await full_schema_conn.execute(
+                "UPDATE public.vibecheck_feedback SET final_type = 'thumbs_up' "
+                "WHERE id = '00000000-0000-0000-0000-000000000020'"
+            )
+    finally:
+        await full_schema_conn.execute("RESET ROLE")
+
+
+async def test_vibecheck_feedback_anon_cannot_select_pii(
+    full_schema_conn: asyncpg.Connection,
+) -> None:
+    # TASK-1588.13: anon must be write-only on vibecheck_feedback. A prior
+    # `FOR ALL` policy combined with `GRANT SELECT` to anon let unauthenticated
+    # clients read every email/message PII row. Restoring the write-only
+    # contract requires both dropping the SELECT grant and splitting the
+    # write policy into INSERT and UPDATE so SELECT has no policy at all.
+    await _apply_full_schema_as_superuser(full_schema_conn)
+
+    await full_schema_conn.execute(
+        """
+        INSERT INTO public.vibecheck_feedback
+            (id, page_path, user_agent, uid, bell_location, initial_type,
+             email, message)
+        VALUES
+            ('00000000-0000-0000-0000-000000000050',
+             '/page', 'ua', '00000000-0000-0000-0000-000000000051',
+             'bottom-right', 'message',
+             'pii@example.com', 'secret message')
+        """
     )
+
+    await full_schema_conn.execute("SET ROLE anon")
+    try:
+        with pytest.raises(asyncpg.InsufficientPrivilegeError):
+            await full_schema_conn.fetch(
+                "SELECT email, message FROM public.vibecheck_feedback"
+            )
+    finally:
+        await full_schema_conn.execute("RESET ROLE")
 
 
 async def test_vibecheck_feedback_check_constraint_rejects_invalid_initial_type(

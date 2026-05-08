@@ -1065,16 +1065,30 @@ CREATE TABLE IF NOT EXISTS public.vibecheck_feedback (
 );
 ALTER TABLE public.vibecheck_feedback ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.vibecheck_feedback FORCE ROW LEVEL SECURITY;
-GRANT INSERT, UPDATE, SELECT ON public.vibecheck_feedback TO anon;
+-- TASK-1588.13: anon is strictly write-only. The earlier GRANT included
+-- table-level SELECT which, paired with a FOR ALL policy, let
+-- unauthenticated clients read every email/message PII row. Drop SELECT
+-- entirely and split the write policy into INSERT and UPDATE so no SELECT
+-- policy exists for anon. PII columns (email, message) are unreadable by
+-- anon both at the privilege layer (no SELECT grant) and the RLS layer
+-- (no SELECT policy). The PATCH /api/feedback/{id} flow runs through the
+-- backend on service_role, which bypasses RLS, so the user-facing follow-up
+-- update path is unaffected.
+REVOKE SELECT ON public.vibecheck_feedback FROM anon;
+GRANT INSERT, UPDATE ON public.vibecheck_feedback TO anon;
 
 DROP POLICY IF EXISTS vibecheck_feedback_anon_insert ON public.vibecheck_feedback;
 DROP POLICY IF EXISTS vibecheck_feedback_anon_update ON public.vibecheck_feedback;
 DROP POLICY IF EXISTS vibecheck_feedback_anon_write ON public.vibecheck_feedback;
-CREATE POLICY vibecheck_feedback_anon_write ON public.vibecheck_feedback
-  FOR ALL TO anon USING (true) WITH CHECK (true);
+CREATE POLICY vibecheck_feedback_anon_insert ON public.vibecheck_feedback
+  FOR INSERT TO anon WITH CHECK (true);
+CREATE POLICY vibecheck_feedback_anon_update ON public.vibecheck_feedback
+  FOR UPDATE TO anon USING (true) WITH CHECK (true);
 
--- No DELETE policy for anon; no separate SELECT policy needed — FOR ALL covers
--- row visibility for UPDATE USING evaluation. service_role bypasses RLS.
+-- No DELETE policy and no SELECT policy for anon. service_role bypasses
+-- RLS for the backend's UPDATE-by-id flow. The anon UPDATE policy is
+-- retained as defense in depth in case a future client ever updates via
+-- anon RPCs that don't need a row-id WHERE clause.
 
 CREATE INDEX IF NOT EXISTS vibecheck_feedback_uid_created_idx
   ON public.vibecheck_feedback (uid, created_at DESC);
