@@ -244,3 +244,113 @@ describe("FeedbackBell — surface closes after successful send", () => {
     });
   });
 });
+
+describe("FeedbackBell — feedbackId is reset between bell uses (Bug 1)", () => {
+  it("after a successful submit, second use of the same bell does NOT PATCH the stale id", async () => {
+    mockOpenFeedback.mockResolvedValueOnce({ id: "first-feedback-id" });
+    mockSubmitFeedback.mockResolvedValue(undefined);
+
+    render(() => <FeedbackBell bell_location="card:reuse-test" />);
+
+    const bell = screen.getByRole("button", { name: /Send feedback about/ });
+    fireEvent.click(bell);
+    fireEvent.click(screen.getByRole("button", { name: "Thumbs up" }));
+
+    await screen.findByText("Send feedback");
+
+    await waitFor(() => {
+      expect(mockOpenFeedback).toHaveBeenCalledTimes(1);
+    });
+
+    const form1 = screen
+      .getByPlaceholderText("name@example.com")
+      .closest("form") as HTMLFormElement;
+    fireEvent.submit(form1);
+
+    await waitFor(() => {
+      expect(mockSubmitFeedback).toHaveBeenCalledWith(
+        "first-feedback-id",
+        expect.any(Object),
+      );
+      expect(screen.queryByText("Send feedback")).not.toBeInTheDocument();
+    });
+
+    mockSubmitFeedback.mockClear();
+    mockSubmitFeedbackCombined.mockClear();
+
+    let resolveSecondOpen: (value: { id: string }) => void = () => {};
+    mockOpenFeedback.mockImplementationOnce(
+      () =>
+        new Promise<{ id: string }>((resolve) => {
+          resolveSecondOpen = resolve;
+        }),
+    );
+
+    fireEvent.click(bell);
+    fireEvent.click(screen.getByRole("button", { name: "Thumbs up" }));
+
+    await screen.findByText("Send feedback");
+
+    const form2 = screen
+      .getByPlaceholderText("name@example.com")
+      .closest("form") as HTMLFormElement;
+    fireEvent.submit(form2);
+
+    await waitFor(() => {
+      expect(
+        mockSubmitFeedback.mock.calls.some(
+          ([id]) => id === "first-feedback-id",
+        ),
+      ).toBe(false);
+    });
+
+    resolveSecondOpen({ id: "second-feedback-id" });
+  });
+});
+
+describe("FeedbackBell — Send during in-flight open POST yields exactly one client call (Bug 2)", () => {
+  it("clicking Send while open POST is still in flight results in exactly one feedback client call (no double-write)", async () => {
+    let resolveOpen: (value: { id: string }) => void = () => {};
+    mockOpenFeedback.mockImplementationOnce(
+      () =>
+        new Promise<{ id: string }>((resolve) => {
+          resolveOpen = resolve;
+        }),
+    );
+    mockSubmitFeedbackCombined.mockResolvedValue({ id: "combined-id" });
+    mockSubmitFeedback.mockResolvedValue(undefined);
+
+    render(() => <FeedbackBell bell_location="card:race-test" />);
+
+    const bell = screen.getByRole("button", { name: /Send feedback about/ });
+    fireEvent.click(bell);
+    fireEvent.click(screen.getByRole("button", { name: "Thumbs up" }));
+
+    await screen.findByText("Send feedback");
+
+    const form = screen
+      .getByPlaceholderText("name@example.com")
+      .closest("form") as HTMLFormElement;
+    fireEvent.submit(form);
+
+    resolveOpen({ id: "race-feedback-id" });
+
+    await waitFor(() => {
+      expect(screen.queryByText("Send feedback")).not.toBeInTheDocument();
+    });
+
+    const totalCalls =
+      mockSubmitFeedback.mock.calls.length +
+      mockSubmitFeedbackCombined.mock.calls.length;
+    expect(totalCalls).toBe(1);
+
+    expect(mockSubmitFeedback).toHaveBeenCalledTimes(1);
+    expect(mockSubmitFeedback).toHaveBeenCalledWith(
+      "race-feedback-id",
+      expect.objectContaining({
+        final_type: "thumbs_up",
+      }),
+    );
+    expect(mockSubmitFeedbackCombined).not.toHaveBeenCalled();
+  });
+});

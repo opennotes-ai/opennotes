@@ -11,6 +11,9 @@ import {
 import type { components } from "../../lib/generated-types";
 
 type OpenReq = components["schemas"]["FeedbackOpenRequest"];
+type CombinedReq = components["schemas"]["FeedbackCombinedRequest"];
+type SubmitReq = components["schemas"]["FeedbackSubmitRequest"];
+type OpenRes = components["schemas"]["FeedbackOpenResponse"];
 
 interface FeedbackPopoverProps {
   open: boolean;
@@ -19,6 +22,8 @@ interface FeedbackPopoverProps {
   bellLocation: string;
   children: JSX.Element;
 }
+
+const OPEN_POST_GATE_TIMEOUT_MS = 800;
 
 export function FeedbackPopover(props: FeedbackPopoverProps): JSX.Element {
   const [surfaceOpen, setSurfaceOpen] = createSignal(false);
@@ -32,7 +37,10 @@ export function FeedbackPopover(props: FeedbackPopoverProps): JSX.Element {
     initial_type: "thumbs_up",
   });
 
+  let openInFlight: Promise<string | null> | null = null;
+
   const handleIconClick = async (type: FeedbackType) => {
+    setFeedbackId(null);
     props.onOpenChange(false);
 
     const payload: OpenReq = {
@@ -47,12 +55,54 @@ export function FeedbackPopover(props: FeedbackPopoverProps): JSX.Element {
     setOpenPayload(payload);
     setSurfaceOpen(true);
 
-    try {
-      const result = await openFeedback(payload);
-      setFeedbackId(result.id);
-    } catch {
-      setFeedbackId(null);
+    const runOpen = async (): Promise<string | null> => {
+      try {
+        const result = await openFeedback(payload);
+        setFeedbackId(result.id);
+        return result.id;
+      } catch {
+        setFeedbackId(null);
+        return null;
+      }
+    };
+    const flight = runOpen();
+    openInFlight = flight;
+    flight.finally(() => {
+      if (openInFlight === flight) {
+        openInFlight = null;
+      }
+    });
+    await flight;
+  };
+
+  const wrappedSubmitFeedback = async (
+    id: string,
+    payload: SubmitReq,
+  ): Promise<void> => {
+    return submitFeedback(id, payload);
+  };
+
+  const wrappedSubmitFeedbackCombined = async (
+    payload: CombinedReq,
+  ): Promise<OpenRes> => {
+    if (openInFlight !== null) {
+      const inFlight = openInFlight;
+      const resolvedId = await Promise.race<string | null>([
+        inFlight,
+        new Promise<null>((resolve) =>
+          setTimeout(() => resolve(null), OPEN_POST_GATE_TIMEOUT_MS),
+        ),
+      ]);
+      if (resolvedId !== null) {
+        await submitFeedback(resolvedId, {
+          email: payload.email,
+          message: payload.message,
+          final_type: payload.final_type,
+        });
+        return { id: resolvedId };
+      }
     }
+    return submitFeedbackCombined(payload);
   };
 
   return (
@@ -96,8 +146,8 @@ export function FeedbackPopover(props: FeedbackPopoverProps): JSX.Element {
         initialType={initialType()}
         feedbackId={feedbackId()}
         openPayload={openPayload()}
-        submitFeedback={submitFeedback}
-        submitFeedbackCombined={submitFeedbackCombined}
+        submitFeedback={wrappedSubmitFeedback}
+        submitFeedbackCombined={wrappedSubmitFeedbackCombined}
       />
     </>
   );
