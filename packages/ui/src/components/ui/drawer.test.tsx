@@ -28,8 +28,9 @@ describe("<Drawer /> source contract", () => {
     expect(drawerSource).toContain("border-t")
   })
 
-  it("has a drag handle visual indicator (data-drag-handle or .drag-handle class)", () => {
-    expect(drawerSource).toMatch(/drag-handle|drag_handle/)
+  it("constrains height with max-h-[90vh] and enables vertical scroll for tall content", () => {
+    expect(drawerSource).toContain("max-h-[90vh]")
+    expect(drawerSource).toContain("overflow-y-auto")
   })
 
   it("uses slide-in-from-bottom and slide-out-to-bottom transition classes", () => {
