@@ -60,6 +60,7 @@ async def full_schema_conn(
 
     await conn.execute("DROP SCHEMA IF EXISTS cron CASCADE")
     for table in (
+        "vibecheck_feedback",
         "vibecheck_job_utterances",
         "vibecheck_jobs",
         "vibecheck_scrapes",
@@ -178,6 +179,7 @@ async def _assert_vibecheck_tables_exist(conn: asyncpg.Connection) -> None:
         "vibecheck_scrapes",
         "vibecheck_job_utterances",
         "vibecheck_web_risk_lookups",
+        "vibecheck_feedback",
     }
     rows = await conn.fetch(
         "SELECT tablename FROM pg_tables WHERE schemaname = 'public' AND tablename = ANY($1)",
@@ -234,6 +236,7 @@ async def test_full_schema_apply_first_seed(full_schema_conn: asyncpg.Connection
         "vibecheck_scrapes",
         "vibecheck_job_utterances",
         "vibecheck_web_risk_lookups",
+        "vibecheck_feedback",
     ):
         await _assert_rls_enabled(full_schema_conn, table)
 
@@ -287,6 +290,7 @@ async def test_full_schema_reapply_via_exec_sql_idempotent(
         "vibecheck_scrapes",
         "vibecheck_job_utterances",
         "vibecheck_web_risk_lookups",
+        "vibecheck_feedback",
     ):
         await _assert_rls_enabled(full_schema_conn, table)
 
@@ -417,6 +421,7 @@ async def test_full_schema_reapply_twice_idempotent(
         "vibecheck_scrapes",
         "vibecheck_job_utterances",
         "vibecheck_web_risk_lookups",
+        "vibecheck_feedback",
     ):
         await _assert_rls_enabled(full_schema_conn, table)
 
@@ -617,3 +622,139 @@ async def test_atomic_scrape_upsert_rpc_14_arg_shim_writes_null_raw_html(
     assert row is not None
     assert row["html"] == "<main>old-replica-html</main>"
     assert row["raw_html"] is None
+
+
+# ============= VIBECHECK FEEDBACK tests (TASK-1588.01) =============
+
+
+async def _assert_feedback_table_rls(conn: asyncpg.Connection) -> None:
+    await _assert_rls_enabled(conn, "vibecheck_feedback")
+
+
+async def test_vibecheck_feedback_table_exists_after_schema_apply(
+    full_schema_conn: asyncpg.Connection,
+) -> None:
+    await _apply_full_schema_as_superuser(full_schema_conn)
+
+    row = await full_schema_conn.fetchrow(
+        "SELECT tablename FROM pg_tables WHERE schemaname = 'public' AND tablename = 'vibecheck_feedback'"
+    )
+    assert row is not None, "vibecheck_feedback table was not created"
+
+
+async def test_vibecheck_feedback_rls_enabled_and_forced(
+    full_schema_conn: asyncpg.Connection,
+) -> None:
+    await _apply_full_schema_as_superuser(full_schema_conn)
+
+    await _assert_feedback_table_rls(full_schema_conn)
+
+
+async def test_vibecheck_feedback_anon_can_insert_valid_row(
+    full_schema_conn: asyncpg.Connection,
+) -> None:
+    await _apply_full_schema_as_superuser(full_schema_conn)
+
+    await full_schema_conn.execute("SET ROLE anon")
+    try:
+        await full_schema_conn.execute(
+            """
+            INSERT INTO public.vibecheck_feedback
+                (id, page_path, user_agent, uid, bell_location, initial_type)
+            VALUES
+                ('00000000-0000-0000-0000-000000000001',
+                 '/some/page', 'Mozilla/5.0', '00000000-0000-0000-0000-000000000002',
+                 'bottom-right', 'thumbs_up')
+            """
+        )
+    finally:
+        await full_schema_conn.execute("RESET ROLE")
+
+    count = await full_schema_conn.fetchval(
+        "SELECT COUNT(*) FROM public.vibecheck_feedback WHERE id = '00000000-0000-0000-0000-000000000001'"
+    )
+    assert count == 1
+
+
+async def test_vibecheck_feedback_anon_can_update_row(
+    full_schema_conn: asyncpg.Connection,
+) -> None:
+    await _apply_full_schema_as_superuser(full_schema_conn)
+
+    await full_schema_conn.execute(
+        """
+        INSERT INTO public.vibecheck_feedback
+            (id, page_path, user_agent, uid, bell_location, initial_type)
+        VALUES
+            ('00000000-0000-0000-0000-000000000010',
+             '/page', 'ua', '00000000-0000-0000-0000-000000000011',
+             'top-left', 'thumbs_down')
+        """
+    )
+
+    now = datetime.now(UTC)
+    await full_schema_conn.execute("SET ROLE anon")
+    try:
+        await full_schema_conn.execute(
+            """
+            UPDATE public.vibecheck_feedback
+            SET email = $1,
+                message = $2,
+                final_type = $3,
+                submitted_at = $4
+            WHERE id = '00000000-0000-0000-0000-000000000010'
+            """,
+            "user@example.com",
+            "Great site!",
+            "thumbs_up",
+            now,
+        )
+    finally:
+        await full_schema_conn.execute("RESET ROLE")
+
+    row = await full_schema_conn.fetchrow(
+        "SELECT email, message, final_type FROM public.vibecheck_feedback WHERE id = '00000000-0000-0000-0000-000000000010'"
+    )
+    assert row is not None
+    assert row["email"] == "user@example.com"
+    assert row["message"] == "Great site!"
+    assert row["final_type"] == "thumbs_up"
+
+
+async def test_vibecheck_feedback_no_dedicated_select_policy_for_anon(
+    full_schema_conn: asyncpg.Connection,
+) -> None:
+    await _apply_full_schema_as_superuser(full_schema_conn)
+
+    rows = await full_schema_conn.fetch(
+        """
+        SELECT policyname, cmd
+        FROM pg_policies
+        WHERE schemaname = 'public'
+          AND tablename = 'vibecheck_feedback'
+          AND roles @> ARRAY['anon']::name[]
+          AND cmd = 'SELECT'
+        """
+    )
+    assert rows == [], (
+        "no dedicated SELECT-only policy should exist for anon on vibecheck_feedback; "
+        "row visibility is granted via the write policy FOR ALL"
+    )
+
+
+async def test_vibecheck_feedback_check_constraint_rejects_invalid_initial_type(
+    full_schema_conn: asyncpg.Connection,
+) -> None:
+    await _apply_full_schema_as_superuser(full_schema_conn)
+
+    with pytest.raises(asyncpg.CheckViolationError):
+        await full_schema_conn.execute(
+            """
+            INSERT INTO public.vibecheck_feedback
+                (id, page_path, user_agent, uid, bell_location, initial_type)
+            VALUES
+                ('00000000-0000-0000-0000-000000000030',
+                 '/page', 'ua', '00000000-0000-0000-0000-000000000031',
+                 'bottom-right', 'lol')
+            """
+        )

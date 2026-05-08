@@ -1046,3 +1046,37 @@ BEGIN
     );
 END
 $$;
+
+-- ============= VIBECHECK FEEDBACK =============
+
+CREATE TABLE IF NOT EXISTS public.vibecheck_feedback (
+  id              uuid PRIMARY KEY,
+  created_at      timestamptz NOT NULL DEFAULT now(),
+  page_path       text NOT NULL,
+  user_agent      text NOT NULL,
+  referrer        text NOT NULL DEFAULT '',
+  uid             uuid NOT NULL,
+  bell_location   text NOT NULL,
+  initial_type    text NOT NULL CHECK (initial_type IN ('thumbs_up','thumbs_down','message')),
+  email           text,
+  message         text,
+  final_type      text CHECK (final_type IN ('thumbs_up','thumbs_down','message')),
+  submitted_at    timestamptz
+);
+ALTER TABLE public.vibecheck_feedback ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.vibecheck_feedback FORCE ROW LEVEL SECURITY;
+GRANT INSERT, UPDATE, SELECT ON public.vibecheck_feedback TO anon;
+
+DROP POLICY IF EXISTS vibecheck_feedback_anon_insert ON public.vibecheck_feedback;
+DROP POLICY IF EXISTS vibecheck_feedback_anon_update ON public.vibecheck_feedback;
+DROP POLICY IF EXISTS vibecheck_feedback_anon_write ON public.vibecheck_feedback;
+CREATE POLICY vibecheck_feedback_anon_write ON public.vibecheck_feedback
+  FOR ALL TO anon USING (true) WITH CHECK (true);
+
+-- No DELETE policy for anon; no separate SELECT policy needed — FOR ALL covers
+-- row visibility for UPDATE USING evaluation. service_role bypasses RLS.
+
+CREATE INDEX IF NOT EXISTS vibecheck_feedback_uid_created_idx
+  ON public.vibecheck_feedback (uid, created_at DESC);
+CREATE INDEX IF NOT EXISTS vibecheck_feedback_bell_location_idx
+  ON public.vibecheck_feedback (bell_location);
