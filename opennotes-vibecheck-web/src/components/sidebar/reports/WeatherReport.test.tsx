@@ -166,17 +166,23 @@ describe("WeatherReport", () => {
     expect(screen.queryByText(/Truth — Epistemic stance/)).toBeNull();
   });
 
-  it("axis row trigger is a button with the axis name in its accessible name", () => {
+  it("axis row trigger is a button whose accessible name combines axis context and visible value", () => {
     render(() => <WeatherReport report={makeWeatherReport()} />);
 
-    for (const axis of ["Truth", "Relevance", "Sentiment"] as const) {
+    const expected: Array<{ axis: string; value: string }> = [
+      { axis: "Truth", value: "First-Person" },
+      { axis: "Relevance", value: "On Topic" },
+      { axis: "Sentiment", value: "Warmly Skeptical" },
+    ];
+    for (const { axis, value } of expected) {
       const trigger = screen.getByRole("button", {
-        name: new RegExp(axis, "i"),
+        name: new RegExp(`${axis}.*${value}`, "i"),
       });
       expect(trigger).toBeDefined();
       expect(trigger.getAttribute("data-testid")).toMatch(
         new RegExp(`^weather-axis-card-${axis.toLowerCase()}$`),
       );
+      expect(trigger.getAttribute("aria-label")).toBeNull();
     }
   });
 

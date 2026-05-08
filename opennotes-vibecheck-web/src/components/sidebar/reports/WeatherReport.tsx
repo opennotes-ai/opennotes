@@ -122,9 +122,9 @@ function AxisRow(props: AxisRowProps): JSX.Element {
         <Popover>
           <PopoverTrigger
             data-testid={`weather-axis-card-${props.axis.axisType}`}
-            aria-label={`${props.axis.heading} description`}
             class="rounded-md text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
           >
+            <span class="sr-only">{props.axis.heading}: </span>
             <Show
               when={axisData()}
               fallback={
