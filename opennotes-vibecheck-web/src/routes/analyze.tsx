@@ -100,7 +100,7 @@ const DEFAULT_FRAME_COMPAT: FrameCompatResult = {
 };
 const ORIGINAL_BLOCKED_TIP_ID = "preview-mode-original-tip";
 const ORIGINAL_BLOCKED_TIP_TEXT =
-  "This page blocks framing — click to attempt anyway";
+  "Original not available — this page blocks framing";
 const ARCHIVE_PROBE_INTERVAL_MS = 5_000;
 const ARCHIVE_PROBE_CAP_MS = 300_000;
 const ARCHIVE_PROBE_TERMINAL_GRACE_MS = 10_000;
@@ -610,6 +610,9 @@ function AnalyzePageContent(props: { initialJobState: JobState | null }) {
   };
 
   const selectPreviewMode = (mode: PreviewMode) => {
+    if (mode === "original" && !frameCompat().canIframe) return;
+    if (mode === "archived" && archiveProbeState() === "unavailable") return;
+    if (mode === "screenshot" && isPdf()) return;
     setPreviewMode(mode);
     setSelectedPreviewMode(mode);
     setPreviewModeRequestId((id) => id + 1);
@@ -795,39 +798,20 @@ function AnalyzePageContent(props: { initialJobState: JobState | null }) {
                                   const isScreenshotUnavailable = () =>
                                     option.value === "screenshot" && isPdf();
                                   const isUnavailable = () =>
+                                    isOriginalBlocked() ||
                                     isArchivedUnavailable() ||
                                     isScreenshotUnavailable();
                                   return (
-                                    <button
-                                      type="button"
-                                      data-testid={`preview-mode-${option.value}`}
-                                      class={`${segmentClass(
-                                        isPreviewModePressed(option.value),
-                                        segmentCornerClass(
-                                          index(),
-                                          PREVIEW_MODE_OPTIONS.length,
-                                        ),
-                                      )}${isOriginalBlocked() ? " opacity-60" : ""}`}
-                                      aria-pressed={isPreviewModePressed(
-                                        option.value,
-                                      )}
-                                      aria-describedby={
+                                    <span
+                                      data-testid={
                                         isOriginalBlocked()
-                                          ? ORIGINAL_BLOCKED_TIP_ID
+                                          ? "preview-mode-original-hover-wrapper"
                                           : undefined
                                       }
-                                      aria-label={
-                                        isScreenshotUnavailable()
-                                          ? "Not available for PDFs"
-                                          : undefined
-                                      }
-                                      disabled={isUnavailable()}
-                                      title={
-                                        isArchivedUnavailable()
-                                          ? "No archive available for this page"
-                                          : isScreenshotUnavailable()
-                                            ? "Not available for PDFs"
-                                            : undefined
+                                      class={
+                                        isOriginalBlocked()
+                                          ? "inline-block"
+                                          : "contents"
                                       }
                                       onMouseEnter={() => {
                                         if (isOriginalBlocked()) {
@@ -835,22 +819,59 @@ function AnalyzePageContent(props: { initialJobState: JobState | null }) {
                                         }
                                       }}
                                       onMouseLeave={() => {
-                                        setIsOriginalBlockedTipHovered(false);
-                                      }}
-                                      onFocus={() => {
                                         if (isOriginalBlocked()) {
-                                          setIsOriginalBlockedTipFocused(true);
+                                          setIsOriginalBlockedTipHovered(false);
                                         }
                                       }}
-                                      onBlur={() => {
-                                        setIsOriginalBlockedTipFocused(false);
-                                      }}
-                                      onClick={() =>
-                                        selectPreviewMode(option.value)
-                                      }
                                     >
-                                      {option.label}
-                                    </button>
+                                      <button
+                                        type="button"
+                                        data-testid={`preview-mode-${option.value}`}
+                                        class={segmentClass(
+                                          isPreviewModePressed(option.value),
+                                          segmentCornerClass(
+                                            index(),
+                                            PREVIEW_MODE_OPTIONS.length,
+                                          ),
+                                        )}
+                                        aria-pressed={isPreviewModePressed(
+                                          option.value,
+                                        )}
+                                        aria-describedby={
+                                          isOriginalBlocked()
+                                            ? ORIGINAL_BLOCKED_TIP_ID
+                                            : undefined
+                                        }
+                                        aria-label={
+                                          isScreenshotUnavailable()
+                                            ? "Not available for PDFs"
+                                            : undefined
+                                        }
+                                        disabled={isUnavailable()}
+                                        title={
+                                          isOriginalBlocked()
+                                            ? "Original not available — this page blocks framing"
+                                            : isArchivedUnavailable()
+                                              ? "No archive available for this page"
+                                              : isScreenshotUnavailable()
+                                                ? "Not available for PDFs"
+                                                : undefined
+                                        }
+                                        onFocus={() => {
+                                          if (isOriginalBlocked()) {
+                                            setIsOriginalBlockedTipFocused(true);
+                                          }
+                                        }}
+                                        onBlur={() => {
+                                          setIsOriginalBlockedTipFocused(false);
+                                        }}
+                                        onClick={() =>
+                                          selectPreviewMode(option.value)
+                                        }
+                                      >
+                                        {option.label}
+                                      </button>
+                                    </span>
                                   );
                                 }}
                               </For>
