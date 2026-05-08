@@ -12,7 +12,6 @@ const SHIMMER_STYLES = `
 [data-opennotes-skeleton] {
   position: relative;
   overflow: hidden;
-  background-color: hsl(var(--muted, 220 14% 90%));
 }
 
 [data-skeleton-shimmer] {
@@ -22,7 +21,7 @@ const SHIMMER_STYLES = `
   background-image: linear-gradient(
     90deg,
     transparent 0%,
-    hsl(var(--card, 0 0% 100%) / 0.55) 50%,
+    color-mix(in oklab, var(--card, white) 55%, transparent) 50%,
     transparent 100%
   );
   transform: translateX(-100%);
