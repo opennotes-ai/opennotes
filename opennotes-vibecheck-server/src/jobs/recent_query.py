@@ -33,12 +33,18 @@ filters live in this same function so the denylist sees the same shaped rows.
 from __future__ import annotations
 
 import json
+import logging
 from typing import Any, Protocol
 from urllib.parse import parse_qs, urlsplit
+from uuid import UUID
+
+from pydantic import ValidationError
 
 from src.analyses.schemas import RecentAnalysis
 from src.analyses.synthesis._weather_schemas import WeatherReport
 from src.utils.url_security import InvalidURL, validate_public_http_url
+
+logger = logging.getLogger(__name__)
 
 _SECRET_QUERY_PARAM_KEYS = frozenset(
     {
@@ -221,11 +227,27 @@ def _passes_partial_threshold(sections_raw: Any, status: str) -> bool:
     return done * 10 >= total * 9
 
 
-def _weather_report_from_row(value: Any) -> WeatherReport | None:
+def _weather_report_from_row(value: Any, *, job_id: UUID) -> WeatherReport | None:
+    """Parse a weather_report JSONB column, tolerating schema drift.
+
+    Pre-existing rows can carry weather payloads from older label sets. A
+    raised ValidationError here would 500 the gallery for one bad row, so
+    log and degrade to None instead — the caller still surfaces the row
+    without a weather strip.
+    """
     if value is None:
         return None
     data = json.loads(value) if isinstance(value, str) else value
-    return WeatherReport.model_validate(data)
+    try:
+        return WeatherReport.model_validate(data)
+    except ValidationError as exc:
+        logger.warning(
+            "Invalid weather_report payload on job %s; surfacing row without "
+            "weather strip. errors=%s",
+            job_id,
+            exc.errors(include_url=False, include_context=False),
+        )
+        return None
 
 
 async def list_recent(
@@ -284,7 +306,9 @@ async def list_recent(
                 screenshot_url=signed,
                 preview_description=row["preview_description"],
                 headline_summary=row["headline_summary_text"],
-                weather_report=_weather_report_from_row(row["weather_report_json"]),
+                weather_report=_weather_report_from_row(
+                    row["weather_report_json"], job_id=row["job_id"]
+                ),
                 completed_at=row["finished_at"],
             )
         )
