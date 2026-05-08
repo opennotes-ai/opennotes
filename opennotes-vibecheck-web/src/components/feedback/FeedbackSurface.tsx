@@ -10,10 +10,11 @@ import {
   DrawerTitle,
 } from "@opennotes/ui";
 import { FeedbackForm, type FeedbackType } from "./FeedbackForm";
-import type { submitFeedback, submitFeedbackCombined } from "../../lib/feedback-client";
-import type { components } from "../../lib/generated-types";
-
-type OpenReq = components["schemas"]["FeedbackOpenRequest"];
+import type {
+  submitFeedback,
+  submitFeedbackCombined,
+  OpenInput,
+} from "../../lib/feedback-client";
 
 export interface FeedbackSurfaceProps {
   open: boolean;
@@ -21,7 +22,7 @@ export interface FeedbackSurfaceProps {
   isDesktop: boolean;
   initialType: FeedbackType;
   feedbackId: string | null;
-  openPayload: OpenReq;
+  openPayload: OpenInput;
   submitFeedback: typeof submitFeedback;
   submitFeedbackCombined: typeof submitFeedbackCombined;
 }

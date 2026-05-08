@@ -42,9 +42,9 @@ beforeEach(() => {
 });
 
 describe("openFeedback", () => {
-  it("resolves with parsed { id } on 200", async () => {
+  it("resolves with parsed { id } on 201", async () => {
     const fetchSpy = mockFetch(
-      new Response(JSON.stringify({ id: FEEDBACK_ID }), { status: 200 }),
+      new Response(JSON.stringify({ id: FEEDBACK_ID }), { status: 201 }),
     );
 
     const result = await openFeedback(OPEN_REQ);
@@ -59,7 +59,19 @@ describe("openFeedback", () => {
     expect((init.headers as Record<string, string>)["Content-Type"]).toBe(
       "application/json",
     );
-    expect(JSON.parse(init.body as string)).toEqual(OPEN_REQ);
+    expect(JSON.parse(init.body as string)).toEqual({
+      ...OPEN_REQ,
+      kind: "open",
+    });
+  });
+
+  it("also accepts a 200 response (any 2xx)", async () => {
+    mockFetch(
+      new Response(JSON.stringify({ id: FEEDBACK_ID }), { status: 200 }),
+    );
+
+    const result = await openFeedback(OPEN_REQ);
+    expect(result).toEqual({ id: FEEDBACK_ID });
   });
 
   it("rejects with FeedbackApiError on 500", async () => {
@@ -97,6 +109,23 @@ describe("openFeedback", () => {
     expect(caught).toBeInstanceOf(FeedbackApiError);
     expect((caught as FeedbackApiError).status).toBe(422);
     expect((caught as FeedbackApiError).body).toEqual(errorBody);
+  });
+
+  it("wraps network-layer fetch rejection as FeedbackApiError(status=0)", async () => {
+    vi.spyOn(globalThis, "fetch").mockRejectedValue(
+      new TypeError("Failed to fetch"),
+    );
+
+    let caught: unknown;
+    try {
+      await openFeedback(OPEN_REQ);
+    } catch (err) {
+      caught = err;
+    }
+
+    expect(caught).toBeInstanceOf(FeedbackApiError);
+    expect((caught as FeedbackApiError).status).toBe(0);
+    expect((caught as FeedbackApiError).message).toContain("Failed to fetch");
   });
 });
 
@@ -145,12 +174,28 @@ describe("submitFeedback", () => {
     expect((caught as FeedbackApiError).status).toBe(404);
     expect((caught as FeedbackApiError).body).toEqual(errorBody);
   });
+
+  it("wraps fetch network rejection as FeedbackApiError(status=0)", async () => {
+    vi.spyOn(globalThis, "fetch").mockRejectedValue(
+      new TypeError("Failed to fetch"),
+    );
+
+    let caught: unknown;
+    try {
+      await submitFeedback(FEEDBACK_ID, SUBMIT_REQ);
+    } catch (err) {
+      caught = err;
+    }
+
+    expect(caught).toBeInstanceOf(FeedbackApiError);
+    expect((caught as FeedbackApiError).status).toBe(0);
+  });
 });
 
 describe("submitFeedbackCombined", () => {
-  it("POSTs to /api/feedback with combined payload and resolves { id }", async () => {
+  it("POSTs to /api/feedback with combined payload (kind=combined) and resolves { id }", async () => {
     const fetchSpy = mockFetch(
-      new Response(JSON.stringify({ id: FEEDBACK_ID }), { status: 200 }),
+      new Response(JSON.stringify({ id: FEEDBACK_ID }), { status: 201 }),
     );
 
     const result = await submitFeedbackCombined(COMBINED_REQ);
@@ -161,7 +206,10 @@ describe("submitFeedbackCombined", () => {
     expect(url).toBe("/api/feedback");
     expect(init.method).toBe("POST");
     expect(init.credentials).toBe("include");
-    expect(JSON.parse(init.body as string)).toEqual(COMBINED_REQ);
+    expect(JSON.parse(init.body as string)).toEqual({
+      ...COMBINED_REQ,
+      kind: "combined",
+    });
   });
 
   it("rejects with FeedbackApiError on non-2xx", async () => {
@@ -180,6 +228,22 @@ describe("submitFeedbackCombined", () => {
     expect(caught).toBeInstanceOf(FeedbackApiError);
     expect((caught as FeedbackApiError).status).toBe(503);
     expect((caught as FeedbackApiError).body).toEqual(errorBody);
+  });
+
+  it("wraps fetch network rejection as FeedbackApiError(status=0)", async () => {
+    vi.spyOn(globalThis, "fetch").mockRejectedValue(
+      new TypeError("Failed to fetch"),
+    );
+
+    let caught: unknown;
+    try {
+      await submitFeedbackCombined(COMBINED_REQ);
+    } catch (err) {
+      caught = err;
+    }
+
+    expect(caught).toBeInstanceOf(FeedbackApiError);
+    expect((caught as FeedbackApiError).status).toBe(0);
   });
 });
 

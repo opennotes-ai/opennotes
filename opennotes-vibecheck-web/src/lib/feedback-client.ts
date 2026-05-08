@@ -5,6 +5,9 @@ type OpenRes = components["schemas"]["FeedbackOpenResponse"];
 type SubmitReq = components["schemas"]["FeedbackSubmitRequest"];
 type CombinedReq = components["schemas"]["FeedbackCombinedRequest"];
 
+export type OpenInput = Omit<OpenReq, "kind">;
+export type CombinedInput = Omit<CombinedReq, "kind">;
+
 export class FeedbackApiError extends Error {
   constructor(
     public readonly status: number,
@@ -34,12 +37,27 @@ async function handleResponse(response: Response): Promise<unknown> {
   return body;
 }
 
-export async function openFeedback(payload: OpenReq): Promise<OpenRes> {
-  const response = await fetch("/api/feedback", {
+async function safeFetch(
+  input: RequestInfo | URL,
+  init: RequestInit,
+): Promise<Response> {
+  try {
+    return await fetch(input, init);
+  } catch (error) {
+    if (error instanceof FeedbackApiError) throw error;
+    const message =
+      error instanceof Error ? error.message : "Network request failed";
+    throw new FeedbackApiError(0, null, message);
+  }
+}
+
+export async function openFeedback(payload: OpenInput): Promise<OpenRes> {
+  const body: OpenReq = { ...payload, kind: "open" };
+  const response = await safeFetch("/api/feedback", {
     method: "POST",
     credentials: "include",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
+    body: JSON.stringify(body),
   });
   return (await handleResponse(response)) as OpenRes;
 }
@@ -48,7 +66,7 @@ export async function submitFeedback(
   id: string,
   payload: SubmitReq,
 ): Promise<void> {
-  const response = await fetch(`/api/feedback/${id}`, {
+  const response = await safeFetch(`/api/feedback/${id}`, {
     method: "PATCH",
     credentials: "include",
     headers: { "Content-Type": "application/json" },
@@ -58,13 +76,14 @@ export async function submitFeedback(
 }
 
 export async function submitFeedbackCombined(
-  payload: CombinedReq,
+  payload: CombinedInput,
 ): Promise<OpenRes> {
-  const response = await fetch("/api/feedback", {
+  const body: CombinedReq = { ...payload, kind: "combined" };
+  const response = await safeFetch("/api/feedback", {
     method: "POST",
     credentials: "include",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
+    body: JSON.stringify(body),
   });
   return (await handleResponse(response)) as OpenRes;
 }

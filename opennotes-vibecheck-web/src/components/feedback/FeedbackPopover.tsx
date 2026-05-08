@@ -7,11 +7,11 @@ import {
   openFeedback,
   submitFeedback,
   submitFeedbackCombined,
+  type OpenInput,
+  type CombinedInput,
 } from "../../lib/feedback-client";
 import type { components } from "../../lib/generated-types";
 
-type OpenReq = components["schemas"]["FeedbackOpenRequest"];
-type CombinedReq = components["schemas"]["FeedbackCombinedRequest"];
 type SubmitReq = components["schemas"]["FeedbackSubmitRequest"];
 type OpenRes = components["schemas"]["FeedbackOpenResponse"];
 
@@ -29,7 +29,7 @@ export function FeedbackPopover(props: FeedbackPopoverProps): JSX.Element {
   const [surfaceOpen, setSurfaceOpen] = createSignal(false);
   const [initialType, setInitialType] = createSignal<FeedbackType>("thumbs_up");
   const [feedbackId, setFeedbackId] = createSignal<string | null>(null);
-  const [openPayload, setOpenPayload] = createSignal<OpenReq>({
+  const [openPayload, setOpenPayload] = createSignal<OpenInput>({
     page_path: "",
     user_agent: "",
     referrer: "",
@@ -43,7 +43,7 @@ export function FeedbackPopover(props: FeedbackPopoverProps): JSX.Element {
     setFeedbackId(null);
     props.onOpenChange(false);
 
-    const payload: OpenReq = {
+    const payload: OpenInput = {
       page_path: window.location.pathname,
       user_agent: navigator.userAgent,
       referrer: document.referrer,
@@ -83,7 +83,7 @@ export function FeedbackPopover(props: FeedbackPopoverProps): JSX.Element {
   };
 
   const wrappedSubmitFeedbackCombined = async (
-    payload: CombinedReq,
+    payload: CombinedInput,
   ): Promise<OpenRes> => {
     if (openInFlight !== null) {
       const inFlight = openInFlight;
