@@ -31,4 +31,9 @@ describe("<Skeleton /> shimmer primitive", () => {
   it("ships shimmer keyframes from packages/ui (not from vibecheck-web)", () => {
     expect(skeletonSource).toMatch(/@keyframes\s+[A-Za-z_-]*[Ss]himmer/);
   });
+
+  it("does not wrap css variables in hsl() (theme tokens are oklch — wrapping makes them invalid)", () => {
+    expect(skeletonSource).not.toMatch(/hsl\(\s*var\(--muted/);
+    expect(skeletonSource).not.toMatch(/hsl\(\s*var\(--card/);
+  });
 });

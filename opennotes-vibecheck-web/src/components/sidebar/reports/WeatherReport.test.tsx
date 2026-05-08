@@ -65,6 +65,36 @@ describe("WeatherReport", () => {
     ).toBeTruthy();
   });
 
+  it("renders the literal axis labels (Truth, Relevance, Sentiment) statically in the loading state", () => {
+    render(() => <WeatherReport report={null} />);
+
+    expect(
+      screen.getByTestId("weather-skeleton-truth-label").textContent,
+    ).toBe("Truth");
+    expect(
+      screen.getByTestId("weather-skeleton-relevance-label").textContent,
+    ).toBe("Relevance");
+    expect(
+      screen.getByTestId("weather-skeleton-sentiment-label").textContent,
+    ).toBe("Sentiment");
+
+    for (const axis of ["truth", "relevance", "sentiment"]) {
+      expect(
+        screen
+          .getByTestId(`weather-skeleton-${axis}`)
+          .querySelector("[data-opennotes-skeleton]"),
+      ).toBeTruthy();
+    }
+  });
+
+  it("does not put a Skeleton primitive on the axis label cell (label must be literal text)", () => {
+    render(() => <WeatherReport report={null} />);
+    for (const axis of ["truth", "relevance", "sentiment"]) {
+      const labelCell = screen.getByTestId(`weather-skeleton-${axis}-label`);
+      expect(labelCell.querySelector("[data-opennotes-skeleton]")).toBeNull();
+    }
+  });
+
   it("does not impose a min-h-[110px] on the skeleton container or its cards", () => {
     render(() => <WeatherReport report={null} />);
     const root = screen.getByTestId("weather-report-skeleton");

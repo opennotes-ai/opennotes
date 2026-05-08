@@ -254,30 +254,23 @@ function WeatherReportSkeleton(props: { class?: string }): JSX.Element {
       data-testid="weather-report-skeleton"
       class={`grid grid-cols-3 gap-2 ${props.class ?? ""}`.trim()}
     >
-      <div
-        data-testid="weather-skeleton-truth"
-        class="rounded-md border border-border bg-card p-2"
-        aria-hidden="true"
-      >
-        <Skeleton class="mb-1 h-3 w-12" />
-        <Skeleton class="h-4 w-20 rounded-full" />
-      </div>
-      <div
-        data-testid="weather-skeleton-relevance"
-        class="rounded-md border border-border bg-card p-2"
-        aria-hidden="true"
-      >
-        <Skeleton class="mb-1 h-3 w-16" />
-        <Skeleton class="h-4 w-20 rounded-full" />
-      </div>
-      <div
-        data-testid="weather-skeleton-sentiment"
-        class="rounded-md border border-border bg-card p-2"
-        aria-hidden="true"
-      >
-        <Skeleton class="mb-1 h-3 w-14" />
-        <Skeleton class="h-4 w-20 rounded-full" />
-      </div>
+      <For each={AXES}>
+        {(axis) => (
+          <section
+            data-testid={`weather-skeleton-${axis.axisType}`}
+            class="rounded-md border border-border bg-card p-2"
+            aria-hidden="true"
+          >
+            <h4
+              data-testid={`weather-skeleton-${axis.axisType}-label`}
+              class="mb-1 text-xs font-semibold text-muted-foreground"
+            >
+              {axis.heading}
+            </h4>
+            <Skeleton class="h-4 w-20 rounded-full" />
+          </section>
+        )}
+      </For>
     </div>
   );
 }

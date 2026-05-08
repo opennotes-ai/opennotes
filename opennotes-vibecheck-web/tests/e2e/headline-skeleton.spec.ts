@@ -381,6 +381,17 @@ test("AC1+AC2+AC3: skeletons appear, shimmer animates, then resolve to real head
     headlineSkeleton.locator("[data-opennotes-skeleton]").first(),
   ).toBeAttached();
 
+  // TASK-1569.07 regression: skeleton box must have a visible (non-transparent)
+  // computed background. Earlier the primitive's CSS used `hsl(var(--muted))`
+  // against oklch theme tokens, which makes the declaration invalid and falls
+  // back to transparent — the headline area then renders as an empty box.
+  const skeletonBg = await headlineSkeleton
+    .locator("[data-opennotes-skeleton]")
+    .first()
+    .evaluate((el) => window.getComputedStyle(el).backgroundColor);
+  expect(skeletonBg).not.toBe("rgba(0, 0, 0, 0)");
+  expect(skeletonBg).not.toBe("transparent");
+
   // AC3: Once sidebar_payload arrives, skeletons must disappear and the
   // real headline-summary testid renders.
   const headlineSummary = page.locator('[data-testid="headline-summary"]');
