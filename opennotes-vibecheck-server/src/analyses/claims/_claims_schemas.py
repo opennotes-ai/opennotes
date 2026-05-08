@@ -7,9 +7,8 @@ stays self-contained and parallel agents can land sibling modules
 from __future__ import annotations
 
 from enum import StrEnum
-from typing import Any
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field
 
 
 class SourceKind(StrEnum):
@@ -38,13 +37,6 @@ class PremisesRegistry(BaseModel):
     """Global registry of unique premises discovered across all claims."""
 
     premises: dict[str, Premise] = Field(default_factory=dict)
-
-    @model_validator(mode="before")
-    @classmethod
-    def _accept_flat_registry(cls, value: Any) -> Any:
-        if isinstance(value, dict) and "premises" not in value:
-            return {"premises": value}
-        return value
 
 
 class ClaimCategory(StrEnum):

@@ -179,6 +179,108 @@ async def test_run_claims_premises_adds_premise_ids_and_registry_from_payload(
     )
 
 
+async def test_build_premises_by_claim_chunks_input_above_batch_size(
+    settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    settings = settings.model_copy(update={"PREMISES_MAX_CLAIMS_PER_BATCH": 10})
+    call_chunks: list[list[str]] = []
+
+    async def fake_infer_premises_batch(
+        claim_texts: list[str], _settings: Settings
+    ) -> dict[str, list[str]]:
+        call_chunks.append(list(claim_texts))
+        return {claim_text: [f"Premise for {claim_text}"] for claim_text in claim_texts}
+
+    monkeypatch.setattr(premises, "infer_premises_batch", fake_infer_premises_batch)
+
+    claim_texts = [f"Claim {i}." for i in range(105)]
+    claims = _claims_report(*claim_texts)
+    _registry, premise_ids_by_claim = await premises.build_premises_by_claim(
+        claims.deduped_claims, settings
+    )
+
+    assert len(call_chunks) == 11
+    assert all(len(chunk) <= 10 for chunk in call_chunks)
+    flat = [text for chunk in call_chunks for text in chunk]
+    assert flat == claim_texts
+    assert len(premise_ids_by_claim) == 105
+
+
+async def test_build_premises_by_claim_continues_after_chunk_failure(
+    settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    settings = settings.model_copy(update={"PREMISES_MAX_CLAIMS_PER_BATCH": 2})
+    call_count = 0
+
+    async def fake_infer_premises_batch(
+        claim_texts: list[str], _settings: Settings
+    ) -> dict[str, list[str]]:
+        nonlocal call_count
+        call_count += 1
+        if call_count == 2:
+            raise RuntimeError("simulated chunk failure")
+        return {claim_text: [f"Premise for {claim_text}"] for claim_text in claim_texts}
+
+    monkeypatch.setattr(premises, "infer_premises_batch", fake_infer_premises_batch)
+
+    claim_texts = [f"Claim {i} will occur." for i in range(6)]
+    claims = _claims_report(*claim_texts)
+    _registry, premise_ids_by_claim = await premises.build_premises_by_claim(
+        claims.deduped_claims, settings
+    )
+
+    assert call_count == 3
+    for text in claim_texts[4:]:
+        assert text in premise_ids_by_claim
+    for text in claim_texts[:2]:
+        assert text in premise_ids_by_claim
+    for text in claim_texts[2:4]:
+        assert text not in premise_ids_by_claim
+
+
+async def test_run_claims_premises_uses_injected_premise_extractor(
+    settings: Settings,
+) -> None:
+    received: list[list[str]] = []
+
+    async def fake_extractor(claim_texts: list[str], _settings: Settings) -> dict[str, list[str]]:
+        received.append(list(claim_texts))
+        return {claim_texts[0]: ["Injected premise"]} if claim_texts else {}
+
+    payload = SimpleNamespace(claims_report=_claims_report("Some prediction will happen."))
+    result = await run_claims_premises(
+        pool=object(),
+        job_id=uuid4(),
+        task_attempt=uuid4(),
+        payload=payload,
+        settings=settings,
+        premise_extractor=fake_extractor,
+    )
+
+    assert received
+    claim = result["claims_report"]["deduped_claims"][0]
+    assert len(claim["premise_ids"]) == 1
+
+
+def test_premises_registry_accepts_empty_dict() -> None:
+    registry = PremisesRegistry.model_validate({})
+    assert registry.premises == {}
+
+
+def test_premises_registry_accepts_nested_shape() -> None:
+    registry = PremisesRegistry.model_validate(
+        {"premises": {"premise_x": {"premise_id": "premise_x", "statement": "Example."}}}
+    )
+    assert registry.premises["premise_x"].statement == "Example."
+
+
+def test_premises_registry_does_not_reroute_flat_shape() -> None:
+    registry = PremisesRegistry.model_validate(
+        {"premise_x": {"premise_id": "premise_x", "statement": "Example."}}
+    )
+    assert registry.premises == {}
+
+
 async def test_run_claims_premises_falls_back_to_dedup_slot_when_payload_missing(
     monkeypatch: pytest.MonkeyPatch,
     settings: Settings,

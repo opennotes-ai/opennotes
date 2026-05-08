@@ -8,7 +8,7 @@ from uuid import UUID
 from pydantic import ValidationError
 
 from src.analyses.claims._claims_schemas import ClaimsReport, DedupedClaim
-from src.analyses.claims.premises import build_premises_by_claim
+from src.analyses.claims.premises import PremiseSeam, build_premises_by_claim
 from src.config import Settings
 
 
@@ -82,6 +82,8 @@ async def run_claims_premises(
     task_attempt: UUID,
     payload: Any,
     settings: Settings,
+    *,
+    premise_extractor: PremiseSeam | None = None,
 ) -> dict[str, Any]:
     del task_attempt
 
@@ -91,8 +93,11 @@ async def run_claims_premises(
     if claims_report is None:
         return {"claims_report": _empty_report().model_dump(mode="json")}
 
+    extractor_kwargs: dict[str, Any] = {}
+    if premise_extractor is not None:
+        extractor_kwargs["premise_extractor"] = premise_extractor
     premises, premise_ids_by_claim = await build_premises_by_claim(
-        claims_report.deduped_claims, settings
+        claims_report.deduped_claims, settings, **extractor_kwargs
     )
 
     updated_claims: list[DedupedClaim] = []

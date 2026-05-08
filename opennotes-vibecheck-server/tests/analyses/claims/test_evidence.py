@@ -329,6 +329,57 @@ def test_grounded_urls_from_result_normalizes_search_result_urls() -> None:
 
 
 @pytest.mark.asyncio
+async def test_run_claims_evidence_uses_injected_external_fetcher(
+    monkeypatch: pytest.MonkeyPatch,
+    settings: Settings,
+) -> None:
+    received: list[list[str]] = []
+
+    async def fake_fetcher(
+        claim_texts: list[str], _settings: Settings
+    ) -> dict[str, list[dict[str, Any]]]:
+        received.append(list(claim_texts))
+        return {
+            claim_texts[0]: [
+                {
+                    "statement": "Injected lunar fact.",
+                    "source_kind": "external",
+                    "source_ref": "https://example.test/moon",
+                }
+            ]
+        }
+
+    async def fake_load_utterances(_pool: object, job_id: object) -> list[Utterance]:
+        del job_id
+        return []
+
+    monkeypatch.setattr(
+        "src.analyses.claims.evidence_slot.load_job_utterances",
+        fake_load_utterances,
+    )
+
+    result = await run_claims_evidence(
+        pool=object(),
+        job_id=uuid4(),
+        task_attempt=uuid4(),
+        payload=_Payload(_claims_report("The moon is round.")),
+        settings=settings,
+        external_fetcher=fake_fetcher,
+    )
+
+    assert received == [["The moon is round."]]
+    claim = result["claims_report"]["deduped_claims"][0]
+    assert claim["canonical_text"] == "The moon is round."
+    assert claim["supporting_facts"] == [
+        {
+            "statement": "Injected lunar fact.",
+            "source_kind": "external",
+            "source_ref": "https://example.test/moon",
+        }
+    ]
+
+
+@pytest.mark.asyncio
 async def test_run_claims_evidence_merges_from_payload(
     monkeypatch: pytest.MonkeyPatch,
     no_external_settings: Settings,
@@ -355,6 +406,7 @@ async def test_run_claims_evidence_merges_from_payload(
         task_attempt=uuid4(),
         payload=_Payload(_claims_report("The moon is round.")),
         settings=no_external_settings,
+        external_fetcher=_no_external_fetcher,
     )
 
     claim = result["claims_report"]["deduped_claims"][0]
@@ -401,6 +453,7 @@ async def test_run_claims_evidence_falls_back_to_dedup_slot_when_payload_missing
         task_attempt=uuid4(),
         payload=object(),
         settings=no_external_settings,
+        external_fetcher=_no_external_fetcher,
     )
 
     claim = result["claims_report"]["deduped_claims"][0]
@@ -446,6 +499,7 @@ async def test_run_claims_evidence_drops_post_kind_utterance_from_dedup_slot(
         task_attempt=uuid4(),
         payload=object(),
         settings=no_external_settings,
+        external_fetcher=_no_external_fetcher,
     )
 
     claim = result["claims_report"]["deduped_claims"][0]
@@ -526,6 +580,7 @@ async def test_run_claims_evidence_sets_zero_facts_to_verify_when_fact_exists(
         task_attempt=uuid4(),
         payload=_Payload(_claims_report("The moon has ice.")),
         settings=no_external_settings,
+        external_fetcher=_no_external_fetcher,
     )
 
     claim_payload = result["claims_report"]["deduped_claims"][0]
