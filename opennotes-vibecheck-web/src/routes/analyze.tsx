@@ -96,7 +96,7 @@ const DEFAULT_FRAME_COMPAT: FrameCompatResult = {
 };
 const ORIGINAL_BLOCKED_TIP_ID = "preview-mode-original-tip";
 const ORIGINAL_BLOCKED_TIP_TEXT =
-  "This page blocks framing — click to attempt anyway";
+  "Original not available — this page blocks framing";
 const ARCHIVE_PROBE_INTERVAL_MS = 5_000;
 const ARCHIVE_PROBE_CAP_MS = 300_000;
 const ARCHIVE_PROBE_TERMINAL_GRACE_MS = 10_000;
@@ -791,19 +791,20 @@ function AnalyzePageContent(props: { initialJobState: JobState | null }) {
                                   const isScreenshotUnavailable = () =>
                                     option.value === "screenshot" && isPdf();
                                   const isUnavailable = () =>
+                                    isOriginalBlocked() ||
                                     isArchivedUnavailable() ||
                                     isScreenshotUnavailable();
                                   return (
                                     <button
                                       type="button"
                                       data-testid={`preview-mode-${option.value}`}
-                                      class={`${segmentClass(
+                                      class={segmentClass(
                                         isPreviewModePressed(option.value),
                                         segmentCornerClass(
                                           index(),
                                           PREVIEW_MODE_OPTIONS.length,
                                         ),
-                                      )}${isOriginalBlocked() ? " opacity-60" : ""}`}
+                                      )}
                                       aria-pressed={isPreviewModePressed(
                                         option.value,
                                       )}
@@ -819,11 +820,13 @@ function AnalyzePageContent(props: { initialJobState: JobState | null }) {
                                       }
                                       disabled={isUnavailable()}
                                       title={
-                                        isArchivedUnavailable()
-                                          ? "No archive available for this page"
-                                          : isScreenshotUnavailable()
-                                            ? "Not available for PDFs"
-                                            : undefined
+                                        isOriginalBlocked()
+                                          ? "Original not available — this page blocks framing"
+                                          : isArchivedUnavailable()
+                                            ? "No archive available for this page"
+                                            : isScreenshotUnavailable()
+                                              ? "Not available for PDFs"
+                                              : undefined
                                       }
                                       onMouseEnter={() => {
                                         if (isOriginalBlocked()) {

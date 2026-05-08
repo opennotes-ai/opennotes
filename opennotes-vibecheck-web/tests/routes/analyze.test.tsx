@@ -898,30 +898,32 @@ describe("AnalyzePage route", () => {
     );
   });
 
-  it("keeps preview mode selections observable via aria-pressed across a blocked-to-unblocked job transition (TASK-1483.13.27)", async () => {
-    const blockedCompat = frameCompatResult({
-      canIframe: false,
-      blockingHeader: "content-security-policy: frame-ancestors 'none'",
-      cspFrameAncestors: "'none'",
+  it("keeps preview mode selections observable via aria-pressed across a job transition (TASK-1483.13.27)", async () => {
+    const firstCompat = frameCompatResult({
+      canIframe: true,
       archivedPreviewUrl:
         "/api/archive-preview?url=https%3A%2F%2Fnypost.com%2Farticle",
     });
-    const unblockedCompat = deferred<MockArchiveProbeResult>();
+    const secondCompat = deferred<MockArchiveProbeResult>();
 
     getArchiveProbeMock
-      .mockResolvedValueOnce(blockedCompat)
-      .mockReturnValueOnce(unblockedCompat.promise);
+      .mockResolvedValueOnce(firstCompat)
+      .mockReturnValueOnce(secondCompat.promise);
     getScreenshotMock.mockResolvedValue(null);
 
     const history = renderAtWithHistory(
       "/analyze?job=task-1483.13.27&url=https://nypost.com/article",
     ).history;
 
-    const archivedButton = await screen.findByTestId("preview-mode-archived");
+    const originalButton = await screen.findByTestId("preview-mode-original");
+    await waitFor(() => {
+      expect(originalButton.getAttribute("aria-pressed")).toBe("true");
+    });
+    const archivedButton = screen.getByTestId("preview-mode-archived");
+    fireEvent.click(archivedButton);
     await waitFor(() => {
       expect(archivedButton.getAttribute("aria-pressed")).toBe("true");
     });
-    const originalButton = screen.getByTestId("preview-mode-original");
     fireEvent.click(originalButton);
     await waitFor(() => {
       expect(originalButton.getAttribute("aria-pressed")).toBe("true");
@@ -930,27 +932,25 @@ describe("AnalyzePage route", () => {
 
     history.set({
       value:
-        "/analyze?job=task-1483.13.27-unblocked&url=https://example.com/permissive",
+        "/analyze?job=task-1483.13.27-second&url=https://example.com/permissive",
       scroll: false,
       replace: true,
     });
     setPolledJobState(
       makeJobState({
-        job_id: "task-1483.13.27-unblocked",
+        job_id: "task-1483.13.27-second",
         status: "analyzing",
         url: "https://example.com/permissive",
       }),
     );
 
     expect(originalButton.getAttribute("aria-pressed")).toBe("true");
-    expect(
-      screen.getByTestId("preview-mode-archived").getAttribute("aria-pressed"),
-    ).toBe("false");
+    expect(archivedButton.getAttribute("aria-pressed")).toBe("false");
     expect(
       screen.getByTestId("preview-mode-screenshot").getAttribute("aria-pressed"),
     ).toBe("false");
 
-    unblockedCompat.resolve(
+    secondCompat.resolve(
       frameCompatResult({
         canIframe: true,
         blockingHeader: null,
@@ -2193,8 +2193,10 @@ describe("AnalyzePage Archived tab availability (TASK-1483.15.02)", () => {
       );
       expect(archived.getAttribute("aria-pressed")).toBe("false");
 
-      expect(original.disabled).toBe(false);
-      expect(original.hasAttribute("title")).toBe(false);
+      expect(original.disabled).toBe(true);
+      expect(original.getAttribute("title")).toBe(
+        "Original not available — this page blocks framing",
+      );
       expect(screenshot.disabled).toBe(false);
       expect(screenshot.hasAttribute("title")).toBe(false);
 
@@ -2372,9 +2374,7 @@ describe("AnalyzePage Original tab — soft-disabled when canIframe=false (TASK-
 
     const tip = screen.getByTestId("preview-mode-original-tip");
     expect(tip.getAttribute("id")).toBe("preview-mode-original-tip");
-    expect(tip.textContent ?? "").toMatch(
-      /blocks framing.*click to attempt anyway/i,
-    );
+    expect(tip.textContent ?? "").toMatch(/original not available.*blocks framing/i);
     expect((tip.getAttribute("class") ?? "").split(/\s+/)).toContain("sr-only");
     expect(tip.getAttribute("role")).toBe("tooltip");
     expect(tip.getAttribute("data-visible")).toBe("false");
@@ -2397,9 +2397,7 @@ describe("AnalyzePage Original tab — soft-disabled when canIframe=false (TASK-
 
     fireEvent.mouseEnter(original);
     expect(tip.getAttribute("data-visible")).toBe("true");
-    expect(tip.textContent ?? "").toMatch(
-      /blocks framing.*click to attempt anyway/i,
-    );
+    expect(tip.textContent ?? "").toMatch(/original not available.*blocks framing/i);
 
     fireEvent.mouseLeave(original);
     expect(tip.getAttribute("data-visible")).toBe("false");
@@ -2431,7 +2429,7 @@ describe("AnalyzePage Original tab — soft-disabled when canIframe=false (TASK-
     expect(tip.getAttribute("data-visible")).toBe("false");
   });
 
-  it("describes Original when canIframe=false without disabling it", async () => {
+  it("has aria-describedby on Original and preserves aria-describedby when canIframe=false (TASK-1591.02: hard-disabled)", async () => {
     mockBlockedFrame();
     renderAt("/analyze?job=job-blocked&url=https://nypost.com/article");
 
@@ -2441,26 +2439,26 @@ describe("AnalyzePage Original tab — soft-disabled when canIframe=false (TASK-
         "preview-mode-original-tip",
       );
     });
-    // AC #4: must NOT use aria-disabled, disabled, or pointer-events:none.
     expect(original.hasAttribute("aria-disabled")).toBe(false);
-    expect(original.hasAttribute("disabled")).toBe(false);
     expect(original.getAttribute("class") ?? "").not.toMatch(
       /pointer-events-none/,
     );
+    expect((original as HTMLButtonElement).disabled).toBe(true);
   });
 
-  it("Original tab remains clickable as the escape hatch when canIframe=false", async () => {
+  it("Original tab is hard-disabled (not clickable) when canIframe=false (TASK-1591.02)", async () => {
     mockBlockedFrame();
     renderAt("/analyze?job=job-blocked&url=https://nypost.com/article");
 
     const original = await screen.findByTestId("preview-mode-original");
     await waitFor(() => {
-      // Auto-resolve flips the parent's previewMode off Original.
-      expect(original.getAttribute("aria-pressed")).toBe("false");
+      expect(original.getAttribute("aria-describedby")).toBe(
+        "preview-mode-original-tip",
+      );
     });
+    expect((original as HTMLButtonElement).disabled).toBe(true);
     fireEvent.click(original);
-    expect(original.getAttribute("aria-pressed")).toBe("true");
-    expect(screen.getByTestId("page-frame-deciding")).not.toBeNull();
+    expect(original.getAttribute("aria-pressed")).toBe("false");
   });
 
   it("does not show Original pressed before frame compatibility resolves", async () => {
@@ -2774,6 +2772,84 @@ describe("AnalyzePage Original tab — soft-disabled when canIframe=false (TASK-
       const card = screen.getByTestId("job-failure-card");
       expect(card.getAttribute("data-error-code")).toBe("upstream_error");
       expect(screen.queryByTestId("expired-analysis-card")).toBeNull();
+    });
+  });
+
+  describe("AnalyzePage Original tab — hard-disabled when canIframe=false (TASK-1591.02)", () => {
+    function mockBlockedFrameForDisabled() {
+      getArchiveProbeMock.mockResolvedValue(
+        frameCompatResult({
+          canIframe: false,
+          blockingHeader: "content-security-policy: frame-ancestors 'none'",
+          cspFrameAncestors: "'none'",
+          archivedPreviewUrl:
+            "/api/archive-preview?url=https%3A%2F%2Fnypost.com%2Farticle",
+        }),
+      );
+      getScreenshotMock.mockResolvedValue("https://cdn.example.com/shot.png");
+    }
+
+    it("Original tab has disabled attribute when canIframe=false", async () => {
+      mockBlockedFrameForDisabled();
+      renderAt("/analyze?job=job-disabled-original&url=https://nypost.com/article");
+
+      const original = await screen.findByTestId("preview-mode-original");
+      await waitFor(() => {
+        expect(original.getAttribute("aria-describedby")).toBe(
+          "preview-mode-original-tip",
+        );
+      });
+      expect((original as HTMLButtonElement).disabled).toBe(true);
+    });
+
+    it("clicking disabled Original tab does not change active preview mode", async () => {
+      mockBlockedFrameForDisabled();
+      renderAt("/analyze?job=job-disabled-click&url=https://nypost.com/article");
+
+      const original = await screen.findByTestId("preview-mode-original");
+      await waitFor(() => {
+        expect(original.getAttribute("aria-describedby")).toBe(
+          "preview-mode-original-tip",
+        );
+      });
+
+      const archived = screen.getByTestId("preview-mode-archived");
+      const screenshot = screen.getByTestId("preview-mode-screenshot");
+
+      const archivedPressed = archived.getAttribute("aria-pressed");
+      const screenshotPressed = screenshot.getAttribute("aria-pressed");
+      const originalPressed = original.getAttribute("aria-pressed");
+
+      fireEvent.click(original);
+
+      expect(original.getAttribute("aria-pressed")).toBe(originalPressed);
+      expect(archived.getAttribute("aria-pressed")).toBe(archivedPressed);
+      expect(screenshot.getAttribute("aria-pressed")).toBe(screenshotPressed);
+    });
+
+    it("tooltip text contains 'Original not available' when canIframe=false", async () => {
+      mockBlockedFrameForDisabled();
+      renderAt("/analyze?job=job-disabled-tooltip&url=https://nypost.com/article");
+
+      await screen.findByTestId("preview-mode-original");
+      await waitFor(() => {
+        expect(
+          screen.getByTestId("preview-mode-original-tip").textContent ?? "",
+        ).toContain("Original not available");
+      });
+    });
+
+    it("Original tab is not disabled when canIframe=true", async () => {
+      getArchiveProbeMock.mockResolvedValue(
+        frameCompatResult({ canIframe: true }),
+      );
+      getScreenshotMock.mockResolvedValue("https://cdn.example.com/shot.png");
+      renderAt("/analyze?job=job-enabled-original&url=https://nypost.com/article");
+
+      const original = await screen.findByTestId("preview-mode-original");
+      await waitFor(() => {
+        expect((original as HTMLButtonElement).disabled).toBe(false);
+      });
     });
   });
 });
