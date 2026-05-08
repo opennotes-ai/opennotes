@@ -61,6 +61,15 @@ describe("<Drawer /> source contract", () => {
     expect(drawerSource).toContain("sr-only")
   })
 
+  it("DrawerContent exposes a showCloseButton prop and gates the close button on it", () => {
+    expect(drawerSource).toContain("showCloseButton")
+    expect(drawerSource).toMatch(/Show\s+when=\{showCloseButton\(\)\}/)
+  })
+
+  it("DrawerContent defaults showCloseButton to true so existing call sites keep their close button", () => {
+    expect(drawerSource).toMatch(/local\.showCloseButton\s*\?\?\s*true/)
+  })
+
   it("uses splitProps to extract class so arbitrary props forward to the primitive", () => {
     expect(drawerSource).toContain("splitProps")
     expect(drawerSource).toContain("...others")

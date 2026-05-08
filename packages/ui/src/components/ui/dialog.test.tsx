@@ -58,6 +58,15 @@ describe("<Dialog /> source contract", () => {
     expect(dialogSource).toContain("sr-only")
   })
 
+  it("DialogContent exposes a showCloseButton prop and gates the close button on it", () => {
+    expect(dialogSource).toContain("showCloseButton")
+    expect(dialogSource).toMatch(/Show\s+when=\{showCloseButton\(\)\}/)
+  })
+
+  it("DialogContent defaults showCloseButton to true so existing call sites keep their close button", () => {
+    expect(dialogSource).toMatch(/local\.showCloseButton\s*\?\?\s*true/)
+  })
+
   it("uses splitProps to extract class so arbitrary props forward to the primitive", () => {
     expect(dialogSource).toContain("splitProps")
     expect(dialogSource).toContain("...others")
