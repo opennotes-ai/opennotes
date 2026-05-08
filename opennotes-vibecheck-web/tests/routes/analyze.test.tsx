@@ -2851,5 +2851,39 @@ describe("AnalyzePage Original tab — soft-disabled when canIframe=false (TASK-
         expect((original as HTMLButtonElement).disabled).toBe(false);
       });
     });
+
+    it("synthetic click on disabled Original tab does not mutate aria-pressed state (TASK-1591.05)", async () => {
+      mockBlockedFrameForDisabled();
+      renderAt(
+        "/analyze?job=job-synthetic-click&url=https://nypost.com/article",
+      );
+
+      const original = await screen.findByTestId("preview-mode-original");
+      await waitFor(() => {
+        expect(original.getAttribute("aria-describedby")).toBe(
+          "preview-mode-original-tip",
+        );
+      });
+
+      const archived = screen.getByTestId("preview-mode-archived");
+      const screenshot = screen.getByTestId("preview-mode-screenshot");
+
+      const archivedPressedBefore = archived.getAttribute("aria-pressed");
+      const screenshotPressedBefore = screenshot.getAttribute("aria-pressed");
+      const originalPressedBefore = original.getAttribute("aria-pressed");
+
+      original.dispatchEvent(
+        new MouseEvent("click", { bubbles: true, cancelable: true }),
+      );
+      original.dispatchEvent(
+        new MouseEvent("click", { bubbles: true, cancelable: true }),
+      );
+
+      expect(original.getAttribute("aria-pressed")).toBe(originalPressedBefore);
+      expect(archived.getAttribute("aria-pressed")).toBe(archivedPressedBefore);
+      expect(screenshot.getAttribute("aria-pressed")).toBe(
+        screenshotPressedBefore,
+      );
+    });
   });
 });

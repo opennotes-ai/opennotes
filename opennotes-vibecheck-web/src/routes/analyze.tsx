@@ -606,6 +606,9 @@ function AnalyzePageContent(props: { initialJobState: JobState | null }) {
   };
 
   const selectPreviewMode = (mode: PreviewMode) => {
+    if (mode === "original" && !frameCompat().canIframe) return;
+    if (mode === "archived" && archiveProbeState() === "unavailable") return;
+    if (mode === "screenshot" && isPdf()) return;
     setPreviewMode(mode);
     setSelectedPreviewMode(mode);
     setPreviewModeRequestId((id) => id + 1);
