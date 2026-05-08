@@ -262,6 +262,25 @@ async def test_run_claims_premises_uses_injected_premise_extractor(
     assert len(claim["premise_ids"]) == 1
 
 
+def test_premises_registry_accepts_empty_dict() -> None:
+    registry = PremisesRegistry.model_validate({})
+    assert registry.premises == {}
+
+
+def test_premises_registry_accepts_nested_shape() -> None:
+    registry = PremisesRegistry.model_validate(
+        {"premises": {"premise_x": {"premise_id": "premise_x", "statement": "Example."}}}
+    )
+    assert registry.premises["premise_x"].statement == "Example."
+
+
+def test_premises_registry_does_not_reroute_flat_shape() -> None:
+    registry = PremisesRegistry.model_validate(
+        {"premise_x": {"premise_id": "premise_x", "statement": "Example."}}
+    )
+    assert registry.premises == {}
+
+
 async def test_run_claims_premises_falls_back_to_dedup_slot_when_payload_missing(
     monkeypatch: pytest.MonkeyPatch,
     settings: Settings,
