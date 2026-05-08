@@ -452,6 +452,57 @@ class TestListRecentDoneJobs:
         assert result[0].headline_summary is None
         assert result[0].weather_report is None
 
+    async def test_invalid_weather_report_returns_none_and_preserves_headline(
+        self, db_pool: Any, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        url = "https://example.com/invalid-weather"
+        job_id = await _seed_job(
+            db_pool,
+            url=url,
+            sidebar_payload={
+                "headline": {
+                    "text": "Headline survives malformed weather payload.",
+                    "kind": "synthesized",
+                    "unavailable_inputs": [],
+                },
+                "weather_report": {
+                    "truth": {
+                        "label": "not-a-real-label",
+                        "logprob": None,
+                        "alternatives": [],
+                    },
+                    "relevance": {
+                        "label": "on_topic",
+                        "logprob": None,
+                        "alternatives": [],
+                    },
+                    "sentiment": {
+                        "label": "engaged",
+                        "logprob": None,
+                        "alternatives": [],
+                    },
+                },
+            },
+        )
+        await _seed_scrape(db_pool, url=url)
+
+        with caplog.at_level("WARNING", logger="src.jobs.recent_query"):
+            result = await list_recent(db_pool, limit=5, signer=_StubSigner())
+
+        assert len(result) == 1
+        assert result[0].weather_report is None
+        assert result[0].headline_summary == (
+            "Headline survives malformed weather payload."
+        )
+        warning_records = [
+            record
+            for record in caplog.records
+            if record.name == "src.jobs.recent_query"
+            and record.levelname == "WARNING"
+        ]
+        assert warning_records, "expected a structured warning for invalid payload"
+        assert any(str(job_id) in record.getMessage() for record in warning_records)
+
     async def test_truncates_to_limit(self, db_pool: Any) -> None:
         for i in range(7):
             url = f"https://example.com/page-{i}"
