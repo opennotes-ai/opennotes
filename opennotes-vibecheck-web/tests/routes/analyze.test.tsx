@@ -2380,7 +2380,7 @@ describe("AnalyzePage Original tab — soft-disabled when canIframe=false (TASK-
     expect(tip.getAttribute("data-visible")).toBe("false");
   });
 
-  it("surfaces the Original blocked-frame tooltip on hover and focus", async () => {
+  it("surfaces the Original blocked-frame tooltip on hover via wrapper and focus via button (TASK-1591.04)", async () => {
     mockBlockedFrame();
     renderAt("/analyze?job=job-blocked&url=https://nypost.com/article");
 
@@ -2391,15 +2391,19 @@ describe("AnalyzePage Original tab — soft-disabled when canIframe=false (TASK-
       );
     });
 
+    const wrapper = screen.getByTestId("preview-mode-original-hover-wrapper");
     const tip = screen.getByTestId("preview-mode-original-tip");
     expect(tip.getAttribute("role")).toBe("tooltip");
     expect(tip.getAttribute("data-visible")).toBe("false");
 
-    fireEvent.mouseEnter(original);
+    fireEvent.mouseEnter(wrapper);
     expect(tip.getAttribute("data-visible")).toBe("true");
     expect(tip.textContent ?? "").toMatch(/original not available.*blocks framing/i);
+    expect((tip.getAttribute("class") ?? "").split(/\s+/)).not.toContain(
+      "sr-only",
+    );
 
-    fireEvent.mouseLeave(original);
+    fireEvent.mouseLeave(wrapper);
     expect(tip.getAttribute("data-visible")).toBe("false");
 
     fireEvent.focus(original);
@@ -2417,12 +2421,13 @@ describe("AnalyzePage Original tab — soft-disabled when canIframe=false (TASK-
       );
     });
 
+    const wrapper = screen.getByTestId("preview-mode-original-hover-wrapper");
     const tip = screen.getByRole("tooltip");
 
     fireEvent.focus(original);
     expect(tip.getAttribute("data-visible")).toBe("true");
 
-    fireEvent.mouseLeave(original);
+    fireEvent.mouseLeave(wrapper);
     expect(tip.getAttribute("data-visible")).toBe("true");
 
     fireEvent.blur(original);
@@ -2504,17 +2509,17 @@ describe("AnalyzePage Original tab — soft-disabled when canIframe=false (TASK-
         "preview-mode-original-tip",
       );
     });
-    const archived = screen.getByTestId("preview-mode-archived");
+    const wrapper = screen.getByTestId("preview-mode-original-hover-wrapper");
     const tip = screen.getByTestId("preview-mode-original-tip");
 
-    fireEvent.mouseEnter(original);
+    fireEvent.mouseEnter(wrapper);
     expect(tip.getAttribute("data-visible")).toBe("true");
-    fireEvent.mouseLeave(archived);
+    fireEvent.mouseLeave(wrapper);
     expect(tip.getAttribute("data-visible")).toBe("false");
 
     fireEvent.focus(original);
     expect(tip.getAttribute("data-visible")).toBe("true");
-    fireEvent.blur(archived);
+    fireEvent.blur(original);
     expect(tip.getAttribute("data-visible")).toBe("false");
   });
 

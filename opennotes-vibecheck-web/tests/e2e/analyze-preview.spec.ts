@@ -604,13 +604,17 @@ test("Original tab is disabled when canIframe=false; click is a noop; tooltip sh
   await expect(page.getByRole("button", { name: "Original" })).toHaveAttribute("aria-pressed", "false");
   await expect(page.getByTestId("page-frame-archived-iframe")).toBeVisible();
 
-  // Hover Original (still focusable for screen readers via aria-describedby).
-  // Disabled <button> may not fire DOM mouse events in some browsers — use
-  // dispatchEvent to ensure the hover signal flips, OR rely on the tooltip
-  // being present in the DOM (the existing tooltip span is rendered when
-  // !canIframe; visibility is driven by hover/focus signals). Assert the
-  // tooltip TEXT regardless of visibility, since aria-describedby links it
-  // to screen readers always.
+  // Hover the wrapper span (not the disabled button itself) — disabled buttons
+  // do not fire pointer events reliably in Firefox/Safari (TASK-1591.04).
+  const wrapper = page.getByTestId("preview-mode-original-hover-wrapper");
   const tip = page.getByTestId("preview-mode-original-tip");
+  // Move mouse away first to ensure tooltip is in hidden state before hover test.
+  await page.mouse.move(0, 0);
+  await expect(tip).toHaveAttribute("data-visible", "false");
+  await wrapper.hover();
+  await expect(tip).toHaveAttribute("data-visible", "true");
+  await expect(tip).toBeVisible();
   await expect(tip).toContainText("Original not available");
+  await page.mouse.move(0, 0);
+  await expect(tip).toHaveAttribute("data-visible", "false");
 });
