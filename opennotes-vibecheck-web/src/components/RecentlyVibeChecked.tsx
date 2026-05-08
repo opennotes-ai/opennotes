@@ -82,7 +82,9 @@ export default function RecentlyVibeChecked(props: RecentlyVibeCheckedProps) {
                     </Show>
                   </div>
                 </GalleryHoverCard>
-                <FeedbackBell bell_location="home:recently-vibe-checked" />
+                <FeedbackBell
+                  bell_location={`home:recently-vibe-checked:${item.job_id}`}
+                />
               </div>
             )}
           </For>
