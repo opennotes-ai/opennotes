@@ -13,6 +13,10 @@ import {
 } from "@opennotes/ui/components/ui/tooltip";
 import { Skeleton } from "@opennotes/ui/components/ui/skeleton";
 import type { components } from "~/lib/generated-types";
+import {
+  formatWeatherBadgeClass,
+  formatWeatherLabel,
+} from "~/lib/weather-labels";
 
 type WeatherReportData = components["schemas"]["WeatherReport"];
 type WeatherAxisTruth = components["schemas"]["WeatherAxisTruth"];
@@ -43,17 +47,15 @@ interface AxisDefinition {
   axisType: AxisType;
   heading: string;
   tooltip: string;
-  mapLabel: (value: WeatherAxisLabel) => string;
-  valueClass: (value: WeatherAxisLabel) => string;
 }
 
 const TOOLTIP_COPY: Record<AxisType, string> = {
   truth:
     "Truth — Epistemic stance, not verdict. Whether claims are sourced, factual claims, first-person, second-hand, or actively misleading.",
   relevance:
-    "Relevance — How on-topic the content is. Higher = insightful and on-topic; lower = drifting or off-topic.",
+    "Relevance — Conversational stance, not score. Whether the content is insightful, on topic, chatty, drifting, or off topic.",
   sentiment:
-    "Sentiment — The emotional tone of the content as a free-form descriptor.",
+    "Sentiment — Emotional stance, not judgment. The tone is rendered as a free-form descriptor (commonly supportive, neutral, critical, or oppositional).",
 };
 
 const AXES: AxisDefinition[] = [
@@ -61,22 +63,16 @@ const AXES: AxisDefinition[] = [
     axisType: "truth",
     heading: "Truth",
     tooltip: TOOLTIP_COPY.truth,
-    mapLabel: mapTruthLabel,
-    valueClass: valueClassForTruth,
   },
   {
     axisType: "relevance",
     heading: "Relevance",
     tooltip: TOOLTIP_COPY.relevance,
-    mapLabel: mapRelevanceLabel,
-    valueClass: valueClassForRelevance,
   },
   {
     axisType: "sentiment",
     heading: "Sentiment",
     tooltip: TOOLTIP_COPY.sentiment,
-    mapLabel: mapSentimentLabel,
-    valueClass: valueClassForSentiment,
   },
 ];
 
@@ -86,82 +82,6 @@ function formatLogprobProbability(value: number | null | undefined): string | nu
   }
   const probability = Math.exp(value) * 100;
   return `${Math.round(probability * 100) / 100}%`;
-}
-
-function mapTruthLabel(value: WeatherAxisLabel): string {
-  switch (value) {
-    case "sourced":
-      return "Sourced";
-    case "factual_claims":
-      return "Factual claims";
-    case "first_person":
-      return "First-person";
-    case "hearsay":
-      return "Second-hand";
-    case "misleading":
-      return "Actively misleading";
-    default:
-      return String(value);
-  }
-}
-
-function mapRelevanceLabel(value: WeatherAxisLabel): string {
-  switch (value) {
-    case "insightful":
-      return "Insightful";
-    case "on_topic":
-      return "On topic";
-    case "chatty":
-      return "Chatty";
-    case "drifting":
-      return "Drifting";
-    case "off_topic":
-      return "Off topic";
-    default:
-      return String(value);
-  }
-}
-
-function mapSentimentLabel(value: WeatherAxisLabel): string {
-  return String(value);
-}
-
-function valueClassForTruth(value: WeatherAxisLabel): string {
-  switch (value) {
-    case "sourced":
-      return "inline-flex rounded-full bg-emerald-500/10 px-2 py-0.5 text-[11px] font-medium text-emerald-700";
-    case "factual_claims":
-      return "inline-flex rounded-full bg-lime-500/10 px-2 py-0.5 text-[11px] font-medium text-lime-700";
-    case "first_person":
-      return "inline-flex rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground";
-    case "hearsay":
-      return "inline-flex rounded-full bg-amber-500/10 px-2 py-0.5 text-[11px] font-medium text-amber-700";
-    case "misleading":
-      return "inline-flex rounded-full bg-destructive/10 px-2 py-0.5 text-[11px] font-medium text-destructive";
-    default:
-      return "inline-flex rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-foreground";
-  }
-}
-
-function valueClassForRelevance(value: WeatherAxisLabel): string {
-  switch (value) {
-    case "insightful":
-      return "inline-flex rounded-full bg-sky-500/10 px-2 py-0.5 text-[11px] font-medium text-sky-700";
-    case "on_topic":
-      return "inline-flex rounded-full bg-emerald-500/10 px-2 py-0.5 text-[11px] font-medium text-emerald-700";
-    case "chatty":
-      return "inline-flex rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground";
-    case "drifting":
-      return "inline-flex rounded-full bg-amber-500/10 px-2 py-0.5 text-[11px] font-medium text-amber-700";
-    case "off_topic":
-      return "inline-flex rounded-full bg-destructive/10 px-2 py-0.5 text-[11px] font-medium text-destructive";
-    default:
-      return "inline-flex rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-foreground";
-  }
-}
-
-function valueClassForSentiment(_value: WeatherAxisLabel): string {
-  return "inline-flex rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-foreground";
 }
 
 function safeAlternatives(axis: WeatherAxis | null): WeatherAxisAlternative[] {
@@ -212,12 +132,13 @@ function AxisRow(props: AxisRowProps): JSX.Element {
             }
           >
             {(axisValue) => {
-              const label = () => props.axis.mapLabel(axisValue().label);
+              const label = () => formatWeatherLabel(axisValue().label);
+              const badgeClass = () => formatWeatherBadgeClass(axisValue().label);
               return (
                 <div class="flex flex-wrap items-center gap-2">
                   <span
                     data-testid={`weather-${props.axis.axisType}-value`}
-                    class={props.axis.valueClass(axisValue().label)}
+                    class={badgeClass()}
                     title={axisValue().label}
                   >
                     {label()}
@@ -237,7 +158,7 @@ function AxisRow(props: AxisRowProps): JSX.Element {
                     >
                       <For each={alternatives()}>
                         {(alternative) => {
-                          const alternativeLabel = props.axis.mapLabel(
+                          const alternativeLabel = formatWeatherLabel(
                             alternative.label as WeatherAxisLabel,
                           );
                           const alternativeConfidence =

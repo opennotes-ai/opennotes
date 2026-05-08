@@ -52,13 +52,13 @@ describe("WeatherReport", () => {
     expect(screen.getByTestId("weather-axis-card-relevance")).toBeDefined();
     expect(screen.getByTestId("weather-axis-card-sentiment")).toBeDefined();
     expect(screen.getByTestId("weather-truth-value").textContent).toBe(
-      "First-person",
+      "First-Person",
     );
     expect(screen.getByTestId("weather-relevance-value").textContent).toBe(
-      "On topic",
+      "On Topic",
     );
     expect(screen.getByTestId("weather-sentiment-value").textContent).toBe(
-      "warmly skeptical",
+      "Warmly Skeptical",
     );
   });
 
@@ -177,11 +177,11 @@ describe("WeatherReport", () => {
     expect(cls).toContain("rounded-lg");
   });
 
-  it("keeps first-person truth neutral, not amber or destructive", () => {
+  it("renders first-person truth in indigo, not amber or destructive", () => {
     render(() => <WeatherReport report={makeWeatherReport()} />);
 
     const className = screen.getByTestId("weather-truth-value").className;
-    expect(className).toContain("text-muted-foreground");
+    expect(className).toContain("text-indigo-700");
     expect(className).not.toContain("amber");
     expect(className).not.toContain("destructive");
   });
@@ -227,7 +227,7 @@ describe("WeatherReport", () => {
     await waitFor(() => {
       expect(screen.queryByTestId("weather-report-skeleton")).toBeNull();
       expect(screen.getByTestId("weather-truth-value").textContent).toBe(
-        "First-person",
+        "First-Person",
       );
     });
   });
@@ -258,7 +258,7 @@ describe("WeatherReport", () => {
 
     await waitFor(() => {
       expect(screen.getByTestId("weather-truth-value").textContent).toBe(
-        "Actively misleading",
+        "Actively Misleading",
       );
     });
   });
@@ -276,7 +276,7 @@ describe("WeatherReport", () => {
       />
     ));
     expect(screen.getByTestId("weather-truth-value").textContent).toBe(
-      "Factual claims",
+      "Factual Claims",
     );
 
     cleanup();
@@ -293,7 +293,7 @@ describe("WeatherReport", () => {
       />
     ));
     expect(screen.getByTestId("weather-truth-value").textContent).toBe(
-      "Second-hand",
+      "Second-Hand",
     );
   });
 
@@ -314,7 +314,7 @@ describe("WeatherReport", () => {
       "88.69%",
     );
     expect(screen.getByTestId("weather-truth-alternatives").textContent).toContain(
-      "Factual claims (28.65%)",
+      "Factual Claims (28.65%)",
     );
   });
 });
