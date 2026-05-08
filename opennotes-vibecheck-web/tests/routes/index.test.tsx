@@ -20,7 +20,13 @@ vi.mock("../../src/routes/analyze.data", () => {
   return {
     analyzeAction: createActionStub("/__mock_analyze_action"),
     analyzePdfAction: createActionStub("/__mock_analyze_pdf_action"),
+    requestImageUploadUrlsAction: createActionStub(
+      "/__mock_request_image_upload_urls",
+    ),
     requestUploadUrlAction: createActionStub("/__mock_request_upload_url"),
+    submitImageAnalysisAction: createActionStub(
+      "/__mock_submit_image_analysis",
+    ),
     submitPdfAnalysisAction: createActionStub("/__mock_submit_pdf_analysis"),
   };
 });
