@@ -408,6 +408,14 @@ test("AC1+AC2+AC3: skeletons appear, shimmer animates, then resolve to real head
   await expect(
     weatherSkeleton.locator('[data-testid="weather-skeleton-sentiment-label"]'),
   ).toHaveText("SENTIMENT");
+  for (const axis of ["truth", "relevance", "sentiment"] as const) {
+    const labelCell = weatherSkeleton.locator(
+      `[data-testid="weather-skeleton-${axis}-label"]`,
+    );
+    await expect(
+      labelCell.locator("[data-opennotes-skeleton]"),
+    ).toHaveCount(0);
+  }
 
   // AC3: Once sidebar_payload arrives, skeletons must disappear and the
   // real headline-summary testid renders.

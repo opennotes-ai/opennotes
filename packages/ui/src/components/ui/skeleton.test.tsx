@@ -36,4 +36,14 @@ describe("<Skeleton /> shimmer primitive", () => {
     expect(skeletonSource).not.toMatch(/hsl\(\s*var\(--muted/);
     expect(skeletonSource).not.toMatch(/hsl\(\s*var\(--card/);
   });
+
+  it("keeps bg-muted in the Skeleton root default class — removing it would render the box transparent", () => {
+    expect(skeletonSource).toMatch(/cn\([^)]*bg-muted/);
+  });
+
+  it("uses color-mix on var(--card) for the shimmer overlay (theme-aware, oklch-safe)", () => {
+    expect(skeletonSource).toMatch(
+      /color-mix\(\s*in\s+oklab\s*,\s*var\(--card[^)]*\)\s+\d+%\s*,\s*transparent\s*\)/,
+    );
+  });
 });
