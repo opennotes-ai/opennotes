@@ -51,7 +51,9 @@ beforeAll(async () => {
     server: { middlewareMode: true },
     ssr: { noExternal: true },
   });
-});
+
+  await renderAnalyzeHead("/analyze");
+}, 60_000);
 
 afterAll(async () => {
   await server.close();
