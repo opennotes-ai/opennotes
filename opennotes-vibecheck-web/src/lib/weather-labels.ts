@@ -16,19 +16,19 @@ type WeatherLabelEntry = {
 type WeatherVariant = keyof typeof VARIANT_CLASSES;
 
 export const VARIANT_CLASSES = {
-  sky:     "inline-flex rounded-full bg-sky-500/10 px-2 py-0.5 text-[11px] font-medium text-sky-700",
-  blue:    "inline-flex rounded-full bg-blue-500/10 px-2 py-0.5 text-[11px] font-medium text-blue-700",
-  indigo:  "inline-flex rounded-full bg-indigo-500/10 px-2 py-0.5 text-[11px] font-medium text-indigo-700",
-  stone:   "inline-flex rounded-full bg-stone-500/10 px-2 py-0.5 text-[11px] font-medium text-stone-700",
-  rose:    "inline-flex rounded-full bg-rose-500/10 px-2 py-0.5 text-[11px] font-medium text-rose-700",
-  emerald: "inline-flex rounded-full bg-emerald-500/10 px-2 py-0.5 text-[11px] font-medium text-emerald-700",
-  green:   "inline-flex rounded-full bg-green-500/10 px-2 py-0.5 text-[11px] font-medium text-green-700",
-  teal:    "inline-flex rounded-full bg-teal-500/10 px-2 py-0.5 text-[11px] font-medium text-teal-700",
-  cyan:    "inline-flex rounded-full bg-cyan-500/10 px-2 py-0.5 text-[11px] font-medium text-cyan-700",
-  amber:   "inline-flex rounded-full bg-amber-500/10 px-2 py-0.5 text-[11px] font-medium text-amber-700",
-  slate:   "inline-flex rounded-full bg-slate-500/10 px-2 py-0.5 text-[11px] font-medium text-slate-700",
-  orange:  "inline-flex rounded-full bg-orange-500/10 px-2 py-0.5 text-[11px] font-medium text-orange-700",
-  violet:  "inline-flex rounded-full bg-violet-500/10 px-2 py-0.5 text-[11px] font-medium text-violet-700",
+  sky:     "inline-flex rounded-md px-2 py-1 text-lg font-semibold text-sky-700 dark:text-sky-300",
+  blue:    "inline-flex rounded-md px-2 py-1 text-lg font-semibold text-blue-700 dark:text-blue-300",
+  indigo:  "inline-flex rounded-md px-2 py-1 text-lg font-semibold text-indigo-700 dark:text-indigo-300",
+  stone:   "inline-flex rounded-md px-2 py-1 text-lg font-semibold text-stone-700 dark:text-stone-300",
+  rose:    "inline-flex rounded-md px-2 py-1 text-lg font-semibold text-rose-700 dark:text-rose-300",
+  emerald: "inline-flex rounded-md px-2 py-1 text-lg font-semibold text-emerald-700 dark:text-emerald-300",
+  green:   "inline-flex rounded-md px-2 py-1 text-lg font-semibold text-green-700 dark:text-green-300",
+  teal:    "inline-flex rounded-md px-2 py-1 text-lg font-semibold text-teal-700 dark:text-teal-300",
+  cyan:    "inline-flex rounded-md px-2 py-1 text-lg font-semibold text-cyan-700 dark:text-cyan-300",
+  amber:   "inline-flex rounded-md px-2 py-1 text-lg font-semibold text-amber-700 dark:text-amber-300",
+  slate:   "inline-flex rounded-md px-2 py-1 text-lg font-semibold text-slate-700 dark:text-slate-300",
+  orange:  "inline-flex rounded-md px-2 py-1 text-lg font-semibold text-orange-700 dark:text-orange-300",
+  violet:  "inline-flex rounded-md px-2 py-1 text-lg font-semibold text-violet-700 dark:text-violet-300",
 } as const satisfies Record<string, string>;
 
 const DEFAULT_VARIANT: WeatherVariant = "slate";

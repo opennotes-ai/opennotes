@@ -119,6 +119,12 @@ function AxisRow(props: AxisRowProps): JSX.Element {
         as={TableRow}
         data-testid={`weather-axis-card-${props.axis.axisType}`}
       >
+        <TableCell
+          aria-hidden="true"
+          class="whitespace-nowrap pr-3 text-[12px] font-semibold uppercase tracking-[0.06em] text-muted-foreground"
+        >
+          {props.axis.heading.toUpperCase()}
+        </TableCell>
         <TableCell class="w-full">
           <Show
             when={axisData()}
@@ -146,7 +152,7 @@ function AxisRow(props: AxisRowProps): JSX.Element {
                   <Show when={confidence() !== null}>
                     <span
                       data-testid={`weather-${props.axis.axisType}-confidence`}
-                      class="text-[11px] text-muted-foreground"
+                      class="text-xs text-muted-foreground"
                     >
                       {confidence()}
                     </span>
@@ -164,7 +170,7 @@ function AxisRow(props: AxisRowProps): JSX.Element {
                           const alternativeConfidence =
                             formatLogprobProbability(alternative.logprob);
                           return (
-                            <li class="inline-flex rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+                            <li class="inline-flex rounded-md bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
                               {alternativeLabel}
                               <Show when={alternativeConfidence !== null}>
                                 <span> ({alternativeConfidence})</span>

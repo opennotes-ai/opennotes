@@ -347,4 +347,74 @@ describe("WeatherReport", () => {
       "Factual Claims (28.65%)",
     );
   });
+
+  it("renders a spaced-caps heading cell per row with aria-hidden", () => {
+    render(() => <WeatherReport report={makeWeatherReport()} />);
+
+    for (const axis of ["truth", "relevance", "sentiment"] as const) {
+      const row = screen.getByTestId(`weather-axis-card-${axis}`);
+      const cells = row.querySelectorAll('[data-slot="table-cell"]');
+      expect(cells.length).toBeGreaterThanOrEqual(2);
+      const headingCell = cells[0] as HTMLElement;
+      expect(headingCell.getAttribute("aria-hidden")).toBe("true");
+      expect(headingCell.textContent?.trim()).toMatch(/^TRUTH$|^RELEVANCE$|^SENTIMENT$/);
+      expect(headingCell.className).toContain("uppercase");
+      expect(headingCell.className).toContain("tracking-[0.06em]");
+      expect(headingCell.className).toContain("text-muted-foreground");
+    }
+  });
+
+  it("renders the value chip at text-lg with rounded-md (de-pilled)", () => {
+    render(() => <WeatherReport report={makeWeatherReport()} />);
+
+    const className = screen.getByTestId("weather-truth-value").className;
+    expect(className).toContain("text-lg");
+    expect(className).toContain("rounded-md");
+    expect(className).not.toContain("rounded-full");
+  });
+
+  it("value chip recipe drops tinted background (no bg- token)", () => {
+    render(() => <WeatherReport report={makeWeatherReport()} />);
+
+    const className = screen.getByTestId("weather-truth-value").className;
+    expect(className).not.toMatch(/(?:^|\s)bg-/);
+  });
+
+  it("renders confidence at text-xs (no arbitrary text-[11px])", () => {
+    render(() => (
+      <WeatherReport
+        report={makeWeatherReport({
+          truth: {
+            label: "sourced",
+            logprob: -0.12,
+            alternatives: [],
+          },
+        })}
+      />
+    ));
+
+    const confidence = screen.getByTestId("weather-truth-confidence");
+    expect(confidence.className).toContain("text-xs");
+    expect(confidence.className).not.toContain("text-[11px]");
+  });
+
+  it("renders alternative chips at text-xs (no arbitrary text-[10px])", () => {
+    render(() => (
+      <WeatherReport
+        report={makeWeatherReport({
+          truth: {
+            label: "sourced",
+            logprob: null,
+            alternatives: [{ label: "factual_claims", logprob: null }],
+          },
+        })}
+      />
+    ));
+
+    const list = screen.getByTestId("weather-truth-alternatives");
+    const item = list.querySelector("li");
+    expect(item).not.toBeNull();
+    expect(item!.className).toContain("text-xs");
+    expect(item!.className).not.toContain("text-[10px]");
+  });
 });

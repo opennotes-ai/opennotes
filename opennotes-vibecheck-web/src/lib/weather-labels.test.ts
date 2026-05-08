@@ -112,9 +112,9 @@ describe("formatWeatherBadgeClass", () => {
     expect(formatWeatherBadgeClass("unknown_slug")).toContain("text-slate-700");
   });
 
-  it("returns a string containing inline-flex and rounded-full for any slug", () => {
+  it("returns a string containing inline-flex and rounded-md for any slug", () => {
     const cls = formatWeatherBadgeClass("sourced");
     expect(cls).toContain("inline-flex");
-    expect(cls).toContain("rounded-full");
+    expect(cls).toContain("rounded-md");
   });
 });
