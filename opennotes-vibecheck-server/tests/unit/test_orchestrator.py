@@ -375,10 +375,13 @@ async def test_run_section_retry_trends_dependencies_not_ready_reenqueues_with_b
     async def fake_enqueue_section_retry(*args: Any, **kwargs: Any) -> None:
         enqueue_calls.append((args, kwargs))
 
-    write_slot_calls: list[tuple[tuple[Any, ...], dict[str, Any]]] = []
+    record_wait_calls: list[tuple[tuple[Any, ...], dict[str, Any]]] = []
 
-    async def fake_write_slot(*args: Any, **kwargs: Any) -> int:
-        write_slot_calls.append((args, kwargs))
+    async def fake_record_trends_dependency_wait_slot(
+        *args: Any,
+        **kwargs: Any,
+    ) -> int:
+        record_wait_calls.append((args, kwargs))
         return 1
 
     monkeypatch.setattr(orchestrator, "_load_job_attempt_and_slot", _load)
@@ -389,7 +392,11 @@ async def test_run_section_retry_trends_dependencies_not_ready_reenqueues_with_b
     )
     monkeypatch.setattr(orchestrator, "mark_slot_done", never_done)
     monkeypatch.setattr(orchestrator, "mark_slot_failed", never_failed)
-    monkeypatch.setattr(orchestrator, "write_slot", fake_write_slot)
+    monkeypatch.setattr(
+        orchestrator,
+        "_record_trends_dependency_wait_slot",
+        fake_record_trends_dependency_wait_slot,
+    )
     monkeypatch.setattr(orchestrator, "enqueue_section_retry", fake_enqueue_section_retry)
 
     job_id = uuid4()
@@ -413,16 +420,73 @@ async def test_run_section_retry_trends_dependencies_not_ready_reenqueues_with_b
         "use_deterministic_task_name": True,
         "schedule_delay_seconds": orchestrator._SECTION_RETRY_DEPENDENCY_BACKOFF_SECONDS,
     }
-    assert len(write_slot_calls) == 1
-    write_args, write_kwargs = write_slot_calls[0]
+    assert len(record_wait_calls) == 1
+    write_args, write_kwargs = record_wait_calls[0]
     assert write_args[1] == job_id
     assert write_args[2] == task_attempt
     assert write_args[3] == SectionSlug.OPINIONS_SENTIMENTS_TRENDS_OPPOSITIONS
-    assert isinstance(write_args[4], SectionSlot)
-    assert write_args[4].data == {"dependency_wait_iteration": 1}
+    assert write_args[4] == task_attempt
+    assert isinstance(write_args[5], SectionSlot)
+    assert write_args[5].data == {"dependency_wait_iteration": 1}
     assert write_kwargs == {}
     assert mark_slot_failed_calls == []
     assert mark_slot_done_calls == []
+
+
+@pytest.mark.asyncio
+async def test_run_section_retry_trends_dependency_wait_stale_slot_does_not_enqueue(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.analyses.opinions import trends_oppositions_slot
+    from src.jobs import orchestrator
+
+    task_attempt = uuid4()
+    slot_attempt = str(task_attempt)
+
+    async def handler(*args: Any, **kwargs: Any) -> dict[str, Any]:
+        raise trends_oppositions_slot.TrendsDependenciesNotReadyError("pending deps")
+
+    async def _load(*args: Any, **kwargs: Any) -> tuple[UUID, dict[str, Any]]:
+        return task_attempt, {
+            "state": "running",
+            "attempt_id": slot_attempt,
+            "data": None,
+        }
+
+    async def fake_record_trends_dependency_wait_slot(
+        *args: Any,
+        **kwargs: Any,
+    ) -> int:
+        return 0
+
+    enqueue_calls: list[tuple[tuple[Any, ...], dict[str, Any]]] = []
+
+    async def fake_enqueue_section_retry(*args: Any, **kwargs: Any) -> None:
+        enqueue_calls.append((args, kwargs))
+
+    monkeypatch.setattr(orchestrator, "_load_job_attempt_and_slot", _load)
+    monkeypatch.setitem(
+        orchestrator._SECTION_HANDLERS,
+        SectionSlug.OPINIONS_SENTIMENTS_TRENDS_OPPOSITIONS,
+        handler,
+    )
+    monkeypatch.setattr(
+        orchestrator,
+        "_record_trends_dependency_wait_slot",
+        fake_record_trends_dependency_wait_slot,
+    )
+    monkeypatch.setattr(orchestrator, "enqueue_section_retry", fake_enqueue_section_retry)
+
+    result = await run_section_retry(
+        pool=MagicMock(),
+        job_id=uuid4(),
+        slug=SectionSlug.OPINIONS_SENTIMENTS_TRENDS_OPPOSITIONS,
+        expected_slot_attempt_id=task_attempt,
+        settings=MagicMock(),
+    )
+
+    assert result.status_code == 200
+    assert enqueue_calls == []
 
 
 @pytest.mark.asyncio
@@ -459,7 +523,10 @@ async def test_run_section_retry_trends_dependencies_not_ready_marked_reenqueue_
     async def fake_enqueue_section_retry(*args: Any, **kwargs: Any) -> None:
         raise RuntimeError("enqueue failed")
 
-    async def fake_write_slot(*args: Any, **kwargs: Any) -> int:
+    async def fake_record_trends_dependency_wait_slot(
+        *args: Any,
+        **kwargs: Any,
+    ) -> int:
         return 1
 
     monkeypatch.setattr(orchestrator, "_load_job_attempt_and_slot", _load)
@@ -470,7 +537,11 @@ async def test_run_section_retry_trends_dependencies_not_ready_marked_reenqueue_
     )
     monkeypatch.setattr(orchestrator, "mark_slot_done", never_done)
     monkeypatch.setattr(orchestrator, "mark_slot_failed", never_failed)
-    monkeypatch.setattr(orchestrator, "write_slot", fake_write_slot)
+    monkeypatch.setattr(
+        orchestrator,
+        "_record_trends_dependency_wait_slot",
+        fake_record_trends_dependency_wait_slot,
+    )
     monkeypatch.setattr(orchestrator, "enqueue_section_retry", fake_enqueue_section_retry)
 
     result = await run_section_retry(

@@ -3065,6 +3065,26 @@ FROM vibecheck_jobs
 WHERE job_id = $1
 """
 
+_RECORD_TRENDS_DEPENDENCY_WAIT_SQL = """
+UPDATE vibecheck_jobs
+SET sections = sections || jsonb_build_object($3::text, $5::jsonb),
+    updated_at = now()
+WHERE job_id = $1
+  AND attempt_id = $2
+  AND sections ? $3::text
+  AND sections -> $3::text ->> 'attempt_id' = $4::text
+  AND sections -> $3::text ->> 'state' = 'running'
+"""
+
+
+def _update_rowcount(result: Any) -> int:
+    if isinstance(result, str) and result.startswith("UPDATE"):
+        try:
+            return int(result.split()[-1])
+        except (ValueError, IndexError):
+            return 0
+    return 0
+
 
 async def _load_job_attempt_and_slot(
     pool: Any,
@@ -3132,6 +3152,26 @@ def _slot_with_trends_dependency_wait_iteration(
         data=data,
         started_at=parsed_slot.started_at,
     )
+
+
+async def _record_trends_dependency_wait_slot(
+    pool: Any,
+    job_id: UUID,
+    task_attempt: UUID,
+    slug: SectionSlug,
+    expected_slot_attempt_id: UUID,
+    slot: SectionSlot,
+) -> int:
+    async with pool.acquire() as conn:
+        result = await conn.execute(
+            _RECORD_TRENDS_DEPENDENCY_WAIT_SQL,
+            job_id,
+            task_attempt,
+            slug.value,
+            str(expected_slot_attempt_id),
+            json.dumps(slot.model_dump(mode="json")),
+        )
+    return _update_rowcount(result)
 
 
 async def run_section_retry(  # noqa: PLR0911, PLR0912
@@ -3288,11 +3328,12 @@ async def run_section_retry(  # noqa: PLR0911, PLR0912
                             expected_slot_attempt_id,
                             wait_iteration,
                         )
-                        rows = await write_slot(
+                        rows = await _record_trends_dependency_wait_slot(
                             pool,
                             job_id,
                             task_attempt,
                             slug,
+                            expected_slot_attempt_id,
                             wait_slot,
                         )
                         if rows == 0:
