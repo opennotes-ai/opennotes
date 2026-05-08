@@ -33,6 +33,7 @@ def setup_observability(
     logfire_token: str | None = None,
     trace_content: bool = False,
     sample_rate: float = 0.1,
+    dbos_datastore_logfire_sample_rate: float = 0.0,
     use_gcp_exporters: bool = True,
     enable_console_export: bool = False,
     tail_level_threshold: LevelName | None = "warning",
@@ -50,6 +51,7 @@ def setup_observability(
         logfire_token: Logfire write token (also reads LOGFIRE_TOKEN env var)
         trace_content: Enable logging prompts/completions in traces
         sample_rate: Logfire tail sampling background rate 0.0-1.0
+        dbos_datastore_logfire_sample_rate: DBOS-worker datastore Logfire sample rate, capped at 0.01
         use_gcp_exporters: Use GCP-native exporters on Cloud Run
         enable_console_export: Enable console span export for debugging
         tail_level_threshold: Min log level that always passes tail sampling
@@ -116,33 +118,16 @@ def setup_observability(
                     )
 
             from logfire import SamplingOptions
-            from logfire.sampling import TailSamplingSpanInfo
 
-            def _module_aware_tail_sampler(info: TailSamplingSpanInfo) -> float:
-                if info.level >= "warning":
-                    return 1.0
-                if tail_duration_threshold and info.duration >= tail_duration_threshold:
-                    return 1.0
+            from src.monitoring.logfire_sampling import build_logfire_tail_sampler
 
-                span = info.span
-                attrs = dict(span.attributes) if span.attributes else {}
-                scope = (
-                    span.instrumentation_scope.name if span.instrumentation_scope else ""
-                ) or ""
-                name = span.name or ""
-
-                if (
-                    attrs.get("gen_ai.system")
-                    or "anthropic" in name.lower()
-                    or "openai" in name.lower()
-                ):
-                    return 0.2
-                if "dbos" in name.lower() or "dbos" in scope.lower():
-                    return 0.01
-                if "sqlalchemy" in scope or attrs.get("db.system"):
-                    return 0.01
-
-                return sample_rate
+            tail_sampler = build_logfire_tail_sampler(
+                service_name=service_name,
+                background_sample_rate=sample_rate,
+                dbos_datastore_sample_rate=dbos_datastore_logfire_sample_rate,
+                tail_level_threshold=tail_level_threshold,
+                tail_duration_threshold=tail_duration_threshold,
+            )
 
             logfire.configure(
                 token=logfire_token,
@@ -153,7 +138,7 @@ def setup_observability(
                 additional_span_processors=additional_processors,
                 sampling=SamplingOptions(
                     head=1.0,
-                    tail=_module_aware_tail_sampler,
+                    tail=tail_sampler,
                 ),
                 scrubbing=False if trace_content else None,
             )

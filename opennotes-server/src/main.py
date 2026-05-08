@@ -28,6 +28,7 @@ if _otel_settings.ENABLE_TRACING and _otel_settings.LOGFIRE_ENABLED and not _ote
         logfire_token=_otel_settings.LOGFIRE_TOKEN,
         trace_content=_otel_settings.LOGFIRE_TRACE_CONTENT,
         sample_rate=_otel_settings.TRACING_SAMPLE_RATE,
+        dbos_datastore_logfire_sample_rate=_otel_settings.LOGFIRE_DBOS_DATASTORE_SAMPLE_RATE,
         use_gcp_exporters=_otel_settings.USE_GCP_EXPORTERS,
         enable_console_export=_otel_settings.ENABLE_CONSOLE_TRACING,
         tail_level_threshold=_otel_settings.LOGFIRE_TAIL_LEVEL_THRESHOLD,

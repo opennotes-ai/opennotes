@@ -169,6 +169,56 @@ class TestJWTSecretKeyValidation:
             assert settings.JWT_SECRET_KEY == "dev-secret-key-change-in-production-min-32-chars"
 
 
+class TestLogfireDbosDatastoreSampleRate:
+    def test_defaults_to_zero(self):
+        with patch.dict(
+            os.environ,
+            {
+                "JWT_SECRET_KEY": "a" * 32,
+                "ENVIRONMENT": "development",
+                "CREDENTIALS_ENCRYPTION_KEY": TEST_CREDENTIALS_ENCRYPTION_KEY,
+                "ENCRYPTION_MASTER_KEY": TEST_ENCRYPTION_MASTER_KEY,
+            },
+            clear=True,
+        ):
+            settings = create_settings_no_env_file()
+
+        assert settings.LOGFIRE_DBOS_DATASTORE_SAMPLE_RATE == 0.0
+
+    def test_accepts_rate_up_to_one_percent(self):
+        with patch.dict(
+            os.environ,
+            {
+                "JWT_SECRET_KEY": "a" * 32,
+                "ENVIRONMENT": "development",
+                "CREDENTIALS_ENCRYPTION_KEY": TEST_CREDENTIALS_ENCRYPTION_KEY,
+                "ENCRYPTION_MASTER_KEY": TEST_ENCRYPTION_MASTER_KEY,
+                "LOGFIRE_DBOS_DATASTORE_SAMPLE_RATE": "0.01",
+            },
+            clear=True,
+        ):
+            settings = create_settings_no_env_file()
+
+        assert settings.LOGFIRE_DBOS_DATASTORE_SAMPLE_RATE == 0.01
+
+    def test_rejects_rate_above_one_percent(self):
+        with (
+            patch.dict(
+                os.environ,
+                {
+                    "JWT_SECRET_KEY": "a" * 32,
+                    "ENVIRONMENT": "development",
+                    "CREDENTIALS_ENCRYPTION_KEY": TEST_CREDENTIALS_ENCRYPTION_KEY,
+                    "ENCRYPTION_MASTER_KEY": TEST_ENCRYPTION_MASTER_KEY,
+                    "LOGFIRE_DBOS_DATASTORE_SAMPLE_RATE": "0.02",
+                },
+                clear=True,
+            ),
+            pytest.raises(ValidationError),
+        ):
+            create_settings_no_env_file()
+
+
 class TestConfigurationDefaults:
     def test_environment_defaults_to_development(self):
         valid_key = "a" * 32
