@@ -182,20 +182,22 @@ def all_inputs_clear(inputs: HeadlineSummaryInputs) -> bool:
         inputs.highlights is not None and bool(inputs.highlights.highlights)
     )
     # `run_safety_recommendation` emits CAUTION (not SAFE) for purely
-    # coverage-degraded jobs — the prompt classes "partial data" as a
-    # caution trigger. When the only reason for CAUTION is missing
-    # coverage (no top_signals AND unavailable_inputs is non-empty), the
-    # headline must NOT treat it as a real signal — otherwise the
-    # clear-but-degraded shape skips the deterministic degraded-stock
-    # branch and goes to the model path. UNSAFE is always a signal;
-    # CAUTION counts when there are concrete top_signals OR when
-    # coverage is complete (so the caution is sourced from a real
-    # finding, not from the coverage gap itself).
+    # coverage-degraded jobs, and MILD can be returned for low-severity
+    # verified findings. When CAUTION/MILD has no top_signals and
+    # unavailable_inputs is non-empty, the headline must NOT treat it as
+    # a real signal — otherwise the clear-but-degraded shape skips the
+    # deterministic degraded-stock branch and goes to the model path.
+    # UNSAFE is always a signal; CAUTION/MILD count when there are
+    # concrete top_signals OR when coverage is complete (so the tier is
+    # sourced from a real finding, not from the coverage gap itself).
     level = inputs.safety_recommendation.level if inputs.safety_recommendation is not None else None
     safety_signal = inputs.safety_recommendation is not None and (
         level == SafetyLevel.UNSAFE
         or bool(inputs.safety_recommendation.top_signals)
-        or (level == SafetyLevel.CAUTION and not inputs.unavailable_inputs)
+        or (
+            level in {SafetyLevel.CAUTION, SafetyLevel.MILD}
+            and not inputs.unavailable_inputs
+        )
     )
     return not (
         inputs.harmful_content_matches

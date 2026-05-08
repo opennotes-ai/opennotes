@@ -805,6 +805,19 @@ def test_all_inputs_clear_true_for_coverage_only_caution():
     assert all_inputs_clear(inputs) is True
 
 
+def test_all_inputs_clear_true_for_coverage_only_mild():
+    inputs = replace(
+        _empty_inputs(),
+        safety_recommendation=SafetyRecommendation(
+            level=SafetyLevel.MILD,
+            rationale="partial data: web_risk unavailable",
+            top_signals=[],
+        ),
+        unavailable_inputs=["web_risk"],
+    )
+    assert all_inputs_clear(inputs) is True
+
+
 def test_all_inputs_clear_false_for_caution_with_top_signals():
     # CAUTION with concrete top_signals must always count as a signal,
     # regardless of unavailable_inputs.
@@ -820,6 +833,19 @@ def test_all_inputs_clear_false_for_caution_with_top_signals():
     assert all_inputs_clear(inputs) is False
 
 
+def test_all_inputs_clear_false_for_mild_with_top_signals():
+    inputs = replace(
+        _empty_inputs(),
+        safety_recommendation=SafetyRecommendation(
+            level=SafetyLevel.MILD,
+            rationale="topic-match content score 0.51",
+            top_signals=["topic-match content score 0.51"],
+        ),
+        unavailable_inputs=["web_risk"],
+    )
+    assert all_inputs_clear(inputs) is False
+
+
 def test_all_inputs_clear_false_for_caution_when_coverage_complete():
     # Coverage-complete CAUTION reflects a real (non-coverage) reason,
     # so even with empty top_signals (e.g., the model returned only a
@@ -828,6 +854,19 @@ def test_all_inputs_clear_false_for_caution_when_coverage_complete():
         _empty_inputs(),
         safety_recommendation=SafetyRecommendation(
             level=SafetyLevel.CAUTION,
+            rationale="one isolated low-score flag",
+            top_signals=[],
+        ),
+        unavailable_inputs=[],
+    )
+    assert all_inputs_clear(inputs) is False
+
+
+def test_all_inputs_clear_false_for_mild_when_coverage_complete():
+    inputs = replace(
+        _empty_inputs(),
+        safety_recommendation=SafetyRecommendation(
+            level=SafetyLevel.MILD,
             rationale="one isolated low-score flag",
             top_signals=[],
         ),
