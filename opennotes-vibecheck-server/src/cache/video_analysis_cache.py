@@ -5,12 +5,12 @@ from datetime import UTC, datetime, timedelta
 
 import asyncpg
 
-from src.analyses.safety._schemas import FrameFinding
+from src.analyses.safety._schemas import VideoSegmentFinding
 
 
 async def fetch_cached(
     pool: asyncpg.Pool, urls: list[str]
-) -> dict[str, list[FrameFinding]]:
+) -> dict[str, list[VideoSegmentFinding]]:
     if not urls:
         return {}
     async with pool.acquire() as conn:
@@ -22,18 +22,21 @@ async def fetch_cached(
             """,
             urls,
         )
-    out: dict[str, list[FrameFinding]] = {}
+    out: dict[str, list[VideoSegmentFinding]] = {}
     for row in rows:
         payload = row["frame_findings_payload"]
         if isinstance(payload, str):
             payload = json.loads(payload)
-        out[row["video_url"]] = [FrameFinding.model_validate(f) for f in payload]
+        out[row["video_url"]] = [
+            VideoSegmentFinding.model_validate(_normalize_cached_finding(f))
+            for f in payload
+        ]
     return out
 
 
 async def upsert_cached(
     pool: asyncpg.Pool,
-    results: dict[str, list[FrameFinding]],
+    results: dict[str, list[VideoSegmentFinding]],
     *,
     ttl_hours: int,
 ) -> None:
@@ -58,3 +61,14 @@ async def upsert_cached(
             """,
             rows,
         )
+
+
+def _normalize_cached_finding(payload: dict[str, object]) -> dict[str, object]:
+    if "frame_offset_ms" not in payload:
+        return payload
+    offset = payload["frame_offset_ms"]
+    return {
+        **payload,
+        "start_offset_ms": offset,
+        "end_offset_ms": offset,
+    }

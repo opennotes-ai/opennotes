@@ -108,7 +108,7 @@ async def test_video_sampling_sentinel_is_marked_inconclusive(monkeypatch):
                 VideoModerationMatch(
                     utterance_id="u1",
                     video_url="https://cdn.example/video.mp4",
-                    frame_findings=[],
+                    segment_findings=[],
                     flagged=True,
                     max_likelihood=1.0,
                 )

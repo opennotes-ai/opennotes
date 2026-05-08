@@ -575,7 +575,7 @@ class TestAssembleSidebarPayload:
                     {
                         "utterance_id": "u2",
                         "video_url": "https://example.com/vid.mp4",
-                        "frame_findings": [],
+                        "segment_findings": [],
                         "flagged": True,
                         "max_likelihood": 1.0,
                     }

@@ -8,7 +8,7 @@ from uuid import UUID
 import httpx
 import logfire
 
-from src.analyses.safety._schemas import FrameFinding, VideoModerationMatch
+from src.analyses.safety._schemas import VideoModerationMatch, VideoSegmentFinding
 from src.analyses.safety._vision_likelihood import likelihood_to_score
 from src.analyses.safety.video_sampler import FrameBytes, VideoSamplingError, sample_video
 from src.analyses.safety.vision_client import ANNOTATE_URL, VisionTransientError
@@ -59,20 +59,20 @@ async def run_video_moderation(  # noqa: PLR0912
             if not token:
                 raise VisionTransientError("ADC token unavailable")
 
-        fresh_to_persist: dict[str, list[FrameFinding]] = {}
+        fresh_to_persist: dict[str, list[VideoSegmentFinding]] = {}
         matches: list[VideoModerationMatch] = []
         async with httpx.AsyncClient() as hx:
             for uid, vurl in capped:
                 if vurl in cached:
-                    frame_findings = cached[vurl]
+                    segment_findings = cached[vurl]
                     max_likelihood = max(
-                        (ff.max_likelihood for ff in frame_findings),
+                        (ff.max_likelihood for ff in segment_findings),
                         default=0.0,
                     )
-                    flagged = any(ff.flagged for ff in frame_findings)
+                    flagged = any(ff.flagged for ff in segment_findings)
                     matches.append(VideoModerationMatch(
                         utterance_id=uid, video_url=vurl,
-                        frame_findings=frame_findings,
+                        segment_findings=segment_findings,
                         flagged=flagged,
                         max_likelihood=max_likelihood,
                     ))
@@ -87,25 +87,25 @@ async def run_video_moderation(  # noqa: PLR0912
                     logger.warning("video sampling failed for %s: %s", vurl, exc)
                     matches.append(VideoModerationMatch(
                         utterance_id=uid, video_url=vurl,
-                        frame_findings=[], flagged=True, max_likelihood=1.0,
+                        segment_findings=[], flagged=True, max_likelihood=1.0,
                     ))
                     continue
                 if token is None:
                     raise VisionTransientError("ADC token unavailable")
-                frame_findings, had_errors = await _annotate_frames(frames, hx, token)
+                segment_findings, had_errors = await _annotate_frames(frames, hx, token)
                 # Don't cache when any frame returned a Vision error: those frames
                 # default to UNKNOWN scores (codex review P1) and would persist as
                 # a fake "clean" verdict for the whole TTL window.
-                if frame_findings and not had_errors:
-                    fresh_to_persist[vurl] = frame_findings
+                if segment_findings and not had_errors:
+                    fresh_to_persist[vurl] = segment_findings
                 max_likelihood = max(
-                    (ff.max_likelihood for ff in frame_findings),
+                    (ff.max_likelihood for ff in segment_findings),
                     default=0.0,
                 )
-                flagged = any(ff.flagged for ff in frame_findings)
+                flagged = any(ff.flagged for ff in segment_findings)
                 matches.append(VideoModerationMatch(
                     utterance_id=uid, video_url=vurl,
-                    frame_findings=frame_findings,
+                    segment_findings=segment_findings,
                     flagged=flagged,
                     max_likelihood=max_likelihood,
                 ))
@@ -123,7 +123,7 @@ async def run_video_moderation(  # noqa: PLR0912
 
 async def _annotate_frames(
     frames: list[FrameBytes], hx: httpx.AsyncClient, token: str
-) -> tuple[list[FrameFinding], bool]:
+) -> tuple[list[VideoSegmentFinding], bool]:
     """Returns (findings, had_errors). had_errors is True when any per-frame
     Vision response contained an `error` payload (e.g. transient backend error
     for that frame). Callers should suppress caching when had_errors is True
@@ -158,7 +158,7 @@ async def _annotate_frames(
             raise VisionTransientError(f"vision-frames {r.status_code}")
         r.raise_for_status()
         responses = r.json().get("responses") or []
-        out: list[FrameFinding] = []
+        out: list[VideoSegmentFinding] = []
         flagged_count = 0
         had_errors = False
         for fb, resp in zip(frames, responses, strict=False):
@@ -172,8 +172,9 @@ async def _annotate_frames(
             max_likelihood = max(scores.values())
             flagged = max_likelihood >= 0.75
             flagged_count += 1 if flagged else 0
-            out.append(FrameFinding(
-                frame_offset_ms=fb.frame_offset_ms,
+            out.append(VideoSegmentFinding(
+                start_offset_ms=fb.frame_offset_ms,
+                end_offset_ms=fb.frame_offset_ms,
                 **scores,
                 flagged=flagged,
                 max_likelihood=max_likelihood,

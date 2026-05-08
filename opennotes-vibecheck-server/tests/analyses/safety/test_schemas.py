@@ -7,12 +7,12 @@ import pytest
 from pydantic import ValidationError
 
 from src.analyses.safety._schemas import (
-    FrameFinding,
     HarmfulContentMatch,
     ImageModerationMatch,
     SafetyLevel,
     SafetyRecommendation,
     VideoModerationMatch,
+    VideoSegmentFinding,
     WebRiskFinding,
 )
 from src.analyses.safety._vision_likelihood import likelihood_to_score
@@ -185,9 +185,10 @@ class TestImageModerationMatch:
 
 
 class TestVideoModerationMatch:
-    def test_video_moderation_match_round_trip_with_frame_findings(self) -> None:
-        frame = FrameFinding(
-            frame_offset_ms=1000,
+    def test_video_moderation_match_round_trip_with_segment_findings(self) -> None:
+        frame = VideoSegmentFinding(
+            start_offset_ms=1000,
+            end_offset_ms=1000,
             adult=0.75,
             violence=0.1,
             racy=0.5,
@@ -199,27 +200,28 @@ class TestVideoModerationMatch:
         match = VideoModerationMatch(
             utterance_id="utt_vid_1",
             video_url="https://example.com/video.mp4",
-            frame_findings=[frame],
+            segment_findings=[frame],
             flagged=True,
             max_likelihood=0.75,
         )
         assert match.utterance_id == "utt_vid_1"
         assert match.video_url == "https://example.com/video.mp4"
-        assert len(match.frame_findings) == 1
-        assert match.frame_findings[0].frame_offset_ms == 1000
-        assert match.frame_findings[0].adult == 0.75
+        assert len(match.segment_findings) == 1
+        assert match.segment_findings[0].start_offset_ms == 1000
+        assert match.segment_findings[0].end_offset_ms == 1000
+        assert match.segment_findings[0].adult == 0.75
         assert match.flagged is True
         assert match.max_likelihood == 0.75
 
-    def test_video_moderation_match_empty_frame_findings(self) -> None:
+    def test_video_moderation_match_empty_segment_findings(self) -> None:
         match = VideoModerationMatch(
             utterance_id="utt_vid_2",
             video_url="https://example.com/video2.mp4",
-            frame_findings=[],
+            segment_findings=[],
             flagged=False,
             max_likelihood=0.0,
         )
-        assert match.frame_findings == []
+        assert match.segment_findings == []
 
 
 class TestVisionLikelihood:

@@ -58,10 +58,11 @@ class WebRiskFinding(BaseModel):
     ]
 
 
-class FrameFinding(BaseModel):
-    """SafeSearch scores for a single video frame."""
+class VideoSegmentFinding(BaseModel):
+    """SafeSearch scores for a video segment or sampled frame."""
 
-    frame_offset_ms: int
+    start_offset_ms: int
+    end_offset_ms: int
     adult: float
     violence: float
     racy: float
@@ -90,6 +91,6 @@ class VideoModerationMatch(BaseModel):
 
     utterance_id: str
     video_url: str
-    frame_findings: list[FrameFinding]
+    segment_findings: list[VideoSegmentFinding]
     flagged: bool
     max_likelihood: float

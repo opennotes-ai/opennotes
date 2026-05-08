@@ -634,7 +634,7 @@ def _minimal_slot_payloads() -> dict[SectionSlug, dict[str, Any]]:
                 {
                     "utterance_id": "utt-vid-sentinel-001",
                     "video_url": "https://sentinel-video-mod.example.test/vid.mp4",
-                    "frame_findings": [],
+                    "segment_findings": [],
                     "flagged": True,
                     "max_likelihood": 0.77,
                 }

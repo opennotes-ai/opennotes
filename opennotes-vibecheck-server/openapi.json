@@ -833,6 +833,58 @@
         }
       }
     },
+    "/_internal/jobs/{job_id}/video-moderation/poll": {
+      "post": {
+        "tags": [
+          "internal"
+        ],
+        "summary": "Poll Video Moderation",
+        "description": "Drive one Video Intelligence LRO polling Cloud Task delivery.",
+        "operationId": "poll_video_moderation__internal_jobs__job_id__video_moderation_poll_post",
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Job Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VideoModerationPollPayload"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/scrape": {
       "post": {
         "tags": [
@@ -1654,55 +1706,6 @@
           "blocking_header"
         ],
         "title": "FrameCompatResponse"
-      },
-      "FrameFinding": {
-        "properties": {
-          "frame_offset_ms": {
-            "type": "integer",
-            "title": "Frame Offset Ms"
-          },
-          "adult": {
-            "type": "number",
-            "title": "Adult"
-          },
-          "violence": {
-            "type": "number",
-            "title": "Violence"
-          },
-          "racy": {
-            "type": "number",
-            "title": "Racy"
-          },
-          "medical": {
-            "type": "number",
-            "title": "Medical"
-          },
-          "spoof": {
-            "type": "number",
-            "title": "Spoof"
-          },
-          "flagged": {
-            "type": "boolean",
-            "title": "Flagged"
-          },
-          "max_likelihood": {
-            "type": "number",
-            "title": "Max Likelihood"
-          }
-        },
-        "type": "object",
-        "required": [
-          "frame_offset_ms",
-          "adult",
-          "violence",
-          "racy",
-          "medical",
-          "spoof",
-          "flagged",
-          "max_likelihood"
-        ],
-        "title": "FrameFinding",
-        "description": "SafeSearch scores for a single video frame."
       },
       "HTTPValidationError": {
         "properties": {
@@ -3327,12 +3330,12 @@
             "type": "string",
             "title": "Video Url"
           },
-          "frame_findings": {
+          "segment_findings": {
             "items": {
-              "$ref": "#/components/schemas/FrameFinding"
+              "$ref": "#/components/schemas/VideoSegmentFinding"
             },
             "type": "array",
-            "title": "Frame Findings"
+            "title": "Segment Findings"
           },
           "flagged": {
             "type": "boolean",
@@ -3347,12 +3350,38 @@
         "required": [
           "utterance_id",
           "video_url",
-          "frame_findings",
+          "segment_findings",
           "flagged",
           "max_likelihood"
         ],
         "title": "VideoModerationMatch",
         "description": "GCP Video Intelligence SafeSearch result for a single video."
+      },
+      "VideoModerationPollPayload": {
+        "properties": {
+          "job_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Job Id"
+          },
+          "task_attempt": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Task Attempt"
+          },
+          "slot_attempt": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Slot Attempt"
+          }
+        },
+        "type": "object",
+        "required": [
+          "job_id",
+          "task_attempt",
+          "slot_attempt"
+        ],
+        "title": "VideoModerationPollPayload"
       },
       "VideoModerationSection": {
         "properties": {
@@ -3367,6 +3396,60 @@
         "type": "object",
         "title": "VideoModerationSection",
         "description": "GCP Video Intelligence SafeSearch results for videos referenced in the page."
+      },
+      "VideoSegmentFinding": {
+        "properties": {
+          "start_offset_ms": {
+            "type": "integer",
+            "title": "Start Offset Ms"
+          },
+          "end_offset_ms": {
+            "type": "integer",
+            "title": "End Offset Ms"
+          },
+          "adult": {
+            "type": "number",
+            "title": "Adult"
+          },
+          "violence": {
+            "type": "number",
+            "title": "Violence"
+          },
+          "racy": {
+            "type": "number",
+            "title": "Racy"
+          },
+          "medical": {
+            "type": "number",
+            "title": "Medical"
+          },
+          "spoof": {
+            "type": "number",
+            "title": "Spoof"
+          },
+          "flagged": {
+            "type": "boolean",
+            "title": "Flagged"
+          },
+          "max_likelihood": {
+            "type": "number",
+            "title": "Max Likelihood"
+          }
+        },
+        "type": "object",
+        "required": [
+          "start_offset_ms",
+          "end_offset_ms",
+          "adult",
+          "violence",
+          "racy",
+          "medical",
+          "spoof",
+          "flagged",
+          "max_likelihood"
+        ],
+        "title": "VideoSegmentFinding",
+        "description": "SafeSearch scores for a video segment or sampled frame."
       },
       "WeatherReport": {
         "properties": {

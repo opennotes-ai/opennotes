@@ -97,6 +97,7 @@ from src.analyses.safety.recommendation_agent import (
     SafetyRecommendationInputs,
     run_safety_recommendation,
 )
+from src.analyses.safety.video_intelligence_worker import run_video_intelligence
 from src.analyses.safety.video_moderation_worker import run_video_moderation
 from src.analyses.safety.web_risk_worker import run_web_risk
 from src.analyses.schemas import (
@@ -139,7 +140,7 @@ from src.firecrawl_client import (
     ScrapeMetadata,
     ScrapeResult,
 )
-from src.jobs.enqueue import enqueue_section_retry
+from src.jobs.enqueue import enqueue_section_retry, enqueue_video_moderation_poll
 from src.jobs.finalize import maybe_finalize_job
 from src.jobs.pdf_extract import PDFExtractionError, pdf_extract_step
 from src.jobs.scrape_quality import ScrapeQuality, classify_scrape
@@ -1814,6 +1815,13 @@ async def _run_section(
     else:
         data = _empty_section_data(slug)
 
+    if (
+        slug == SectionSlug.SAFETY_VIDEO_MODERATION
+        and isinstance(data, dict)
+        and data.get("status") == "polling"
+    ):
+        slot_state = SectionState.RUNNING
+
     # write_slot (not mark_slot_failed) works for the terminal write here
     # because its CAS only checks job.attempt_id — no pre-existing slot row
     # required. mark_slot_failed requires slot.state='running' in the DB,
@@ -1821,7 +1829,7 @@ async def _run_section(
     slot = SectionSlot(
         state=slot_state,
         attempt_id=slot_attempt,
-        data=data if slot_state == SectionState.DONE else None,
+        data=data if slot_state in {SectionState.DONE, SectionState.RUNNING} else None,
         error=slot_error,
     )
     section_tokens = bind_contextvars(slug=slug)
@@ -1859,6 +1867,14 @@ async def _run_section(
                 raise TransientError(
                     f"write_slot CAS returned rowcount=0 for job={job_id} slug={slug.value}"
                 )
+            if slot_state == SectionState.RUNNING and slug == SectionSlug.SAFETY_VIDEO_MODERATION:
+                await enqueue_video_moderation_poll(
+                    job_id,
+                    task_attempt,
+                    slot_attempt,
+                    settings,
+                    schedule_delay_seconds=30,
+                )
         finally:
             SECTION_DURATION.labels(slug=slug.value).observe(
                 time.monotonic() - started
@@ -1868,11 +1884,23 @@ async def _run_section(
     return slot_state
 
 
+async def _video_moderation_dispatch(
+    pool: Any,
+    job_id: UUID,
+    task_attempt: UUID,
+    payload: Any,
+    settings: Settings,
+) -> dict[str, Any]:
+    if settings.VIDEO_MODERATION_PROVIDER == "video_intelligence":
+        return await run_video_intelligence(pool, job_id, task_attempt, payload, settings)
+    return await run_video_moderation(pool, job_id, task_attempt, payload, settings)
+
+
 _SECTION_HANDLERS: dict[SectionSlug, Any] = {
     SectionSlug.SAFETY_MODERATION: run_safety_moderation,
     SectionSlug.SAFETY_WEB_RISK: run_web_risk,
     SectionSlug.SAFETY_IMAGE_MODERATION: run_image_moderation,
-    SectionSlug.SAFETY_VIDEO_MODERATION: run_video_moderation,
+    SectionSlug.SAFETY_VIDEO_MODERATION: _video_moderation_dispatch,
     SectionSlug.TONE_DYNAMICS_FLASHPOINT: run_flashpoint,
     SectionSlug.TONE_DYNAMICS_SCD: run_scd,
     SectionSlug.FACTS_CLAIMS_DEDUP: run_claims_dedup,

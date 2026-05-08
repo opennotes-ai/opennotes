@@ -114,7 +114,7 @@ def _video_match(max_likelihood: float) -> VideoModerationMatch:
     return VideoModerationMatch(
         utterance_id="u1",
         video_url="https://cdn.example/v.mp4",
-        frame_findings=[],
+        segment_findings=[],
         flagged=max_likelihood > 0.5,
         max_likelihood=max_likelihood,
     )

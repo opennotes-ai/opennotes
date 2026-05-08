@@ -3,7 +3,7 @@ import type { components } from "~/lib/generated-types";
 import { categoryColor, categoryColorClasses } from "~/lib/category-colors";
 import { FeedbackBell } from "../../feedback/FeedbackBell";
 
-type FrameFinding = components["schemas"]["FrameFinding"];
+type VideoSegmentFinding = components["schemas"]["VideoSegmentFinding"];
 type VideoModerationMatch = components["schemas"]["VideoModerationMatch"];
 
 const SAFESEARCH_FIELDS = [
@@ -25,7 +25,14 @@ function formatOffset(ms: number): string {
   return `${(ms / 1000).toFixed(1)}s`;
 }
 
-function flaggedCategories(frame: FrameFinding): SafeSearchField[] {
+function formatSegment(finding: VideoSegmentFinding): string {
+  if (finding.start_offset_ms === finding.end_offset_ms) {
+    return formatOffset(finding.start_offset_ms);
+  }
+  return `${formatOffset(finding.start_offset_ms)}-${formatOffset(finding.end_offset_ms)}`;
+}
+
+function flaggedCategories(frame: VideoSegmentFinding): SafeSearchField[] {
   if (frame.flagged) {
     return SAFESEARCH_FIELDS.filter(
       (field) => frame[field] > FLAGGED_CATEGORY_DISPLAY_THRESHOLD,
@@ -70,15 +77,15 @@ export default function VideoModerationReport(
                   </p>
                 </div>
                 <Show
-                  when={match.frame_findings.length > 0}
+                  when={match.segment_findings.length > 0}
                   fallback={
                     <p class="mt-2 text-[11px] text-muted-foreground">
-                      No sampled frames returned.
+                      No video segments returned.
                     </p>
                   }
                 >
                   <ul class="mt-2 grid grid-cols-1 gap-1.5">
-                    <For each={match.frame_findings}>
+                    <For each={match.segment_findings}>
                       {(frame) => (
                         <li
                           data-testid="video-frame-finding"
@@ -87,7 +94,7 @@ export default function VideoModerationReport(
                         >
                           <div class="flex items-center justify-between gap-2">
                             <span class="font-mono text-[11px] text-foreground">
-                              {formatOffset(frame.frame_offset_ms)}
+                              {formatSegment(frame)}
                             </span>
                             <span
                               data-testid="video-frame-flag"

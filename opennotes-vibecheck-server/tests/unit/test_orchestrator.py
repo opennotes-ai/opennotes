@@ -94,6 +94,74 @@ async def test_run_section_write_slot_exception_raises_transient_error(
     assert len(mark_slot_called) == 1, "mark_slot_failed should have been called once"
 
 
+@pytest.mark.asyncio
+async def test_video_moderation_dispatch_defaults_to_frame_sample(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.jobs import orchestrator
+
+    frame_sample = AsyncMock(return_value={"matches": []})
+    video_intelligence = AsyncMock(return_value={"status": "polling"})
+    monkeypatch.setattr(orchestrator, "run_video_moderation", frame_sample)
+    monkeypatch.setattr(orchestrator, "run_video_intelligence", video_intelligence)
+
+    result = await orchestrator._video_moderation_dispatch(
+        object(),
+        uuid4(),
+        uuid4(),
+        object(),
+        MagicMock(VIDEO_MODERATION_PROVIDER="frame_sample"),
+    )
+
+    assert result == {"matches": []}
+    frame_sample.assert_awaited_once()
+    video_intelligence.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_run_section_video_intelligence_polling_leaves_slot_running(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.jobs import orchestrator
+
+    written: list[SectionSlot] = []
+    enqueue = AsyncMock()
+
+    async def fake_handler(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
+        return {
+            "status": "polling",
+            "started_at": "2026-05-08T00:00:00+00:00",
+            "operations": [{"operation_name": "operations/1"}],
+        }
+
+    async def fake_write_slot(_pool, _job_id, _task_attempt, _slug, slot):
+        written.append(slot)
+        return 1
+
+    monkeypatch.setitem(
+        orchestrator._SECTION_HANDLERS,
+        SectionSlug.SAFETY_VIDEO_MODERATION,
+        fake_handler,
+    )
+    monkeypatch.setattr(orchestrator, "write_slot", fake_write_slot)
+    monkeypatch.setattr(orchestrator, "enqueue_video_moderation_poll", enqueue)
+
+    state = await _run_section(
+        object(),
+        uuid4(),
+        uuid4(),
+        SectionSlug.SAFETY_VIDEO_MODERATION,
+        object(),
+        MagicMock(),
+    )
+
+    assert state == SectionState.RUNNING
+    assert written[0].state == SectionState.RUNNING
+    assert written[0].data is not None
+    assert written[0].data["status"] == "polling"
+    enqueue.assert_awaited_once()
+
+
 async def test_run_section_write_slot_exception_still_raises_when_mark_slot_also_fails(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

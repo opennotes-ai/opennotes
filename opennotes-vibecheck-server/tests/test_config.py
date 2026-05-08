@@ -49,3 +49,24 @@ class TestRecentAnalysesCacheTTL:
     def test_accepts_one(self) -> None:
         s = Settings(VIBECHECK_RECENT_ANALYSES_CACHE_TTL_SECONDS=1)
         assert s.VIBECHECK_RECENT_ANALYSES_CACHE_TTL_SECONDS == 1
+
+
+class TestVideoModerationProvider:
+    def test_defaults_preserve_frame_sample_provider(self) -> None:
+        s = Settings()
+        assert s.VIDEO_MODERATION_PROVIDER == "frame_sample"
+        assert s.VIDEO_MODERATION_MAX_WAIT_SEC == 1800
+        assert s.GCS_VIDEO_STAGING_BUCKET is None
+        assert "height<=480" in s.YT_DLP_VIDEO_QUALITY
+
+    def test_video_intelligence_requires_staging_bucket(self) -> None:
+        with pytest.raises(ValidationError, match="GCS_VIDEO_STAGING_BUCKET"):
+            Settings(VIDEO_MODERATION_PROVIDER="video_intelligence")
+
+    def test_video_intelligence_accepts_staging_bucket(self) -> None:
+        s = Settings(
+            VIDEO_MODERATION_PROVIDER="video_intelligence",
+            GCS_VIDEO_STAGING_BUCKET="vibecheck-video-staging-prod",
+        )
+        assert s.VIDEO_MODERATION_PROVIDER == "video_intelligence"
+        assert s.GCS_VIDEO_STAGING_BUCKET == "vibecheck-video-staging-prod"

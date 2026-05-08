@@ -28,7 +28,7 @@ from __future__ import annotations
 import json
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from src.monitoring import get_logger
 
@@ -275,6 +275,19 @@ def _section_target_url(
     return f"{base}/_internal/jobs/{job_id}/sections/{slug.value}/run"
 
 
+def build_video_moderation_poll_task_name(
+    job_id: UUID,
+    expected_slot_attempt_id: UUID,
+) -> str:
+    """Compose the Cloud Tasks name for a Video Intelligence LRO poll."""
+    return f"vibecheck-video-poll-{job_id}-{expected_slot_attempt_id}-{uuid4()}"
+
+
+def _video_moderation_poll_target_url(settings: Settings, job_id: UUID) -> str:
+    base = settings.VIBECHECK_SERVER_URL.rstrip("/")
+    return f"{base}/_internal/jobs/{job_id}/video-moderation/poll"
+
+
 async def enqueue_section_retry(
     job_id: UUID,
     slug: SectionSlug,
@@ -364,9 +377,78 @@ async def enqueue_section_retry(
     await client.create_task(request={"parent": parent, "task": task})
 
 
+async def enqueue_video_moderation_poll(
+    job_id: UUID,
+    expected_task_attempt_id: UUID,
+    expected_slot_attempt_id: UUID,
+    settings: Settings,
+    *,
+    schedule_delay_seconds: int | None = None,
+) -> None:
+    """Publish a Cloud Task that polls Video Intelligence LRO completion."""
+    _require_settings(settings)
+
+    try:
+        client = _get_async_client()
+    except ImportError as exc:  # pragma: no cover - prod-only path
+        raise RuntimeError(
+            "google-cloud-tasks is not installed; enqueue_video_moderation_poll cannot publish"
+        ) from exc
+
+    parent = client.queue_path(
+        settings.VIBECHECK_TASKS_PROJECT,
+        settings.VIBECHECK_TASKS_LOCATION,
+        settings.VIBECHECK_TASKS_QUEUE,
+    )
+    task_name = build_video_moderation_poll_task_name(
+        job_id,
+        expected_slot_attempt_id,
+    )
+    target_url = _video_moderation_poll_target_url(settings, job_id)
+    body = json.dumps(
+        {
+            "job_id": str(job_id),
+            "task_attempt": str(expected_task_attempt_id),
+            "slot_attempt": str(expected_slot_attempt_id),
+        }
+    ).encode("utf-8")
+
+    task: dict[str, Any] = {
+        "name": f"{parent}/tasks/{task_name}",
+        "dispatch_deadline": {"seconds": _DISPATCH_DEADLINE_SECONDS},
+        "http_request": {
+            "http_method": "POST",
+            "url": target_url,
+            "headers": {"Content-Type": "application/json"},
+            "body": body,
+            "oidc_token": {
+                "service_account_email": settings.VIBECHECK_TASKS_ENQUEUER_SA,
+                "audience": settings.VIBECHECK_SERVER_URL,
+            },
+        },
+    }
+    if schedule_delay_seconds is not None and schedule_delay_seconds > 0:
+        task["schedule_time"] = {
+            "seconds": int(
+                (datetime.now(UTC) + timedelta(seconds=schedule_delay_seconds)).timestamp()
+            )
+        }
+
+    logger.info(
+        "enqueue_video_moderation_poll publishing task_name=%s job_id=%s slot_attempt=%s target=%s",
+        task_name,
+        job_id,
+        expected_slot_attempt_id,
+        target_url,
+    )
+    await client.create_task(request={"parent": parent, "task": task})
+
+
 __all__ = [
     "build_section_task_name",
     "build_task_name",
+    "build_video_moderation_poll_task_name",
     "enqueue_job",
     "enqueue_section_retry",
+    "enqueue_video_moderation_poll",
 ]
