@@ -1,5 +1,4 @@
 import uuid
-from typing import get_args
 
 import pytest
 from pydantic import TypeAdapter, ValidationError

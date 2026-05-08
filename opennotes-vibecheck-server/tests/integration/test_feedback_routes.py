@@ -326,7 +326,7 @@ async def test_post_rate_limit_by_ip_with_rotating_uids(
 
     We send POST_RATE_LIMIT+1 requests (11), all from the same IP (ASGITransport
     default: 127.0.0.1), each with a freshly generated uid cookie. Requests
-    1–10 must succeed (201); request 11 must be 429.
+    1-10 must succeed (201); request 11 must be 429.
     """
     app.state.db_pool = db_pool
     app.state.limiter = feedback_route.limiter
