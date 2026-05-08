@@ -28,7 +28,7 @@ from testcontainers.postgres import PostgresContainer
 
 from src.main import app
 from src.routes import analyze as analyze_route
-from tests.conftest import VIBECHECK_JOBS_DDL
+from tests.conftest import VIBECHECK_IMAGE_UPLOAD_BATCHES_DDL, VIBECHECK_JOBS_DDL
 
 _REAL_GETADDRINFO = socket.getaddrinfo
 
@@ -45,6 +45,7 @@ CREATE TABLE vibecheck_analyses (
 );
 """
     + VIBECHECK_JOBS_DDL
+    + VIBECHECK_IMAGE_UPLOAD_BATCHES_DDL
     + """
 CREATE INDEX vibecheck_jobs_normalized_url_idx
     ON vibecheck_jobs(normalized_url);
@@ -91,6 +92,7 @@ async def db_pool(_postgres_container: PostgresContainer) -> AsyncIterator[Any]:
     assert pool is not None
     async with pool.acquire() as conn:
         await conn.execute(
+            "DROP TABLE IF EXISTS vibecheck_image_upload_batches CASCADE;"
             "DROP TABLE IF EXISTS vibecheck_job_utterances CASCADE;"
             "DROP TABLE IF EXISTS vibecheck_analyses CASCADE;"
             "DROP TABLE IF EXISTS vibecheck_jobs CASCADE;"

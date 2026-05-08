@@ -110,6 +110,20 @@ CREATE TABLE vibecheck_jobs (
 """
 
 
+VIBECHECK_IMAGE_UPLOAD_BATCHES_DDL = """
+CREATE TABLE vibecheck_image_upload_batches (
+    job_id UUID PRIMARY KEY REFERENCES vibecheck_jobs(job_id) ON DELETE CASCADE,
+    images JSONB NOT NULL,
+    conversion_status TEXT NOT NULL DEFAULT 'awaiting_upload',
+    generated_pdf_gcs_key TEXT,
+    error_code TEXT,
+    error_message TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+"""
+
+
 @pytest.fixture(autouse=True)
 def _stub_dns(monkeypatch: pytest.MonkeyPatch) -> None:
     def _fake_getaddrinfo(
