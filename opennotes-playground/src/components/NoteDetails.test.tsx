@@ -46,7 +46,7 @@ describe("NoteDetails", () => {
     expect(noteCard?.tagName.toLowerCase()).toBe("div");
     const cls = noteCard?.className ?? "";
     expect(cls).toContain("rounded-md");
-    expect(cls).toContain("border");
+    expect(cls).toMatch(/\bborder-border\b/);
     expect(cls).toContain("bg-card");
     expect(cls).toContain("p-4");
     expect(cls).not.toContain("shadow-none");

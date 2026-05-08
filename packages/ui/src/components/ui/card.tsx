@@ -29,7 +29,7 @@ export const Card = <T extends ValidComponent = "div">(props: CardProps<T>) => {
   const [, rest] = splitProps(props as CardProps, ["class", "variant", "as"]);
   const tag = (props.as ?? "div") as ValidComponent;
 
-  const hasHref = (props as { href?: unknown }).href !== undefined;
+  const hasHref = (props as { href?: unknown }).href != null;
   const isInteractive = props.variant === "interactive";
   const a11yProps =
     isInteractive && !hasHref ? { tabindex: 0, role: "button" } : {};
