@@ -130,6 +130,8 @@ export default function AnalyzePage() {
   const [searchParams] = useSearchParams();
   const jobParam = () =>
     typeof searchParams.job === "string" ? searchParams.job : "";
+  const pendingUrl = () =>
+    typeof searchParams.url === "string" ? searchParams.url : "";
   const initialJobState = createAsync(async () => {
     const id = jobParam();
     if (!id) return null;
@@ -140,14 +142,50 @@ export default function AnalyzePage() {
       return null;
     }
   });
+  const initialOgState = () => initialJobState() ?? null;
+  const initialOgUrl = () => initialOgState()?.url ?? pendingUrl();
+  const initialOgSidebarPayload = () =>
+    initialOgState()?.sidebar_payload ?? null;
+  const ogTitle = () =>
+    deriveOgTitle({
+      pageTitle: initialOgState()?.page_title,
+      url: initialOgUrl(),
+    });
+  const ogDescription = () =>
+    deriveOgDescription({
+      headlineSummary: initialOgSidebarPayload()?.headline?.text,
+      safetyRationale:
+        initialOgSidebarPayload()?.safety?.recommendation?.rationale,
+      url: initialOgUrl(),
+    });
+  const ogImage = () => {
+    const id = jobParam();
+    return id
+      ? siteUrl(`/api/og?job=${encodeURIComponent(id)}`)
+      : siteUrl("/api/og");
+  };
+  const ogUrl = () => {
+    const id = jobParam();
+    return id
+      ? siteUrl(`/analyze?job=${encodeURIComponent(id)}`)
+      : siteUrl("/analyze");
+  };
 
   return (
-    <Show
-      when={initialJobState() !== undefined}
-      fallback={<LoadingSavedAnalysis />}
-    >
-      <AnalyzePageContent initialJobState={initialJobState() ?? null} />
-    </Show>
+    <>
+      <Title>vibecheck — analyzing</Title>
+      <Meta property="og:title" content={`${ogTitle()} — vibecheck`} />
+      <Meta property="og:description" content={ogDescription()} />
+      <Meta property="og:url" content={ogUrl()} />
+      <Meta property="og:image" content={ogImage()} />
+      <Meta name="twitter:image" content={ogImage()} />
+      <Show
+        when={initialJobState() !== undefined}
+        fallback={<LoadingSavedAnalysis />}
+      >
+        <AnalyzePageContent initialJobState={initialJobState() ?? null} />
+      </Show>
+    </>
   );
 }
 
@@ -509,31 +547,6 @@ function AnalyzePageContent(props: { initialJobState: JobState | null }) {
 
   const sidebarPayload = () => jobState()?.sidebar_payload ?? null;
 
-  const ogTitle = () => deriveOgTitle({
-    pageTitle: jobState()?.page_title,
-    url: jobUrl(),
-  });
-
-  const ogDescription = () => deriveOgDescription({
-    headlineSummary: sidebarPayload()?.headline?.text,
-    safetyRationale: sidebarPayload()?.safety?.recommendation?.rationale,
-    url: jobUrl(),
-  });
-
-  const ogImage = () => {
-    const id = jobId();
-    return id
-      ? siteUrl(`/api/og?job=${encodeURIComponent(id)}`)
-      : siteUrl("/api/og");
-  };
-
-  const ogUrl = () => {
-    const id = jobId();
-    return id
-      ? siteUrl(`/analyze?job=${encodeURIComponent(id)}`)
-      : siteUrl("/analyze");
-  };
-
   const sidebarPayloadComplete = () =>
     jobState()?.sidebar_payload_complete === true;
   const isCached = () => jobState()?.cached === true;
@@ -703,12 +716,6 @@ function AnalyzePageContent(props: { initialJobState: JobState | null }) {
 
   return (
     <>
-      <Title>vibecheck — analyzing</Title>
-      <Meta property="og:title" content={`${ogTitle()} — vibecheck`} />
-      <Meta property="og:description" content={ogDescription()} />
-      <Meta property="og:url" content={ogUrl()} />
-      <Meta property="og:image" content={ogImage()} />
-      <Meta name="twitter:image" content={ogImage()} />
       <main
         data-testid="analyze-main"
         data-archive-probe-state={archiveProbeState()}
