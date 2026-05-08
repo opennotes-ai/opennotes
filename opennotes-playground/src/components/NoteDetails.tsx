@@ -190,7 +190,7 @@ export default function NoteDetails(props: {
                     {(note) => {
                       const attrs = note.attributes;
                       return (
-                        <Card id={`note-${note.attributes.note_id}`} class="border-border p-4 shadow-none" data-testid="note-card">
+                        <Card id={`note-${note.attributes.note_id}`} class="border-border p-4" data-testid="note-card">
                           <div class="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-start sm:justify-between">
                             <div class="min-w-0 flex-1" data-testid="note-summary">
                               <div class="font-normal leading-snug">{attrs.summary}</div>

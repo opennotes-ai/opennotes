@@ -27,7 +27,7 @@ function makeNote(overrides?: Partial<DetailedNoteResource["attributes"]>): Deta
 }
 
 describe("NoteDetails", () => {
-  it("renders each note inside a Card-styled container with rounded-lg, border, bg-card and p-4", () => {
+  it("renders each note inside a Card-styled container with rounded-md, border, bg-card and p-4", () => {
     const notes = [makeNote()];
     const { container } = render(() => (
       <NoteDetails
@@ -45,9 +45,11 @@ describe("NoteDetails", () => {
     expect(noteCard).not.toBeNull();
     expect(noteCard?.tagName.toLowerCase()).toBe("div");
     const cls = noteCard?.className ?? "";
-    expect(cls).toContain("rounded-lg");
+    expect(cls).toContain("rounded-md");
     expect(cls).toContain("border");
     expect(cls).toContain("bg-card");
     expect(cls).toContain("p-4");
+    expect(cls).not.toContain("shadow-none");
+    expect(cls).not.toContain("shadow-sm");
   });
 });
