@@ -15,6 +15,11 @@ import pytest
 from src.analyses.claims._claims_schemas import ClaimCategory, ClaimsReport, DedupedClaim
 from src.analyses.opinions import trends_oppositions as trends_oppositions_module
 from src.analyses.opinions import trends_oppositions_slot
+from src.analyses.opinions.trends_oppositions_testing import (
+    OppositionLLMForTest,
+    TrendLLMForTest,
+    TrendsOppositionsLLMForTest,
+)
 from src.analyses.schemas import SectionSlug
 from src.config import Settings
 
@@ -76,16 +81,16 @@ async def test_trends_oppositions_e2e_wealth_tax_fixture_produces_trends_and_opp
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     scripted = _ScriptedAgent(
-        trends_oppositions_module._TrendsOppositionsLLM(  # pyright: ignore[reportPrivateUsage]
+        TrendsOppositionsLLMForTest(
             trends=[
-                trends_oppositions_module._TrendLLM(  # pyright: ignore[reportPrivateUsage]
+                TrendLLMForTest(
                     label="Tax fairness debate",
                     cluster_indices=[0, 2],
                     summary="Speakers repeatedly frame the wealth tax as a fairness and services question.",
                 )
             ],
             oppositions=[
-                trends_oppositions_module._OppositionLLM(  # pyright: ignore[reportPrivateUsage]
+                OppositionLLMForTest(
                     topic="Wealth tax economic impact",
                     supporting_cluster_indices=[0],
                     opposing_cluster_indices=[1],
@@ -184,7 +189,7 @@ async def test_trends_oppositions_e2e_no_relevant_opinion_clusters_returns_empty
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     scripted = _ScriptedAgent(
-        trends_oppositions_module._TrendsOppositionsLLM(  # pyright: ignore[reportPrivateUsage]
+        TrendsOppositionsLLMForTest(
             trends=[],
             oppositions=[],
         )

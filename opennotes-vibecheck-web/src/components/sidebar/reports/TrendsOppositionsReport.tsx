@@ -20,7 +20,11 @@ export const EMPTY_TRENDS_OPPOSITIONS_REPORT: TrendsOppositionsReport = {
 
 function hasNoContent(report: TrendsOppositionsReport | null): boolean {
   if (!report) return true;
-  return (report.trends ?? []).length === 0 && (report.oppositions ?? []).length === 0;
+  return (
+    (report.trends ?? []).length === 0 &&
+    (report.oppositions ?? []).length === 0 &&
+    (report.skipped_for_cap ?? 0) === 0
+  );
 }
 
 function TrendListItem(props: { trend: ClaimTrend }) {
@@ -115,6 +119,7 @@ export default function TrendsOppositionsReport(props: TrendsOppositionsReportPr
   const report = () => props.report;
   const trends = () => report()?.trends ?? [];
   const oppositions = () => report()?.oppositions ?? [];
+  const skippedForCap = () => report()?.skipped_for_cap ?? 0;
 
   return (
     <Show when={!hasNoContent(report())}>
@@ -145,6 +150,14 @@ export default function TrendsOppositionsReport(props: TrendsOppositionsReportPr
               </For>
             </ul>
           </section>
+        </Show>
+        <Show when={skippedForCap() > 0}>
+          <p
+            data-testid="trends-opposition-skipped-count"
+            class="pr-8 text-[11px] text-muted-foreground"
+          >
+            {skippedForCap()} more not analyzed
+          </p>
         </Show>
         <FeedbackBell bell_location="card:trends-oppositions" />
       </div>

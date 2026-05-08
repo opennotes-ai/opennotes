@@ -133,6 +133,10 @@ class Settings(BaseSettings):
     # filtering in production without code changes.
     VIBECHECK_OPINIONS_HIGHLIGHTS_AUTHOR_DIVISOR: float = 2.0
     VIBECHECK_OPINIONS_HIGHLIGHTS_OCCURRENCE_MULTIPLIER: float = 1.5
+    # TASK-1508.09: cap opinion clusters sent to the trends/oppositions
+    # analyzer. Keep tunable so production can trade result breadth against
+    # LLM cost without a code deploy.
+    VIBECHECK_TRENDS_OPPOSITIONS_MAX_CLUSTERS: int = 50
 
     # TASK-1588.17 AC#6: Set-Cookie's Secure attribute. Browsers silently drop
     # `Secure` cookies on `http://localhost`, so a hard-coded True breaks the
@@ -168,6 +172,13 @@ class Settings(BaseSettings):
     def _opinion_highlights_scaling_factors_positive(cls, value: float) -> float:
         if value <= 0:
             raise ValueError("opinion highlights scaling factors must be > 0")
+        return value
+
+    @field_validator("VIBECHECK_TRENDS_OPPOSITIONS_MAX_CLUSTERS")
+    @classmethod
+    def _trends_oppositions_max_clusters_nonnegative(cls, value: int) -> int:
+        if value < 0:
+            raise ValueError("trends/oppositions max clusters must be >= 0")
         return value
 
 

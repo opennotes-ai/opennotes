@@ -21,7 +21,7 @@ import asyncpg
 import pytest
 
 from src.analyses.safety._schemas import SafetyLevel, SafetyRecommendation
-from src.analyses.schemas import ErrorCode, SectionSlug, SectionState
+from src.analyses.schemas import ErrorCode, SectionSlot, SectionSlug, SectionState
 from src.cache.scrape_cache import CachedScrape, SupabaseScrapeCache
 from src.coral import (
     CoralComments,
@@ -207,7 +207,7 @@ async def test_run_all_sections_writes_trends_oppositions_after_dedup(
         _settings: Any,
         *,
         test_fail_slug: str | None = None,
-    ) -> None:
+    ) -> SectionState:
         if slug == SectionSlug.FACTS_CLAIMS_DEDUP:
             # Simulate a non-trivial slot write path that must finish first.
             run_order.append(slug.value)
@@ -301,8 +301,8 @@ async def test_run_all_sections_trends_with_unavailable_dedup_does_not_fail(
     async def no_op_handler(*args: Any, **kwargs: Any) -> dict[str, Any]:
         return {}
 
-    mark_slot_failed_calls: list[tuple] = []
-    write_slot_calls: list[tuple] = []
+    mark_slot_failed_calls: list[tuple[tuple[Any, ...], dict[str, Any]]] = []
+    write_slot_calls: list[tuple[tuple[Any, ...], dict[str, Any]]] = []
 
     async def fake_write_slot(*args: Any, **kwargs: Any) -> int:
         write_slot_calls.append((args, kwargs))
@@ -359,8 +359,8 @@ async def test_run_section_retry_trends_dependencies_not_ready_reenqueues_with_b
             "data": None,
         }
 
-    mark_slot_failed_calls: list[tuple] = []
-    mark_slot_done_calls: list[tuple] = []
+    mark_slot_failed_calls: list[tuple[tuple[Any, ...], dict[str, Any]]] = []
+    mark_slot_done_calls: list[tuple[tuple[Any, ...], dict[str, Any]]] = []
 
     async def never_done(*args: Any, **kwargs: Any) -> int:
         mark_slot_done_calls.append((args, kwargs))
@@ -375,6 +375,12 @@ async def test_run_section_retry_trends_dependencies_not_ready_reenqueues_with_b
     async def fake_enqueue_section_retry(*args: Any, **kwargs: Any) -> None:
         enqueue_calls.append((args, kwargs))
 
+    write_slot_calls: list[tuple[tuple[Any, ...], dict[str, Any]]] = []
+
+    async def fake_write_slot(*args: Any, **kwargs: Any) -> int:
+        write_slot_calls.append((args, kwargs))
+        return 1
+
     monkeypatch.setattr(orchestrator, "_load_job_attempt_and_slot", _load)
     monkeypatch.setitem(
         orchestrator._SECTION_HANDLERS,
@@ -383,6 +389,7 @@ async def test_run_section_retry_trends_dependencies_not_ready_reenqueues_with_b
     )
     monkeypatch.setattr(orchestrator, "mark_slot_done", never_done)
     monkeypatch.setattr(orchestrator, "mark_slot_failed", never_failed)
+    monkeypatch.setattr(orchestrator, "write_slot", fake_write_slot)
     monkeypatch.setattr(orchestrator, "enqueue_section_retry", fake_enqueue_section_retry)
 
     job_id = uuid4()
@@ -402,10 +409,18 @@ async def test_run_section_retry_trends_dependencies_not_ready_reenqueues_with_b
     assert enqueue_args[2] == task_attempt
     assert enqueue_args[3] is not None
     assert enqueue_kwargs == {
-        "task_name": None,
-        "use_deterministic_task_name": False,
+        "task_name": f"vibecheck-retry-trends-deps-{task_attempt}-wait-1",
+        "use_deterministic_task_name": True,
         "schedule_delay_seconds": orchestrator._SECTION_RETRY_DEPENDENCY_BACKOFF_SECONDS,
     }
+    assert len(write_slot_calls) == 1
+    write_args, write_kwargs = write_slot_calls[0]
+    assert write_args[1] == job_id
+    assert write_args[2] == task_attempt
+    assert write_args[3] == SectionSlug.OPINIONS_SENTIMENTS_TRENDS_OPPOSITIONS
+    assert isinstance(write_args[4], SectionSlot)
+    assert write_args[4].data == {"dependency_wait_iteration": 1}
+    assert write_kwargs == {}
     assert mark_slot_failed_calls == []
     assert mark_slot_done_calls == []
 
@@ -430,8 +445,8 @@ async def test_run_section_retry_trends_dependencies_not_ready_marked_reenqueue_
             "data": None,
         }
 
-    mark_slot_failed_calls: list[tuple] = []
-    mark_slot_done_calls: list[tuple] = []
+    mark_slot_failed_calls: list[tuple[tuple[Any, ...], dict[str, Any]]] = []
+    mark_slot_done_calls: list[tuple[tuple[Any, ...], dict[str, Any]]] = []
 
     async def never_done(*args: Any, **kwargs: Any) -> int:
         mark_slot_done_calls.append((args, kwargs))
@@ -444,6 +459,9 @@ async def test_run_section_retry_trends_dependencies_not_ready_marked_reenqueue_
     async def fake_enqueue_section_retry(*args: Any, **kwargs: Any) -> None:
         raise RuntimeError("enqueue failed")
 
+    async def fake_write_slot(*args: Any, **kwargs: Any) -> int:
+        return 1
+
     monkeypatch.setattr(orchestrator, "_load_job_attempt_and_slot", _load)
     monkeypatch.setitem(
         orchestrator._SECTION_HANDLERS,
@@ -452,6 +470,7 @@ async def test_run_section_retry_trends_dependencies_not_ready_marked_reenqueue_
     )
     monkeypatch.setattr(orchestrator, "mark_slot_done", never_done)
     monkeypatch.setattr(orchestrator, "mark_slot_failed", never_failed)
+    monkeypatch.setattr(orchestrator, "write_slot", fake_write_slot)
     monkeypatch.setattr(orchestrator, "enqueue_section_retry", fake_enqueue_section_retry)
 
     result = await run_section_retry(
@@ -525,8 +544,8 @@ async def test_run_section_retry_trends_with_permanent_dependency_states_settles
             "data": None,
         }
 
-    mark_slot_failed_calls: list[tuple] = []
-    mark_slot_done_calls: list[tuple] = []
+    mark_slot_failed_calls: list[tuple[tuple[Any, ...], dict[str, Any]]] = []
+    mark_slot_done_calls: list[tuple[tuple[Any, ...], dict[str, Any]]] = []
 
     async def fake_done(*args: Any, **kwargs: Any) -> int:
         mark_slot_done_calls.append((args, kwargs))

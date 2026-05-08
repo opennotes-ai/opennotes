@@ -191,6 +191,7 @@ stop, preventing wasted deliveries that the prior cap of 2 caused.
 """
 
 _SECTION_RETRY_DEPENDENCY_BACKOFF_SECONDS: Final[int] = 30
+_TRENDS_DEPENDENCY_WAIT_ITERATION_KEY: Final[str] = "dependency_wait_iteration"
 
 
 _CORAL_PARTIAL_MARKERS: tuple[str, ...] = (
@@ -3094,6 +3095,45 @@ async def _load_job_attempt_and_slot(
     return row["attempt_id"], slot
 
 
+def _trends_dependency_wait_task_name(
+    expected_slot_attempt_id: UUID,
+    wait_iteration: int,
+) -> str:
+    return f"vibecheck-retry-trends-deps-{expected_slot_attempt_id}-wait-{wait_iteration}"
+
+
+def _next_trends_dependency_wait_iteration(slot: dict[str, Any]) -> int:
+    slot_data = slot.get("data")
+    if not isinstance(slot_data, dict):
+        return 1
+    raw_iteration = slot_data.get(_TRENDS_DEPENDENCY_WAIT_ITERATION_KEY)
+    if not isinstance(raw_iteration, int):
+        return 1
+    return max(raw_iteration, 0) + 1
+
+
+def _slot_with_trends_dependency_wait_iteration(
+    slot: dict[str, Any],
+    expected_slot_attempt_id: UUID,
+    wait_iteration: int,
+) -> SectionSlot:
+    try:
+        parsed_slot = SectionSlot.model_validate(slot)
+    except Exception:
+        parsed_slot = SectionSlot(
+            state=SectionState.RUNNING,
+            attempt_id=expected_slot_attempt_id,
+        )
+    data = dict(parsed_slot.data or {})
+    data[_TRENDS_DEPENDENCY_WAIT_ITERATION_KEY] = wait_iteration
+    return SectionSlot(
+        state=SectionState.RUNNING,
+        attempt_id=expected_slot_attempt_id,
+        data=data,
+        started_at=parsed_slot.started_at,
+    )
+
+
 async def run_section_retry(  # noqa: PLR0911, PLR0912
     pool: Any,
     job_id: UUID,
@@ -3242,13 +3282,37 @@ async def run_section_retry(  # noqa: PLR0911, PLR0912
                         slug.value,
                     )
                     try:
+                        wait_iteration = _next_trends_dependency_wait_iteration(slot)
+                        wait_slot = _slot_with_trends_dependency_wait_iteration(
+                            slot,
+                            expected_slot_attempt_id,
+                            wait_iteration,
+                        )
+                        rows = await write_slot(
+                            pool,
+                            job_id,
+                            task_attempt,
+                            slug,
+                            wait_slot,
+                        )
+                        if rows == 0:
+                            CLOUD_TASKS_REDELIVERIES.inc()
+                            logger.info(
+                                "section-retry: dependency wait CAS failed for job=%s slug=%s — no-op",
+                                job_id,
+                                slug.value,
+                            )
+                            return RunResult(status_code=200)
                         await enqueue_section_retry(
                             job_id,
                             slug,
                             expected_slot_attempt_id,
                             settings,
-                            task_name=None,
-                            use_deterministic_task_name=False,
+                            task_name=_trends_dependency_wait_task_name(
+                                expected_slot_attempt_id,
+                                wait_iteration,
+                            ),
+                            use_deterministic_task_name=True,
                             schedule_delay_seconds=_SECTION_RETRY_DEPENDENCY_BACKOFF_SECONDS,
                         )
                     except Exception as reenqueue_exc:
