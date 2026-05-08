@@ -10,6 +10,7 @@ import {
 import type { components } from "~/lib/generated-types";
 import ExpandableText from "../ExpandableText";
 import UtteranceRef from "../UtteranceRef";
+import { FeedbackBell } from "../../feedback/FeedbackBell";
 
 type ClaimsReport = components["schemas"]["ClaimsReport"];
 type DedupedClaim = components["schemas"]["DedupedClaim"];
@@ -107,7 +108,7 @@ export default function ClaimsDedupReport(props: ClaimsDedupReportProps) {
   });
 
   return (
-    <div data-testid="report-facts_claims__dedup" class="space-y-2">
+    <div data-testid="report-facts_claims__dedup" class="relative space-y-2">
       <p class="text-[11px] text-muted-foreground">
         {sorted().length} claim{sorted().length === 1 ? "" : "s"}
       </p>
@@ -343,6 +344,7 @@ export default function ClaimsDedupReport(props: ClaimsDedupReportProps) {
           </For>
         </div>
       </Show>
+      <FeedbackBell bell_location="card:claims-dedup" />
     </div>
   );
 }

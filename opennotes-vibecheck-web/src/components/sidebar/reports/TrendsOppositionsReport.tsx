@@ -1,6 +1,7 @@
 import { For, Show } from "solid-js";
 import type { components } from "~/lib/generated-types";
 import ExpandableText from "../ExpandableText";
+import { FeedbackBell } from "../../feedback/FeedbackBell";
 
 type ClaimTrend = components["schemas"]["ClaimTrend"];
 type ClaimOpposition = components["schemas"]["ClaimOpposition"];
@@ -119,7 +120,7 @@ export default function TrendsOppositionsReport(props: TrendsOppositionsReportPr
     <Show when={!hasNoContent(report())}>
       <div
         data-testid="report-opinions_sentiments__trends_oppositions"
-        class="space-y-4"
+        class="relative space-y-4"
       >
         <Show when={trends().length > 0}>
           <section>
@@ -145,6 +146,7 @@ export default function TrendsOppositionsReport(props: TrendsOppositionsReportPr
             </ul>
           </section>
         </Show>
+        <FeedbackBell bell_location="card:trends-oppositions" />
       </div>
     </Show>
   );

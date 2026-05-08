@@ -1,5 +1,6 @@
 import type { components } from "~/lib/generated-types";
 import SentimentTimelineSection from "./sentiment-timeline/SentimentTimelineSection";
+import { FeedbackBell } from "../../feedback/FeedbackBell";
 
 type SentimentStats = components["schemas"]["SentimentStatsReport"];
 type UtteranceAnchor = components["schemas"]["UtteranceAnchor"];
@@ -36,7 +37,7 @@ export default function SentimentReport(props: SentimentReportProps) {
   return (
     <div
       data-testid="report-opinions_sentiments__sentiment"
-      class="space-y-2"
+      class="relative space-y-2"
     >
       <div
         role="img"
@@ -86,6 +87,7 @@ export default function SentimentReport(props: SentimentReportProps) {
         scores={props.stats.per_utterance}
         anchors={props.anchors}
       />
+      <FeedbackBell bell_location="card:sentiment" />
     </div>
   );
 }

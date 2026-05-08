@@ -1,6 +1,7 @@
 import { Show, type JSX } from "solid-js";
 import { Button } from "@opennotes/ui/components/ui/button";
 import { analyzeAction } from "~/routes/analyze.data";
+import { FeedbackBell } from "./feedback/FeedbackBell";
 
 export interface ExpiredAnalysisCardProps {
   url: string | null;
@@ -23,7 +24,7 @@ export default function ExpiredAnalysisCard(props: ExpiredAnalysisCardProps): JS
     <section
       role="alert"
       data-testid="expired-analysis-card"
-      class="flex w-full flex-col gap-4 rounded-lg border border-amber-400/40 bg-amber-50/5 p-6"
+      class="relative flex w-full flex-col gap-4 rounded-lg border border-amber-400/40 bg-amber-50/5 p-6"
     >
       <header class="flex flex-col gap-1">
         <p
@@ -84,6 +85,7 @@ export default function ExpiredAnalysisCard(props: ExpiredAnalysisCardProps): JS
           </form>
         </Show>
       </div>
+      <FeedbackBell bell_location="card:expired-analysis" />
     </section>
   );
 }

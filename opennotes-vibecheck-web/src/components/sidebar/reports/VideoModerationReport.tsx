@@ -1,6 +1,7 @@
 import { For, Show, type JSX } from "solid-js";
 import type { components } from "~/lib/generated-types";
 import { categoryColor, categoryColorClasses } from "~/lib/category-colors";
+import { FeedbackBell } from "../../feedback/FeedbackBell";
 
 type FrameFinding = components["schemas"]["FrameFinding"];
 type VideoModerationMatch = components["schemas"]["VideoModerationMatch"];
@@ -39,7 +40,7 @@ export default function VideoModerationReport(
   const matches = (): VideoModerationMatch[] => props.matches ?? [];
 
   return (
-    <div data-testid="report-safety__video_moderation" class="space-y-2">
+    <div data-testid="report-safety__video_moderation" class="relative space-y-2">
       <p class="text-[11px] text-muted-foreground">
         {matches().length} video{matches().length === 1 ? "" : "s"} checked
       </p>
@@ -130,6 +131,7 @@ export default function VideoModerationReport(
           </For>
         </ul>
       </Show>
+      <FeedbackBell bell_location="card:video-moderation" />
     </div>
   );
 }

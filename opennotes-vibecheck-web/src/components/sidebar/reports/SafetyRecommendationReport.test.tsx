@@ -1,9 +1,39 @@
-import { afterEach, describe, it, expect } from "vitest";
+import { afterEach, beforeEach, describe, it, expect, vi } from "vitest";
 import { cleanup, render, screen } from "@solidjs/testing-library";
 import type { components } from "~/lib/generated-types";
 import SafetyRecommendationReport from "./SafetyRecommendationReport";
 
+vi.mock("../../../lib/feedback-client", () => ({
+  openFeedback: vi.fn().mockResolvedValue({ id: "test-id" }),
+  submitFeedback: vi.fn().mockResolvedValue(undefined),
+  submitFeedbackCombined: vi.fn().mockResolvedValue({ id: "combined-id" }),
+  FeedbackApiError: class FeedbackApiError extends Error {
+    constructor(
+      public status: number,
+      public body: unknown,
+      message?: string,
+    ) {
+      super(message ?? `Feedback API error (${status})`);
+      this.name = "FeedbackApiError";
+    }
+  },
+}));
+
 type SafetyRecommendation = components["schemas"]["SafetyRecommendation"];
+
+beforeEach(() => {
+  Object.defineProperty(window, "matchMedia", {
+    writable: true,
+    value: (query: string) => ({
+      matches: false,
+      media: query,
+      onchange: null,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    }),
+  });
+});
 
 afterEach(() => {
   cleanup();
@@ -44,7 +74,11 @@ describe("SafetyRecommendationReport", () => {
     expect(rationale.getAttribute("data-truncated")).toBeNull();
     const cls = rationale.getAttribute("class") ?? "";
     expect(cls).not.toMatch(/line-clamp-/);
-    expect(screen.queryAllByRole("button").length).toBe(0);
+    const buttons = screen.queryAllByRole("button");
+    const nonBellButtons = buttons.filter(
+      (btn) => !btn.getAttribute("aria-label")?.startsWith("Send feedback about"),
+    );
+    expect(nonBellButtons.length).toBe(0);
   });
 
   it("renders the recommendation level badge", () => {
@@ -71,5 +105,15 @@ describe("SafetyRecommendationReport", () => {
       .querySelectorAll("li");
     expect(items.length).toBe(4);
     expect(items[3]?.textContent).toBe("+2 more");
+  });
+
+  it("renders a FeedbackBell with the correct bell_location aria-label", () => {
+    render(() => (
+      <SafetyRecommendationReport recommendation={makeRecommendation()} />
+    ));
+    const bell = screen.getByRole("button", {
+      name: "Send feedback about card:safety-recommendation",
+    });
+    expect(bell).toBeTruthy();
   });
 });

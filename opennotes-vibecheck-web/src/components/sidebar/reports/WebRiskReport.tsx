@@ -1,5 +1,6 @@
 import { For, Show, type JSX } from "solid-js";
 import type { components } from "~/lib/generated-types";
+import { FeedbackBell } from "../../feedback/FeedbackBell";
 
 type WebRiskFinding = components["schemas"]["WebRiskFinding"];
 
@@ -17,7 +18,7 @@ export default function WebRiskReport(
   const findings = (): WebRiskFinding[] => props.findings ?? [];
 
   return (
-    <div data-testid="report-safety__web_risk" class="space-y-2">
+    <div data-testid="report-safety__web_risk" class="relative space-y-2">
       <p class="text-[11px] text-muted-foreground">
         {findings().length} flagged URL{findings().length === 1 ? "" : "s"}
       </p>
@@ -56,6 +57,7 @@ export default function WebRiskReport(
           </For>
         </ul>
       </Show>
+      <FeedbackBell bell_location="card:web-risk" />
     </div>
   );
 }

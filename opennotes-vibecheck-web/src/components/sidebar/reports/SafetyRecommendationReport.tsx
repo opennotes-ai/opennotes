@@ -1,5 +1,6 @@
 import { For, Show, type JSX } from "solid-js";
 import type { components } from "~/lib/generated-types";
+import { FeedbackBell } from "../../feedback/FeedbackBell";
 
 type SafetyRecommendation = components["schemas"]["SafetyRecommendation"];
 
@@ -26,7 +27,7 @@ export default function SafetyRecommendationReport(
         return (
           <section
             data-testid="safety-recommendation-report"
-            class="space-y-2 rounded-md border border-border bg-background p-3 text-xs"
+            class="relative space-y-2 rounded-md border border-border bg-background p-3 text-xs"
           >
             <div class="flex items-center gap-2">
               <span
@@ -57,6 +58,7 @@ export default function SafetyRecommendationReport(
                 Some analyses did not run: {unavailable().join(", ")}
               </p>
             </Show>
+            <FeedbackBell bell_location="card:safety-recommendation" />
           </section>
         );
       }}

@@ -2,6 +2,7 @@ import { For, Show, type JSX } from "solid-js";
 import type { components } from "~/lib/generated-types";
 import ExpandableText from "../ExpandableText";
 import UtteranceRef from "../UtteranceRef";
+import { FeedbackBell } from "../../feedback/FeedbackBell";
 
 type SCDReport = components["schemas"]["SCDReport"];
 type SpeakerArc = components["schemas"]["SpeakerArc"];
@@ -46,7 +47,7 @@ export default function ScdReport(props: ScdReportProps): JSX.Element {
       ?.utterance_id ?? null;
 
   return (
-    <div data-testid="report-tone_dynamics__scd" class="space-y-3">
+    <div data-testid="report-tone_dynamics__scd" class="relative space-y-3">
       <Show
         when={!props.scd.insufficient_conversation}
         fallback={
@@ -137,6 +138,7 @@ export default function ScdReport(props: ScdReportProps): JSX.Element {
           </ul>
         </Show>
       </Show>
+      <FeedbackBell bell_location="card:scd" />
     </div>
   );
 }
