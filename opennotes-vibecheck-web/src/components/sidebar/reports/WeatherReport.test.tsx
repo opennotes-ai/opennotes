@@ -150,21 +150,52 @@ describe("WeatherReport", () => {
     const truthRow = screen.getByTestId("weather-axis-card-truth");
     fireEvent.click(truthRow);
     await screen.findByText(/Truth — Epistemic stance/);
-    await new Promise((resolve) => setTimeout(resolve, 0));
 
     const outside = screen.getByTestId("outside-target");
-    fireEvent.pointerDown(outside, { pointerType: "mouse", button: 0 });
-
     await waitFor(() => {
+      fireEvent.pointerDown(outside, { pointerType: "mouse", button: 0 });
       expect(screen.queryByText(/Truth — Epistemic stance/)).toBeNull();
     });
   });
 
-  it("hovering a row (pointerenter) opens the popover for desktop users", async () => {
+  it("does not open the popover on pointerenter — popover is click/tap only", async () => {
     render(() => <WeatherReport report={makeWeatherReport()} />);
     const truthRow = screen.getByTestId("weather-axis-card-truth");
     fireEvent.pointerEnter(truthRow);
-    await screen.findByText(/Truth — Epistemic stance/);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(screen.queryByText(/Truth — Epistemic stance/)).toBeNull();
+  });
+
+  it("axis row trigger is a button whose accessible name combines axis context and visible value", () => {
+    render(() => <WeatherReport report={makeWeatherReport()} />);
+
+    const expected: Array<{ axis: string; value: string }> = [
+      { axis: "Truth", value: "First-Person" },
+      { axis: "Relevance", value: "On Topic" },
+      { axis: "Sentiment", value: "Warmly Skeptical" },
+    ];
+    for (const { axis, value } of expected) {
+      const trigger = screen.getByRole("button", {
+        name: new RegExp(`${axis}.*${value}`, "i"),
+      });
+      expect(trigger).toBeDefined();
+      expect(trigger.getAttribute("data-testid")).toMatch(
+        new RegExp(`^weather-axis-card-${axis.toLowerCase()}$`),
+      );
+      expect(trigger.getAttribute("aria-label")).toBeNull();
+    }
+  });
+
+  it("does not put role=button or aria-haspopup on the underlying TableRow", () => {
+    render(() => <WeatherReport report={makeWeatherReport()} />);
+    const root = screen.getByTestId("weather-report");
+    const rows = root.querySelectorAll('[data-slot="table-row"]');
+    expect(rows.length).toBe(3);
+    for (const row of Array.from(rows)) {
+      expect(row.getAttribute("role")).not.toBe("button");
+      expect(row.getAttribute("aria-haspopup")).toBeNull();
+      expect(row.getAttribute("tabindex")).toBeNull();
+    }
   });
 
   it("renders stable shimmer skeletons when report is null", () => {
@@ -359,19 +390,26 @@ describe("WeatherReport", () => {
     );
   });
 
-  it("renders a spaced-caps heading cell per row with aria-hidden", () => {
+  it("renders a spaced-caps heading cell per row that is exposed to assistive tech", () => {
     render(() => <WeatherReport report={makeWeatherReport()} />);
 
-    for (const axis of ["truth", "relevance", "sentiment"] as const) {
-      const row = screen.getByTestId(`weather-axis-card-${axis}`);
+    const root = screen.getByTestId("weather-report");
+    const rows = root.querySelectorAll('[data-slot="table-row"]');
+    expect(rows.length).toBe(3);
+
+    const expectedHeadings = ["TRUTH", "RELEVANCE", "SENTIMENT"];
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i] as HTMLElement;
       const cells = row.querySelectorAll('[data-slot="table-cell"]');
       expect(cells.length).toBeGreaterThanOrEqual(2);
       const headingCell = cells[0] as HTMLElement;
-      expect(headingCell.getAttribute("aria-hidden")).toBe("true");
-      expect(headingCell.textContent?.trim()).toMatch(/^TRUTH$|^RELEVANCE$|^SENTIMENT$/);
+      expect(headingCell.getAttribute("aria-hidden")).toBeNull();
+      expect(headingCell.textContent?.trim()).toBe(expectedHeadings[i]);
       expect(headingCell.className).toContain("uppercase");
       expect(headingCell.className).toContain("tracking-[0.06em]");
       expect(headingCell.className).toContain("text-muted-foreground");
+      expect(headingCell.className).toContain("text-xs");
+      expect(headingCell.className).not.toMatch(/text-\[12px\]/);
     }
   });
 

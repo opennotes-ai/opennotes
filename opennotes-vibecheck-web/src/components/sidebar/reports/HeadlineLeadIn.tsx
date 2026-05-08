@@ -49,7 +49,7 @@ export default function HeadlineLeadIn(props: HeadlineLeadInProps): JSX.Element 
 
   const gridClass = () =>
     weatherSlotVisible()
-      ? "grid grid-cols-1 gap-3 lg:grid-cols-[max-content_1fr]"
+      ? "grid grid-cols-1 gap-3 lg:grid-cols-[fit-content(28rem)_1fr]"
       : "grid grid-cols-1 gap-3";
 
   return (

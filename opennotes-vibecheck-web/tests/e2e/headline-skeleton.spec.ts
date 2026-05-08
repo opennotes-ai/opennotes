@@ -24,7 +24,7 @@ import { ALL_SECTION_SLUGS } from "./fixtures/quizlet";
  *      Variant B (null weather collapse): done, sidebar_payload populated
  *        with headline but weather_report=null, sidebar_payload_complete=
  *        true → headline-summary renders full-width (HeadlineLeadIn drops
- *        the lg:grid-cols-[minmax(0,1fr)_minmax(0,2fr)] class) and the
+ *        the lg:grid-cols-[fit-content(28rem)_1fr] class) and the
  *        weather-report testid never resolves.
  *
  * This is a verification-only test — it stubs the backend and observes
@@ -423,7 +423,7 @@ test("AC4+AC6 collapse: weather_report=null + done renders single-column headlin
   // test fails loudly if the collapse logic regresses.
   const cls = (await root.getAttribute("class")) ?? "";
   expect(cls).toMatch(/\bgrid-cols-1\b/);
-  expect(cls).not.toMatch(/lg:grid-cols-\[minmax\(0,1fr\)_minmax\(0,2fr\)\]/);
+  expect(cls).not.toMatch(/lg:grid-cols-\[fit-content\(28rem\)_1fr\]/);
 });
 
 /**
