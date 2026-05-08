@@ -238,6 +238,30 @@ async def test_build_premises_by_claim_continues_after_chunk_failure(
         assert text not in premise_ids_by_claim
 
 
+async def test_run_claims_premises_uses_injected_premise_extractor(
+    settings: Settings,
+) -> None:
+    received: list[list[str]] = []
+
+    async def fake_extractor(claim_texts: list[str], _settings: Settings) -> dict[str, list[str]]:
+        received.append(list(claim_texts))
+        return {claim_texts[0]: ["Injected premise"]} if claim_texts else {}
+
+    payload = SimpleNamespace(claims_report=_claims_report("Some prediction will happen."))
+    result = await run_claims_premises(
+        pool=object(),
+        job_id=uuid4(),
+        task_attempt=uuid4(),
+        payload=payload,
+        settings=settings,
+        premise_extractor=fake_extractor,
+    )
+
+    assert received
+    claim = result["claims_report"]["deduped_claims"][0]
+    assert len(claim["premise_ids"]) == 1
+
+
 async def test_run_claims_premises_falls_back_to_dedup_slot_when_payload_missing(
     monkeypatch: pytest.MonkeyPatch,
     settings: Settings,

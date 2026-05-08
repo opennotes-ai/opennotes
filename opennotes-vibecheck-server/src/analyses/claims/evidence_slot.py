@@ -9,7 +9,7 @@ from uuid import UUID
 from pydantic import ValidationError
 
 from src.analyses.claims._claims_schemas import ClaimCategory, ClaimsReport
-from src.analyses.claims.evidence import _UtteranceMeta, build_supporting_facts_by_claim
+from src.analyses.claims.evidence import ExternalEvidenceFetcher, _UtteranceMeta, build_supporting_facts_by_claim
 from src.analyses.slot_utterances import load_job_utterances
 from src.config import Settings
 
@@ -98,6 +98,8 @@ async def run_claims_evidence(
     task_attempt: UUID,
     payload: Any,
     settings: Settings,
+    *,
+    external_fetcher: ExternalEvidenceFetcher | None = None,
 ) -> dict[str, Any]:
     del task_attempt
 
@@ -113,8 +115,11 @@ async def run_claims_evidence(
         for u in utterances
         if u.utterance_id is not None
     }
+    fetcher_kwargs: dict[str, Any] = {}
+    if external_fetcher is not None:
+        fetcher_kwargs["external_fetcher"] = external_fetcher
     supporting_facts_by_claim = await build_supporting_facts_by_claim(
-        claims_report.deduped_claims, utterance_meta_by_id, settings
+        claims_report.deduped_claims, utterance_meta_by_id, settings, **fetcher_kwargs
     )
 
     claims = []
