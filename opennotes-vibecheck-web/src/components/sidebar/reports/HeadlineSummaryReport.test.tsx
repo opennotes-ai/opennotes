@@ -134,6 +134,15 @@ describe("HeadlineSummaryReport", () => {
     expect(nonBellButtons.length).toBe(0);
   });
 
+  it("renders the FeedbackBell as a button with a 'Send feedback about' aria-label", () => {
+    render(() => <HeadlineSummaryReport headline={makeHeadline()} />);
+    const bell = screen.getByRole("button", { name: /Send feedback about/ });
+    expect(bell).toBeTruthy();
+    expect(bell.getAttribute("aria-label")).toMatch(/Send feedback about/);
+    const section = screen.getByTestId("headline-summary");
+    expect(section.contains(bell)).toBe(true);
+  });
+
   it("renders no element with data-truncated (no read-more chrome)", () => {
     render(() => <HeadlineSummaryReport headline={makeHeadline()} />);
     const section = screen.getByTestId("headline-summary");
