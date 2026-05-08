@@ -223,6 +223,35 @@ class TestVideoModerationMatch:
         )
         assert match.segment_findings == []
 
+    def test_video_moderation_match_accepts_legacy_frame_findings(self) -> None:
+        match = VideoModerationMatch.model_validate(
+            {
+                "utterance_id": "utt_vid_legacy",
+                "video_url": "https://example.com/legacy.mp4",
+                "frame_findings": [
+                    {
+                        "start_offset_ms": 1250,
+                        "end_offset_ms": 1250,
+                        "adult": 0.0,
+                        "violence": 1.0,
+                        "racy": 0.0,
+                        "medical": 0.0,
+                        "spoof": 0.0,
+                        "flagged": True,
+                        "max_likelihood": 1.0,
+                    }
+                ],
+                "flagged": True,
+                "max_likelihood": 1.0,
+            }
+        )
+
+        assert len(match.segment_findings) == 1
+        assert match.segment_findings[0].start_offset_ms == 1250
+        dumped = match.model_dump(mode="json")
+        assert "segment_findings" in dumped
+        assert "frame_findings" not in dumped
+
 
 class TestVisionLikelihood:
     def test_vision_likelihood_maps_very_likely_to_one(self) -> None:
