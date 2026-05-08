@@ -51,13 +51,17 @@ async function safeFetch(
   }
 }
 
-export async function openFeedback(payload: OpenInput): Promise<OpenRes> {
+export async function openFeedback(
+  payload: OpenInput,
+  signal?: AbortSignal,
+): Promise<OpenRes> {
   const body: OpenReq = { ...payload, kind: "open" };
   const response = await safeFetch("/api/feedback", {
     method: "POST",
     credentials: "include",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
+    signal,
   });
   return (await handleResponse(response)) as OpenRes;
 }

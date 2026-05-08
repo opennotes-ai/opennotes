@@ -38,10 +38,19 @@ export function FeedbackPopover(props: FeedbackPopoverProps): JSX.Element {
   });
 
   let openInFlight: Promise<string | null> | null = null;
+  let openController: AbortController | null = null;
+  let generation = 0;
 
   const handleIconClick = async (type: FeedbackType) => {
     setFeedbackId(null);
     props.onOpenChange(false);
+
+    if (openController !== null) {
+      openController.abort();
+      openController = null;
+    }
+
+    const thisGeneration = ++generation;
 
     const payload: OpenInput = {
       page_path: window.location.pathname,
@@ -55,14 +64,25 @@ export function FeedbackPopover(props: FeedbackPopoverProps): JSX.Element {
     setOpenPayload(payload);
     setSurfaceOpen(true);
 
+    const controller = new AbortController();
+    openController = controller;
+
     const runOpen = async (): Promise<string | null> => {
       try {
-        const result = await openFeedback(payload);
-        setFeedbackId(result.id);
+        const result = await openFeedback(payload, controller.signal);
+        if (thisGeneration === generation) {
+          setFeedbackId(result.id);
+        }
         return result.id;
       } catch {
-        setFeedbackId(null);
+        if (thisGeneration === generation) {
+          setFeedbackId(null);
+        }
         return null;
+      } finally {
+        if (openController === controller) {
+          openController = null;
+        }
       }
     };
     const flight = runOpen();

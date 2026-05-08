@@ -127,6 +127,29 @@ describe("openFeedback", () => {
     expect((caught as FeedbackApiError).status).toBe(0);
     expect((caught as FeedbackApiError).message).toContain("Failed to fetch");
   });
+
+  it("passes AbortSignal through to fetch when provided", async () => {
+    const fetchSpy = mockFetch(
+      new Response(JSON.stringify({ id: FEEDBACK_ID }), { status: 200 }),
+    );
+    const controller = new AbortController();
+
+    await openFeedback(OPEN_REQ, controller.signal);
+
+    const [, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
+    expect(init.signal).toBe(controller.signal);
+  });
+
+  it("fetch without signal when signal param is omitted", async () => {
+    const fetchSpy = mockFetch(
+      new Response(JSON.stringify({ id: FEEDBACK_ID }), { status: 200 }),
+    );
+
+    await openFeedback(OPEN_REQ);
+
+    const [, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
+    expect(init.signal).toBeUndefined();
+  });
 });
 
 describe("submitFeedback", () => {

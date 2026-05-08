@@ -154,6 +154,7 @@ describe("FeedbackBell — thumbs up opens desktop dialog with correct pre-selec
           initial_type: "thumbs_up",
           bell_location: "card:dialog-test",
         }),
+        expect.any(AbortSignal),
       );
     });
   });
@@ -181,6 +182,7 @@ describe("FeedbackBell — mobile drawer on thumbs down click", () => {
           initial_type: "thumbs_down",
           bell_location: "card:drawer-test",
         }),
+        expect.any(AbortSignal),
       );
     });
   });
@@ -350,5 +352,69 @@ describe("FeedbackBell — Send during in-flight open POST yields exactly one cl
       }),
     );
     expect(mockSubmitFeedbackCombined).not.toHaveBeenCalled();
+  });
+});
+
+describe("FeedbackBell — generation guard: re-open aborts previous in-flight POST (AC4)", () => {
+  it("re-clicking bell then icon while first open POST is still in-flight: stale result does NOT update feedbackId", async () => {
+    let resolveFirstOpen!: (value: { id: string }) => void;
+    let firstSignal: AbortSignal | undefined;
+    let callCount = 0;
+
+    mockOpenFeedback.mockImplementation((_payload, signal?: AbortSignal) => {
+      callCount++;
+      if (callCount === 1) {
+        firstSignal = signal;
+        return new Promise<{ id: string }>((resolve) => {
+          resolveFirstOpen = resolve;
+        });
+      }
+      return Promise.resolve({ id: "second-open-id" });
+    });
+
+    render(() => <FeedbackBell bell_location="card:gen-test" />);
+
+    const bell = screen.getByRole("button", { name: /Send feedback about/ });
+
+    fireEvent.click(bell);
+    fireEvent.click(screen.getByRole("button", { name: "Thumbs up" }));
+
+    await screen.findByText("Send feedback");
+
+    expect(firstSignal).toBeDefined();
+    expect(firstSignal!.aborted).toBe(false);
+
+    fireEvent.click(bell);
+    const thumbsDownBtns = screen.getAllByRole("button", { name: "Thumbs down" });
+    fireEvent.click(thumbsDownBtns[thumbsDownBtns.length - 1]);
+
+    await waitFor(() => {
+      expect(firstSignal!.aborted).toBe(true);
+    });
+
+    resolveFirstOpen({ id: "stale-open-id" });
+    await Promise.resolve();
+
+    await waitFor(() => {
+      expect(mockOpenFeedback).toHaveBeenCalledTimes(2);
+    });
+
+    const form = screen
+      .getByPlaceholderText("name@example.com")
+      .closest("form") as HTMLFormElement;
+    fireEvent.submit(form);
+
+    await waitFor(() => {
+      expect(mockSubmitFeedback).toHaveBeenCalledTimes(1);
+      expect(mockSubmitFeedback).toHaveBeenCalledWith(
+        "second-open-id",
+        expect.any(Object),
+      );
+    });
+
+    expect(mockSubmitFeedback).not.toHaveBeenCalledWith(
+      "stale-open-id",
+      expect.any(Object),
+    );
   });
 });
