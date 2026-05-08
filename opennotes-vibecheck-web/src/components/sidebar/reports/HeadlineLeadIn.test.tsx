@@ -151,7 +151,7 @@ describe("HeadlineLeadIn weather-column collapse", () => {
     ));
     const root = screen.getByTestId("headline-lead-in");
     const cls = root.getAttribute("class") ?? "";
-    expect(cls).toMatch(/lg:grid-cols-\[max-content_1fr\]/);
+    expect(cls).toMatch(/lg:grid-cols-\[minmax\(max-content,28rem\)_1fr\]/);
     expect(cls).not.toMatch(/1fr\)_minmax\(0,2fr/);
   });
 
@@ -164,7 +164,7 @@ describe("HeadlineLeadIn weather-column collapse", () => {
     ));
     const root = screen.getByTestId("headline-lead-in");
     const cls = root.getAttribute("class") ?? "";
-    expect(cls).toMatch(/lg:grid-cols-\[max-content_1fr\]/);
+    expect(cls).toMatch(/lg:grid-cols-\[minmax\(max-content,28rem\)_1fr\]/);
     expect(cls).not.toMatch(/1fr\)_minmax\(0,2fr/);
   });
 
@@ -177,7 +177,7 @@ describe("HeadlineLeadIn weather-column collapse", () => {
     ));
     const root = screen.getByTestId("headline-lead-in");
     const cls = root.getAttribute("class") ?? "";
-    expect(cls).not.toMatch(/lg:grid-cols-\[max-content_1fr\]/);
+    expect(cls).not.toMatch(/lg:grid-cols-\[minmax\(max-content,28rem\)_1fr\]/);
     expect(cls).toMatch(/\bgrid-cols-1\b/);
   });
 
@@ -210,8 +210,8 @@ describe("HeadlineLeadIn weather-column collapse", () => {
         ?.getAttribute("class") ?? "";
 
     expect(failureCls).not.toEqual(twoColCls);
-    expect(twoColCls).toMatch(/lg:grid-cols-\[max-content_1fr\]/);
-    expect(failureCls).not.toMatch(/lg:grid-cols-\[max-content_1fr\]/);
+    expect(twoColCls).toMatch(/lg:grid-cols-\[minmax\(max-content,28rem\)_1fr\]/);
+    expect(failureCls).not.toMatch(/lg:grid-cols-\[minmax\(max-content,28rem\)_1fr\]/);
   });
 
   it("does not pass the vestigial grid-cols-3 lg:grid-cols-1 class to WeatherReport", () => {
