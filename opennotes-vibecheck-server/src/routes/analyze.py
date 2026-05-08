@@ -40,7 +40,7 @@ from uuid import UUID
 import httpx
 from fastapi import APIRouter, Request, Response
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
@@ -56,6 +56,7 @@ from src.analyses.schemas import (
     SidebarPayload,
     UtteranceStreamType,
 )
+from src.analyses.synthesis._weather_schemas import WeatherReport
 from src.cache.scrape_cache import canonical_cache_key
 from src.config import Settings, get_settings
 from src.jobs import submit as submit_job
@@ -600,6 +601,78 @@ def _parse_sections(raw: Any) -> dict[SectionSlug, SectionSlot]:
 _NON_TERMINAL_STATUSES_POLL = frozenset({"pending", "extracting", "analyzing"})
 
 
+def _safe_validation_error_summary(exc: ValidationError) -> Any:
+    """Pydantic ValidationError.__str__ includes input_value snippets that
+    may contain user/article text from a stored sidebar section. Strip the
+    inputs before logging so warnings stay PII-clean."""
+    return exc.errors(include_input=False, include_url=False, include_context=False)
+
+
+def _validate_sidebar_payload_with_weather_salvage(
+    sidebar_raw: Any, *, job_id: Any
+) -> SidebarPayload | None:
+    """Validate a stored SidebarPayload, salvaging weather_report drift.
+
+    Stored payloads can outlive the schema that wrote them — e.g. TASK-1578
+    renamed TruthLabel values, and rows persisted before the schema.sql
+    migration ran (or with future label drift) carry weather_report shapes
+    that no longer round-trip through the current Pydantic models. Without
+    a salvage path, GET /api/analyze/{job_id} 500s for those jobs.
+
+    On ValidationError, retry once with weather_report stripped. If that
+    succeeds, return the salvaged payload (caller renders the sidebar
+    without a weather strip). If it still fails, return None so the route
+    degrades to the existing "no payload" branch instead of bubbling a 500.
+    """
+    try:
+        return SidebarPayload.model_validate(sidebar_raw)
+    except ValidationError as exc:
+        if isinstance(sidebar_raw, dict) and sidebar_raw.get("weather_report") is not None:
+            stripped = {**sidebar_raw, "weather_report": None}
+            try:
+                salvaged = SidebarPayload.model_validate(stripped)
+            except ValidationError as retry_exc:
+                logger.warning(
+                    "SidebarPayload validation failed even after stripping weather_report; dropping payload (job_id=%s): %s",
+                    job_id,
+                    _safe_validation_error_summary(retry_exc),
+                )
+                return None
+            logger.warning(
+                "SidebarPayload weather_report validation failed; stripping weather and continuing (job_id=%s): %s",
+                job_id,
+                _safe_validation_error_summary(exc),
+            )
+            return salvaged
+        logger.warning(
+            "SidebarPayload validation failed and no weather_report to strip; dropping payload (job_id=%s): %s",
+            job_id,
+            _safe_validation_error_summary(exc),
+        )
+        return None
+
+
+def _safe_weather_report_dict(weather_raw: Any, *, job_id: Any) -> Any:
+    """Pre-validate the standalone vibecheck_jobs.weather_report column for
+    the non-terminal in-flight assembly path. assemble_sidebar_payload
+    calls WeatherReport.model_validate directly; legacy/invalid labels
+    would otherwise 500 polls of pending/extracting/analyzing jobs that
+    happen to have at least one DONE section."""
+    if weather_raw is None:
+        return None
+    decoded = json.loads(weather_raw) if isinstance(weather_raw, str) else weather_raw
+    try:
+        WeatherReport.model_validate(decoded)
+    except ValidationError as exc:
+        logger.warning(
+            "in-flight weather_report failed validation; dropping (job_id=%s): %s",
+            job_id,
+            _safe_validation_error_summary(exc),
+        )
+        return None
+    return decoded
+
+
 def _row_to_job_state(row: Any) -> JobState:
     status = JobStatus(row["status"])
     source_type = row.get("source_type", "url")
@@ -611,10 +684,14 @@ def _row_to_job_state(row: Any) -> JobState:
     sections = _parse_sections(row["sections"])
     sidebar_raw = None if is_non_terminal else _parse_jsonb(row["sidebar_payload"])
     if status in {JobStatus.DONE, JobStatus.PARTIAL} and sidebar_raw is not None:
-        sidebar_payload = SidebarPayload.model_validate(sidebar_raw)
-        sidebar_payload_complete = True
+        sidebar_payload = _validate_sidebar_payload_with_weather_salvage(
+            sidebar_raw, job_id=row["job_id"]
+        )
+        sidebar_payload_complete = sidebar_payload is not None
     elif not is_non_terminal and sidebar_raw is not None:
-        sidebar_payload = SidebarPayload.model_validate(sidebar_raw)
+        sidebar_payload = _validate_sidebar_payload_with_weather_salvage(
+            sidebar_raw, job_id=row["job_id"]
+        )
         sidebar_payload_complete = False
     elif is_non_terminal and any(
         slot.state == SectionState.DONE and slot.data is not None for slot in sections.values()
@@ -624,7 +701,9 @@ def _row_to_job_state(row: Any) -> JobState:
             sections,
             safety_recommendation=row.get("safety_recommendation", None),
             headline_summary=row.get("headline_summary", None),
-            weather_report=row.get("weather_report", None),
+            weather_report=_safe_weather_report_dict(
+                row.get("weather_report", None), job_id=row["job_id"]
+            ),
             utterances=[],
             page_title=row.get("page_title", None),
             page_kind=PageKind(row["page_kind"]) if row.get("page_kind", None) else PageKind.OTHER,
