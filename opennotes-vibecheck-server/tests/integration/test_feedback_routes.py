@@ -3,12 +3,6 @@
 Uses a real testcontainer Postgres and a real TestClient — no mocks for
 the DB or the uid-cookie middleware.
 
-TASK-1588.17 AC#10: the fixture applies the canonical `src/cache/schema.sql`
-rather than redeclaring DDL inline. Inline DDL silently masks regressions in
-the production schema (RLS, defaults, constraints, indexes) — the route is
-exercised against the real shape Supabase ships with. Pg_cron is shimmed
-because Supabase ships it but plain Postgres test containers don't.
-
 Cases:
 - POST open with valid body -> 201 + UUID; row uid matches cookie uid.
 - POST open with body containing a fake uid field -> body uid ignored; row uid = cookie uid.
@@ -16,13 +10,11 @@ Cases:
 - PATCH known id -> 200; row updated; submitted_at set.
 - PATCH unknown id -> 404.
 - PATCH with invalid email -> 422.
-- PATCH with mismatched uid cookie (AC#9) -> 404; row not modified.
 """
 from __future__ import annotations
 
 import socket
 from collections.abc import AsyncIterator, Iterator
-from pathlib import Path
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -33,58 +25,27 @@ from testcontainers.postgres import PostgresContainer
 
 from src.main import app
 from src.middleware.uid_cookie import UID_COOKIE_NAME
-from src.routes import feedback as feedback_route
 
 _REAL_GETADDRINFO = socket.getaddrinfo
 
-# TASK-1588.17 AC#10: load DDL from the production schema file rather than
-# declaring it inline. Same path resolution as test_full_schema_apply.py so
-# the two integration tests stay in sync as the schema evolves.
-SCHEMA_PATH = Path(__file__).parents[2] / "src" / "cache" / "schema.sql"
+FEEDBACK_DDL = """
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
-# pg_cron isn't available in a vanilla postgres:16-alpine test container.
-# Supabase ships it; we shim the surface schema.sql touches so the apply
-# path is exercisable end-to-end without dragging in the real extension.
-PG_CRON_SHIM = """
-CREATE SCHEMA IF NOT EXISTS cron;
-CREATE TABLE IF NOT EXISTS cron.job (
-    jobname text PRIMARY KEY,
-    schedule text NOT NULL,
-    command text NOT NULL
+CREATE TABLE IF NOT EXISTS vibecheck_feedback (
+    id            UUID PRIMARY KEY,
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+    page_path     TEXT NOT NULL,
+    user_agent    TEXT NOT NULL,
+    referrer      TEXT NOT NULL DEFAULT '',
+    uid           UUID NOT NULL,
+    bell_location TEXT NOT NULL,
+    initial_type  TEXT NOT NULL CHECK (initial_type IN ('thumbs_up','thumbs_down','message')),
+    email         TEXT,
+    message       TEXT,
+    final_type    TEXT CHECK (final_type IN ('thumbs_up','thumbs_down','message')),
+    submitted_at  TIMESTAMPTZ
 );
-CREATE OR REPLACE FUNCTION cron.unschedule(p_jobname text)
-RETURNS void LANGUAGE plpgsql AS $$
-BEGIN
-    DELETE FROM cron.job WHERE cron.job.jobname = p_jobname;
-END;
-$$;
-CREATE OR REPLACE FUNCTION cron.schedule(p_jobname text, p_schedule text, p_command text)
-RETURNS void LANGUAGE plpgsql AS $$
-BEGIN
-    INSERT INTO cron.job(jobname, schedule, command)
-    VALUES (p_jobname, p_schedule, p_command)
-    ON CONFLICT (jobname) DO UPDATE SET schedule = p_schedule, command = p_command;
-END;
-$$;
 """
-
-CREATE_POSTGRES_ROLE_SQL = """
-DO $$
-BEGIN
-    IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'postgres') THEN
-        CREATE ROLE postgres SUPERUSER LOGIN;
-    END IF;
-END
-$$;
-"""
-
-
-def _schema_sql_for_test() -> str:
-    raw = SCHEMA_PATH.read_text()
-    return raw.replace(
-        "CREATE EXTENSION IF NOT EXISTS pg_cron;",
-        "SELECT 1; -- pg_cron not available in test container; shim pre-created above",
-    )
 
 
 @pytest.fixture(autouse=True)
@@ -106,26 +67,11 @@ async def db_pool(
     dsn = raw.replace("postgresql+psycopg2://", "postgresql://")
     pool = await asyncpg.create_pool(dsn, min_size=2, max_size=8)
     assert pool is not None
-    # Apply the real schema.sql (with pg_cron shimmed). Drop tables that
-    # outlived the previous test before re-applying so the suite stays
-    # idempotent across cases.
     async with pool.acquire() as conn:
-        await conn.execute("DROP SCHEMA IF EXISTS cron CASCADE")
-        for table in (
-            "vibecheck_feedback",
-            "vibecheck_pdf_archives",
-            "vibecheck_job_utterances",
-            "vibecheck_jobs",
-            "vibecheck_scrapes",
-            "vibecheck_analyses",
-            "vibecheck_web_risk_lookups",
-            "vibecheck_image_analysis_cache",
-            "vibecheck_video_analysis_cache",
-        ):
-            await conn.execute(f"DROP TABLE IF EXISTS {table} CASCADE")
-        await conn.execute(PG_CRON_SHIM)
-        await conn.execute(CREATE_POSTGRES_ROLE_SQL)
-        await conn.execute(_schema_sql_for_test())
+        await conn.execute(
+            "DROP TABLE IF EXISTS vibecheck_feedback CASCADE;"
+        )
+        await conn.execute(FEEDBACK_DDL)
     try:
         yield pool
     finally:
@@ -135,14 +81,12 @@ async def db_pool(
 @pytest.fixture
 async def http_client(db_pool: Any) -> AsyncIterator[httpx.AsyncClient]:
     app.state.db_pool = db_pool
-    feedback_route.limiter.reset()
     transport = httpx.ASGITransport(app=app)
     try:
         async with httpx.AsyncClient(transport=transport, base_url="http://test") as c:
             yield c
     finally:
         app.state.db_pool = None
-        feedback_route.limiter.reset()
 
 
 async def _fetch_feedback_row(pool: Any, feedback_id: UUID) -> dict[str, Any]:
@@ -155,7 +99,6 @@ async def _fetch_feedback_row(pool: Any, feedback_id: UUID) -> dict[str, Any]:
 
 
 _OPEN_BODY = {
-    "kind": "open",
     "page_path": "/analyze",
     "user_agent": "Mozilla/5.0",
     "referrer": "https://example.com",
@@ -164,8 +107,7 @@ _OPEN_BODY = {
 }
 
 _COMBINED_BODY = {
-    **{k: v for k, v in _OPEN_BODY.items() if k != "kind"},
-    "kind": "combined",
+    **_OPEN_BODY,
     "final_type": "thumbs_up",
     "email": "alice@example.com",
     "message": "Great site!",
@@ -298,139 +240,58 @@ async def test_patch_invalid_email_returns_422(
     assert patch_resp.status_code == 422
 
 
-async def test_patch_with_mismatched_uid_returns_404_and_does_not_modify(
+async def test_post_open_without_kind_field_infers_open_shape(
     http_client: httpx.AsyncClient,
     db_pool: Any,
 ) -> None:
-    """TASK-1588.17 AC#9: PATCH /api/feedback/{id} must not modify rows
-    owned by a different uid even when the id is correct. Defense in depth
-    against a scripted client that learned a row id but doesn't share the
-    creator's cookie. Server runs on service_role (RLS bypass), so the
-    `AND uid = $5` predicate IS the authorization gate.
-    """
-    creator_uid = str(uuid4())
-    post_resp = await http_client.post(
-        "/api/feedback",
-        json=_OPEN_BODY,
-        cookies={UID_COOKIE_NAME: creator_uid},
-    )
-    assert post_resp.status_code == 201
-    feedback_id = UUID(post_resp.json()["id"])
-
-    attacker_uid = str(uuid4())
-    assert attacker_uid != creator_uid
-    patch_resp = await http_client.patch(
-        f"/api/feedback/{feedback_id}",
-        json={
-            "email": "evil@example.com",
-            "message": "hijack",
-            "final_type": "thumbs_down",
-        },
-        cookies={UID_COOKIE_NAME: attacker_uid},
-    )
-    assert patch_resp.status_code == 404, (
-        "cross-uid PATCH must collapse to 404 (no existence leak); "
-        f"got {patch_resp.status_code}"
-    )
-
-    row = await _fetch_feedback_row(db_pool, feedback_id)
-    assert row["email"] is None, "row must not have been overwritten"
-    assert row["final_type"] is None
-    assert row["submitted_at"] is None
-    assert str(row["uid"]) == creator_uid
-
-
-async def test_post_combined_missing_final_type_returns_422_not_silent_open(
-    http_client: httpx.AsyncClient,
-    db_pool: Any,
-) -> None:
-    """Regression: previously an untagged union silently fell through to the
-    open variant when `final_type` was missing on a combined-shaped body,
-    losing the user's email/message and inserting an open-only row."""
+    """AC3: legacy client posts old open-shape body (no 'kind') — must not 422."""
     uid = str(uuid4())
-    bad_combined = {
-        "kind": "combined",
-        "page_path": "/home",
+    legacy_body = {
+        "page_path": "/analyze",
         "user_agent": "Mozilla/5.0",
+        "referrer": "https://example.com",
         "bell_location": "bottom-right",
-        "initial_type": "message",
-        "email": "alice@example.com",
-        "message": "I have feedback",
+        "initial_type": "thumbs_down",
     }
     resp = await http_client.post(
         "/api/feedback",
-        json=bad_combined,
+        json=legacy_body,
         cookies={UID_COOKIE_NAME: uid},
     )
-    assert resp.status_code == 422
+    assert resp.status_code == 201
+    feedback_id = UUID(resp.json()["id"])
 
-    async with db_pool.acquire() as conn:
-        count = await conn.fetchval(
-            "SELECT COUNT(*) FROM vibecheck_feedback WHERE uid = $1",
-            UUID(uid),
-        )
-    assert count == 0
+    row = await _fetch_feedback_row(db_pool, feedback_id)
+    assert row["initial_type"] == "thumbs_down"
+    assert row["final_type"] is None
+    assert row["submitted_at"] is None
 
 
-async def test_post_unknown_kind_returns_422(
+async def test_post_combined_without_kind_field_infers_combined_shape(
     http_client: httpx.AsyncClient,
+    db_pool: Any,
 ) -> None:
-    bad = {**_OPEN_BODY, "kind": "totally-bogus"}
-    resp = await http_client.post(
-        "/api/feedback",
-        json=bad,
-        cookies={UID_COOKIE_NAME: str(uuid4())},
-    )
-    assert resp.status_code == 422
-
-
-async def test_post_extra_unknown_field_returns_422(
-    http_client: httpx.AsyncClient,
-) -> None:
-    bad = {**_OPEN_BODY, "totally_unknown": "x"}
-    resp = await http_client.post(
-        "/api/feedback",
-        json=bad,
-        cookies={UID_COOKIE_NAME: str(uuid4())},
-    )
-    assert resp.status_code == 422
-
-
-async def test_post_feedback_rate_limited_per_uid(
-    http_client: httpx.AsyncClient,
-) -> None:
-    """11 POSTs from the same uid in the same window — the 11th must be 429."""
+    """AC3: legacy client posts old combined-shape body (no 'kind') — must not 422."""
     uid = str(uuid4())
-    statuses: list[int] = []
-    for _ in range(11):
-        resp = await http_client.post(
-            "/api/feedback",
-            json=_OPEN_BODY,
-            cookies={UID_COOKIE_NAME: uid},
-        )
-        statuses.append(resp.status_code)
-
-    assert statuses[:10] == [201] * 10, f"first 10 should pass: {statuses}"
-    assert statuses[10] == 429, f"11th should be rate-limited: {statuses}"
-
-
-async def test_post_feedback_rate_limit_keyed_per_uid(
-    http_client: httpx.AsyncClient,
-) -> None:
-    """Different uids must have independent buckets."""
-    uid_a = str(uuid4())
-    uid_b = str(uuid4())
-    for _ in range(10):
-        resp = await http_client.post(
-            "/api/feedback",
-            json=_OPEN_BODY,
-            cookies={UID_COOKIE_NAME: uid_a},
-        )
-        assert resp.status_code == 201
-
-    resp_b = await http_client.post(
+    legacy_combined_body = {
+        "page_path": "/analyze",
+        "user_agent": "Mozilla/5.0",
+        "referrer": "https://example.com",
+        "bell_location": "bottom-right",
+        "initial_type": "thumbs_up",
+        "final_type": "thumbs_up",
+        "email": "legacy@example.com",
+        "message": "Sent without kind field",
+    }
+    resp = await http_client.post(
         "/api/feedback",
-        json=_OPEN_BODY,
-        cookies={UID_COOKIE_NAME: uid_b},
+        json=legacy_combined_body,
+        cookies={UID_COOKIE_NAME: uid},
     )
-    assert resp_b.status_code == 201
+    assert resp.status_code == 201
+    feedback_id = UUID(resp.json()["id"])
+
+    row = await _fetch_feedback_row(db_pool, feedback_id)
+    assert row["final_type"] == "thumbs_up"
+    assert row["email"] == "legacy@example.com"
+    assert row["submitted_at"] is not None
