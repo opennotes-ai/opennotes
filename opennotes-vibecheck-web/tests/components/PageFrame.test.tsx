@@ -553,6 +553,76 @@ describe("<PageFrame />", () => {
     expect((iframe as unknown as { inert: boolean }).inert).toBe(true);
     expect(iframe.getAttribute("aria-hidden")).toBe("true");
   });
+
+  it("shows the archived loading overlay immediately on mount before the archived iframe loads (TASK-1591.01)", () => {
+    render(() => (
+      <PageFrame
+        url="https://example.com/article"
+        canIframe={true}
+        previewMode="archived"
+        archivedPreviewUrl="/archive"
+        screenshotUrl={null}
+      />
+    ));
+
+    const overlay = screen.getByTestId("page-frame-archived-loading");
+    expect(overlay).not.toBeNull();
+    expect(overlay.getAttribute("role")).toBe("status");
+    expect(overlay.getAttribute("aria-live")).toBe("polite");
+    expect(overlay.textContent).toMatch(/Loading archived version/);
+  });
+
+  it("removes the archived loading overlay once the archived iframe loads successfully (TASK-1591.01)", async () => {
+    render(() => (
+      <PageFrame
+        url="https://example.com/article"
+        canIframe={true}
+        previewMode="archived"
+        archivedPreviewUrl="/archive"
+        screenshotUrl={null}
+      />
+    ));
+
+    expect(screen.getByTestId("page-frame-archived-loading")).not.toBeNull();
+
+    const archived = screen.getByTestId(
+      "page-frame-archived-iframe",
+    ) as HTMLIFrameElement;
+    const restore = stubContentDocument(archived, {
+      body: { children: [{}], textContent: "Archived content" },
+      title: "Archived",
+    });
+    archived.dispatchEvent(new Event("load"));
+
+    await waitFor(() => {
+      expect(screen.queryByTestId("page-frame-archived-loading")).toBeNull();
+    });
+    expect(screen.getByTestId("page-frame-archived-iframe")).not.toBeNull();
+    restore();
+  });
+
+  it("removes the archived loading overlay when the archived iframe errors (TASK-1591.01)", async () => {
+    render(() => (
+      <PageFrame
+        url="https://example.com/article"
+        canIframe={true}
+        previewMode="archived"
+        archivedPreviewUrl="/archive"
+        screenshotUrl="https://cdn.example.com/shot.png"
+      />
+    ));
+
+    expect(screen.getByTestId("page-frame-archived-loading")).not.toBeNull();
+
+    const archived = screen.getByTestId(
+      "page-frame-archived-iframe",
+    ) as HTMLIFrameElement;
+    archived.dispatchEvent(new Event("error"));
+
+    await waitFor(() => {
+      expect(screen.queryByTestId("page-frame-archived-loading")).toBeNull();
+    });
+  });
 });
 
 describe("countdown interstitial (TASK-1495.07 + TASK-1483.13.02 escape hatch)", () => {

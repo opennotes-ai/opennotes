@@ -346,18 +346,30 @@ export default function PageFrame(props: PageFrameProps) {
       </Show>
 
       <Show when={showArchived()}>
-        <iframe
-          data-testid="page-frame-archived-iframe"
-          src={props.archivedPreviewUrl ?? ""}
-          title="Archived page"
-          sandbox="allow-same-origin"
-          referrerpolicy="no-referrer"
-          loading="lazy"
-          ref={archivedIframeRef}
-          onLoad={handleArchivedLoad}
-          onError={handleArchivedError}
-          class="h-full min-h-[60vh] w-full flex-1 border-0 bg-background"
-        />
+        <div class="relative flex h-full min-h-[60vh] w-full min-w-0 flex-1 flex-col">
+          <iframe
+            data-testid="page-frame-archived-iframe"
+            src={props.archivedPreviewUrl ?? ""}
+            title="Archived page"
+            sandbox="allow-same-origin"
+            referrerpolicy="no-referrer"
+            loading="lazy"
+            ref={archivedIframeRef}
+            onLoad={handleArchivedLoad}
+            onError={handleArchivedError}
+            class="h-full min-h-[60vh] w-full flex-1 border-0 bg-background"
+          />
+          <Show when={!archivedLoaded() && !archivedFailed()}>
+            <div
+              data-testid="page-frame-archived-loading"
+              role="status"
+              aria-live="polite"
+              class="absolute inset-0 flex items-center justify-center bg-background/80 backdrop-blur-sm"
+            >
+              <p class="text-sm text-muted-foreground">Loading archived version&hellip;</p>
+            </div>
+          </Show>
+        </div>
       </Show>
 
       <Show when={showScreenshot()}>
