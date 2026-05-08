@@ -73,6 +73,20 @@ describe("TrendsOppositionsReport", () => {
     expect(screen.getByText("2 clusters")).toBeDefined();
   });
 
+  it("renders skipped cluster count when the analyzer cap omits clusters", () => {
+    render(() => (
+      <TrendsOppositionsReport
+        report={makeReport({
+          trends: [makeTrend()],
+          oppositions: [],
+          skipped_for_cap: 2,
+        })}
+      />
+    ));
+
+    expect(screen.getByText("2 more not analyzed")).toBeDefined();
+  });
+
   it("renders singular cluster label correctly", () => {
     render(() => (
       <TrendsOppositionsReport

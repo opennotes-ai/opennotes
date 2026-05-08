@@ -80,9 +80,15 @@ async def extract_trends_oppositions(
     clusters: list[DedupedClaim],
     *,
     settings: Settings | None = None,
-    max_clusters: int = 50,
+    max_clusters: int | None = None,
 ) -> TrendsOppositionsReport:
     """Build opinion trends/oppositions from deduped claim clusters."""
+    settings = settings or get_settings()
+    configured_max_clusters = (
+        settings.VIBECHECK_TRENDS_OPPOSITIONS_MAX_CLUSTERS
+        if max_clusters is None
+        else max_clusters
+    )
     filtered = [
         cluster
         for cluster in clusters
@@ -90,7 +96,7 @@ async def extract_trends_oppositions(
     ]
     filtered.sort(key=lambda c: c.occurrence_count, reverse=True)
 
-    capping_window = max(max_clusters, 0)
+    capping_window = max(configured_max_clusters, 0)
     capped = filtered[:capping_window]
 
     if not capped:
@@ -98,7 +104,6 @@ async def extract_trends_oppositions(
         empty.skipped_for_cap = max(0, len(filtered) - len(capped))
         return empty
 
-    settings = settings or get_settings()
     prompt = _format_prompt(capped)
     agent = build_agent(
         settings,

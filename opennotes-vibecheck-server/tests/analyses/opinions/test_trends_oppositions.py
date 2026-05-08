@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import Any
 
 import pytest
@@ -8,42 +7,27 @@ import pytest
 from src.analyses.claims._claims_schemas import ClaimCategory, DedupedClaim
 from src.analyses.opinions import trends_oppositions as trends_oppositions_module
 from src.analyses.opinions._trends_schemas import TrendsOppositionsReport
+from src.analyses.opinions.trends_oppositions_testing import (
+    OppositionLLMForTest,
+    TrendLLMForTest,
+    TrendsOppositionsLLMForTest,
+)
+from src.config import Settings
 
 
-@dataclass
 class _FakeRunResult:
-    output: Any
-
-
-@dataclass
-class _TrendLLM:
-    label: str
-    cluster_indices: list[int]
-    summary: str
-
-
-@dataclass
-class _OppositionLLM:
-    topic: str
-    supporting_cluster_indices: list[int]
-    opposing_cluster_indices: list[int]
-    note: str | None = None
-
-
-@dataclass
-class _TrendsOppositionsLLM:
-    trends: list[_TrendLLM]
-    oppositions: list[_OppositionLLM]
+    def __init__(self, output: Any) -> None:
+        self.output = output
 
 
 class _ScriptedAgent:
     def __init__(
         self,
-        responses_by_prompt: dict[str, _TrendsOppositionsLLM],
-        default: _TrendsOppositionsLLM | None = None,
+        responses_by_prompt: dict[str, TrendsOppositionsLLMForTest],
+        default: TrendsOppositionsLLMForTest | None = None,
     ) -> None:
         self._responses_by_prompt = responses_by_prompt
-        self._default = default or _TrendsOppositionsLLM(trends=[], oppositions=[])
+        self._default = default or TrendsOppositionsLLMForTest(trends=[], oppositions=[])
         self.calls: list[str] = []
 
     async def run(self, prompt: str) -> _FakeRunResult:
@@ -78,7 +62,7 @@ async def test_extract_trends_oppositions_empty_input_no_llm_calls(
 ) -> None:
     scripted = _ScriptedAgent(
         {
-            "unused": _TrendsOppositionsLLM(
+            "unused": TrendsOppositionsLLMForTest(
                 trends=[],
                 oppositions=[],
             )
@@ -117,10 +101,10 @@ async def test_extract_trends_oppositions_detects_opposition_pairs(
 
     scripted = _ScriptedAgent(
         {
-            "We should raise wealth taxes": _TrendsOppositionsLLM(
+            "We should raise wealth taxes": TrendsOppositionsLLMForTest(
                 trends=[],
                 oppositions=[
-                    _OppositionLLM(
+                    OppositionLLMForTest(
                         topic="Wealth-tax policy",
                         supporting_cluster_indices=[0],
                         opposing_cluster_indices=[1],
@@ -167,9 +151,9 @@ async def test_extract_trends_oppositions_extracts_recurring_trends(
 
     scripted = _ScriptedAgent(
         {
-            "Analyze the opinion clusters": _TrendsOppositionsLLM(
+            "Analyze the opinion clusters": TrendsOppositionsLLMForTest(
                 trends=[
-                    _TrendLLM(
+                    TrendLLMForTest(
                         label="Rising healthcare-cost concerns",
                         cluster_indices=[0, 2],
                         summary="Multiple clusters repeatedly mention healthcare spending pain points.",
@@ -206,7 +190,7 @@ async def test_extract_trends_oppositions_capting_limits_prompt_and_counts(
 
     scripted = _ScriptedAgent(
         {
-            "topic-00": _TrendsOppositionsLLM(trends=[], oppositions=[]),
+            "topic-00": TrendsOppositionsLLMForTest(trends=[], oppositions=[]),
         }
     )
     monkeypatch.setattr(trends_oppositions_module, "build_agent", lambda *args, **kwargs: scripted)
@@ -221,6 +205,40 @@ async def test_extract_trends_oppositions_capting_limits_prompt_and_counts(
     assert "topic-49" in prompt
     assert "topic-50" not in prompt
     assert "topic-59" not in prompt
+
+
+async def test_extract_trends_oppositions_uses_settings_cluster_cap(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    clusters = [
+        _cluster(
+            f"settings-topic-{i}",
+            category=ClaimCategory.SUBJECTIVE,
+            occurrence_count=10 - i,
+        )
+        for i in range(3)
+    ]
+
+    scripted = _ScriptedAgent(
+        {
+            "settings-topic-0": TrendsOppositionsLLMForTest(
+                trends=[],
+                oppositions=[],
+            ),
+        }
+    )
+    monkeypatch.setattr(trends_oppositions_module, "build_agent", lambda *args, **kwargs: scripted)
+
+    report = await trends_oppositions_module.extract_trends_oppositions(
+        clusters,
+        settings=Settings(VIBECHECK_TRENDS_OPPOSITIONS_MAX_CLUSTERS=1),
+    )
+
+    assert report.input_cluster_count == 1
+    assert report.skipped_for_cap == 2
+    assert scripted.calls
+    assert "settings-topic-0" in scripted.calls[0]
+    assert "settings-topic-1" not in scripted.calls[0]
 
 
 async def test_extract_trends_oppositions_filters_to_subjective_and_self_claims(
@@ -282,16 +300,16 @@ async def test_extract_trends_oppositions_ignores_out_of_range_indices(
 
     scripted = _ScriptedAgent(
         {
-            "The policy is fair": _TrendsOppositionsLLM(
+            "The policy is fair": TrendsOppositionsLLMForTest(
                 trends=[
-                    _TrendLLM(
+                    TrendLLMForTest(
                         label="Mismatched indexing",
                         cluster_indices=[0, 7],
                         summary="One valid and one dropped index.",
                     )
                 ],
                 oppositions=[
-                    _OppositionLLM(
+                    OppositionLLMForTest(
                         topic="Mismatched indices",
                         supporting_cluster_indices=[3],
                         opposing_cluster_indices=[-1],
