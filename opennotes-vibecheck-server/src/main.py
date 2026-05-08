@@ -10,7 +10,7 @@ from src.analyses.synthesis._weather_schemas import _normalize_weather_schema_na
 from src.auth.cloud_tasks_oidc import verify_cloud_tasks_oidc
 from src.middleware import UidCookieMiddleware
 from src.monitoring import get_logger
-from src.routes import _schema_anchor, analyze, analyze_pdf, frame, internal_jobs, scrape
+from src.routes import _schema_anchor, analyze, analyze_pdf, feedback, frame, internal_jobs, scrape
 from src.startup import lifespan
 
 logger = get_logger(__name__)
@@ -20,11 +20,12 @@ app.state.limiter = analyze.limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)  # pyright: ignore[reportArgumentType]
 app.add_middleware(SlowAPIMiddleware)
 app.add_middleware(UidCookieMiddleware)
-app.include_router(frame.router)
 app.include_router(analyze.router)
-app.include_router(scrape.router)
 app.include_router(analyze_pdf.router)
+app.include_router(feedback.router)
+app.include_router(frame.router)
 app.include_router(internal_jobs.router)
+app.include_router(scrape.router)
 app.include_router(_schema_anchor.router)
 
 _original_openapi = app.openapi
