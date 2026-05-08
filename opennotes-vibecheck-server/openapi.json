@@ -245,10 +245,10 @@
               "schema": {
                 "anyOf": [
                   {
-                    "$ref": "#/components/schemas/FeedbackCombinedRequest"
+                    "$ref": "#/components/schemas/FeedbackOpenRequest"
                   },
                   {
-                    "$ref": "#/components/schemas/FeedbackOpenRequest"
+                    "$ref": "#/components/schemas/FeedbackCombinedRequest"
                   }
                 ],
                 "title": "Payload"
@@ -1234,6 +1234,12 @@
       },
       "FeedbackCombinedRequest": {
         "properties": {
+          "kind": {
+            "type": "string",
+            "const": "combined",
+            "title": "Kind",
+            "default": "combined"
+          },
           "page_path": {
             "type": "string",
             "title": "Page Path"
@@ -1275,7 +1281,8 @@
           "message": {
             "anyOf": [
               {
-                "type": "string"
+                "type": "string",
+                "maxLength": 4000
               },
               {
                 "type": "null"
@@ -1293,6 +1300,7 @@
             "title": "Final Type"
           }
         },
+        "additionalProperties": false,
         "type": "object",
         "required": [
           "page_path",
@@ -1305,6 +1313,12 @@
       },
       "FeedbackOpenRequest": {
         "properties": {
+          "kind": {
+            "type": "string",
+            "const": "open",
+            "title": "Kind",
+            "default": "open"
+          },
           "page_path": {
             "type": "string",
             "title": "Page Path"
@@ -1332,6 +1346,7 @@
             "title": "Initial Type"
           }
         },
+        "additionalProperties": false,
         "type": "object",
         "required": [
           "page_path",
@@ -1372,7 +1387,8 @@
           "message": {
             "anyOf": [
               {
-                "type": "string"
+                "type": "string",
+                "maxLength": 4000
               },
               {
                 "type": "null"
@@ -1390,6 +1406,7 @@
             "title": "Final Type"
           }
         },
+        "additionalProperties": false,
         "type": "object",
         "required": [
           "final_type"

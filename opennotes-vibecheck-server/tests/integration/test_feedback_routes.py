@@ -25,6 +25,7 @@ from testcontainers.postgres import PostgresContainer
 
 from src.main import app
 from src.middleware.uid_cookie import UID_COOKIE_NAME
+from src.routes import feedback as feedback_route
 
 _REAL_GETADDRINFO = socket.getaddrinfo
 
@@ -81,12 +82,14 @@ async def db_pool(
 @pytest.fixture
 async def http_client(db_pool: Any) -> AsyncIterator[httpx.AsyncClient]:
     app.state.db_pool = db_pool
+    feedback_route.limiter.reset()
     transport = httpx.ASGITransport(app=app)
     try:
         async with httpx.AsyncClient(transport=transport, base_url="http://test") as c:
             yield c
     finally:
         app.state.db_pool = None
+        feedback_route.limiter.reset()
 
 
 async def _fetch_feedback_row(pool: Any, feedback_id: UUID) -> dict[str, Any]:
@@ -99,6 +102,7 @@ async def _fetch_feedback_row(pool: Any, feedback_id: UUID) -> dict[str, Any]:
 
 
 _OPEN_BODY = {
+    "kind": "open",
     "page_path": "/analyze",
     "user_agent": "Mozilla/5.0",
     "referrer": "https://example.com",
@@ -107,7 +111,8 @@ _OPEN_BODY = {
 }
 
 _COMBINED_BODY = {
-    **_OPEN_BODY,
+    **{k: v for k, v in _OPEN_BODY.items() if k != "kind"},
+    "kind": "combined",
     "final_type": "thumbs_up",
     "email": "alice@example.com",
     "message": "Great site!",
@@ -238,3 +243,99 @@ async def test_patch_invalid_email_returns_422(
         cookies={UID_COOKIE_NAME: uid},
     )
     assert patch_resp.status_code == 422
+
+
+async def test_post_combined_missing_final_type_returns_422_not_silent_open(
+    http_client: httpx.AsyncClient,
+    db_pool: Any,
+) -> None:
+    """Regression: previously an untagged union silently fell through to the
+    open variant when `final_type` was missing on a combined-shaped body,
+    losing the user's email/message and inserting an open-only row."""
+    uid = str(uuid4())
+    bad_combined = {
+        "kind": "combined",
+        "page_path": "/home",
+        "user_agent": "Mozilla/5.0",
+        "bell_location": "bottom-right",
+        "initial_type": "message",
+        "email": "alice@example.com",
+        "message": "I have feedback",
+    }
+    resp = await http_client.post(
+        "/api/feedback",
+        json=bad_combined,
+        cookies={UID_COOKIE_NAME: uid},
+    )
+    assert resp.status_code == 422
+
+    async with db_pool.acquire() as conn:
+        count = await conn.fetchval(
+            "SELECT COUNT(*) FROM vibecheck_feedback WHERE uid = $1",
+            UUID(uid),
+        )
+    assert count == 0
+
+
+async def test_post_unknown_kind_returns_422(
+    http_client: httpx.AsyncClient,
+) -> None:
+    bad = {**_OPEN_BODY, "kind": "totally-bogus"}
+    resp = await http_client.post(
+        "/api/feedback",
+        json=bad,
+        cookies={UID_COOKIE_NAME: str(uuid4())},
+    )
+    assert resp.status_code == 422
+
+
+async def test_post_extra_unknown_field_returns_422(
+    http_client: httpx.AsyncClient,
+) -> None:
+    bad = {**_OPEN_BODY, "totally_unknown": "x"}
+    resp = await http_client.post(
+        "/api/feedback",
+        json=bad,
+        cookies={UID_COOKIE_NAME: str(uuid4())},
+    )
+    assert resp.status_code == 422
+
+
+async def test_post_feedback_rate_limited_per_uid(
+    http_client: httpx.AsyncClient,
+) -> None:
+    """11 POSTs from the same uid in the same window — the 11th must be 429."""
+    uid = str(uuid4())
+    statuses: list[int] = []
+    for _ in range(11):
+        resp = await http_client.post(
+            "/api/feedback",
+            json=_OPEN_BODY,
+            cookies={UID_COOKIE_NAME: uid},
+        )
+        statuses.append(resp.status_code)
+
+    assert statuses[:10] == [201] * 10, f"first 10 should pass: {statuses}"
+    assert statuses[10] == 429, f"11th should be rate-limited: {statuses}"
+
+
+async def test_post_feedback_rate_limit_keyed_per_uid(
+    http_client: httpx.AsyncClient,
+) -> None:
+    """Different uids must have independent buckets."""
+    uid_a = str(uuid4())
+    uid_b = str(uuid4())
+    for _ in range(10):
+        resp = await http_client.post(
+            "/api/feedback",
+            json=_OPEN_BODY,
+            cookies={UID_COOKIE_NAME: uid_a},
+        )
+        assert resp.status_code == 201
+
+    resp_b = await http_client.post(
+        "/api/feedback",
+        json=_OPEN_BODY,
+        cookies={UID_COOKIE_NAME: uid_b},
+    )
+    assert resp_b.status_code == 201

@@ -1,17 +1,32 @@
 from uuid import UUID
 
 import uuid_utils
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Body, HTTPException, Request
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 
 from src.middleware.uid_cookie import get_uid
 from src.routes.feedback_models import (
     FeedbackCombinedRequest,
-    FeedbackOpenRequest,
     FeedbackOpenResponse,
+    FeedbackRequest,
     FeedbackSubmitRequest,
 )
 
 router = APIRouter(prefix="/api", tags=["feedback"])
+
+
+def _uid_or_ip_key(request: Request) -> str:
+    uid = getattr(request.state, "uid", None)
+    if uid is not None:
+        return f"uid:{uid}"
+    return f"ip:{get_remote_address(request)}"
+
+
+limiter = Limiter(key_func=_uid_or_ip_key)
+
+_POST_LIMIT = "10/hour"
+_PATCH_LIMIT = "30/hour"
 
 
 def _get_db_pool(request: Request):
@@ -22,15 +37,17 @@ def _get_db_pool(request: Request):
 
 
 @router.post("/feedback", response_model=FeedbackOpenResponse, status_code=201)
+@limiter.limit(_POST_LIMIT)
 async def open_or_combined_feedback(
-    payload: FeedbackCombinedRequest | FeedbackOpenRequest,
     request: Request,
+    payload: FeedbackRequest = Body(...),
 ) -> FeedbackOpenResponse:
     uid = get_uid(request)
     feedback_id = UUID(str(uuid_utils.uuid7()))
     pool = _get_db_pool(request)
 
-    if isinstance(payload, FeedbackCombinedRequest):
+    if payload.kind == "combined":
+        assert isinstance(payload, FeedbackCombinedRequest)
         async with pool.acquire() as conn:
             await conn.execute(
                 """
@@ -71,10 +88,11 @@ async def open_or_combined_feedback(
 
 
 @router.patch("/feedback/{feedback_id}", status_code=200)
+@limiter.limit(_PATCH_LIMIT)
 async def submit_feedback(
+    request: Request,
     feedback_id: UUID,
     payload: FeedbackSubmitRequest,
-    request: Request,
 ) -> dict:
     pool = _get_db_pool(request)
     async with pool.acquire() as conn:
