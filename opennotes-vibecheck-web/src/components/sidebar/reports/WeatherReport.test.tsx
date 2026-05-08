@@ -590,4 +590,48 @@ describe("WeatherReport", () => {
       node = node.parentElement;
     }
   });
+
+  it("truth skeleton eval cell renders 2 word-shape Skeleton elements", () => {
+    render(() => <WeatherReport report={null} />);
+
+    const wordsCell = screen.getByTestId("weather-skeleton-truth-words");
+    const skeletons = wordsCell.querySelectorAll("[data-opennotes-skeleton]");
+    expect(skeletons.length).toBe(2);
+  });
+
+  it("relevance skeleton eval cell renders 2 word-shape Skeleton elements", () => {
+    render(() => <WeatherReport report={null} />);
+
+    const wordsCell = screen.getByTestId("weather-skeleton-relevance-words");
+    const skeletons = wordsCell.querySelectorAll("[data-opennotes-skeleton]");
+    expect(skeletons.length).toBe(2);
+  });
+
+  it("sentiment skeleton eval cell renders exactly 1 word-shape Skeleton element", () => {
+    render(() => <WeatherReport report={null} />);
+
+    const wordsCell = screen.getByTestId("weather-skeleton-sentiment-words");
+    const skeletons = wordsCell.querySelectorAll("[data-opennotes-skeleton]");
+    expect(skeletons.length).toBe(1);
+  });
+
+  it("skeleton label cell still contains literal axis text (TRUTH / RELEVANCE / SENTIMENT)", () => {
+    render(() => <WeatherReport report={null} />);
+
+    expect(screen.getByTestId("weather-skeleton-truth-label").textContent).toBe("TRUTH");
+    expect(screen.getByTestId("weather-skeleton-relevance-label").textContent).toBe("RELEVANCE");
+    expect(screen.getByTestId("weather-skeleton-sentiment-label").textContent).toBe("SENTIMENT");
+  });
+
+  it("skeleton eval cell (words) is LEFT of label cell in DOM order", () => {
+    render(() => <WeatherReport report={null} />);
+
+    const truthRow = screen.getByTestId("weather-skeleton-truth");
+    const cells = truthRow.querySelectorAll('[data-slot="table-cell"]');
+    expect(cells.length).toBe(2);
+    const firstCellWordsWrapper = cells[0].querySelector("[data-testid='weather-skeleton-truth-words']");
+    expect(firstCellWordsWrapper).not.toBeNull();
+    const secondCellLabel = cells[1].getAttribute("data-testid");
+    expect(secondCellLabel).toBe("weather-skeleton-truth-label");
+  });
 });

@@ -200,6 +200,12 @@ function AxisRow(props: AxisRowProps): JSX.Element {
   );
 }
 
+const WORD_SHAPES: Record<AxisType, number[]> = {
+  truth: [80, 56],
+  relevance: [72, 48],
+  sentiment: [64],
+};
+
 function WeatherReportSkeleton(props: { class?: string }): JSX.Element {
   return (
     <Card
@@ -212,14 +218,21 @@ function WeatherReportSkeleton(props: { class?: string }): JSX.Element {
             <For each={AXES}>
               {(axis) => (
                 <TableRow data-testid={`weather-skeleton-${axis.axisType}`}>
+                  <TableCell class="w-full px-2 py-1.5">
+                    <div
+                      data-testid={`weather-skeleton-${axis.axisType}-words`}
+                      class="flex items-center gap-1.5"
+                    >
+                      <For each={WORD_SHAPES[axis.axisType]}>
+                        {(w) => <Skeleton class="h-4 rounded" style={{ width: `${w}px` }} />}
+                      </For>
+                    </div>
+                  </TableCell>
                   <TableCell
                     data-testid={`weather-skeleton-${axis.axisType}-label`}
-                    class="whitespace-nowrap pr-3 text-xs font-semibold uppercase tracking-[0.06em] text-muted-foreground"
+                    class="whitespace-nowrap pr-3 text-xs font-semibold uppercase tracking-[0.06em] text-muted-foreground/70 text-right"
                   >
                     {axis.heading.toUpperCase()}
-                  </TableCell>
-                  <TableCell class="w-full">
-                    <Skeleton class="h-4 w-20 rounded-full" />
                   </TableCell>
                 </TableRow>
               )}
