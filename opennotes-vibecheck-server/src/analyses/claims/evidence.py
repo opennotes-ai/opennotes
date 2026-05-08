@@ -290,21 +290,19 @@ async def build_supporting_facts_by_claim(
         if inline_facts:
             facts_by_claim[claim.canonical_text] = inline_facts
 
-    batch_size = max(1, settings.EVIDENCE_MAX_CLAIMS_PER_BATCH)
-    raw_external: dict[str, list[dict[str, Any]]] = {}
-    for start in range(0, len(claim_texts), batch_size):
-        chunk = claim_texts[start : start + batch_size]
+    budgeted_texts = claim_texts[: settings.EVIDENCE_MAX_EXTERNAL_RETRIEVALS]
+    if budgeted_texts:
         try:
-            chunk_output = await external_fetcher(chunk, settings)
+            raw_external = await external_fetcher(budgeted_texts, settings)
         except Exception as exc:
             logger.warning(
                 "external evidence batch lookup failed for %d claims: %s",
-                len(chunk),
+                len(budgeted_texts),
                 exc,
             )
-            continue
-        if isinstance(chunk_output, dict):
-            raw_external.update(chunk_output)
+            raw_external = {}
+    else:
+        raw_external = {}
 
     for canonical_text in claim_texts:
         external_facts = [

@@ -164,10 +164,9 @@ async def test_build_supporting_facts_only_includes_potentially_factual_claims(
 
 
 @pytest.mark.asyncio
-async def test_build_supporting_facts_chunks_external_batch_by_evidence_max_claims_per_batch(
+async def test_build_supporting_facts_budgets_external_batch(
     settings: Settings,
 ) -> None:
-    settings = settings.model_copy(update={"EVIDENCE_MAX_CLAIMS_PER_BATCH": 5})
     calls: list[list[str]] = []
 
     async def fake_external_fetcher(
@@ -195,48 +194,7 @@ async def test_build_supporting_facts_chunks_external_batch_by_evidence_max_clai
         external_fetcher=fake_external_fetcher,
     )
 
-    assert len(calls) == 2
-    assert calls[0] == [f"claim {i}" for i in range(5)]
-    assert calls[1] == ["claim 5"]
-
-
-@pytest.mark.asyncio
-async def test_build_supporting_facts_chunks_all_claims_across_multiple_batches(
-    settings: Settings,
-) -> None:
-    settings = settings.model_copy(update={"EVIDENCE_MAX_CLAIMS_PER_BATCH": 5})
-    call_chunks: list[list[str]] = []
-
-    async def fake_external_fetcher(
-        claim_texts: list[str], _settings: Settings
-    ) -> dict[str, list[dict[str, Any]]]:
-        call_chunks.append(list(claim_texts))
-        return {text: [] for text in claim_texts}
-
-    claims = [
-        DedupedClaim(
-            canonical_text=f"Claim {i}.",
-            category=ClaimCategory.POTENTIALLY_FACTUAL,
-            occurrence_count=1,
-            author_count=1,
-            utterance_ids=[],
-            representative_authors=["alice"],
-        )
-        for i in range(107)
-    ]
-
-    await evidence.build_supporting_facts_by_claim(
-        claims,
-        {},
-        settings,
-        external_fetcher=fake_external_fetcher,
-    )
-
-    assert len(call_chunks) >= 22
-    assert all(len(chunk) <= 5 for chunk in call_chunks)
-    flat = [text for chunk in call_chunks for text in chunk]
-    claim_texts = [f"Claim {i}." for i in range(107)]
-    assert flat == claim_texts
+    assert calls == [[f"claim {i}" for i in range(5)]]
 
 
 @pytest.mark.asyncio

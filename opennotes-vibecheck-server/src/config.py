@@ -71,7 +71,6 @@ class Settings(BaseSettings):
     VISION_VIDEO_CACHE_TTL_HOURS: int = 168
     EVIDENCE_MAX_EXTERNAL_RETRIEVALS: int = 5
     PREMISES_MAX_CLAIMS_PER_BATCH: int = 30
-    EVIDENCE_MAX_CLAIMS_PER_BATCH: int = 5
 
     # --- Cloud Tasks + internal worker endpoint (TASK-1473.12) ---
     # Defaults map the dev/test shape: empty strings so enqueue_job short-
