@@ -225,6 +225,29 @@ class TestGetDbosConfig:
             assert config["otlp_traces_endpoints"] == ["http://tempo:4318/v1/traces"]
             assert config["otlp_logs_endpoints"] == ["http://tempo:4318/v1/logs"]
 
+    def test_includes_otlp_config_for_dbos_worker_when_logfire_enabled(self) -> None:
+        """GCE DBOS workers keep exporting DBOS-native OTLP to the local collector."""
+        with patch("src.dbos_workflows.config.settings") as mock_settings:
+            mock_settings.DATABASE_URL = TEST_DATABASE_URL
+            mock_settings.DATABASE_DIRECT_URL = None
+            mock_settings.DBOS_APP_NAME = "opennotes-server"
+            mock_settings.DBOS_ADMIN_PORT = 3001
+            mock_settings.DBOS_RUN_ADMIN_SERVER = False
+            mock_settings.OTLP_ENDPOINT = "http://localhost:4317"
+            mock_settings.LOGFIRE_ENABLED = True
+            mock_settings.OTEL_SERVICE_NAME = "opennotes-dbos-worker"
+            mock_settings.PROJECT_NAME = "Open Notes Server"
+            mock_settings.DBOS_CONDUCTOR_KEY = None
+            mock_settings.VERSION = "1.0.0"
+            mock_settings.ENVIRONMENT = "production"
+
+            config: dict[str, Any] = dict(get_dbos_config())
+
+            assert config.get("enable_otlp") is True
+            assert config["otlp_traces_endpoints"] == ["http://localhost:4318/v1/traces"]
+            assert config["otlp_logs_endpoints"] == ["http://localhost:4318/v1/logs"]
+            assert "logfire_token" not in config
+
     def test_disables_otlp_when_no_endpoint(self) -> None:
         """Config disables OTLP when OTLP_ENDPOINT is not set."""
         with patch("src.dbos_workflows.config.settings") as mock_settings:

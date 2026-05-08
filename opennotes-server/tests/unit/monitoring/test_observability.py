@@ -213,6 +213,36 @@ class TestObservabilityConfigureParams:
     @patch(LOGFIRE_CONFIGURE_PATH)
     @patch(LOGFIRE_INSTRUMENT_ANTHROPIC_PATH)
     @patch(LOGFIRE_INSTRUMENT_OPENAI_PATH)
+    def test_tail_sampler_caps_dbos_worker_datastore_rate(
+        self, mock_openai, mock_anthropic, mock_configure, mock_is_gcp
+    ):
+        import src.monitoring.observability as obs_mod
+
+        obs_mod._observability_initialized = False
+
+        obs_mod.setup_observability(
+            service_name="opennotes-dbos-worker",
+            environment="test",
+            sample_rate=0.3,
+            dbos_datastore_logfire_sample_rate=0.5,
+        )
+
+        sampling = mock_configure.call_args[1]["sampling"]
+        span = MagicMock()
+        span.name = "redis query"
+        span.instrumentation_scope.name = "opentelemetry.instrumentation.redis"
+        span.attributes = {"db.system": "redis"}
+        info = MagicMock()
+        info.level = "info"
+        info.duration = 0.1
+        info.span = span
+
+        assert sampling.tail(info) == 0.01
+
+    @patch(GCP_DETECTOR_PATH, return_value=False)
+    @patch(LOGFIRE_CONFIGURE_PATH)
+    @patch(LOGFIRE_INSTRUMENT_ANTHROPIC_PATH)
+    @patch(LOGFIRE_INSTRUMENT_OPENAI_PATH)
     def test_scrubbing_disabled_when_trace_content_true(
         self, mock_openai, mock_anthropic, mock_configure, mock_is_gcp
     ):
