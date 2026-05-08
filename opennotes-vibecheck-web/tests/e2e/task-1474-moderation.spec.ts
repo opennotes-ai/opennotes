@@ -128,9 +128,10 @@ function sectionData(slug: string): Record<string, unknown> {
           {
             utterance_id: "u4",
             video_url: VIDEO_URL,
-            frame_findings: [
+            segment_findings: [
               {
-                frame_offset_ms: 4200,
+                start_offset_ms: 4200,
+                end_offset_ms: 4200,
                 adult: 0.09,
                 violence: 0.88,
                 racy: 0.12,

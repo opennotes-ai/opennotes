@@ -11,7 +11,7 @@ import asyncpg
 import pytest
 from testcontainers.postgres import PostgresContainer
 
-from src.analyses.safety._schemas import FrameFinding
+from src.analyses.safety._schemas import VideoSegmentFinding
 from src.cache import video_analysis_cache
 
 _REAL_GETADDRINFO = socket.getaddrinfo
@@ -54,9 +54,10 @@ async def db_pool(_postgres_container: PostgresContainer) -> AsyncIterator[async
         await pool.close()
 
 
-def _frame(offset_ms: int, *, adult: float = 0.1, flagged: bool = False) -> FrameFinding:
-    return FrameFinding(
-        frame_offset_ms=offset_ms,
+def _frame(offset_ms: int, *, adult: float = 0.1, flagged: bool = False) -> VideoSegmentFinding:
+    return VideoSegmentFinding(
+        start_offset_ms=offset_ms,
+        end_offset_ms=offset_ms,
         adult=adult,
         violence=0.2,
         racy=0.3,
@@ -80,7 +81,7 @@ class TestFetchCached:
         out = await video_analysis_cache.fetch_cached(db_pool, [url])
 
         assert list(out.keys()) == [url]
-        assert [f.frame_offset_ms for f in out[url]] == [0, 1000, 2000]
+        assert [f.start_offset_ms for f in out[url]] == [0, 1000, 2000]
         assert [f.adult for f in out[url]] == [pytest.approx(0.1), pytest.approx(0.5), pytest.approx(0.9)]
 
     async def test_expired_entry_treated_as_miss(self, db_pool: asyncpg.Pool) -> None:

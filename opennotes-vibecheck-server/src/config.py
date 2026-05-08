@@ -1,6 +1,7 @@
 from functools import lru_cache
+from typing import Literal
 
-from pydantic import field_validator
+from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -61,6 +62,10 @@ class Settings(BaseSettings):
     CACHE_TTL_HOURS: int = 72
     MAX_IMAGES_MODERATED: int = 30
     MAX_VIDEOS_MODERATED: int = 5
+    VIDEO_MODERATION_PROVIDER: Literal["frame_sample", "video_intelligence"] = "frame_sample"
+    VIDEO_MODERATION_MAX_WAIT_SEC: int = 1800
+    GCS_VIDEO_STAGING_BUCKET: str | None = None
+    YT_DLP_VIDEO_QUALITY: str = "bestvideo[height<=480]+bestaudio/best[height<=480]"
     WEB_RISK_CACHE_TTL_HOURS: int = 6
     # TASK-1483.24: Vision API SafeSearch results are stable per-URL within
     # the cache window. Cache aggressively (7 days) to bound per-job cost;
@@ -180,6 +185,18 @@ class Settings(BaseSettings):
         if value < 0:
             raise ValueError("trends/oppositions max clusters must be >= 0")
         return value
+
+    @model_validator(mode="after")
+    def _video_intelligence_requires_staging_bucket(self) -> "Settings":
+        if (
+            self.VIDEO_MODERATION_PROVIDER == "video_intelligence"
+            and not self.GCS_VIDEO_STAGING_BUCKET
+        ):
+            raise ValueError(
+                "GCS_VIDEO_STAGING_BUCKET is required when "
+                "VIDEO_MODERATION_PROVIDER=video_intelligence"
+            )
+        return self
 
 
 @lru_cache

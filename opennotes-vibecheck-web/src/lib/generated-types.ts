@@ -390,6 +390,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/_internal/jobs/{job_id}/video-moderation/poll": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Poll Video Moderation
+         * @description Drive one Video Intelligence LRO polling Cloud Task delivery.
+         */
+        post: operations["poll_video_moderation__internal_jobs__job_id__video_moderation_poll_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/scrape": {
         parameters: {
             query?: never;
@@ -803,28 +823,6 @@ export interface components {
              * @default false
              */
             has_archive: boolean;
-        };
-        /**
-         * FrameFinding
-         * @description SafeSearch scores for a single video frame.
-         */
-        FrameFinding: {
-            /** Frame Offset Ms */
-            frame_offset_ms: number;
-            /** Adult */
-            adult: number;
-            /** Violence */
-            violence: number;
-            /** Racy */
-            racy: number;
-            /** Medical */
-            medical: number;
-            /** Spoof */
-            spoof: number;
-            /** Flagged */
-            flagged: boolean;
-            /** Max Likelihood */
-            max_likelihood: number;
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -1616,12 +1614,30 @@ export interface components {
             utterance_id: string;
             /** Video Url */
             video_url: string;
-            /** Frame Findings */
-            frame_findings: components["schemas"]["FrameFinding"][];
+            /** Segment Findings */
+            segment_findings: components["schemas"]["VideoSegmentFinding"][];
             /** Flagged */
             flagged: boolean;
             /** Max Likelihood */
             max_likelihood: number;
+        };
+        /** VideoModerationPollPayload */
+        VideoModerationPollPayload: {
+            /**
+             * Job Id
+             * Format: uuid
+             */
+            job_id: string;
+            /**
+             * Task Attempt
+             * Format: uuid
+             */
+            task_attempt: string;
+            /**
+             * Slot Attempt
+             * Format: uuid
+             */
+            slot_attempt: string;
         };
         /**
          * VideoModerationSection
@@ -1630,6 +1646,30 @@ export interface components {
         VideoModerationSection: {
             /** Matches */
             matches?: components["schemas"]["VideoModerationMatch"][];
+        };
+        /**
+         * VideoSegmentFinding
+         * @description SafeSearch scores for a video segment or sampled frame.
+         */
+        VideoSegmentFinding: {
+            /** Start Offset Ms */
+            start_offset_ms: number;
+            /** End Offset Ms */
+            end_offset_ms: number;
+            /** Adult */
+            adult: number;
+            /** Violence */
+            violence: number;
+            /** Racy */
+            racy: number;
+            /** Medical */
+            medical: number;
+            /** Spoof */
+            spoof: number;
+            /** Flagged */
+            flagged: boolean;
+            /** Max Likelihood */
+            max_likelihood: number;
         };
         /** WeatherReport */
         WeatherReport: {
@@ -2256,6 +2296,41 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["RunSectionBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    poll_video_moderation__internal_jobs__job_id__video_moderation_poll_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VideoModerationPollPayload"];
             };
         };
         responses: {

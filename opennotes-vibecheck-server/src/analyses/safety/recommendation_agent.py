@@ -31,7 +31,7 @@ Important caveats:
 - Vision SafeSearch enum labels are not available downstream. Describe image/video signals
   with float scores only, such as "adult max_likelihood 0.91"; never mention enum labels
   like VERY_LIKELY.
-- A video match with max_likelihood=1.0 and no frame_findings means sampling was
+- A video match with max_likelihood=1.0 and no segment_findings means sampling was
   inconclusive, not verified unsafe visual content. Treat it as caution unless other
   verified signals justify unsafe, and describe it with an "inconclusive:" top signal.
 - Echo the unavailable_inputs list exactly in the output."""
@@ -57,7 +57,7 @@ def _serialize_inputs(inputs: SafetyRecommendationInputs) -> str:
     for match in inputs.video_moderation_matches:
         dumped = cast(dict[str, Any], _model_dump(match))
         dumped["sampling_inconclusive"] = (
-            match.max_likelihood == 1.0 and len(match.frame_findings) == 0
+            match.max_likelihood == 1.0 and len(match.segment_findings) == 0
         )
         video_matches.append(dumped)
 

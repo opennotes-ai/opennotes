@@ -24,6 +24,10 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
+from src.analyses.safety.video_moderation_poller import (
+    VideoModerationPollPayload,
+    video_moderation_poll,
+)
 from src.analyses.schemas import SectionSlug
 from src.auth.cloud_tasks_oidc import verify_cloud_tasks_oidc
 from src.config import Settings, get_settings
@@ -188,6 +192,28 @@ async def run_section(
         status_code=result.status_code,
         content={"status_code": result.status_code},
     )
+
+
+@router.post("/jobs/{job_id}/video-moderation/poll")
+async def poll_video_moderation(
+    job_id: UUID,
+    body: VideoModerationPollPayload,
+    request: Request,
+    settings: Settings = Depends(get_settings),
+) -> JSONResponse:
+    """Drive one Video Intelligence LRO polling Cloud Task delivery."""
+    if body.job_id != job_id:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "error_code": "invalid_request",
+                "message": "path job_id does not match body job_id",
+            },
+        )
+
+    pool = _get_db_pool(request)
+    status = await video_moderation_poll(body, pool=pool, settings=settings)
+    return JSONResponse(status_code=200, content={"status": status})
 
 
 __all__ = ["router"]

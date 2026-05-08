@@ -335,9 +335,10 @@ describe("<VideoModerationReport />", () => {
         video_url: "https://video.example.test/watch.mp4",
         flagged: true,
         max_likelihood: 1,
-        frame_findings: [
+        segment_findings: [
           {
-            frame_offset_ms: 0,
+            start_offset_ms: 0,
+            end_offset_ms: 0,
             adult: 0,
             violence: 0,
             racy: 0,
@@ -347,7 +348,8 @@ describe("<VideoModerationReport />", () => {
             max_likelihood: 0,
           },
           {
-            frame_offset_ms: 1250,
+            start_offset_ms: 1250,
+            end_offset_ms: 1250,
             adult: 0,
             violence: 1,
             racy: 0,
@@ -382,9 +384,10 @@ describe("<VideoModerationReport />", () => {
         video_url: "https://video.example.test/watch.mp4",
         flagged: true,
         max_likelihood: 0.91,
-        frame_findings: [
+        segment_findings: [
           {
-            frame_offset_ms: 0,
+            start_offset_ms: 0,
+            end_offset_ms: 0,
             adult: 0.91,
             violence: 0.6,
             racy: 0,
@@ -394,7 +397,8 @@ describe("<VideoModerationReport />", () => {
             max_likelihood: 0.91,
           },
           {
-            frame_offset_ms: 1250,
+            start_offset_ms: 1250,
+            end_offset_ms: 1250,
             adult: 0,
             violence: 0,
             racy: 0,

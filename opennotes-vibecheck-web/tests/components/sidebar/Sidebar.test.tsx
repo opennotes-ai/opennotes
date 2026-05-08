@@ -174,9 +174,10 @@ describe("<Sidebar /> payload synthesis fallback", () => {
                 video_url: "https://video.example.test/watch.mp4",
                 flagged: true,
                 max_likelihood: 1,
-                frame_findings: [
+                segment_findings: [
                   {
-                    frame_offset_ms: 1000,
+                    start_offset_ms: 1000,
+                    end_offset_ms: 1000,
                     adult: 0,
                     violence: 1,
                     racy: 0,

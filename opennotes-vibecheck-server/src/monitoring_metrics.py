@@ -50,7 +50,7 @@ __all__ = [
 
 
 ErrorType = Literal["timeout", "upstream", "extraction", "internal"]
-ExternalAPI = Literal["webrisk", "gcp_nl", "vision", "factcheck"]
+ExternalAPI = Literal["webrisk", "gcp_nl", "vision", "factcheck", "video_intelligence"]
 ExternalAPIErrorCategory = Literal[
     "none",
     "auth",
