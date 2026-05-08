@@ -195,7 +195,7 @@ async def test_build_premises_by_claim_chunks_input_above_batch_size(
 
     claim_texts = [f"Claim {i}." for i in range(105)]
     claims = _claims_report(*claim_texts)
-    registry, premise_ids_by_claim = await premises.build_premises_by_claim(
+    _registry, premise_ids_by_claim = await premises.build_premises_by_claim(
         claims.deduped_claims, settings
     )
 
@@ -204,6 +204,38 @@ async def test_build_premises_by_claim_chunks_input_above_batch_size(
     flat = [text for chunk in call_chunks for text in chunk]
     assert flat == claim_texts
     assert len(premise_ids_by_claim) == 105
+
+
+async def test_build_premises_by_claim_continues_after_chunk_failure(
+    settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    settings = settings.model_copy(update={"PREMISES_MAX_CLAIMS_PER_BATCH": 2})
+    call_count = 0
+
+    async def fake_infer_premises_batch(
+        claim_texts: list[str], _settings: Settings
+    ) -> dict[str, list[str]]:
+        nonlocal call_count
+        call_count += 1
+        if call_count == 2:
+            raise RuntimeError("simulated chunk failure")
+        return {claim_text: [f"Premise for {claim_text}"] for claim_text in claim_texts}
+
+    monkeypatch.setattr(premises, "infer_premises_batch", fake_infer_premises_batch)
+
+    claim_texts = [f"Claim {i} will occur." for i in range(6)]
+    claims = _claims_report(*claim_texts)
+    _registry, premise_ids_by_claim = await premises.build_premises_by_claim(
+        claims.deduped_claims, settings
+    )
+
+    assert call_count == 3
+    for text in claim_texts[4:]:
+        assert text in premise_ids_by_claim
+    for text in claim_texts[:2]:
+        assert text in premise_ids_by_claim
+    for text in claim_texts[2:4]:
+        assert text not in premise_ids_by_claim
 
 
 async def test_run_claims_premises_falls_back_to_dedup_slot_when_payload_missing(

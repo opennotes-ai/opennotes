@@ -153,7 +153,15 @@ async def build_premises_by_claim(
     raw_output: dict[str, list[Any]] = {}
     for start in range(0, len(eligible_texts), batch_size):
         chunk = eligible_texts[start : start + batch_size]
-        chunk_output = await extractor(chunk, settings)
+        try:
+            chunk_output = await extractor(chunk, settings)
+        except Exception as exc:
+            logger.warning(
+                "premise batch extraction failed for %d claims: %s",
+                len(chunk),
+                exc,
+            )
+            continue
         if isinstance(chunk_output, dict):
             raw_output.update(chunk_output)
         else:
