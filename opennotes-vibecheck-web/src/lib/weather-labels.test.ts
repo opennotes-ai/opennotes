@@ -121,100 +121,27 @@ describe("formatWeatherBadgeClass", () => {
   });
 });
 
+type WeatherLabelEntry = { axis: string; label: string; variant: string; expansion: string };
+
 describe("weather-labels.json — expansion field contract", () => {
   it("every entry has a non-empty expansion string", () => {
-    const entries = Object.entries(weatherLabelsJson) as [string, { expansion?: string }][];
+    const entries = Object.entries(weatherLabelsJson) as [string, WeatherLabelEntry][];
     for (const [key, entry] of entries) {
       expect(entry.expansion, `entry "${key}" is missing expansion`).toBeDefined();
-      expect(entry.expansion!.length, `entry "${key}" has empty expansion`).toBeGreaterThan(0);
+      expect(entry.expansion.length, `entry "${key}" has empty expansion`).toBeGreaterThan(0);
     }
   });
 });
 
-describe("formatWeatherExpansion — known labels", () => {
-  it("returns the approved expansion for sourced", () => {
-    expect(formatWeatherExpansion("sourced")).toBe(
-      "Participants are pointing to outside sources to back up their claims."
-    );
-  });
-
-  it("returns the approved expansion for factual_claims", () => {
-    expect(formatWeatherExpansion("factual_claims")).toBe(
-      "Participants are making claims that are theoretically possible to confirm."
-    );
-  });
-
-  it("returns the approved expansion for first_person", () => {
-    expect(formatWeatherExpansion("first_person")).toBe(
-      "Participants are mostly speaking from direct, lived experience."
-    );
-  });
-
-  it("returns the approved expansion for hearsay", () => {
-    expect(formatWeatherExpansion("hearsay")).toBe(
-      "Participants are mostly relaying what they heard from someone else."
-    );
-  });
-
-  it("returns the approved expansion for misleading", () => {
-    expect(formatWeatherExpansion("misleading")).toBe(
-      "Participants are stating things in ways likely to mislead a reader."
-    );
-  });
-
-  it("returns the approved expansion for insightful", () => {
-    expect(formatWeatherExpansion("insightful")).toBe(
-      "Participants are adding meaningful new perspective to the topic."
-    );
-  });
-
-  it("returns the approved expansion for on_topic", () => {
-    expect(formatWeatherExpansion("on_topic")).toBe(
-      "The discussion stays close to the source's subject."
-    );
-  });
-
-  it("returns the approved expansion for chatty", () => {
-    expect(formatWeatherExpansion("chatty")).toBe(
-      "The discussion is on-topic but mostly small talk."
-    );
-  });
-
-  it("returns the approved expansion for drifting", () => {
-    expect(formatWeatherExpansion("drifting")).toBe(
-      "The discussion is wandering away from the source's subject."
-    );
-  });
-
-  it("returns the approved expansion for off_topic", () => {
-    expect(formatWeatherExpansion("off_topic")).toBe(
-      "The discussion is no longer about the source's subject."
-    );
-  });
-
-  it("returns the approved expansion for supportive", () => {
-    expect(formatWeatherExpansion("supportive")).toBe(
-      "Participants are mostly encouraging the topic, or each other."
-    );
-  });
-
-  it("returns the approved expansion for neutral", () => {
-    expect(formatWeatherExpansion("neutral")).toBe(
-      "Participants are not taking a strong emotional stance."
-    );
-  });
-
-  it("returns the approved expansion for critical", () => {
-    expect(formatWeatherExpansion("critical")).toBe(
-      "Participants are mostly criticizing a topic, or each other."
-    );
-  });
-
-  it("returns the approved expansion for oppositional", () => {
-    expect(formatWeatherExpansion("oppositional")).toBe(
-      "Participants are taking adversarial stances toward the topic, or each other."
-    );
-  });
+describe("formatWeatherExpansion — round-trip against JSON data", () => {
+  it.each(Object.entries(weatherLabelsJson) as [string, WeatherLabelEntry][])(
+    "exposes JSON expansion verbatim for %s",
+    (key, entry) => {
+      expect(
+        formatWeatherExpansion(key as Parameters<typeof formatWeatherExpansion>[0])
+      ).toBe(entry.expansion);
+    }
+  );
 });
 
 describe("formatWeatherExpansion — unknown labels", () => {
