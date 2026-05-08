@@ -100,27 +100,47 @@ describe("Dialog (real DOM behaviour)", () => {
     expect(onOpenChange).toHaveBeenCalledWith(false);
   });
 
-  it("clicking the overlay (outside content) closes the dialog", async () => {
+  it("pointerdown outside the content (on the overlay) closes the dialog", async () => {
     const onOpenChange = vi.fn();
     render(() => <ControlledDialogHarness onOpenChange={onOpenChange} />);
 
     fireEvent.click(screen.getByTestId("open-trigger"));
-    await waitFor(() => {
-      expect(
-        document.querySelector('[data-slot="dialog-content"]'),
-      ).not.toBeNull();
+    const content = await waitFor(() => {
+      const el = document.querySelector('[data-slot="dialog-content"]');
+      if (!el) throw new Error("dialog content not yet rendered");
+      return el as HTMLElement;
     });
 
-    const overlay = document.querySelector(
-      '[data-kb-dialog-overlay], [data-slot="dialog-content"]',
-    );
-    expect(overlay).not.toBeNull();
+    const overlay = await waitFor(() => {
+      const candidate = Array.from(
+        document.querySelectorAll<HTMLElement>("div[data-expanded]"),
+      ).find(
+        (el) =>
+          el !== content &&
+          !content.contains(el) &&
+          !el.contains(content),
+      );
+      if (!candidate) {
+        throw new Error("dialog overlay not yet rendered");
+      }
+      return candidate;
+    });
 
-    const dismissBtn = getDismissButton();
-    fireEvent.click(dismissBtn);
+    expect(overlay).not.toBe(content);
+    expect(content.contains(overlay)).toBe(false);
+
+    await new Promise((r) => setTimeout(r, 0));
+
+    fireEvent.pointerDown(overlay);
 
     await waitFor(() => {
       expect(onOpenChange).toHaveBeenCalledWith(false);
+    });
+
+    await waitFor(() => {
+      expect(
+        document.querySelector('[data-slot="dialog-content"]'),
+      ).toBeNull();
     });
   });
 
