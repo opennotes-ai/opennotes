@@ -51,11 +51,11 @@ interface AxisDefinition {
 
 const TOOLTIP_COPY: Record<AxisType, string> = {
   truth:
-    "Truth — Epistemic stance, not verdict. Whether claims are sourced, factual claims, first-person, second-hand, or actively misleading.",
+    "Truth — Epistemic stance, not verdict. Whether claims are sourced, first-person, second-hand, or actively misleading — how the knowledge is held, regardless of whether it's ultimately right.",
   relevance:
-    "Relevance — Conversational stance, not score. Whether the content is insightful, on topic, chatty, drifting, or off topic.",
+    "Relevance — How tightly the discussion is tethered to the source. Insightful engagement, on-topic chatter, drift, or full topic abandonment.",
   sentiment:
-    "Sentiment — Emotional stance, not judgment. The tone is rendered as a free-form descriptor (commonly supportive, neutral, critical, or oppositional).",
+    "Sentiment — The emotional register of the conversation. Read alongside the other axes; tone alone doesn't tell you much.",
 };
 
 const AXES: AxisDefinition[] = [

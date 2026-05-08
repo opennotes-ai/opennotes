@@ -107,12 +107,43 @@ describe("WeatherReport", () => {
         <TooltipTrigger as="span">trigger</TooltipTrigger>
         <TooltipContent>
           Truth — Epistemic stance, not verdict. Whether claims are sourced,
-          factual claims, first-person, second-hand, or actively misleading.
+          first-person, second-hand, or actively misleading — how the knowledge
+          is held, regardless of whether it's ultimately right.
         </TooltipContent>
       </Tooltip>
     ));
 
     await screen.findByText(/Truth — Epistemic stance/);
+  });
+
+  it("uses Option A truth tooltip copy (epistemic stance, not verdict)", async () => {
+    render(() => <WeatherReport report={makeWeatherReport()} />);
+    const truthRow = screen.getByTestId("weather-axis-card-truth");
+    fireEvent.pointerEnter(truthRow);
+    fireEvent.focus(truthRow);
+    await screen.findByText(
+      /Truth — Epistemic stance, not verdict\. Whether claims are sourced, first-person, second-hand, or actively misleading — how the knowledge is held, regardless of whether it's ultimately right\./,
+    );
+  });
+
+  it("uses Option A relevance tooltip copy (tethered to source)", async () => {
+    render(() => <WeatherReport report={makeWeatherReport()} />);
+    const relevanceRow = screen.getByTestId("weather-axis-card-relevance");
+    fireEvent.pointerEnter(relevanceRow);
+    fireEvent.focus(relevanceRow);
+    await screen.findByText(
+      /Relevance — How tightly the discussion is tethered to the source\. Insightful engagement, on-topic chatter, drift, or full topic abandonment\./,
+    );
+  });
+
+  it("uses Option A sentiment tooltip copy (emotional register)", async () => {
+    render(() => <WeatherReport report={makeWeatherReport()} />);
+    const sentimentRow = screen.getByTestId("weather-axis-card-sentiment");
+    fireEvent.pointerEnter(sentimentRow);
+    fireEvent.focus(sentimentRow);
+    await screen.findByText(
+      /Sentiment — The emotional register of the conversation\. Read alongside the other axes; tone alone doesn't tell you much\./,
+    );
   });
 
   it("hovering a row emits pointerenter that Kobalte will use to open tooltip", () => {
