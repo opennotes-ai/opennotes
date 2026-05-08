@@ -142,22 +142,38 @@ async def test_post_open_returns_201_and_uuid(
     assert row["submitted_at"] is None
 
 
-async def test_post_open_body_uid_field_is_ignored(
+async def test_post_open_body_uid_field_is_rejected(
     http_client: httpx.AsyncClient,
     db_pool: Any,
 ) -> None:
+    """A `uid` field in the request body must NOT be honored.
+
+    The cookie is the sole source of truth for the row's uid. Because
+    `FeedbackOpenRequest` is configured with `extra="forbid"`, a body with
+    a `uid` field is rejected outright (422) — which is strictly stronger
+    than silently ignoring it. The previous test name was misleading: the
+    body never actually included `uid`. This rewrite both adds the
+    forged uid to the body AND asserts the server refuses to honor it.
+    """
     cookie_uid = str(uuid4())
-    body_with_fake_uid = {**_OPEN_BODY}
+    forged_body_uid = str(uuid4())
+    assert cookie_uid != forged_body_uid
+    body_with_fake_uid = {**_OPEN_BODY, "uid": forged_body_uid}
     resp = await http_client.post(
         "/api/feedback",
         json=body_with_fake_uid,
         cookies={UID_COOKIE_NAME: cookie_uid},
     )
-    assert resp.status_code == 201
-    feedback_id = UUID(resp.json()["id"])
+    assert resp.status_code == 422, (
+        f"expected body-uid to be rejected, got {resp.status_code}: {resp.text}"
+    )
 
-    row = await _fetch_feedback_row(db_pool, feedback_id)
-    assert str(row["uid"]) == cookie_uid
+    async with db_pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT id FROM vibecheck_feedback WHERE uid = $1",
+            forged_body_uid,
+        )
+    assert row is None, "no feedback row should be created for the forged uid"
 
 
 async def test_post_combined_sets_all_fields(
