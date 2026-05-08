@@ -339,7 +339,15 @@ async def test_run_claims_evidence_uses_injected_external_fetcher(
         claim_texts: list[str], _settings: Settings
     ) -> dict[str, list[dict[str, Any]]]:
         received.append(list(claim_texts))
-        return {}
+        return {
+            claim_texts[0]: [
+                {
+                    "statement": "Injected lunar fact.",
+                    "source_kind": "external",
+                    "source_ref": "https://example.test/moon",
+                }
+            ]
+        }
 
     async def fake_load_utterances(_pool: object, job_id: object) -> list[Utterance]:
         del job_id
@@ -359,8 +367,16 @@ async def test_run_claims_evidence_uses_injected_external_fetcher(
         external_fetcher=fake_fetcher,
     )
 
-    assert received
-    assert result["claims_report"]["deduped_claims"][0]["canonical_text"] == "The moon is round."
+    assert received == [["The moon is round."]]
+    claim = result["claims_report"]["deduped_claims"][0]
+    assert claim["canonical_text"] == "The moon is round."
+    assert claim["supporting_facts"] == [
+        {
+            "statement": "Injected lunar fact.",
+            "source_kind": "external",
+            "source_ref": "https://example.test/moon",
+        }
+    ]
 
 
 @pytest.mark.asyncio
