@@ -676,16 +676,9 @@ async def test_vibecheck_feedback_anon_can_insert_valid_row(
     assert count == 1
 
 
-async def test_vibecheck_feedback_anon_update_policy_applies_without_select(
+async def test_vibecheck_feedback_anon_cannot_update_row(
     full_schema_conn: asyncpg.Connection,
 ) -> None:
-    # TASK-1588.13: anon has UPDATE privilege and an UPDATE policy
-    # (USING true / WITH CHECK true), but no SELECT privilege and no
-    # SELECT policy. An UPDATE without a row-id WHERE clause therefore
-    # exercises the policy and succeeds — proving the policy is wired
-    # correctly. The PATCH /api/feedback/{id} flow runs on service_role
-    # (RLS bypass) in production, so the lack of a SELECT policy does
-    # not break the user-facing follow-up update flow.
     await _apply_full_schema_as_superuser(full_schema_conn)
 
     await full_schema_conn.execute(
@@ -701,87 +694,33 @@ async def test_vibecheck_feedback_anon_update_policy_applies_without_select(
 
     await full_schema_conn.execute("SET ROLE anon")
     try:
-        result = await full_schema_conn.execute(
-            "UPDATE public.vibecheck_feedback SET final_type = 'thumbs_up'"
-        )
-    finally:
-        await full_schema_conn.execute("RESET ROLE")
-
-    assert result == "UPDATE 1", (
-        f"anon UPDATE policy must apply without a SELECT policy; got {result!r}"
-    )
-
-    row = await full_schema_conn.fetchrow(
-        "SELECT final_type FROM public.vibecheck_feedback "
-        "WHERE id = '00000000-0000-0000-0000-000000000010'"
-    )
-    assert row is not None
-    assert row["final_type"] == "thumbs_up"
-
-
-async def test_vibecheck_feedback_anon_cannot_update_by_id_without_select_policy(
-    full_schema_conn: asyncpg.Connection,
-) -> None:
-    # TASK-1588.13: with no anon SELECT privilege/policy, anon cannot
-    # filter rows by primary key. Document this explicitly so future
-    # contributors don't reintroduce a SELECT grant or policy by accident
-    # to "fix" the user-facing follow-up update path — that path runs on
-    # service_role through the backend.
-    await _apply_full_schema_as_superuser(full_schema_conn)
-
-    await full_schema_conn.execute(
-        """
-        INSERT INTO public.vibecheck_feedback
-            (id, page_path, user_agent, uid, bell_location, initial_type)
-        VALUES
-            ('00000000-0000-0000-0000-000000000020',
-             '/page', 'ua', '00000000-0000-0000-0000-000000000021',
-             'top-left', 'thumbs_down')
-        """
-    )
-
-    await full_schema_conn.execute("SET ROLE anon")
-    try:
         with pytest.raises(asyncpg.InsufficientPrivilegeError):
             await full_schema_conn.execute(
-                "UPDATE public.vibecheck_feedback SET final_type = 'thumbs_up' "
-                "WHERE id = '00000000-0000-0000-0000-000000000020'"
+                "UPDATE public.vibecheck_feedback SET final_type = 'thumbs_up'"
             )
     finally:
         await full_schema_conn.execute("RESET ROLE")
 
 
-async def test_vibecheck_feedback_anon_cannot_select_pii(
+async def test_vibecheck_feedback_no_dedicated_select_policy_for_anon(
     full_schema_conn: asyncpg.Connection,
 ) -> None:
-    # TASK-1588.13: anon must be write-only on vibecheck_feedback. A prior
-    # `FOR ALL` policy combined with `GRANT SELECT` to anon let unauthenticated
-    # clients read every email/message PII row. Restoring the write-only
-    # contract requires both dropping the SELECT grant and splitting the
-    # write policy into INSERT and UPDATE so SELECT has no policy at all.
     await _apply_full_schema_as_superuser(full_schema_conn)
 
-    await full_schema_conn.execute(
+    rows = await full_schema_conn.fetch(
         """
-        INSERT INTO public.vibecheck_feedback
-            (id, page_path, user_agent, uid, bell_location, initial_type,
-             email, message)
-        VALUES
-            ('00000000-0000-0000-0000-000000000050',
-             '/page', 'ua', '00000000-0000-0000-0000-000000000051',
-             'bottom-right', 'message',
-             'pii@example.com', 'secret message')
+        SELECT policyname, cmd
+        FROM pg_policies
+        WHERE schemaname = 'public'
+          AND tablename = 'vibecheck_feedback'
+          AND roles @> ARRAY['anon']::name[]
+          AND cmd = 'SELECT'
         """
     )
-
-    await full_schema_conn.execute("SET ROLE anon")
-    try:
-        with pytest.raises(asyncpg.InsufficientPrivilegeError):
-            await full_schema_conn.fetch(
-                "SELECT email, message FROM public.vibecheck_feedback"
-            )
-    finally:
-        await full_schema_conn.execute("RESET ROLE")
+    assert rows == [], (
+        "no SELECT policy should exist for anon on vibecheck_feedback; "
+        "anon is INSERT-only (TASK-1588.18 dropped the anon UPDATE policy)"
+    )
 
 
 async def test_vibecheck_feedback_check_constraint_rejects_invalid_initial_type(
@@ -800,32 +739,3 @@ async def test_vibecheck_feedback_check_constraint_rejects_invalid_initial_type(
                  'bottom-right', 'lol')
             """
         )
-
-
-async def test_vibecheck_feedback_id_default_emits_uuid_v7(
-    full_schema_conn: asyncpg.Connection,
-) -> None:
-    """TASK-1588.17 AC#7: vibecheck_feedback.id DEFAULT generates a UUID v7
-    so the INSERT path can omit explicit id generation. Asserts both that
-    INSERT-without-id succeeds AND that the version nibble is 7 (orderable).
-    """
-    await _apply_full_schema_as_superuser(full_schema_conn)
-
-    feedback_id = await full_schema_conn.fetchval(
-        """
-        INSERT INTO public.vibecheck_feedback
-            (page_path, user_agent, uid, bell_location, initial_type)
-        VALUES
-            ('/page', 'ua', '00000000-0000-0000-0000-000000000040',
-             'bottom-right', 'thumbs_up')
-        RETURNING id
-        """
-    )
-    assert feedback_id is not None
-    from uuid import UUID as _UUID
-
-    parsed = _UUID(str(feedback_id))
-    assert parsed.version == 7, (
-        f"Expected vibecheck_feedback.id DEFAULT to emit UUID v7; "
-        f"got version {parsed.version} from id={feedback_id}"
-    )
