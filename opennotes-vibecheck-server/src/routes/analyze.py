@@ -550,6 +550,8 @@ SELECT
     j.last_stage,
     j.heartbeat_at,
     j.expired_at,
+    ib.conversion_status AS image_conversion_status,
+    ib.generated_pdf_gcs_key AS image_generated_pdf_gcs_key,
     meta.page_title,
     meta.page_kind,
     meta.utterance_stream_type,
@@ -559,6 +561,7 @@ SELECT
         WHERE u.job_id = j.job_id
     ) AS utterance_count
 FROM vibecheck_jobs j
+LEFT JOIN vibecheck_image_upload_batches ib ON ib.job_id = j.job_id
 LEFT JOIN LATERAL (
     SELECT u.page_title, u.page_kind, u.utterance_stream_type
     FROM vibecheck_job_utterances u
@@ -731,6 +734,12 @@ def _row_to_job_state(row: Any) -> JobState:
     if is_non_terminal:
         activity_at = row.get("heartbeat_at", None)
         stage = row.get("last_stage", None)
+        if row.get("image_conversion_status", None) in {
+            "awaiting_upload",
+            "submitted",
+            "converting",
+        } and row.get("image_generated_pdf_gcs_key", None) is not None:
+            stage = "converting_images"
         if stage is None and status is JobStatus.EXTRACTING:
             stage = "extracting"
         activity_label = _activity_label_for_stage(stage)
@@ -766,6 +775,7 @@ def _row_to_job_state(row: Any) -> JobState:
 
 
 _STAGE_LABEL_MAP: dict[str, str] = {
+    "converting_images": "Converting images to PDF",
     "extracting": "Extracting page content",
     "persist_utterances": "Saving page content",
     "set_analyzing": "Preparing analysis",

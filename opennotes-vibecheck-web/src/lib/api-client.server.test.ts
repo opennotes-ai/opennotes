@@ -838,6 +838,79 @@ describe("VibecheckApiError.headers (TASK-1473.39 carry-through)", () => {
   });
 });
 
+describe("image upload API helpers", () => {
+  it("requests signed image upload URLs with ordered metadata", async () => {
+    process.env.NODE_ENV = "development";
+    process.env.VIBECHECK_SERVER_URL = "http://localhost:8000";
+
+    let capturedBody: unknown = null;
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockImplementation(async (req) => {
+        const request = req as Request;
+        capturedBody = JSON.parse(await request.text());
+        return new Response(
+          JSON.stringify({
+            job_id: "job-images",
+            images: [
+              {
+                ordinal: 0,
+                gcs_key: "image-uploads/job/source/000-first",
+                upload_url: "https://storage.example/0",
+              },
+            ],
+          }),
+          { status: 200 },
+        );
+      });
+
+    const { requestImageUploadUrls } = await import("./api-client.server");
+    const result = await requestImageUploadUrls([
+      { filename: "first.png", content_type: "image/png", size_bytes: 12 },
+    ]);
+
+    expect(capturedBody).toEqual({
+      images: [
+        { filename: "first.png", content_type: "image/png", size_bytes: 12 },
+      ],
+    });
+    expect(result.job_id).toBe("job-images");
+    expect(result.images[0].ordinal).toBe(0);
+    fetchSpy.mockRestore();
+  });
+
+  it("submits image analysis to the conversion endpoint", async () => {
+    process.env.NODE_ENV = "development";
+    process.env.VIBECHECK_SERVER_URL = "http://localhost:8000";
+
+    let capturedUrl = "";
+    let capturedBody: unknown = null;
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockImplementation(async (req) => {
+        const request = req as Request;
+        capturedUrl = request.url;
+        capturedBody = JSON.parse(await request.text());
+        return new Response(
+          JSON.stringify({
+            job_id: "job-images",
+            status: "pending",
+            cached: false,
+          }),
+          { status: 202 },
+        );
+      });
+
+    const { requestImageAnalysis } = await import("./api-client.server");
+    const result = await requestImageAnalysis("job-images");
+
+    expect(capturedUrl).toBe("http://localhost:8000/api/analyze-images");
+    expect(capturedBody).toEqual({ job_id: "job-images" });
+    expect(result.job_id).toBe("job-images");
+    fetchSpy.mockRestore();
+  });
+});
+
 describe("pollJob signal threading (TASK-1473.40)", () => {
   it("aborts the underlying fetch when the caller's AbortController fires", async () => {
     process.env.NODE_ENV = "development";

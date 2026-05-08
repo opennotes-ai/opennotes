@@ -1,5 +1,10 @@
 import { action, query, redirect } from "@solidjs/router";
-import type { JobState, SectionSlug } from "~/lib/api-client.server";
+import type {
+  ImageUploadRequestItem,
+  JobState,
+  PublicErrorCode,
+  SectionSlug,
+} from "~/lib/api-client.server";
 import { isPdfFile, isPdfTooLarge } from "~/lib/pdf-constraints";
 
 interface FrameCompatResponse {
@@ -450,6 +455,56 @@ export const requestUploadUrlAction = action(async () => {
   return requestPdfUploadUrl();
 }, "vibecheck-request-pdf-upload-url");
 
+export const requestImageUploadUrlsAction = action(
+  async (images: ImageUploadRequestItem[]) => {
+    "use server";
+    const { getRequestEvent } = await import("solid-js/web");
+    const evt = getRequestEvent();
+    const { checkAnalyzeRateLimit } = await import("~/lib/rate-limit.server");
+    if (evt?.request?.headers) {
+      const decision = checkAnalyzeRateLimit(evt.request.headers);
+      if (!decision.allowed) {
+        throw redirect("/?error=rate_limited");
+      }
+    }
+    const { requestImageUploadUrls } = await import("~/lib/api-client.server");
+    return requestImageUploadUrls(images);
+  },
+  "vibecheck-request-image-upload-urls",
+);
+
+function redirectForUploadError(code: PublicErrorCode | undefined, filename: string): never {
+  if (code === "pdf_too_large") {
+    throw redirect("/?error=pdf_too_large");
+  }
+  if (code === "invalid_url") {
+    throw redirect("/?error=invalid_url");
+  }
+  if (code === "pdf_extraction_failed") {
+    throw redirect("/?error=pdf_extraction_failed");
+  }
+  if (code === "upload_key_invalid" || code === "upload_not_found") {
+    throw redirect("/?error=upload_not_found");
+  }
+  if (code === "invalid_pdf_type") {
+    throw redirect("/?error=invalid_pdf_type");
+  }
+  if (
+    code === "image_count_too_large" ||
+    code === "image_aggregate_too_large" ||
+    code === "invalid_image_type" ||
+    code === "image_conversion_failed"
+  ) {
+    throw redirect(`/?error=${code}`);
+  }
+
+  const qs = redirectParams({
+    pending_error: code ?? "upstream_error",
+    url: filename,
+  });
+  throw redirect(`/analyze?${qs}`);
+}
+
 export const submitPdfAnalysisAction = action(async (formData: FormData) => {
   "use server";
   const { requestPdfAnalysis, VibecheckApiError, clampErrorCode } = await import(
@@ -502,29 +557,52 @@ export const submitPdfAnalysisAction = action(async (formData: FormData) => {
       throw err;
     }
     const code = clampErrorCode(err.errorBody?.error_code);
-    if (code === "pdf_too_large") {
-      throw redirect("/?error=pdf_too_large");
-    }
-    if (code === "invalid_url") {
-      throw redirect("/?error=invalid_url");
-    }
-    if (code === "pdf_extraction_failed") {
-      throw redirect("/?error=pdf_extraction_failed");
-    }
-    if (code === "upload_key_invalid" || code === "upload_not_found") {
-      throw redirect("/?error=upload_not_found");
-    }
-    if (code === "invalid_pdf_type") {
-      throw redirect("/?error=invalid_pdf_type");
-    }
-
-    const qs = redirectParams({
-      pending_error: code ?? "upstream_error",
-      url: filename,
-    });
-    throw redirect(`/analyze?${qs}`);
+    redirectForUploadError(code, filename);
   }
 }, "vibecheck-submit-pdf-analysis");
+
+export async function resolveAnalyzeImagesRedirect(formData: FormData): Promise<never> {
+  "use server";
+  const { requestImageAnalysis, VibecheckApiError, clampErrorCode } = await import(
+    "~/lib/api-client.server"
+  );
+  const jobId = String(formData.get("job_id") ?? "");
+  const filename = String(formData.get("filename") ?? "");
+
+  if (!jobId || !filename) {
+    throw redirect("/?error=invalid_url");
+  }
+
+  const { getRequestEvent } = await import("solid-js/web");
+  const evt = getRequestEvent();
+  const { checkAnalyzeRateLimit } = await import("~/lib/rate-limit.server");
+  if (evt?.request?.headers) {
+    const decision = checkAnalyzeRateLimit(evt.request.headers);
+    if (!decision.allowed) {
+      const qs = redirectParams({
+        pending_error: "rate_limited",
+        url: filename,
+      });
+      throw redirect(`/analyze?${qs}`);
+    }
+  }
+
+  try {
+    const response = await requestImageAnalysis(jobId);
+    throw redirect(buildPdfSuccessRedirectUrl(response.job_id, response.cached, filename));
+  } catch (err: unknown) {
+    if (!(err instanceof VibecheckApiError)) {
+      throw err;
+    }
+    const code = clampErrorCode(err.errorBody?.error_code);
+    redirectForUploadError(code, filename);
+  }
+}
+
+export const submitImageAnalysisAction = action(async (formData: FormData) => {
+  "use server";
+  await resolveAnalyzeImagesRedirect(formData);
+}, "vibecheck-submit-image-analysis");
 
 export async function pollJobState(jobId: string): Promise<JobState> {
   "use server";

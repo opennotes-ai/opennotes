@@ -129,6 +129,18 @@ def test_row_to_job_state_maps_pdf_source_and_archive_url() -> None:
     )
 
 
+def test_row_to_job_state_labels_pending_image_conversion() -> None:
+    row = _mock_poll_row(status="pending", source_type="pdf")
+    row["image_conversion_status"] = "converting"
+    row["image_generated_pdf_gcs_key"] = f"image-uploads/{row['job_id']}/generated.pdf"
+
+    job = _row_to_job_state(row)
+
+    assert job.source_type == "pdf"
+    assert job.pdf_archive_url is None
+    assert job.activity_label == "Converting images to PDF"
+
+
 def test_row_to_job_state_defaults_url_for_missing_source_type() -> None:
     row = _mock_poll_row(status="pending", source_type=None)
     job = _row_to_job_state(row)

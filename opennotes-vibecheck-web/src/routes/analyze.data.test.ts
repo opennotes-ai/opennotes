@@ -8,6 +8,8 @@ const {
   clientGetMock,
   requestPdfUploadUrlMock,
   requestPdfAnalysisMock,
+  requestImageUploadUrlsMock,
+  requestImageAnalysisMock,
 } = vi.hoisted(() => ({
   analyzeUrlMock: vi.fn(),
   pollJobMock: vi.fn(),
@@ -15,6 +17,8 @@ const {
   clientGetMock: vi.fn(),
   requestPdfUploadUrlMock: vi.fn(),
   requestPdfAnalysisMock: vi.fn(),
+  requestImageUploadUrlsMock: vi.fn(),
+  requestImageAnalysisMock: vi.fn(),
 }));
 
 vi.mock("~/lib/api-client.server", async () => {
@@ -28,6 +32,8 @@ vi.mock("~/lib/api-client.server", async () => {
     retrySection: retrySectionMock,
     requestPdfUploadUrl: requestPdfUploadUrlMock,
     requestPdfAnalysis: requestPdfAnalysisMock,
+    requestImageUploadUrls: requestImageUploadUrlsMock,
+    requestImageAnalysis: requestImageAnalysisMock,
     getClient: () => ({ GET: clientGetMock, POST: vi.fn() }),
   };
 });
@@ -65,6 +71,20 @@ async function callPdfActionAsFile(name = "notes.pdf"): Promise<Response> {
   return callPdfAction(file);
 }
 
+async function callSubmitImageAction(jobId = "job-images"): Promise<Response> {
+  const { resolveAnalyzeImagesRedirect } = await import("./analyze.data");
+  const fd = new FormData();
+  fd.set("job_id", jobId);
+  fd.set("filename", "first.png");
+  try {
+    await resolveAnalyzeImagesRedirect(fd);
+    throw new Error("resolveAnalyzeImagesRedirect did not redirect");
+  } catch (thrown) {
+    if (thrown instanceof Response) return thrown;
+    throw thrown;
+  }
+}
+
 describe("analyzeAction", () => {
   beforeEach(() => {
     analyzeUrlMock.mockReset();
@@ -73,6 +93,8 @@ describe("analyzeAction", () => {
     clientGetMock.mockReset();
     requestPdfUploadUrlMock.mockReset();
     requestPdfAnalysisMock.mockReset();
+    requestImageUploadUrlsMock.mockReset();
+    requestImageAnalysisMock.mockReset();
     vi.resetModules();
   });
 
@@ -417,6 +439,44 @@ describe("analyzePdfAction", () => {
       delete process.env.VIBECHECK_RATE_LIMIT_PER_HOUR;
       delete process.env.VIBECHECK_RATE_LIMIT_DISABLED;
     }
+  });
+});
+
+describe("analyzeImagesAction", () => {
+  beforeEach(() => {
+    requestImageAnalysisMock.mockReset();
+    vi.resetModules();
+  });
+
+  it("submits image conversion and redirects to the normal analyze page", async () => {
+    requestImageAnalysisMock.mockResolvedValue({
+      job_id: "image-job-1",
+      status: "pending",
+      cached: false,
+    });
+
+    const response = await callSubmitImageAction("image-job-1");
+    const location = response.headers.get("Location") ?? "";
+    const params = new URLSearchParams(location.split("?")[1]);
+
+    expect(params.get("job")).toBe("image-job-1");
+    expect(params.get("filename")).toBe("first.png");
+    expect(requestImageAnalysisMock).toHaveBeenCalledWith("image-job-1");
+  });
+
+  it("maps image conversion failure to the home error route", async () => {
+    const { VibecheckApiError } = await import("~/lib/api-client.server");
+    requestImageAnalysisMock.mockRejectedValue(
+      new VibecheckApiError("conversion failed", 400, {
+        error_code: "image_conversion_failed",
+      }),
+    );
+
+    const response = await callSubmitImageAction("image-job-2");
+
+    expect(response.headers.get("Location")).toBe(
+      "/?error=image_conversion_failed",
+    );
   });
 });
 

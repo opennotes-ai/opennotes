@@ -93,6 +93,9 @@ CREATE TABLE vibecheck_jobs (
                 'invalid_url', 'unsafe_url', 'unsupported_site', 'upstream_error',
                 'extraction_failed', 'section_failure', 'timeout',
                 'pdf_too_large', 'pdf_extraction_failed',
+                'upload_key_invalid', 'upload_not_found', 'invalid_pdf_type',
+                'image_count_too_large', 'image_aggregate_too_large', 'invalid_image_type',
+                'image_conversion_failed',
                 'rate_limited', 'internal'
             )
         ),
@@ -103,6 +106,20 @@ CREATE TABLE vibecheck_jobs (
             (status NOT IN ('done', 'partial', 'failed') AND finished_at IS NULL)
             OR (status IN ('done', 'partial', 'failed') AND finished_at IS NOT NULL)
         )
+);
+"""
+
+
+VIBECHECK_IMAGE_UPLOAD_BATCHES_DDL = """
+CREATE TABLE vibecheck_image_upload_batches (
+    job_id UUID PRIMARY KEY REFERENCES vibecheck_jobs(job_id) ON DELETE CASCADE,
+    images JSONB NOT NULL,
+    conversion_status TEXT NOT NULL DEFAULT 'awaiting_upload',
+    generated_pdf_gcs_key TEXT,
+    error_code TEXT,
+    error_message TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 """
 

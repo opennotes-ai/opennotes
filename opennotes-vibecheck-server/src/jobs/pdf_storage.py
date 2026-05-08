@@ -25,9 +25,34 @@ class PdfUploadStore:
         self._bucket = self._client.bucket(bucket_name)
         self._credentials: Any = None
 
-    def signed_upload_url(self, key: str, *, ttl_seconds: int = 900) -> str | None:
-        """Mint a versioned signed PUT URL for a PDF object key."""
-        return self._signed_url(key, method="PUT", ttl_seconds=ttl_seconds)
+    def signed_upload_url(
+        self,
+        key: str,
+        *,
+        ttl_seconds: int = 900,
+        content_type: str = "application/pdf",
+    ) -> str | None:
+        """Mint a versioned signed PUT URL for an upload object key."""
+        return self._signed_url(
+            key,
+            method="PUT",
+            ttl_seconds=ttl_seconds,
+            content_type=content_type,
+        )
+
+    def signed_image_upload_url(
+        self,
+        key: str,
+        *,
+        content_type: str,
+        ttl_seconds: int = 900,
+    ) -> str | None:
+        """Mint a versioned signed PUT URL for a source image object."""
+        return self.signed_upload_url(
+            key,
+            ttl_seconds=ttl_seconds,
+            content_type=content_type,
+        )
 
     def signed_read_url(self, key: str, *, ttl_seconds: int = 900) -> str | None:
         """Mint a versioned signed GET URL for a previously uploaded PDF."""
@@ -45,7 +70,14 @@ class PdfUploadStore:
             creds.refresh(google.auth.transport.requests.Request())
         return creds
 
-    def _signed_url(self, key: str, *, method: str, ttl_seconds: int) -> str | None:
+    def _signed_url(
+        self,
+        key: str,
+        *,
+        method: str,
+        ttl_seconds: int,
+        content_type: str | None = None,
+    ) -> str | None:
         try:
             credentials = self._get_credentials()
             signer_email = getattr(credentials, "service_account_email", None) or getattr(
@@ -58,7 +90,7 @@ class PdfUploadStore:
                 return None
 
             blob = self._bucket.blob(key)
-            kwargs = {
+            kwargs: dict[str, Any] = {
                 "version": "v4",
                 "expiration": timedelta(seconds=ttl_seconds),
                 "method": method,
@@ -66,7 +98,7 @@ class PdfUploadStore:
                 "access_token": credentials.token,
             }
             if method == "PUT":
-                kwargs["content_type"] = "application/pdf"
+                kwargs["content_type"] = content_type or "application/octet-stream"
             return blob.generate_signed_url(**kwargs)
         except Exception as exc:
             logger.warning(
@@ -108,6 +140,14 @@ class PdfUploadStore:
                 exc,
             )
             raise
+
+    def read_bytes(self, key: str) -> bytes:
+        """Read an uploaded object as bytes."""
+        return self._bucket.blob(key).download_as_bytes()
+
+    def write_pdf(self, key: str, data: bytes) -> None:
+        """Write a generated PDF object with the canonical content type."""
+        self._bucket.blob(key).upload_from_string(data, content_type="application/pdf")
 
 
 class _StoreCache:

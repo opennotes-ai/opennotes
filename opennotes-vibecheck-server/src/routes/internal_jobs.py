@@ -27,6 +27,7 @@ from pydantic import BaseModel
 from src.analyses.schemas import SectionSlug
 from src.auth.cloud_tasks_oidc import verify_cloud_tasks_oidc
 from src.config import Settings, get_settings
+from src.jobs.image_pdf_conversion import run_image_conversion
 from src.jobs.orchestrator import run_job, run_section_retry
 from src.monitoring import get_logger
 
@@ -97,6 +98,34 @@ async def run(
     pool = _get_db_pool(request)
 
     result = await run_job(
+        pool, job_id, body.expected_attempt_id, settings
+    )
+    return JSONResponse(
+        status_code=result.status_code,
+        content={"status_code": result.status_code},
+    )
+
+
+@router.post("/jobs/{job_id}/convert-images")
+async def convert_images(
+    job_id: UUID,
+    body: RunJobBody,
+    request: Request,
+    settings: Settings = Depends(get_settings),
+) -> JSONResponse:
+    """Drive one Cloud Tasks delivery through image-to-PDF conversion."""
+    if body.job_id != job_id:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "error_code": "invalid_request",
+                "message": "path job_id does not match body job_id",
+            },
+        )
+
+    pool = _get_db_pool(request)
+
+    result = await run_image_conversion(
         pool, job_id, body.expected_attempt_id, settings
     )
     return JSONResponse(

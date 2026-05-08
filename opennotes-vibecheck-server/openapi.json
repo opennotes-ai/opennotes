@@ -191,6 +191,90 @@
         }
       }
     },
+    "/api/upload-images": {
+      "post": {
+        "tags": [
+          "analyze"
+        ],
+        "summary": "Upload Images",
+        "description": "Create a pending job and return signed PUT URLs for ordered source images.",
+        "operationId": "upload_images_api_upload_images_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UploadImagesRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UploadImagesResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/analyze-images": {
+      "post": {
+        "tags": [
+          "analyze"
+        ],
+        "summary": "Analyze Images",
+        "description": "Validate uploaded source images and enqueue image-to-PDF conversion.",
+        "operationId": "analyze_images_api_analyze_images_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AnalyzeImagesRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnalyzeResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/analyze-pdf": {
       "post": {
         "tags": [
@@ -637,6 +721,58 @@
         }
       }
     },
+    "/_internal/jobs/{job_id}/convert-images": {
+      "post": {
+        "tags": [
+          "internal"
+        ],
+        "summary": "Convert Images",
+        "description": "Drive one Cloud Tasks delivery through image-to-PDF conversion.",
+        "operationId": "convert_images__internal_jobs__job_id__convert_images_post",
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Job Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RunJobBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/_internal/jobs/{job_id}/sections/{slug}/run": {
       "post": {
         "tags": [
@@ -867,6 +1003,20 @@
   },
   "components": {
     "schemas": {
+      "AnalyzeImagesRequest": {
+        "properties": {
+          "job_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Job Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "job_id"
+        ],
+        "title": "AnalyzeImagesRequest"
+      },
       "AnalyzePDFRequest": {
         "properties": {
           "gcs_key": {
@@ -1123,6 +1273,10 @@
           "upload_key_invalid",
           "upload_not_found",
           "invalid_pdf_type",
+          "image_count_too_large",
+          "image_aggregate_too_large",
+          "invalid_image_type",
+          "image_conversion_failed",
           "timeout",
           "rate_limited",
           "internal"
@@ -1744,6 +1898,59 @@
         "type": "object",
         "title": "ImageModerationSection",
         "description": "GCP Vision SafeSearch results for images referenced in the page."
+      },
+      "ImageUploadItem": {
+        "properties": {
+          "filename": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Filename"
+          },
+          "content_type": {
+            "type": "string",
+            "title": "Content Type"
+          },
+          "size_bytes": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Size Bytes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "content_type",
+          "size_bytes"
+        ],
+        "title": "ImageUploadItem"
+      },
+      "ImageUploadUrl": {
+        "properties": {
+          "ordinal": {
+            "type": "integer",
+            "title": "Ordinal"
+          },
+          "gcs_key": {
+            "type": "string",
+            "title": "Gcs Key"
+          },
+          "upload_url": {
+            "type": "string",
+            "title": "Upload Url"
+          }
+        },
+        "type": "object",
+        "required": [
+          "ordinal",
+          "gcs_key",
+          "upload_url"
+        ],
+        "title": "ImageUploadUrl"
       },
       "JobState": {
         "properties": {
@@ -2966,6 +3173,45 @@
           "skipped_for_cap"
         ],
         "title": "TrendsOppositionsReport"
+      },
+      "UploadImagesRequest": {
+        "properties": {
+          "images": {
+            "items": {
+              "$ref": "#/components/schemas/ImageUploadItem"
+            },
+            "type": "array",
+            "minItems": 1,
+            "title": "Images"
+          }
+        },
+        "type": "object",
+        "required": [
+          "images"
+        ],
+        "title": "UploadImagesRequest"
+      },
+      "UploadImagesResponse": {
+        "properties": {
+          "job_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Job Id"
+          },
+          "images": {
+            "items": {
+              "$ref": "#/components/schemas/ImageUploadUrl"
+            },
+            "type": "array",
+            "title": "Images"
+          }
+        },
+        "type": "object",
+        "required": [
+          "job_id",
+          "images"
+        ],
+        "title": "UploadImagesResponse"
       },
       "UploadPDFResponse": {
         "properties": {

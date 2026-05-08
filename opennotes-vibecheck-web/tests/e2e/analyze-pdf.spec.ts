@@ -14,9 +14,11 @@ import { fileURLToPath } from "node:url";
 import { stopWebProcess } from "./_helpers/web-process";
 
 const PDF_JOB_ID = "55555555-5555-7555-8555-555555555555";
+const IMAGE_JOB_ID = "55555555-5555-7555-8555-555555555556";
 const ATTEMPT_ID = "66666666-6666-7666-8666-666666666666";
 const WEB_ROOT = fileURLToPath(new URL("../..", import.meta.url));
 const PDF_GCS_KEY = "pdfs/e2e-policy.pdf";
+const IMAGE_PDF_GCS_KEY = `image-uploads/${IMAGE_JOB_ID}/generated.pdf`;
 const MAX_PDF_BYTES = 50 * 1024 * 1024;
 
 let apiServer: Server;
@@ -27,11 +29,17 @@ let webLogs = "";
 let uploadRequestCount = 0;
 let signedUploadRequestCount = 0;
 let analyzePdfRequestCount = 0;
+let uploadImagesRequestCount = 0;
+let signedImageUploadRequestCount = 0;
+let analyzeImagesRequestCount = 0;
 let frameCompatRequestCount = 0;
 let screenshotRequestCount = 0;
 let signedUploadContentType = "";
 let signedUploadBody = Buffer.alloc(0);
 let analyzePdfBody: unknown = null;
+let uploadImagesBody: unknown = null;
+let analyzeImagesBody: unknown = null;
+let signedImageContentTypes: string[] = [];
 
 async function runWebCommand(
   args: string[],
@@ -108,6 +116,15 @@ function writeJson(
 ): void {
   response.writeHead(status, { "content-type": "application/json" });
   response.end(JSON.stringify(body));
+}
+
+function writeCorsNoContent(response: ServerResponse<IncomingMessage>): void {
+  response.writeHead(204, {
+    "access-control-allow-origin": "*",
+    "access-control-allow-methods": "PUT, OPTIONS",
+    "access-control-allow-headers": "content-type",
+  });
+  response.end();
 }
 
 function minimalPdf(): Buffer {
@@ -201,6 +218,26 @@ function pdfJobState() {
   };
 }
 
+function imageJobState() {
+  return {
+    ...pdfJobState(),
+    job_id: IMAGE_JOB_ID,
+    url: IMAGE_PDF_GCS_KEY,
+    pdf_archive_url: `/api/archive-preview?source_type=pdf&job_id=${IMAGE_JOB_ID}`,
+    sidebar_payload: {
+      ...sidebarPayload(),
+      source_url: IMAGE_PDF_GCS_KEY,
+      page_title: "Image Upload E2E Fixture",
+      headline: {
+        text: "Image Upload E2E Fixture",
+        kind: "stock",
+        unavailable_inputs: [],
+      },
+    },
+    page_title: "Image Upload E2E Fixture",
+  };
+}
+
 function archiveHtml(): string {
   return `<!doctype html>
     <html>
@@ -226,11 +263,17 @@ function resetCounters(): void {
   uploadRequestCount = 0;
   signedUploadRequestCount = 0;
   analyzePdfRequestCount = 0;
+  uploadImagesRequestCount = 0;
+  signedImageUploadRequestCount = 0;
+  analyzeImagesRequestCount = 0;
   frameCompatRequestCount = 0;
   screenshotRequestCount = 0;
   signedUploadContentType = "";
   signedUploadBody = Buffer.alloc(0);
   analyzePdfBody = null;
+  uploadImagesBody = null;
+  analyzeImagesBody = null;
+  signedImageContentTypes = [];
 }
 
 function archiveFrame(page: Page): FrameLocator {
@@ -257,13 +300,75 @@ async function uploadValidPdf(page: Page): Promise<void> {
     mimeType: "application/pdf",
     buffer: minimalPdf(),
   });
-  await page.getByRole("button", { name: "Upload PDF" }).click();
+  await page.getByRole("button", { name: "Upload" }).click();
   await expect(page).toHaveURL(new RegExp(`/analyze\\?job=${PDF_JOB_ID}`));
 }
 
 test.beforeAll(async () => {
   apiServer = createServer((request, response) => {
     const requestUrl = new URL(request.url ?? "/", apiBaseUrl || "http://x");
+    if (
+      request.method === "OPTIONS" &&
+      (requestUrl.pathname.startsWith(`/signed-image/${IMAGE_JOB_ID}/`) ||
+        requestUrl.pathname === `/signed-upload/${PDF_JOB_ID}`)
+    ) {
+      writeCorsNoContent(response);
+      return;
+    }
+    if (request.method === "POST" && requestUrl.pathname === "/api/upload-images") {
+      uploadImagesRequestCount += 1;
+      const chunks: Buffer[] = [];
+      request.on("data", (chunk) => {
+        chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+      });
+      request.on("end", () => {
+        uploadImagesBody = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+        writeJson(response, 200, {
+          job_id: IMAGE_JOB_ID,
+          images: [
+            {
+              ordinal: 0,
+              gcs_key: `image-uploads/${IMAGE_JOB_ID}/source/000-first`,
+              upload_url: `${apiBaseUrl}/signed-image/${IMAGE_JOB_ID}/0`,
+            },
+            {
+              ordinal: 1,
+              gcs_key: `image-uploads/${IMAGE_JOB_ID}/source/001-second`,
+              upload_url: `${apiBaseUrl}/signed-image/${IMAGE_JOB_ID}/1`,
+            },
+          ],
+        });
+      });
+      return;
+    }
+    if (
+      request.method === "PUT" &&
+      requestUrl.pathname.startsWith(`/signed-image/${IMAGE_JOB_ID}/`)
+    ) {
+      signedImageUploadRequestCount += 1;
+      signedImageContentTypes.push(String(request.headers["content-type"] ?? ""));
+      request.on("end", () => {
+        writeCorsNoContent(response);
+      });
+      request.resume();
+      return;
+    }
+    if (request.method === "POST" && requestUrl.pathname === "/api/analyze-images") {
+      analyzeImagesRequestCount += 1;
+      const chunks: Buffer[] = [];
+      request.on("data", (chunk) => {
+        chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+      });
+      request.on("end", () => {
+        analyzeImagesBody = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+        writeJson(response, 200, {
+          job_id: IMAGE_JOB_ID,
+          status: "pending",
+          cached: false,
+        });
+      });
+      return;
+    }
     if (request.method === "POST" && requestUrl.pathname === "/api/upload-pdf") {
       uploadRequestCount += 1;
       writeJson(response, 200, {
@@ -284,8 +389,7 @@ test.beforeAll(async () => {
       });
       request.on("end", () => {
         signedUploadBody = Buffer.concat(chunks);
-        response.writeHead(204);
-        response.end();
+        writeCorsNoContent(response);
       });
       return;
     }
@@ -316,14 +420,21 @@ test.beforeAll(async () => {
       writeJson(response, 200, pdfJobState());
       return;
     }
+    if (
+      request.method === "GET" &&
+      requestUrl.pathname === `/api/analyze/${IMAGE_JOB_ID}`
+    ) {
+      writeJson(response, 200, imageJobState());
+      return;
+    }
     if (request.method === "GET" && requestUrl.pathname === "/api/pdf-read") {
       const jobId = requestUrl.searchParams.get("job_id");
-      if (jobId !== PDF_JOB_ID) {
+      if (jobId !== PDF_JOB_ID && jobId !== IMAGE_JOB_ID) {
         writeJson(response, 404, { error_code: "not_found" });
         return;
       }
       response.writeHead(307, {
-        location: `${apiBaseUrl}/pdf-source/${PDF_JOB_ID}.pdf`,
+        location: `${apiBaseUrl}/pdf-source/${jobId}.pdf`,
         "cache-control": "no-store, private",
       });
       response.end();
@@ -331,7 +442,8 @@ test.beforeAll(async () => {
     }
     if (
       request.method === "GET" &&
-      requestUrl.pathname === `/pdf-source/${PDF_JOB_ID}.pdf`
+      (requestUrl.pathname === `/pdf-source/${PDF_JOB_ID}.pdf` ||
+        requestUrl.pathname === `/pdf-source/${IMAGE_JOB_ID}.pdf`)
     ) {
       const body = minimalPdf();
       response.writeHead(200, {
@@ -347,7 +459,7 @@ test.beforeAll(async () => {
     ) {
       if (
         requestUrl.searchParams.get("source_type") === "pdf" &&
-        requestUrl.searchParams.get("job_id") === PDF_JOB_ID
+        [PDF_JOB_ID, IMAGE_JOB_ID].includes(requestUrl.searchParams.get("job_id") ?? "")
       ) {
         response.writeHead(200, {
           "cache-control": "no-store, private",
@@ -441,6 +553,7 @@ test("PDF upload happy path shows Original PDF and Archived annotated HTML", asy
   await expect(page.getByTestId("flashpoint-reasoning")).toContainText(
     "gets sharper around the cited turn",
   );
+  await page.getByRole("button", { name: "Original" }).click();
   await expect(page.getByTestId("page-frame-pdf-embed")).toHaveAttribute(
     "src",
     `/api/pdf-read?job_id=${PDF_JOB_ID}`,
@@ -477,11 +590,57 @@ test("PDF upload happy path shows Original PDF and Archived annotated HTML", asy
   expect(screenshotRequestCount).toBe(0);
 });
 
+test("image batch upload reaches the normal analyze page with generated PDF original", async ({
+  page,
+}) => {
+  await page.goto(webBaseUrl);
+  await page.getByTestId("vibecheck-pdf-input").setInputFiles([
+    {
+      name: "first.png",
+      mimeType: "image/png",
+      buffer: Buffer.from("png bytes"),
+    },
+    {
+      name: "second.jpg",
+      mimeType: "image/jpeg",
+      buffer: Buffer.from("jpeg bytes"),
+    },
+  ]);
+  await expect(page.getByTestId("upload-selection-copy")).toContainText(
+    "2 images selected",
+  );
+
+  await page.getByRole("button", { name: "Upload" }).click();
+  await expect(page).toHaveURL(new RegExp(`/analyze\\?job=${IMAGE_JOB_ID}`));
+
+  await expect(page.getByTestId("headline-summary-text")).toContainText(
+    "Image Upload E2E Fixture",
+  );
+  await page.getByRole("button", { name: "Original" }).click();
+  await expect(page.getByTestId("page-frame-pdf-embed")).toHaveAttribute(
+    "src",
+    `/api/pdf-read?job_id=${IMAGE_JOB_ID}`,
+  );
+  expect(uploadImagesRequestCount).toBe(1);
+  expect(signedImageUploadRequestCount).toBe(2);
+  expect(analyzeImagesRequestCount).toBe(1);
+  expect(signedImageContentTypes).toEqual(["image/png", "image/jpeg"]);
+  expect(uploadImagesBody).toEqual({
+    images: [
+      { filename: "first.png", content_type: "image/png", size_bytes: 9 },
+      { filename: "second.jpg", content_type: "image/jpeg", size_bytes: 10 },
+    ],
+  });
+  expect(analyzeImagesBody).toEqual({ job_id: IMAGE_JOB_ID });
+});
+
 test("PDF utterance ref switches to Archived and targets the cited anchor", async ({
   page,
 }) => {
   await uploadValidPdf(page);
 
+  await page.getByText("Tone/dynamics").click();
+  await expect(page.getByTestId("flashpoint-utterance-ref")).toBeVisible();
   await page.getByTestId("flashpoint-utterance-ref").click();
   await expect(page.getByRole("button", { name: "Archived" })).toHaveAttribute(
     "aria-pressed",
@@ -505,7 +664,7 @@ test("PDF client validation rejects oversize and non-PDF files before submit", a
     const oversizedPath = join(tmpDir, "too-big.pdf");
     await writeFile(oversizedPath, Buffer.alloc(MAX_PDF_BYTES + 1));
     await page.getByTestId("vibecheck-pdf-input").setInputFiles(oversizedPath);
-    await page.getByRole("button", { name: "Upload PDF" }).click();
+    await page.getByRole("button", { name: "Upload" }).click();
     await expect(page.getByRole("alert")).toHaveText(
       "PDF must be 50 MB or less.",
     );
@@ -518,8 +677,8 @@ test("PDF client validation rejects oversize and non-PDF files before submit", a
     mimeType: "text/plain",
     buffer: Buffer.from("not a pdf"),
   });
-  await page.getByRole("button", { name: "Upload PDF" }).click();
-  await expect(page.getByRole("alert")).toHaveText("Please choose a PDF file.");
+  await page.getByRole("button", { name: "Upload" }).click();
+  await expect(page.getByRole("alert")).toHaveText("That image type is not supported.");
   expect(uploadRequestCount).toBe(0);
   expect(signedUploadRequestCount).toBe(0);
   expect(analyzePdfRequestCount).toBe(0);

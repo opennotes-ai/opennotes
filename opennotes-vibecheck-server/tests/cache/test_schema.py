@@ -96,6 +96,7 @@ class TestNewTablesExist:
             "vibecheck_scrapes",
             "vibecheck_job_utterances",
             "vibecheck_pdf_archives",
+            "vibecheck_image_upload_batches",
         ],
     )
     def test_create_table_if_not_exists(self, schema_sql: str, table: str) -> None:
@@ -157,6 +158,7 @@ class TestRowLevelSecurityLockdown:
             "vibecheck_scrapes",
             "vibecheck_job_utterances",
             "vibecheck_pdf_archives",
+            "vibecheck_image_upload_batches",
         ],
     )
     def test_table_enables_and_forces_rls(self, schema_sql: str, table: str) -> None:
@@ -170,6 +172,7 @@ class TestRowLevelSecurityLockdown:
             "vibecheck_scrapes",
             "vibecheck_job_utterances",
             "vibecheck_pdf_archives",
+            "vibecheck_image_upload_batches",
         ],
     )
     def test_revokes_anon_and_authenticated(self, schema_sql: str, table: str) -> None:
@@ -201,6 +204,13 @@ class TestStatusCheckConstraint:
             "internal",
             "pdf_too_large",
             "pdf_extraction_failed",
+            "upload_key_invalid",
+            "upload_not_found",
+            "invalid_pdf_type",
+            "image_count_too_large",
+            "image_aggregate_too_large",
+            "invalid_image_type",
+            "image_conversion_failed",
         ):
             assert f"'{code}'" in _jobs_error_code_check_body(schema_sql)
 

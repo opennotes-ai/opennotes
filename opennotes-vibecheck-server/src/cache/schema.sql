@@ -167,7 +167,9 @@ CREATE TABLE IF NOT EXISTS public.vibecheck_jobs (
             OR error_code IN (
                 'invalid_url', 'unsafe_url', 'unsupported_site', 'upstream_error',
                 'extraction_failed', 'section_failure', 'timeout', 'pdf_too_large',
-                'pdf_extraction_failed',
+                'pdf_extraction_failed', 'upload_key_invalid', 'upload_not_found',
+                'invalid_pdf_type', 'image_count_too_large', 'image_aggregate_too_large',
+                'invalid_image_type', 'image_conversion_failed',
                 'rate_limited', 'internal'
             )
         ),
@@ -216,6 +218,40 @@ CREATE UNIQUE INDEX IF NOT EXISTS
     vibecheck_jobs_unique_done_cached_normalized_url
     ON public.vibecheck_jobs(normalized_url)
     WHERE status = 'done' AND cached = true;
+
+-- =========================================================================
+-- vibecheck_image_upload_batches (multi-image source bundle for PDF pipeline)
+-- =========================================================================
+
+CREATE TABLE IF NOT EXISTS public.vibecheck_image_upload_batches (
+    job_id UUID PRIMARY KEY REFERENCES public.vibecheck_jobs(job_id) ON DELETE CASCADE,
+    images JSONB NOT NULL,
+    conversion_status TEXT NOT NULL DEFAULT 'awaiting_upload',
+    generated_pdf_gcs_key TEXT,
+    error_code TEXT,
+    error_message TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT pg_catalog.now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT pg_catalog.now(),
+    CONSTRAINT vibecheck_image_upload_batches_status_check
+        CHECK (conversion_status IN (
+            'awaiting_upload', 'submitted', 'converting', 'converted', 'failed'
+        )),
+    CONSTRAINT vibecheck_image_upload_batches_error_code_check
+        CHECK (
+            error_code IS NULL
+            OR error_code IN (
+                'upload_not_found', 'invalid_image_type', 'image_count_too_large',
+                'image_aggregate_too_large', 'image_conversion_failed',
+                'upstream_error', 'internal'
+            )
+        ),
+    CONSTRAINT vibecheck_image_upload_batches_images_array_check
+        CHECK (pg_catalog.jsonb_typeof(images) = 'array')
+);
+
+ALTER TABLE public.vibecheck_image_upload_batches ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.vibecheck_image_upload_batches FORCE ROW LEVEL SECURITY;
+REVOKE ALL ON public.vibecheck_image_upload_batches FROM anon, authenticated;
 
 -- TASK-1473.35: e2e test hook for the section-retry Playwright spec.
 -- When VIBECHECK_ALLOW_TEST_FAIL_HEADER=1 and the public POST carries
@@ -996,7 +1032,9 @@ ALTER TABLE public.vibecheck_jobs
       'invalid_url', 'unsupported_site', 'upstream_error',
       'extraction_failed', 'timeout', 'rate_limited', 'internal',
       'unsafe_url', 'section_failure', 'pdf_too_large',
-      'pdf_extraction_failed'
+      'pdf_extraction_failed', 'upload_key_invalid', 'upload_not_found',
+      'invalid_pdf_type', 'image_count_too_large', 'image_aggregate_too_large',
+      'invalid_image_type', 'image_conversion_failed'
     )
   );
 

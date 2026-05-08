@@ -49,6 +49,14 @@ function copyFor(
       return "The PDF upload could not be found.";
     case "invalid_pdf_type":
       return "That file type isn't supported — please upload a PDF.";
+    case "image_count_too_large":
+      return "Too many images were selected.";
+    case "image_aggregate_too_large":
+      return "Those images are too large to analyze together.";
+    case "invalid_image_type":
+      return "That image type isn't supported.";
+    case "image_conversion_failed":
+      return "We couldn't convert those images to a PDF.";
     case "section_failure":
       return "Some analysis sections couldn't be completed.";
     case "timeout":
@@ -90,6 +98,14 @@ function detailFor(code: PublicErrorCode | null): string {
       return "The upload session expired or was not found. Please try uploading again.";
     case "invalid_pdf_type":
       return "Only PDF files are supported. Please select a valid PDF and try again.";
+    case "image_count_too_large":
+      return "Please select 100 images or fewer.";
+    case "image_aggregate_too_large":
+      return "Please select images totaling 45 MB or less.";
+    case "invalid_image_type":
+      return "Use PNG, JPEG, TIFF, or BMP images.";
+    case "image_conversion_failed":
+      return "One or more images may be corrupt or unreadable. Try exporting them again.";
     case "section_failure":
       return "Some analysis sections couldn't complete.";
     case "timeout":
