@@ -4,8 +4,7 @@ This module keeps the enrichment logic reusable for both slot execution and
 downstream tests. Evidence is attached only for
 `ClaimCategory.POTENTIALLY_FACTUAL` claims.
 
-Inline evidence is derived from source utterance text where possible.
-External evidence is currently seam-driven and budgeted; the default seam returns
+Supporting facts are grounded external references only. The default seam returns
 no external facts so tests never hit a network call unless explicitly patched.
 """
 
@@ -16,7 +15,7 @@ import logging
 import re
 from collections import defaultdict
 from collections.abc import Awaitable, Callable
-from typing import Any, Literal, NamedTuple
+from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
 import logfire
@@ -34,26 +33,6 @@ from src.services.gemini_agent import build_agent, run_vertex_agent_with_retry
 from src.services.vertex_limiter import vertex_slot
 
 logger = logging.getLogger(__name__)
-
-INLINE_FACT_MAX_CHARS = 600
-_INLINE_FACT_ELLIPSIS = "…"
-
-
-def _truncate_for_inline_fact(text: str) -> str:
-    text = text.lstrip()
-    if len(text) <= INLINE_FACT_MAX_CHARS:
-        return text
-    budget = INLINE_FACT_MAX_CHARS - len(_INLINE_FACT_ELLIPSIS)
-    cut = text.rfind(" ", 0, budget)
-    if cut < budget // 2:
-        cut = budget
-    return text[:cut].rstrip() + _INLINE_FACT_ELLIPSIS
-
-
-class _UtteranceMeta(NamedTuple):
-    text: str
-    kind: Literal["post", "comment", "reply"]
-
 
 _INLINE_TAUTOLOGY_PADDING_WORDS = {
     "claim",
@@ -254,6 +233,15 @@ def _log_curate_failed(error_type: str) -> None:
 def _log_grounded_url_filter_drop(claim_text: str, source_ref: str, reason: str) -> None:
     logfire.info(
         "vibecheck.evidence.grounded_url_filter_drop",
+        claim_text=claim_text,
+        source_ref=source_ref,
+        reason=reason,
+    )
+
+
+def _log_supporting_fact_filter_drop(claim_text: str, source_ref: str, reason: str) -> None:
+    logfire.info(
+        "vibecheck.evidence.supporting_fact_filter_drop",
         claim_text=claim_text,
         source_ref=source_ref,
         reason=reason,
@@ -697,30 +685,6 @@ def _is_inline_tautology(statement: str, claim_text: str) -> bool:
     return bool(prefix)
 
 
-def _inline_supporting_facts(
-    claim: DedupedClaim,
-    utterance_meta_by_id: dict[str, _UtteranceMeta],
-) -> list[SupportingFact]:
-    facts: list[SupportingFact] = []
-    for utterance_id in _unique_items_in_order(claim.utterance_ids):
-        meta = utterance_meta_by_id.get(utterance_id)
-        if meta is None or not meta.text:
-            continue
-        if meta.kind == "post":
-            continue
-        if _is_inline_tautology(meta.text, claim.canonical_text):
-            continue
-        statement = _truncate_for_inline_fact(meta.text)
-        facts.append(
-            SupportingFact(
-                statement=statement,
-                source_kind=SourceKind.UTTERANCE,
-                source_ref=utterance_id,
-            )
-        )
-    return facts
-
-
 def _dedupe_supporting_facts(facts: list[SupportingFact]) -> list[SupportingFact]:
     seen: set[tuple[str, str, str]] = set()
     out: list[SupportingFact] = []
@@ -733,9 +697,26 @@ def _dedupe_supporting_facts(facts: list[SupportingFact]) -> list[SupportingFact
     return out
 
 
+def _keep_external_supporting_fact(fact: SupportingFact, canonical_text: str) -> bool:
+    if fact.source_kind != SourceKind.EXTERNAL:
+        _log_supporting_fact_filter_drop(
+            canonical_text,
+            fact.source_ref,
+            "non_external_source_kind",
+        )
+        return False
+    if _is_inline_tautology(fact.statement, canonical_text):
+        _log_supporting_fact_filter_drop(
+            canonical_text,
+            fact.source_ref,
+            "tautological_statement",
+        )
+        return False
+    return True
+
+
 async def build_supporting_facts_by_claim(
     claims: list[DedupedClaim],
-    utterance_meta_by_id: dict[str, _UtteranceMeta],
     settings: Settings,
     *,
     external_fetcher: ExternalEvidenceFetcher = fetch_external_evidence_batch,
@@ -752,11 +733,6 @@ async def build_supporting_facts_by_claim(
         return {}
 
     facts_by_claim: dict[str, list[SupportingFact]] = {}
-    for claim in eligible_claims:
-        inline_facts = _inline_supporting_facts(claim, utterance_meta_by_id)
-        if inline_facts:
-            facts_by_claim[claim.canonical_text] = inline_facts
-
     budgeted_texts = claim_texts[: settings.EVIDENCE_MAX_EXTERNAL_CLAIMS]
     _log_claims_eligible_per_job(len(budgeted_texts))
     if budgeted_texts:
@@ -777,10 +753,9 @@ async def build_supporting_facts_by_claim(
             converted
             for raw in raw_external.get(canonical_text, [])
             if (converted := _coerce_supporting_fact(raw))
+            and _keep_external_supporting_fact(converted, canonical_text)
         ]
-        if canonical_text in facts_by_claim:
-            facts_by_claim[canonical_text].extend(external_facts)
-        elif external_facts:
+        if external_facts:
             facts_by_claim[canonical_text] = external_facts
 
     return {
@@ -790,7 +765,6 @@ async def build_supporting_facts_by_claim(
 
 
 __all__ = [
-    "INLINE_FACT_MAX_CHARS",
     "build_supporting_facts_by_claim",
     "fetch_external_evidence_batch",
 ]

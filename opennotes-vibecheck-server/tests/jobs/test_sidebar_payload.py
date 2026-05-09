@@ -263,8 +263,8 @@ class TestAssembleSidebarPayload:
                             "supporting_facts": [
                                 {
                                     "statement": "Observed data",
-                                    "source_kind": "utterance",
-                                    "source_ref": "u-1",
+                                    "source_kind": "external",
+                                    "source_ref": "https://example.test/sky",
                                 }
                             ],
                             "facts_to_verify": 2,
@@ -305,7 +305,10 @@ class TestAssembleSidebarPayload:
         sidebar = assemble_sidebar_payload("https://example.com", sections)
 
         facts = sidebar.facts_claims.claims_report
-        assert facts.deduped_claims[0].supporting_facts[0].source_ref == "u-1"
+        assert (
+            facts.deduped_claims[0].supporting_facts[0].source_ref
+            == "https://example.test/sky"
+        )
         assert facts.deduped_claims[0].facts_to_verify == 2
         assert facts.deduped_claims[0].premise_ids == ["premise_abcdef123456"]
         assert facts.premises is not None
