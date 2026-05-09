@@ -108,7 +108,7 @@ export default function ClaimsDedupReport(props: ClaimsDedupReportProps) {
   });
 
   return (
-    <div data-testid="report-facts_claims__dedup" class="relative space-y-2">
+    <div data-testid="report-facts_claims__dedup" class="relative space-y-2 pb-8 pr-8">
       <p class="text-[11px] text-muted-foreground">
         {sorted().length} claim{sorted().length === 1 ? "" : "s"}
       </p>

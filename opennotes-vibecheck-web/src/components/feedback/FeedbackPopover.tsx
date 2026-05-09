@@ -134,26 +134,26 @@ export function FeedbackPopover(props: FeedbackPopoverProps): JSX.Element {
             <button
               type="button"
               aria-label="Thumbs up"
-              class="flex h-10 w-10 items-center justify-center rounded-md hover:bg-accent focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+              class="flex h-8 w-8 items-center justify-center rounded-md hover:bg-accent focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
               onClick={() => handleIconClick("thumbs_up")}
             >
-              <ThumbsUp size={20} />
+              <ThumbsUp size={18} />
             </button>
             <button
               type="button"
               aria-label="Thumbs down"
-              class="flex h-10 w-10 items-center justify-center rounded-md hover:bg-accent focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+              class="flex h-8 w-8 items-center justify-center rounded-md hover:bg-accent focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
               onClick={() => handleIconClick("thumbs_down")}
             >
-              <ThumbsDown size={20} />
+              <ThumbsDown size={18} />
             </button>
             <button
               type="button"
               aria-label="Send a message"
-              class="flex h-10 w-10 items-center justify-center rounded-md hover:bg-accent focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+              class="flex h-8 w-8 items-center justify-center rounded-md hover:bg-accent focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
               onClick={() => handleIconClick("message")}
             >
-              <MessageSquare size={20} />
+              <MessageSquare size={18} />
             </button>
           </div>
         </PopoverContent>

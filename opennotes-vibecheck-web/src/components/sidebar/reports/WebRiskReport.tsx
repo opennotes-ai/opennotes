@@ -18,7 +18,7 @@ export default function WebRiskReport(
   const findings = (): WebRiskFinding[] => props.findings ?? [];
 
   return (
-    <div data-testid="report-safety__web_risk" class="relative space-y-2">
+    <div data-testid="report-safety__web_risk" class="relative space-y-2 pb-8 pr-8">
       <p class="text-[11px] text-muted-foreground">
         {findings().length} flagged URL{findings().length === 1 ? "" : "s"}
       </p>

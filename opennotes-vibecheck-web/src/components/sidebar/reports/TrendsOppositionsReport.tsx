@@ -125,7 +125,7 @@ export default function TrendsOppositionsReport(props: TrendsOppositionsReportPr
     <Show when={!hasNoContent(report())}>
       <div
         data-testid="report-opinions_sentiments__trends_oppositions"
-        class="relative space-y-4"
+        class="relative space-y-4 pb-8 pr-8"
       >
         <Show when={trends().length > 0}>
           <section>

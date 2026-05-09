@@ -23,7 +23,7 @@ export default function KnownMisinfoReport(props: KnownMisinfoReportProps) {
   });
 
   return (
-    <div data-testid="report-facts_claims__known_misinfo" class="relative space-y-2">
+    <div data-testid="report-facts_claims__known_misinfo" class="relative space-y-2 pb-8 pr-8">
       <p class="text-[11px] text-muted-foreground">
         {grouped().length} claim{grouped().length === 1 ? "" : "s"}
       </p>

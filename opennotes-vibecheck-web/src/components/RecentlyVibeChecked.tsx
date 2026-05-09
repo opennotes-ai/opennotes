@@ -45,7 +45,7 @@ export default function RecentlyVibeChecked(props: RecentlyVibeCheckedProps) {
         <div class="grid grid-cols-2 gap-4 sm:grid-cols-3">
           <For each={props.analyses}>
             {(item) => (
-              <div class="relative">
+              <div class="relative pb-8 pr-8">
                 <GalleryHoverCard
                   item={item}
                   data-testid="recent-analysis-card"

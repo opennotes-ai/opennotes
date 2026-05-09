@@ -28,7 +28,7 @@ export default function SafetyRecommendationReport(
         return (
           <section
             data-testid="safety-recommendation-report"
-            class="relative space-y-2 rounded-md border border-border bg-background p-3 text-xs"
+            class="relative space-y-2 rounded-md border border-border bg-background p-3 pb-8 pr-8 text-xs"
           >
             <div class="flex items-center gap-2">
               <span

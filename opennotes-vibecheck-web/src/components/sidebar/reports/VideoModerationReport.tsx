@@ -65,7 +65,7 @@ export default function VideoModerationReport(
   const matches = (): VideoModerationMatch[] => props.matches ?? [];
 
   return (
-    <div data-testid="report-safety__video_moderation" class="relative space-y-2">
+    <div data-testid="report-safety__video_moderation" class="relative space-y-2 pb-8 pr-8">
       <p class="text-[11px] text-muted-foreground">
         {matches().length} video{matches().length === 1 ? "" : "s"} checked
       </p>

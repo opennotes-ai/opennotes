@@ -37,7 +37,7 @@ export default function SentimentReport(props: SentimentReportProps) {
   return (
     <div
       data-testid="report-opinions_sentiments__sentiment"
-      class="relative space-y-2"
+      class="relative space-y-2 pb-8 pr-8"
     >
       <div
         role="img"
