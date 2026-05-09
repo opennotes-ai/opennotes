@@ -319,6 +319,7 @@ export default function SectionGroup(props: SectionGroupProps): JSX.Element {
   return (
     <section
       data-testid={`section-group-${props.label}`}
+      data-section-group={props.label}
       data-highlighted={props.highlighted ? "true" : undefined}
       class={`flex flex-col gap-4 rounded-lg bg-card p-4 text-card-foreground shadow-sm${props.highlighted ? " weather-pulse" : ""}`}
     >

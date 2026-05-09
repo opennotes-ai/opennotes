@@ -419,18 +419,23 @@ test("AC4: clicking weather-truth-focus collapses other 3 SectionGroups, Facts/c
   await expect(opinionsToggle).toHaveAttribute("aria-expanded", "false");
 });
 
-test("AC5: reduced-motion passthrough — safety popover open still sets data-highlighted=true", async ({
+test("AC5: reduced-motion passthrough — safety popover open still sets data-highlighted=true and changes computed bg-color", async ({
   page,
 }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   await navigateToSafetyJob(page);
 
-  const safetyGroup = page.locator('[data-testid="section-group-Safety"]');
+  const safetyGroup = page.locator('[data-section-group="Safety"]');
   const safetyTrigger = page.locator('[data-testid="weather-axis-card-safety"]');
+
+  const beforeBg = await safetyGroup.evaluate((el) => getComputedStyle(el).backgroundColor);
 
   await safetyTrigger.click();
 
   await expect(safetyGroup).toHaveAttribute("data-highlighted", "true");
+
+  const afterBg = await safetyGroup.evaluate((el) => getComputedStyle(el).backgroundColor);
+  expect(afterBg).not.toBe(beforeBg);
 
   await page.keyboard.press("Escape");
 
