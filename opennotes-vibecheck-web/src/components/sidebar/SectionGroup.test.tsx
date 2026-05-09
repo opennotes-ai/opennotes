@@ -1393,6 +1393,102 @@ describe("SectionGroup", () => {
 
     expect(toggle.getAttribute("aria-expanded")).toBe("true");
   });
+
+  it("controlled open: clicking toggle calls onOpenChange with false when open=true", async () => {
+    const onOpenChange = vi.fn();
+    render(() => (
+      <SectionGroup
+        label="Safety"
+        slugs={["safety__moderation"]}
+        sections={{}}
+        render={{}}
+        open={true}
+        onOpenChange={onOpenChange}
+      />
+    ));
+
+    const toggle = screen.getByTestId("section-toggle-Safety");
+    expect(toggle.getAttribute("aria-expanded")).toBe("true");
+
+    await fireEvent.click(toggle);
+    expect(onOpenChange).toHaveBeenCalledTimes(1);
+    expect(onOpenChange).toHaveBeenCalledWith(false);
+  });
+
+  it("controlled open: clicking toggle calls onOpenChange with true when open=false", async () => {
+    const onOpenChange = vi.fn();
+    render(() => (
+      <SectionGroup
+        label="Safety"
+        slugs={["safety__moderation"]}
+        sections={{}}
+        render={{}}
+        open={false}
+        onOpenChange={onOpenChange}
+      />
+    ));
+
+    const toggle = screen.getByTestId("section-toggle-Safety");
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+
+    await fireEvent.click(toggle);
+    expect(onOpenChange).toHaveBeenCalledTimes(1);
+    expect(onOpenChange).toHaveBeenCalledWith(true);
+  });
+
+  it("highlighted prop: renders data-highlighted attribute on outer section when highlighted=true", () => {
+    render(() => (
+      <SectionGroup
+        label="Safety"
+        slugs={["safety__moderation"]}
+        sections={{}}
+        render={{}}
+        highlighted={true}
+      />
+    ));
+
+    const section = screen.getByTestId("section-group-Safety");
+    expect(section.getAttribute("data-highlighted")).toBe("true");
+  });
+
+  it("highlighted prop: does not render data-highlighted when highlighted is absent", () => {
+    render(() => (
+      <SectionGroup
+        label="Safety"
+        slugs={["safety__moderation"]}
+        sections={{}}
+        render={{}}
+      />
+    ));
+
+    const section = screen.getByTestId("section-group-Safety");
+    expect(section.getAttribute("data-highlighted")).toBeNull();
+  });
+
+  it("uncontrolled fallback: toggle flips internal state when open prop is absent", async () => {
+    render(() => (
+      <SectionGroup
+        label="Tone/dynamics"
+        slugs={TONE_SLUGS}
+        sections={{}}
+        render={{}}
+      />
+    ));
+
+    const toggle = screen.getByTestId("section-toggle-Tone/dynamics");
+    const body = screen.getByTestId("section-group-body-tone-dynamics");
+
+    expect(toggle.getAttribute("aria-expanded")).toBe("true");
+    expectHasAttribute(body, "hidden", false);
+
+    await fireEvent.click(toggle);
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    expectHasAttribute(body, "hidden", true);
+
+    await fireEvent.click(toggle);
+    expect(toggle.getAttribute("aria-expanded")).toBe("true");
+    expectHasAttribute(body, "hidden", false);
+  });
 });
 
 describe("Sidebar", () => {
