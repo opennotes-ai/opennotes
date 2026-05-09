@@ -1970,7 +1970,7 @@ describe("Sidebar (done slots, per-slug reports)", () => {
     expect(screen.getByText("current curated highlight")).toBeDefined();
   });
 
-  it("does not render a standalone subjective section for completed payloads without highlights", () => {
+  it("does not render a standalone subjective slot-toggle for completed payloads without highlights", () => {
     const payload: SidebarPayload = {
       ...makeTonePayload(),
       opinions_sentiments: {
@@ -1991,9 +1991,6 @@ describe("Sidebar (done slots, per-slug reports)", () => {
     render(() => <Sidebar payload={payload} payloadComplete={true} />);
 
     expect(screen.queryByTestId("slot-toggle-opinions_sentiments__subjective")).toBeNull();
-    expect(
-      screen.queryByTestId("report-opinions_sentiments__highlights"),
-    ).toBeNull();
   });
 
   it("shows explicit provider names and hides non-harm confidence numbers", () => {

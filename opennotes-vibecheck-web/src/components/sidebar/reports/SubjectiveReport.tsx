@@ -1,4 +1,3 @@
-// @deprecated — kept only for HighlightsReport's legacy subjective_claims fallback; remove once legacy data is no longer expected.
 import { For, Show } from "solid-js";
 import type { components } from "~/lib/generated-types";
 import ExpandableText from "../ExpandableText";
@@ -13,6 +12,7 @@ export interface SubjectiveReportProps {
   canJumpToUtterance?: boolean;
 }
 
+/** @deprecated Kept only for HighlightsReport's legacy subjective_claims fallback; remove once legacy data is no longer expected. */
 export default function SubjectiveReport(props: SubjectiveReportProps) {
   const claims = (): SubjectiveClaim[] => props.claims ?? [];
 

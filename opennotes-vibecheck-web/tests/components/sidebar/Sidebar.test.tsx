@@ -437,7 +437,7 @@ describe("<Sidebar /> payload synthesis fallback", () => {
     expect(screen.queryByTestId("slot-toggle-facts_claims__evidence")).toBeNull();
   });
 
-  it("synthesizes evidence slot as failed when payload.evidence_status is 'failed' and suppresses 'No sources extracted'", () => {
+  it("suppresses 'No sources extracted' when evidence_status is 'failed'", () => {
     render(() => (
       <Sidebar
         sections={undefined}
