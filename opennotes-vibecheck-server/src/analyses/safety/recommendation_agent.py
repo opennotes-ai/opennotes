@@ -23,7 +23,11 @@ Web Risk, image SafeSearch, and video SafeSearch. Return one SafetyRecommendatio
 
 Use these levels:
 - safe: all available inputs are clear.
-- caution: partial data, topic-match-only moderation hits, inconclusive sampling, or one isolated flag.
+- mild: one verified low-severity signal, such as a topic-match-only moderation
+  hit, one isolated Web Risk POTENTIALLY_HARMFUL_APPLICATION finding, or one
+  low image/video max_likelihood score from verified frames.
+- caution: partial data, unavailable inputs, inconclusive sampling, or multiple
+  low-severity signals together.
 - unsafe: verified high-risk signals such as Web Risk MALWARE, multiple high-score text flags,
   or high image/video max_likelihood scores from real frames.
 

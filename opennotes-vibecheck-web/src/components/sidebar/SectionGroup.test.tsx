@@ -2119,10 +2119,10 @@ describe("Sidebar (done slots, per-slug reports)", () => {
       safety: {
         harmful_content_matches: [],
         recommendation: {
-          level: "caution",
-          rationale: "Some safety analyses were unavailable.",
-          top_signals: ["web risk unavailable", "video sampling inconclusive"],
-          unavailable_inputs: ["web_risk", "video_moderation"],
+          level: "mild",
+          rationale: "One minor verified signal.",
+          top_signals: ["topic-match content score 0.51"],
+          unavailable_inputs: [],
         },
       },
     };
@@ -2132,18 +2132,15 @@ describe("Sidebar (done slots, per-slug reports)", () => {
     const recommendation = screen.getByTestId("safety-recommendation-report");
     const safetySection = screen.getByTestId("section-group-Safety");
     const firstSlot = within(safetySection).getByTestId("slot-safety__moderation");
-    expect(recommendation.textContent).toContain("caution");
-    expect(recommendation.textContent).toContain(
-      "Some safety analyses were unavailable.",
-    );
-    expect(recommendation.textContent).toContain("web risk unavailable");
-    expect(recommendation.textContent).toContain("web_risk, video_moderation");
+    expect(recommendation.textContent).toContain("mild");
+    expect(recommendation.textContent).toContain("One minor verified signal.");
+    expect(recommendation.textContent).toContain("topic-match content score 0.51");
     expect(
       (recommendation.compareDocumentPosition(firstSlot) &
         Node.DOCUMENT_POSITION_FOLLOWING) !==
         0,
     ).toBe(true);
-    expect(safetySection.textContent).toContain("caution");
+    expect(safetySection.textContent).toContain("mild");
   });
 
   it("does not render summary when no safety recommendation is present", () => {

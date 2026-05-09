@@ -15,6 +15,7 @@ from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 
 class SafetyLevel(StrEnum):
     SAFE = "safe"
+    MILD = "mild"
     CAUTION = "caution"
     UNSAFE = "unsafe"
 

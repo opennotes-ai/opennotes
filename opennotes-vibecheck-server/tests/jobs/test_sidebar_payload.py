@@ -317,16 +317,18 @@ class TestAssembleSidebarPayload:
             "https://example.com",
             sections,
             safety_recommendation={
-                "level": "caution",
-                "rationale": "Some inputs were unavailable.",
-                "top_signals": ["web risk unavailable"],
-                "unavailable_inputs": ["web_risk"],
+                "level": "mild",
+                "rationale": "One minor verified signal.",
+                "top_signals": ["topic-match content score 0.51"],
+                "unavailable_inputs": [],
             },
         )
 
         assert sidebar.safety.recommendation is not None
-        assert sidebar.safety.recommendation.level == SafetyLevel.CAUTION
-        assert sidebar.safety.recommendation.unavailable_inputs == ["web_risk"]
+        assert sidebar.safety.recommendation.level == SafetyLevel.MILD
+        assert sidebar.safety.recommendation.top_signals == [
+            "topic-match content score 0.51"
+        ]
 
     def test_safety_recommendation_json_string_parses(self):
         sections = _minimal_done_sections()

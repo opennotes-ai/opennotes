@@ -225,9 +225,9 @@ async def test_post_then_internal_run_then_poll_to_done(
         *args: Any, **kwargs: Any
     ) -> SafetyRecommendation:
         return SafetyRecommendation(
-            level=SafetyLevel.SAFE,
-            rationale="No safety concerns in the deterministic integration fixture.",
-            top_signals=[],
+            level=SafetyLevel.MILD,
+            rationale="One minor verified signal in the deterministic integration fixture.",
+            top_signals=["topic-match content score 0.51"],
             unavailable_inputs=[],
         )
 
@@ -317,6 +317,7 @@ async def test_post_then_internal_run_then_poll_to_done(
     )
     assert sidebar["source_url"] == target_url
     assert "safety" in sidebar
+    assert sidebar["safety"]["recommendation"]["level"] == "mild"
     assert "tone_dynamics" in sidebar
     assert "facts_claims" in sidebar
     assert "opinions_sentiments" in sidebar

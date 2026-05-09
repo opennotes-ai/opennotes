@@ -10,6 +10,7 @@ from src.analyses.safety._schemas import (
     SafetyLevel,
     SafetyRecommendation,
     VideoModerationMatch,
+    WebRiskFinding,
 )
 from src.analyses.safety.recommendation_agent import (
     RECOMMENDATION_SYSTEM_PROMPT,
@@ -27,6 +28,15 @@ class StubAgent:
     async def run(self, user_prompt: str):
         self.prompts.append(user_prompt)
         return SimpleNamespace(output=self.output)
+
+
+def test_recommendation_prompt_defines_all_four_levels() -> None:
+    assert "- safe: all available inputs are clear." in RECOMMENDATION_SYSTEM_PROMPT
+    assert (
+        "- mild: one verified low-severity signal" in RECOMMENDATION_SYSTEM_PROMPT
+    )
+    assert "- caution: partial data" in RECOMMENDATION_SYSTEM_PROMPT
+    assert "- unsafe: verified high-risk signals" in RECOMMENDATION_SYSTEM_PROMPT
 
 
 async def test_run_safety_recommendation_serializes_inputs_for_agent(monkeypatch):
@@ -179,3 +189,82 @@ async def test_agent_output_level_is_returned(monkeypatch, inputs, expected):
 
     assert result.level == expected
     assert result.unavailable_inputs == inputs.unavailable_inputs
+
+
+async def test_topic_match_only_output_can_return_mild(monkeypatch):
+    inputs = SafetyRecommendationInputs(
+        harmful_content_matches=[
+            HarmfulContentMatch(
+                utterance_id="u1",
+                utterance_text="topic hit",
+                max_score=0.51,
+                categories={"toxicity": True},
+                scores={"toxicity": 0.51},
+                flagged_categories=["toxicity"],
+                source="gcp",
+            )
+        ],
+        web_risk_findings=[],
+        image_moderation_matches=[],
+        video_moderation_matches=[],
+        unavailable_inputs=[],
+    )
+    agent = StubAgent(
+        SafetyRecommendation(
+            level=SafetyLevel.MILD,
+            rationale="One topic-match-only moderation hit.",
+            top_signals=["topic-match content score 0.51"],
+        )
+    )
+    monkeypatch.setattr(
+        "src.analyses.safety.recommendation_agent.build_agent",
+        lambda *args, **kwargs: agent,
+    )
+
+    result = await run_safety_recommendation(inputs, settings=Settings())
+
+    assert result.level == SafetyLevel.MILD
+    assert result.top_signals == ["topic-match content score 0.51"]
+
+
+async def test_multiple_low_severity_flags_do_not_return_mild(monkeypatch):
+    inputs = SafetyRecommendationInputs(
+        harmful_content_matches=[
+            HarmfulContentMatch(
+                utterance_id="u1",
+                utterance_text="topic hit",
+                max_score=0.51,
+                categories={"toxicity": True},
+                scores={"toxicity": 0.51},
+                flagged_categories=["toxicity"],
+                source="gcp",
+            )
+        ],
+        web_risk_findings=[
+            WebRiskFinding(
+                url="https://download.example/tool",
+                threat_types=["POTENTIALLY_HARMFUL_APPLICATION"],
+            )
+        ],
+        image_moderation_matches=[],
+        video_moderation_matches=[],
+        unavailable_inputs=[],
+    )
+    agent = StubAgent(
+        SafetyRecommendation(
+            level=SafetyLevel.CAUTION,
+            rationale="Multiple low-severity signals need attention.",
+            top_signals=[
+                "topic-match content score 0.51",
+                "POTENTIALLY_HARMFUL_APPLICATION",
+            ],
+        )
+    )
+    monkeypatch.setattr(
+        "src.analyses.safety.recommendation_agent.build_agent",
+        lambda *args, **kwargs: agent,
+    )
+
+    result = await run_safety_recommendation(inputs, settings=Settings())
+
+    assert result.level == SafetyLevel.CAUTION

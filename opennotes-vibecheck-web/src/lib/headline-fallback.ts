@@ -30,6 +30,7 @@ const WHITESPACE_RE = /\s+/g;
 
 const SAFETY_VERB = {
   safe: "appears clean",
+  mild: "has minor concerns",
   caution: "warrants caution",
   unsafe: "appears unsafe",
 } satisfies Record<SafetyLevel, string>;

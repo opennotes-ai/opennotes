@@ -108,6 +108,17 @@ class TestHeadlineSummaryBranch:
 class TestSafetyRecommendationBranch:
     """Priority 2: SafetyRecommendation rationale wins over later branches."""
 
+    def test_mild_recommendation_renders_level_and_rationale(self) -> None:
+        payload = _empty_payload()
+        payload.safety.recommendation = SafetyRecommendation(
+            level=SafetyLevel.MILD,
+            rationale="One minor verified signal",
+            top_signals=["topic-match content score 0.51"],
+        )
+        out = derive_preview_description(payload, _empty_ctx())
+        assert "Mild" in out or "mild" in out
+        assert "minor verified signal" in out
+
     def test_caution_recommendation_renders_level_and_rationale(self) -> None:
         payload = _empty_payload()
         payload.safety.recommendation = SafetyRecommendation(
