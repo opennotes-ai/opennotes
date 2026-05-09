@@ -91,6 +91,13 @@ describe("IBM Plex Sans Condensed", () => {
       pkg.peerDependenciesMeta?.["@fontsource/ibm-plex-sans-condensed"]?.optional,
     ).toBe(true);
   });
+
+  it("exposes a --font-condensed token in theme.css pointing at IBM Plex Sans Condensed", () => {
+    const themeCss = readWorkspaceFile("packages/tokens/src/theme.css");
+
+    expect(themeCss).toContain("--font-condensed");
+    expect(themeCss).toContain("IBM Plex Sans Condensed");
+  });
 });
 
 describe("archive font specification (single source of truth)", () => {

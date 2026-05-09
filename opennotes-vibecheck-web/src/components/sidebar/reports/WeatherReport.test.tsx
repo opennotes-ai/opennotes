@@ -45,14 +45,13 @@ describe("WeatherReport", () => {
 
     expect(screen.getByTestId("weather-axis-card-truth")).toBeDefined();
     expect(screen.getByTestId("weather-axis-card-relevance")).toBeDefined();
-    expect(screen.getByTestId("weather-axis-card-sentiment")).toBeDefined();
     expect(screen.getByTestId("weather-truth-value").textContent).toBe(
       "First-Person",
     );
     expect(screen.getByTestId("weather-relevance-value").textContent).toBe(
       "On Topic",
     );
-    expect(screen.getByTestId("weather-sentiment-value").textContent).toBe(
+    expect(screen.getByTestId("weather-sentiment-value").textContent).toContain(
       "Warmly Skeptical",
     );
   });
@@ -68,9 +67,6 @@ describe("WeatherReport", () => {
     expect(
       root.contains(screen.getByTestId("weather-axis-card-relevance")),
     ).toBe(true);
-    expect(
-      root.contains(screen.getByTestId("weather-axis-card-sentiment")),
-    ).toBe(true);
   });
 
   it("uses Table primitive with three TableRows in TableBody and no TableHeader", () => {
@@ -84,42 +80,53 @@ describe("WeatherReport", () => {
     expect(root.querySelector('[data-slot="table-header"]')).toBeNull();
   });
 
-  it("removes inline axis heading text from the row chrome", () => {
+  it("heading text appears as a right-side hint span that is aria-hidden, not as an h1-h6 element", () => {
     render(() => <WeatherReport report={makeWeatherReport()} />);
     const root = screen.getByTestId("weather-report");
 
     for (const heading of ["Truth", "Relevance", "Sentiment"]) {
-      const matches = Array.from(
+      const headingEls = Array.from(
         root.querySelectorAll<HTMLElement>("h1, h2, h3, h4, h5, h6"),
       ).filter((node) => node.textContent?.trim() === heading);
-      expect(matches).toHaveLength(0);
+      expect(headingEls).toHaveLength(0);
+
+      const hintSpans = Array.from(
+        root.querySelectorAll<HTMLElement>("span[aria-hidden='true']"),
+      ).filter((node) => node.textContent?.trim().toUpperCase() === heading.toUpperCase());
+      expect(hintSpans.length).toBeGreaterThanOrEqual(1);
     }
   });
 
-  it("clicking the truth row opens a popover with Option A truth copy (epistemic stance, not verdict)", async () => {
+  it("clicking the truth row opens a popover with the expansion for first_person", async () => {
     render(() => <WeatherReport report={makeWeatherReport()} />);
     const truthRow = screen.getByTestId("weather-axis-card-truth");
     fireEvent.click(truthRow);
     await screen.findByText(
-      /Truth — Epistemic stance, not verdict\. Whether claims are sourced, first-person, second-hand, or actively misleading — how the knowledge is held, regardless of whether it's ultimately right\./,
+      /direct, lived experience/i,
     );
   });
 
-  it("clicking the relevance row opens a popover with Option A relevance copy (tethered to source)", async () => {
+  it("clicking the relevance row opens a popover with the expansion for on_topic", async () => {
     render(() => <WeatherReport report={makeWeatherReport()} />);
     const relevanceRow = screen.getByTestId("weather-axis-card-relevance");
     fireEvent.click(relevanceRow);
     await screen.findByText(
-      /Relevance — How tightly the discussion is tethered to the source\. Insightful engagement, on-topic chatter, drift, or full topic abandonment\./,
+      /stays close to the source/i,
     );
   });
 
-  it("clicking the sentiment row opens a popover with Option A sentiment copy (emotional register)", async () => {
-    render(() => <WeatherReport report={makeWeatherReport()} />);
+  it("clicking the sentiment row opens a popover with the expansion for that label", async () => {
+    render(() => (
+      <WeatherReport
+        report={makeWeatherReport({
+          sentiment: { label: "neutral", logprob: null, alternatives: [] },
+        })}
+      />
+    ));
     const sentimentRow = screen.getByTestId("weather-axis-card-sentiment");
     fireEvent.click(sentimentRow);
     await screen.findByText(
-      /Sentiment — The emotional register of the conversation\. Read alongside the other axes; tone alone doesn't tell you much\./,
+      /not taking a strong emotional stance/i,
     );
   });
 
@@ -127,14 +134,14 @@ describe("WeatherReport", () => {
     render(() => <WeatherReport report={makeWeatherReport()} />);
     const truthRow = screen.getByTestId("weather-axis-card-truth");
     fireEvent.click(truthRow);
-    await screen.findByText(/Truth — Epistemic stance/);
+    await screen.findByText(/direct, lived experience/i);
 
     fireEvent.keyDown(document.activeElement ?? document.body, {
       key: "Escape",
     });
 
     await waitFor(() => {
-      expect(screen.queryByText(/Truth — Epistemic stance/)).toBeNull();
+      expect(screen.queryByText(/direct, lived experience/i)).toBeNull();
     });
   });
 
@@ -149,12 +156,12 @@ describe("WeatherReport", () => {
     ));
     const truthRow = screen.getByTestId("weather-axis-card-truth");
     fireEvent.click(truthRow);
-    await screen.findByText(/Truth — Epistemic stance/);
+    await screen.findByText(/direct, lived experience/i);
 
     const outside = screen.getByTestId("outside-target");
     await waitFor(() => {
       fireEvent.pointerDown(outside, { pointerType: "mouse", button: 0 });
-      expect(screen.queryByText(/Truth — Epistemic stance/)).toBeNull();
+      expect(screen.queryByText(/direct, lived experience/i)).toBeNull();
     });
   });
 
@@ -163,27 +170,30 @@ describe("WeatherReport", () => {
     const truthRow = screen.getByTestId("weather-axis-card-truth");
     fireEvent.pointerEnter(truthRow);
     await new Promise((resolve) => setTimeout(resolve, 50));
-    expect(screen.queryByText(/Truth — Epistemic stance/)).toBeNull();
+    expect(screen.queryByText(/direct, lived experience/i)).toBeNull();
   });
 
-  it("axis row trigger is a button whose accessible name combines axis context and visible value", () => {
-    render(() => <WeatherReport report={makeWeatherReport()} />);
+  it("axis row trigger is a button with aria-label combining axis context, visible value, and confidence when present", () => {
+    render(() => (
+      <WeatherReport
+        report={makeWeatherReport({
+          truth: { label: "first_person", logprob: -0.40, alternatives: [] },
+          relevance: { label: "on_topic", logprob: null, alternatives: [] },
+        })}
+      />
+    ));
 
-    const expected: Array<{ axis: string; value: string }> = [
-      { axis: "Truth", value: "First-Person" },
-      { axis: "Relevance", value: "On Topic" },
-      { axis: "Sentiment", value: "Warmly Skeptical" },
-    ];
-    for (const { axis, value } of expected) {
-      const trigger = screen.getByRole("button", {
-        name: new RegExp(`${axis}.*${value}`, "i"),
-      });
-      expect(trigger).toBeDefined();
-      expect(trigger.getAttribute("data-testid")).toMatch(
-        new RegExp(`^weather-axis-card-${axis.toLowerCase()}$`),
-      );
-      expect(trigger.getAttribute("aria-label")).toBeNull();
-    }
+    const truthTrigger = screen.getByTestId("weather-axis-card-truth");
+    const truthLabel = truthTrigger.getAttribute("aria-label") ?? "";
+    expect(truthLabel).toMatch(/Truth/i);
+    expect(truthLabel).toMatch(/First-Person/i);
+    expect(truthLabel).toMatch(/\d+(\.\d+)?%/);
+
+    const relevanceTrigger = screen.getByTestId("weather-axis-card-relevance");
+    const relevanceLabel = relevanceTrigger.getAttribute("aria-label") ?? "";
+    expect(relevanceLabel).toMatch(/Relevance/i);
+    expect(relevanceLabel).toMatch(/On Topic/i);
+    expect(relevanceLabel).not.toMatch(/%/);
   });
 
   it("does not put role=button or aria-haspopup on the underlying TableRow", () => {
@@ -277,15 +287,6 @@ describe("WeatherReport", () => {
     const cls = root.className;
     expect(cls).toContain("bg-card");
     expect(cls).toContain("rounded-md");
-  });
-
-  it("renders first-person truth in indigo, not amber or destructive", () => {
-    render(() => <WeatherReport report={makeWeatherReport()} />);
-
-    const className = screen.getByTestId("weather-truth-value").className;
-    expect(className).toContain("text-indigo-700");
-    expect(className).not.toContain("amber");
-    expect(className).not.toContain("destructive");
   });
 
   it("forwards consumer-provided class to the outer container", () => {
@@ -420,39 +421,60 @@ describe("WeatherReport", () => {
     );
   });
 
-  it("renders a spaced-caps heading cell per row that is exposed to assistive tech", () => {
+  it("axis heading appears on the RIGHT as an aria-hidden hint span OUTSIDE the trigger button in each interactive row", () => {
     render(() => <WeatherReport report={makeWeatherReport()} />);
 
     const root = screen.getByTestId("weather-report");
-    const rows = root.querySelectorAll('[data-slot="table-row"]');
-    expect(rows.length).toBe(3);
 
-    const expectedHeadings = ["TRUTH", "RELEVANCE", "SENTIMENT"];
-    for (let i = 0; i < rows.length; i++) {
-      const row = rows[i] as HTMLElement;
-      const cells = row.querySelectorAll('[data-slot="table-cell"]');
-      expect(cells.length).toBeGreaterThanOrEqual(2);
-      const headingCell = cells[0] as HTMLElement;
-      expect(headingCell.getAttribute("aria-hidden")).toBeNull();
-      expect(headingCell.textContent?.trim()).toBe(expectedHeadings[i]);
-      expect(headingCell.className).toContain("uppercase");
-      expect(headingCell.className).toContain("tracking-[0.06em]");
-      expect(headingCell.className).toContain("text-muted-foreground");
-      expect(headingCell.className).toContain("text-xs");
-      expect(headingCell.className).not.toMatch(/text-\[12px\]/);
+    const expectedHeadings: Array<{ axis: string; heading: string }> = [
+      { axis: "truth", heading: "TRUTH" },
+      { axis: "relevance", heading: "RELEVANCE" },
+      { axis: "sentiment", heading: "SENTIMENT" },
+    ];
+
+    for (const { axis, heading } of expectedHeadings) {
+      const trigger = screen.getByTestId(`weather-axis-card-${axis}`);
+      const td = trigger.closest("td")!;
+      const allHintSpans = Array.from(
+        td.querySelectorAll<HTMLSpanElement>("span[aria-hidden='true']"),
+      );
+      const hintSpan = allHintSpans.find(
+        (s) => s.textContent?.trim().toUpperCase() === heading,
+      );
+      expect(hintSpan).toBeDefined();
+      expect(hintSpan!.getAttribute("aria-hidden")).toBe("true");
+      expect(hintSpan!.className).toContain("uppercase");
+      expect(hintSpan!.className).toContain("tracking-[0.06em]");
+      expect(hintSpan!.className).toContain("text-muted-foreground");
+      expect(hintSpan!.className).toContain("text-xs");
+
+      expect(trigger.contains(hintSpan!)).toBe(false);
+    }
+
+    const cells = root.querySelectorAll("td");
+    expect(cells.length).toBeGreaterThan(0);
+    for (const cell of Array.from(cells)) {
+      expect(cell.getAttribute("aria-hidden")).toBeNull();
     }
   });
 
-  it("renders the value chip at text-lg with rounded-md (de-pilled)", () => {
+  it("eval label uses font-condensed; axis hint span does not", () => {
     render(() => <WeatherReport report={makeWeatherReport()} />);
 
-    const className = screen.getByTestId("weather-truth-value").className;
-    expect(className).toContain("text-lg");
-    expect(className).toContain("rounded-md");
-    expect(className).not.toContain("rounded-full");
+    const evalSpan = screen.getByTestId("weather-truth-value");
+    expect(evalSpan.className).toContain("font-condensed");
+
+    const trigger = screen.getByTestId("weather-axis-card-truth");
+    const td = trigger.closest("td")!;
+    const hintSpans = Array.from(
+      td.querySelectorAll<HTMLSpanElement>("span[aria-hidden='true']"),
+    );
+    for (const hint of hintSpans) {
+      expect(hint.className).not.toContain("font-condensed");
+    }
   });
 
-  it("value chip recipe drops tinted background (no bg- token)", () => {
+  it("eval label has no background badge class (badge background dropped)", () => {
     render(() => <WeatherReport report={makeWeatherReport()} />);
 
     const className = screen.getByTestId("weather-truth-value").className;
@@ -495,5 +517,164 @@ describe("WeatherReport", () => {
     expect(item).not.toBeNull();
     expect(item!.className).toContain("text-xs");
     expect(item!.className).not.toContain("text-[10px]");
+  });
+
+  it("all rows with axis data render a button trigger, even free-form labels not in weather-labels.json", () => {
+    render(() => (
+      <WeatherReport
+        report={makeWeatherReport({
+          sentiment: { label: "warmly skeptical", logprob: null, alternatives: [] },
+        })}
+      />
+    ));
+
+    expect(screen.getByTestId("weather-axis-card-truth")).toBeDefined();
+    expect(screen.getByTestId("weather-axis-card-relevance")).toBeDefined();
+    expect(screen.getByTestId("weather-axis-card-sentiment")).toBeDefined();
+
+    const sentimentValue = screen.getByTestId("weather-sentiment-value");
+    expect(sentimentValue).toBeDefined();
+    expect(sentimentValue.closest("button")).not.toBeNull();
+  });
+
+  it("clicking a row with a free-form label (not in weather-labels.json) falls back to axis-level TOOLTIP_COPY content", async () => {
+    render(() => (
+      <WeatherReport
+        report={makeWeatherReport({
+          sentiment: { label: "warmly skeptical", logprob: null, alternatives: [] },
+        })}
+      />
+    ));
+
+    const sentimentRow = screen.getByTestId("weather-axis-card-sentiment");
+    fireEvent.click(sentimentRow);
+    await screen.findByText(/emotional register/i);
+  });
+
+  it("alternatives ul is NOT a descendant of the trigger button (valid HTML5)", () => {
+    render(() => (
+      <WeatherReport
+        report={makeWeatherReport({
+          truth: {
+            label: "sourced",
+            logprob: null,
+            alternatives: [{ label: "factual_claims", logprob: null }],
+          },
+        })}
+      />
+    ));
+
+    const trigger = screen.getByTestId("weather-axis-card-truth");
+    const altsList = screen.getByTestId("weather-truth-alternatives");
+    expect(trigger.contains(altsList)).toBe(false);
+  });
+
+  it("trigger button has hover:bg-muted/40 class for whole-row hover band", () => {
+    render(() => <WeatherReport report={makeWeatherReport()} />);
+
+    const trigger = screen.getByTestId("weather-axis-card-truth");
+    expect(trigger.className).toContain("hover:bg-muted/40");
+  });
+
+  it("renders a WeatherHelpButton (aria-label /explain.*weather/i) and no FeedbackBell (bell_location=card:weather)", () => {
+    render(() => <WeatherReport report={makeWeatherReport()} />);
+
+    const helpButton = screen.getByRole("button", {
+      name: /explain.*weather/i,
+    });
+    expect(helpButton).toBeDefined();
+
+    const bellButton = screen.queryByRole("button", {
+      name: /send feedback.*card:weather/i,
+    });
+    expect(bellButton).toBeNull();
+  });
+
+  it("renders the help button (aria-label /explain.*weather/i) in the skeleton (null report) path", () => {
+    render(() => <WeatherReport report={null} />);
+
+    const helpButton = screen.getByRole("button", {
+      name: /explain.*weather/i,
+    });
+    expect(helpButton).toBeDefined();
+  });
+
+  it("skeleton CardContent wrapping placeholder rows has aria-hidden='true'", () => {
+    render(() => <WeatherReport report={null} />);
+
+    const skeletonCard = screen.getByTestId("weather-report-skeleton");
+    const tbody = skeletonCard.querySelector('[data-slot="table-body"]');
+    expect(tbody).not.toBeNull();
+
+    let node: Element | null = tbody!;
+    let foundAriaHidden = false;
+    while (node && node !== skeletonCard) {
+      if (node.getAttribute("aria-hidden") === "true") {
+        foundAriaHidden = true;
+        break;
+      }
+      node = node.parentElement;
+    }
+    expect(foundAriaHidden).toBe(true);
+  });
+
+  it("skeleton help button is NOT inside the aria-hidden region", () => {
+    render(() => <WeatherReport report={null} />);
+
+    const helpButton = screen.getByRole("button", {
+      name: /explain.*weather/i,
+    });
+    expect(helpButton).toBeDefined();
+
+    let node: Element | null = helpButton.parentElement;
+    while (node) {
+      expect(node.getAttribute("aria-hidden")).not.toBe("true");
+      if (node.getAttribute("data-testid") === "weather-report-skeleton") break;
+      node = node.parentElement;
+    }
+  });
+
+  it("truth skeleton eval cell renders 2 word-shape Skeleton elements", () => {
+    render(() => <WeatherReport report={null} />);
+
+    const wordsCell = screen.getByTestId("weather-skeleton-truth-words");
+    const skeletons = wordsCell.querySelectorAll("[data-opennotes-skeleton]");
+    expect(skeletons.length).toBe(2);
+  });
+
+  it("relevance skeleton eval cell renders 2 word-shape Skeleton elements", () => {
+    render(() => <WeatherReport report={null} />);
+
+    const wordsCell = screen.getByTestId("weather-skeleton-relevance-words");
+    const skeletons = wordsCell.querySelectorAll("[data-opennotes-skeleton]");
+    expect(skeletons.length).toBe(2);
+  });
+
+  it("sentiment skeleton eval cell renders exactly 1 word-shape Skeleton element", () => {
+    render(() => <WeatherReport report={null} />);
+
+    const wordsCell = screen.getByTestId("weather-skeleton-sentiment-words");
+    const skeletons = wordsCell.querySelectorAll("[data-opennotes-skeleton]");
+    expect(skeletons.length).toBe(1);
+  });
+
+  it("skeleton label cell still contains literal axis text (TRUTH / RELEVANCE / SENTIMENT)", () => {
+    render(() => <WeatherReport report={null} />);
+
+    expect(screen.getByTestId("weather-skeleton-truth-label").textContent).toBe("TRUTH");
+    expect(screen.getByTestId("weather-skeleton-relevance-label").textContent).toBe("RELEVANCE");
+    expect(screen.getByTestId("weather-skeleton-sentiment-label").textContent).toBe("SENTIMENT");
+  });
+
+  it("skeleton eval cell (words) is LEFT of label cell in DOM order", () => {
+    render(() => <WeatherReport report={null} />);
+
+    const truthRow = screen.getByTestId("weather-skeleton-truth");
+    const cells = truthRow.querySelectorAll('[data-slot="table-cell"]');
+    expect(cells.length).toBe(2);
+    const firstCellWordsWrapper = cells[0].querySelector("[data-testid='weather-skeleton-truth-words']");
+    expect(firstCellWordsWrapper).not.toBeNull();
+    const secondCellLabel = cells[1].getAttribute("data-testid");
+    expect(secondCellLabel).toBe("weather-skeleton-truth-label");
   });
 });

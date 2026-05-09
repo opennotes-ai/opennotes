@@ -1,6 +1,6 @@
 import { For, Show, type JSX } from "solid-js";
 import { Card, CardContent } from "@opennotes/ui/components/ui/card";
-import { FeedbackBell } from "../../feedback/FeedbackBell";
+import { WeatherHelpButton, TOOLTIP_COPY } from "./WeatherHelpButton";
 import {
   Table,
   TableBody,
@@ -15,7 +15,7 @@ import {
 import { Skeleton } from "@opennotes/ui/components/ui/skeleton";
 import type { components } from "~/lib/generated-types";
 import {
-  formatWeatherBadgeClass,
+  formatWeatherExpansion,
   formatWeatherLabel,
 } from "~/lib/weather-labels";
 
@@ -47,33 +47,20 @@ export interface WeatherReportProps {
 interface AxisDefinition {
   axisType: AxisType;
   heading: string;
-  tooltip: string;
 }
-
-const TOOLTIP_COPY: Record<AxisType, string> = {
-  truth:
-    "Truth — Epistemic stance, not verdict. Whether claims are sourced, first-person, second-hand, or actively misleading — how the knowledge is held, regardless of whether it's ultimately right.",
-  relevance:
-    "Relevance — How tightly the discussion is tethered to the source. Insightful engagement, on-topic chatter, drift, or full topic abandonment.",
-  sentiment:
-    "Sentiment — The emotional register of the conversation. Read alongside the other axes; tone alone doesn't tell you much.",
-};
 
 const AXES: AxisDefinition[] = [
   {
     axisType: "truth",
     heading: "Truth",
-    tooltip: TOOLTIP_COPY.truth,
   },
   {
     axisType: "relevance",
     heading: "Relevance",
-    tooltip: TOOLTIP_COPY.relevance,
   },
   {
     axisType: "sentiment",
     heading: "Sentiment",
-    tooltip: TOOLTIP_COPY.sentiment,
   },
 ];
 
@@ -113,109 +100,151 @@ function AxisRow(props: AxisRowProps): JSX.Element {
 
   const confidence = () => formatLogprobProbability(axisData()?.logprob);
   const alternatives = () => safeAlternatives(axisData());
+  const expansion = (): string | null => {
+    const data = axisData();
+    if (!data) return null;
+    return formatWeatherExpansion(data.label as WeatherAxisLabel);
+  };
+
+  const ariaLabel = () => {
+    const data = axisData();
+    if (!data) return props.axis.heading;
+    const label = formatWeatherLabel(data.label);
+    const conf = confidence();
+    return conf
+      ? `${props.axis.heading}: ${label}, ${conf}`
+      : `${props.axis.heading}: ${label}`;
+  };
+
+  const placement = () =>
+    props.axis.axisType === "sentiment" ? "top-start" : "bottom-start";
 
   return (
-    <TableRow>
-      <TableCell class="whitespace-nowrap pr-3 text-xs font-semibold uppercase tracking-[0.06em] text-muted-foreground">
-        {props.axis.heading.toUpperCase()}
-      </TableCell>
-      <TableCell class="w-full">
-        <Popover>
-          <PopoverTrigger
-            data-testid={`weather-axis-card-${props.axis.axisType}`}
-            class="rounded-md text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-          >
-            <span class="sr-only">{props.axis.heading}: </span>
-            <Show
-              when={axisData()}
-              fallback={
+    <TableRow class="group">
+      <Show
+        when={axisData()}
+        fallback={
+          <td colSpan={2} class="p-0">
+            <div class="flex w-full items-center justify-between gap-3 px-2 py-1.5">
+              <span class="flex flex-wrap items-baseline gap-2">
                 <span
                   data-testid={`weather-${props.axis.axisType}-value`}
-                  class="text-sm font-medium text-muted-foreground"
+                  class="font-condensed text-lg font-semibold"
                 >
                   Not available
                 </span>
-              }
-            >
-              {(axisValue) => {
-                const label = () => formatWeatherLabel(axisValue().label);
-                const badgeClass = () => formatWeatherBadgeClass(axisValue().label);
-                return (
-                  <div class="flex flex-wrap items-center gap-2">
+              </span>
+              <span
+                aria-hidden="true"
+                class="pr-3 text-xs uppercase tracking-[0.06em] text-muted-foreground/70"
+              >
+                {props.axis.heading}
+              </span>
+            </div>
+          </td>
+        }
+      >
+        {(data) => (
+          <td colSpan={2} class="p-0">
+            <div class="flex w-full items-center gap-3 px-2 py-1.5">
+              <Popover placement={placement()}>
+                <PopoverTrigger
+                  as="button"
+                  type="button"
+                  data-testid={`weather-axis-card-${props.axis.axisType}`}
+                  aria-label={ariaLabel()}
+                  class="flex items-center gap-2 rounded-md text-left hover:bg-muted/40 focus-visible:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 px-2 py-1.5"
+                >
+                  <span
+                    data-testid={`weather-${props.axis.axisType}-value`}
+                    class="font-condensed text-lg font-semibold"
+                  >
+                    {formatWeatherLabel(data().label)}
+                  </span>
+                  <Show when={confidence() !== null}>
                     <span
-                      data-testid={`weather-${props.axis.axisType}-value`}
-                      class={badgeClass()}
-                      title={axisValue().label}
+                      data-testid={`weather-${props.axis.axisType}-confidence`}
+                      class="text-xs text-muted-foreground"
                     >
-                      {label()}
+                      {confidence()}
                     </span>
-                    <Show when={confidence() !== null}>
-                      <span
-                        data-testid={`weather-${props.axis.axisType}-confidence`}
-                        class="text-xs text-muted-foreground"
-                      >
-                        {confidence()}
-                      </span>
-                    </Show>
-                    <Show when={alternatives().length > 0}>
-                      <ul
-                        data-testid={`weather-${props.axis.axisType}-alternatives`}
-                        class="flex flex-wrap gap-1"
-                      >
-                        <For each={alternatives()}>
-                          {(alternative) => {
-                            const alternativeLabel = formatWeatherLabel(
-                              alternative.label as WeatherAxisLabel,
-                            );
-                            const alternativeConfidence =
-                              formatLogprobProbability(alternative.logprob);
-                            return (
-                              <li class="inline-flex rounded-md bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
-                                {alternativeLabel}
-                                <Show when={alternativeConfidence !== null}>
-                                  <span> ({alternativeConfidence})</span>
-                                </Show>
-                              </li>
-                            );
-                          }}
-                        </For>
-                      </ul>
-                    </Show>
-                  </div>
-                );
-              }}
-            </Show>
-          </PopoverTrigger>
-          <PopoverContent class="max-w-xs text-sm leading-snug">
-            {props.axis.tooltip}
-          </PopoverContent>
-        </Popover>
-      </TableCell>
+                  </Show>
+                </PopoverTrigger>
+                <PopoverContent class="max-w-xs text-sm leading-snug">
+                  {expansion() ?? TOOLTIP_COPY[props.axis.axisType]}
+                </PopoverContent>
+              </Popover>
+              <Show when={alternatives().length > 0}>
+                <ul
+                  data-testid={`weather-${props.axis.axisType}-alternatives`}
+                  class="flex flex-wrap gap-1"
+                >
+                  <For each={alternatives()}>
+                    {(alternative) => {
+                      const alternativeLabel = formatWeatherLabel(
+                        alternative.label as WeatherAxisLabel,
+                      );
+                      const alternativeConfidence =
+                        formatLogprobProbability(alternative.logprob);
+                      return (
+                        <li class="inline-flex rounded-md bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
+                          {alternativeLabel}
+                          <Show when={alternativeConfidence !== null}>
+                            <span> ({alternativeConfidence})</span>
+                          </Show>
+                        </li>
+                      );
+                    }}
+                  </For>
+                </ul>
+              </Show>
+              <span
+                aria-hidden="true"
+                class="ml-auto pr-3 text-xs uppercase tracking-[0.06em] text-muted-foreground/70"
+              >
+                {props.axis.heading}
+              </span>
+            </div>
+          </td>
+        )}
+      </Show>
     </TableRow>
   );
 }
+
+const WORD_SHAPES: Record<AxisType, number[]> = {
+  truth: [80, 56],
+  relevance: [72, 48],
+  sentiment: [64],
+};
 
 function WeatherReportSkeleton(props: { class?: string }): JSX.Element {
   return (
     <Card
       data-testid="weather-report-skeleton"
-      class={`border border-border/50 ${props.class ?? ""}`.trim()}
-      aria-hidden="true"
+      class={`relative border border-border/50 ${props.class ?? ""}`.trim()}
     >
-      <CardContent class="p-2">
+      <CardContent class="p-2" aria-hidden="true">
         <Table>
           <TableBody>
             <For each={AXES}>
               {(axis) => (
                 <TableRow data-testid={`weather-skeleton-${axis.axisType}`}>
+                  <TableCell class="w-full px-2 py-1.5">
+                    <div
+                      data-testid={`weather-skeleton-${axis.axisType}-words`}
+                      class="flex items-center gap-1.5"
+                    >
+                      <For each={WORD_SHAPES[axis.axisType]}>
+                        {(w) => <Skeleton class="h-4 rounded" style={{ width: `${w}px` }} />}
+                      </For>
+                    </div>
+                  </TableCell>
                   <TableCell
                     data-testid={`weather-skeleton-${axis.axisType}-label`}
-                    class="whitespace-nowrap pr-3 text-xs font-semibold uppercase tracking-[0.06em] text-muted-foreground"
+                    class="whitespace-nowrap pr-3 text-xs font-semibold uppercase tracking-[0.06em] text-muted-foreground/70 text-right"
                   >
                     {axis.heading.toUpperCase()}
-                  </TableCell>
-                  <TableCell class="w-full">
-                    <Skeleton class="h-4 w-20 rounded-full" />
                   </TableCell>
                 </TableRow>
               )}
@@ -223,6 +252,7 @@ function WeatherReportSkeleton(props: { class?: string }): JSX.Element {
           </TableBody>
         </Table>
       </CardContent>
+      <WeatherHelpButton />
     </Card>
   );
 }
@@ -244,7 +274,7 @@ export default function WeatherReport(props: WeatherReportProps): JSX.Element {
               </TableBody>
             </Table>
           </CardContent>
-          <FeedbackBell bell_location="card:weather" />
+          <WeatherHelpButton />
         </Card>
       )}
     </Show>

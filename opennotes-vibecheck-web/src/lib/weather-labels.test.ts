@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
   formatWeatherBadgeClass,
+  formatWeatherExpansion,
   formatWeatherLabel,
   formatWeatherVariant,
+  VARIANT_CLASSES,
 } from "./weather-labels";
+import weatherLabelsJson from "./weather-labels.json";
 
 describe("formatWeatherLabel — truth slugs (Title Case)", () => {
   it("returns 'Sourced' for sourced", () => {
@@ -116,5 +119,83 @@ describe("formatWeatherBadgeClass", () => {
     const cls = formatWeatherBadgeClass("sourced");
     expect(cls).toContain("inline-flex");
     expect(cls).toContain("rounded-md");
+  });
+});
+
+type WeatherLabelEntry = { axis: string; label: string; variant: string; expansion: string };
+
+describe("weather-labels.json — expansion field contract", () => {
+  it("every entry has a non-empty expansion string", () => {
+    const entries = Object.entries(weatherLabelsJson) as [string, WeatherLabelEntry][];
+    for (const [key, entry] of entries) {
+      expect(entry.expansion, `entry "${key}" is missing expansion`).toBeDefined();
+      expect(entry.expansion.length, `entry "${key}" has empty expansion`).toBeGreaterThan(0);
+    }
+  });
+});
+
+describe("formatWeatherExpansion — round-trip against JSON data", () => {
+  it.each(Object.entries(weatherLabelsJson) as [string, WeatherLabelEntry][])(
+    "exposes JSON expansion verbatim for %s",
+    (key, entry) => {
+      expect(
+        formatWeatherExpansion(key as Parameters<typeof formatWeatherExpansion>[0])
+      ).toBe(entry.expansion);
+    }
+  );
+});
+
+describe("formatWeatherExpansion — unknown labels", () => {
+  it("returns null for a label not in the registry", () => {
+    expect(formatWeatherExpansion("not_a_real_label" as Parameters<typeof formatWeatherExpansion>[0])).toBeNull();
+  });
+});
+
+describe("palette — no classic primary colors in VARIANT_CLASSES", () => {
+  it("does not contain a 'blue' key in VARIANT_CLASSES", () => {
+    expect(Object.keys(VARIANT_CLASSES)).not.toContain("blue");
+  });
+
+  it("does not contain a 'green' key in VARIANT_CLASSES", () => {
+    expect(Object.keys(VARIANT_CLASSES)).not.toContain("green");
+  });
+
+  it("does not contain a 'rose' key in VARIANT_CLASSES", () => {
+    expect(Object.keys(VARIANT_CLASSES)).not.toContain("rose");
+  });
+
+  it("does not produce a text-blue-700 class string from any variant", () => {
+    for (const cls of Object.values(VARIANT_CLASSES)) {
+      expect(cls).not.toContain("blue-700");
+    }
+  });
+
+  it("does not produce a text-green-700 class string from any variant", () => {
+    for (const cls of Object.values(VARIANT_CLASSES)) {
+      expect(cls).not.toContain("green-700");
+    }
+  });
+
+  it("does not produce a text-rose-700 class string from any variant", () => {
+    for (const cls of Object.values(VARIANT_CLASSES)) {
+      expect(cls).not.toContain("rose-700");
+    }
+  });
+
+  it("contains 'lime' and 'fuchsia' keys in VARIANT_CLASSES", () => {
+    expect(Object.keys(VARIANT_CLASSES)).toContain("lime");
+    expect(Object.keys(VARIANT_CLASSES)).toContain("fuchsia");
+  });
+});
+
+describe("palette — every JSON entry's variant is present in VARIANT_CLASSES", () => {
+  it("each weather label variant key resolves to a class in VARIANT_CLASSES", () => {
+    const entries = Object.entries(weatherLabelsJson) as [string, WeatherLabelEntry][];
+    for (const [key, entry] of entries) {
+      expect(
+        Object.keys(VARIANT_CLASSES),
+        `entry "${key}" has variant "${entry.variant}" which is not in VARIANT_CLASSES`,
+      ).toContain(entry.variant);
+    }
   });
 });
