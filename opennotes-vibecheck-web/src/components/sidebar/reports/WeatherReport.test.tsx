@@ -1,5 +1,5 @@
 import { createSignal } from "solid-js";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   cleanup,
   fireEvent,
@@ -10,6 +10,7 @@ import {
 import type { components } from "~/lib/generated-types";
 import WeatherReport from "./WeatherReport";
 import { SidebarStoreProvider, useSidebarStore } from "../SidebarStoreProvider";
+import * as weatherLabels from "~/lib/weather-labels";
 
 type WeatherReportData = components["schemas"]["WeatherReport"];
 type SafetyRecommendation = components["schemas"]["SafetyRecommendation"];
@@ -745,6 +746,58 @@ describe("WeatherReport", () => {
       expect(safetyValue.className).toContain("bg-rose-700");
     });
 
+    it("Safety pill uses yellow variant (text-yellow family) when level=mild", () => {
+      render(() => (
+        <WeatherReport
+          report={makeWeatherReport()}
+          safetyRecommendation={makeSafetyRecommendation({ level: "mild" })}
+        />
+      ));
+
+      const safetyValue = screen.getByTestId("weather-safety-value");
+      expect(weatherLabels.formatWeatherVariant("mild")).toBe("yellow");
+      expect(safetyValue.className).toMatch(/text-yellow/);
+    });
+
+    it("Safety popover for mild renders JSON expansion text", async () => {
+      render(() => (
+        <WeatherReport
+          report={makeWeatherReport()}
+          safetyRecommendation={makeSafetyRecommendation({ level: "mild" })}
+        />
+      ));
+
+      const safetyTrigger = screen.getByTestId("weather-axis-card-safety");
+      fireEvent.click(safetyTrigger);
+      await screen.findByText(/minor concerns surfaced/i);
+    });
+
+    it("Safety pill uses amber-strong variant (text-amber-800 family) when level=caution", () => {
+      render(() => (
+        <WeatherReport
+          report={makeWeatherReport()}
+          safetyRecommendation={makeSafetyRecommendation({ level: "caution" })}
+        />
+      ));
+
+      const safetyValue = screen.getByTestId("weather-safety-value");
+      expect(weatherLabels.formatWeatherVariant("caution")).toBe("amber-strong");
+      expect(safetyValue.className).toMatch(/text-amber-800/);
+    });
+
+    it("Safety popover for caution renders JSON expansion text", async () => {
+      render(() => (
+        <WeatherReport
+          report={makeWeatherReport()}
+          safetyRecommendation={makeSafetyRecommendation({ level: "caution" })}
+        />
+      ));
+
+      const safetyTrigger = screen.getByTestId("weather-axis-card-safety");
+      fireEvent.click(safetyTrigger);
+      await screen.findByText(/multiple signals worth a careful read/i);
+    });
+
     it("Safety popover expansion comes from labels JSON when level is known", async () => {
       render(() => (
         <WeatherReport
@@ -758,7 +811,11 @@ describe("WeatherReport", () => {
       await screen.findByText(/moderation, web risk, image, and video checks/i);
     });
 
-    it("Safety popover falls back to recommendation.rationale when level has no expansion in JSON", async () => {
+    it("Safety popover falls back to recommendation.rationale when formatWeatherExpansion returns null", async () => {
+      const spy = vi
+        .spyOn(weatherLabels, "formatWeatherExpansion")
+        .mockReturnValueOnce(null);
+
       render(() => (
         <WeatherReport
           report={makeWeatherReport()}
@@ -771,7 +828,9 @@ describe("WeatherReport", () => {
 
       const safetyTrigger = screen.getByTestId("weather-axis-card-safety");
       fireEvent.click(safetyTrigger);
-      await screen.findByText(/moderation, web risk, image, and video checks/i);
+      await screen.findByText(/fallback rationale text shown here/i);
+
+      spy.mockRestore();
     });
 
     it("Safety row renders 'Not available' when safetyRecommendation is null", () => {

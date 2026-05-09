@@ -125,7 +125,7 @@ describe("weather-labels JSON drift guard", () => {
     for (const [slug, entry] of Object.entries(weatherLabelsJson)) {
       const axis = (entry as Record<string, unknown>)["axis"] as string;
       expect(
-        VALID_AXES.has(axis as "truth" | "relevance" | "sentiment"),
+        VALID_AXES.has(axis as "truth" | "relevance" | "sentiment" | "safety"),
         `JSON entry "${slug}" has invalid axis "${axis}" — must be one of: ${[...VALID_AXES].join(", ")}`,
       ).toBe(true);
     }
