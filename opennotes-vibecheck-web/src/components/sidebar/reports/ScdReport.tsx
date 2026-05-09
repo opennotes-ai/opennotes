@@ -47,7 +47,7 @@ export default function ScdReport(props: ScdReportProps): JSX.Element {
       ?.utterance_id ?? null;
 
   return (
-    <div data-testid="report-tone_dynamics__scd" class="relative space-y-3">
+    <div data-testid="report-tone_dynamics__scd" class="relative space-y-3 pb-8 pr-8">
       <Show
         when={!props.scd.insufficient_conversation}
         fallback={

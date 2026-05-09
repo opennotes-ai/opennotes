@@ -50,7 +50,7 @@ export default function SafetyModerationReport(
   });
 
   return (
-    <div data-testid="report-safety__moderation" class="relative space-y-2">
+    <div data-testid="report-safety__moderation" class="relative space-y-2 pb-8 pr-8">
       <p class="text-[11px] text-muted-foreground">
         <span data-testid="safety-count">{matches().length} flagged</span>
       </p>

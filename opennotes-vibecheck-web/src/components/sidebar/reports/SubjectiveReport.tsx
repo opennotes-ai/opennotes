@@ -18,7 +18,7 @@ export default function SubjectiveReport(props: SubjectiveReportProps) {
   return (
     <div
       data-testid="report-opinions_sentiments__subjective"
-      class="relative space-y-2"
+      class="relative space-y-2 pb-8 pr-8"
     >
       <p class="text-[11px] text-muted-foreground">
         {claims().length} claim{claims().length === 1 ? "" : "s"}

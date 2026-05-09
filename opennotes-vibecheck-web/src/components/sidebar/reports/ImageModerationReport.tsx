@@ -94,7 +94,7 @@ export default function ImageModerationReport(
     `${clearMatches().length} clear image${clearMatches().length === 1 ? "" : "s"}`;
 
   return (
-    <div data-testid="report-safety__image_moderation" class="relative space-y-2">
+    <div data-testid="report-safety__image_moderation" class="relative space-y-2 pb-8 pr-8">
       <p class="text-[11px] text-muted-foreground">
         {matches().length} image{matches().length === 1 ? "" : "s"} checked
       </p>

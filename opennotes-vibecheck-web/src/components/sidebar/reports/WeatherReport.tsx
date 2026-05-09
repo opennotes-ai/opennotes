@@ -234,7 +234,7 @@ export default function WeatherReport(props: WeatherReportProps): JSX.Element {
       fallback={<WeatherReportSkeleton class={props.class} />}
     >
       {(report) => (
-        <Card data-testid="weather-report" class={`relative border border-border/50 ${props.class ?? ""}`.trim()}>
+        <Card data-testid="weather-report" class={`relative border border-border/50 pb-8 pr-8 ${props.class ?? ""}`.trim()}>
           <CardContent class="p-2">
             <Table>
               <TableBody>

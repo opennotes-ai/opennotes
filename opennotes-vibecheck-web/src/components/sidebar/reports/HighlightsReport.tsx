@@ -35,7 +35,7 @@ export default function HighlightsReport(props: HighlightsReportProps) {
       }
     >
       {(report) => (
-        <div data-testid="report-opinions_sentiments__highlights" class="relative space-y-2">
+        <div data-testid="report-opinions_sentiments__highlights" class="relative space-y-2 pb-8 pr-8">
           <div class="flex items-center gap-1.5">
             <p class="text-[11px] text-muted-foreground">
               {highlights().length} highlight

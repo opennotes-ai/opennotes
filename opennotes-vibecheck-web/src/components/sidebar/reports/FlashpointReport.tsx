@@ -48,7 +48,7 @@ export default function FlashpointReport(
   const matches = (): FlashpointMatch[] => props.matches ?? [];
 
   return (
-    <div data-testid="report-tone_dynamics__flashpoint" class="relative space-y-3">
+    <div data-testid="report-tone_dynamics__flashpoint" class="relative space-y-3 pb-8 pr-8">
       <Show
         when={matches().length > 0}
         fallback={

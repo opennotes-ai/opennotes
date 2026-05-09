@@ -129,4 +129,13 @@ describe("SafetyRecommendationReport", () => {
     });
     expect(bell).toBeTruthy();
   });
+
+  it("outer wrapper has pb-8 and pr-8 so the bell sits in the bottom-right corner", () => {
+    render(() => (
+      <SafetyRecommendationReport recommendation={makeRecommendation()} />
+    ));
+    const wrapper = screen.getByTestId("safety-recommendation-report");
+    expect(wrapper.className).toContain("pb-8");
+    expect(wrapper.className).toContain("pr-8");
+  });
 });
