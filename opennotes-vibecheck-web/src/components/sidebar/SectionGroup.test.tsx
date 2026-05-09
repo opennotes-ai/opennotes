@@ -2594,3 +2594,75 @@ describe("Sidebar (activity indicator)", () => {
     expect(indicator.getAttribute("data-activity-at")).toBe("2026-04-22T00:00:00Z");
   });
 });
+
+vi.mock("../../lib/feedback-client", () => ({
+  openFeedback: vi.fn().mockResolvedValue({ id: "test-feedback-id" }),
+  submitFeedback: vi.fn().mockResolvedValue(undefined),
+  submitFeedbackCombined: vi.fn().mockResolvedValue({ id: "combined-id" }),
+  FeedbackApiError: class FeedbackApiError extends Error {
+    constructor(
+      public status: number,
+      public body: unknown,
+      message?: string,
+    ) {
+      super(message ?? `Feedback API error (${status})`);
+      this.name = "FeedbackApiError";
+    }
+  },
+}));
+
+describe("HelpPopover — FeedbackBell", () => {
+  beforeEach(() => {
+    Object.defineProperty(window, "matchMedia", {
+      writable: true,
+      value: (query: string) => ({
+        matches: query === "(min-width: 768px)",
+        media: query,
+        onchange: null,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+        dispatchEvent: vi.fn(),
+      }),
+    });
+  });
+
+  it("shows a FeedbackBell with aria-label 'Send feedback about Safety' inside the section help popover", async () => {
+    render(() => (
+      <SectionGroup
+        label="Safety"
+        slugs={["safety__moderation"]}
+        sections={{}}
+        render={{}}
+      />
+    ));
+
+    const helpTrigger = screen.getByTestId("section-help-Safety");
+    await fireEvent.click(helpTrigger);
+
+    const content = screen.getByTestId("section-help-content-Safety");
+    const bellButton = within(content).getByRole("button", {
+      name: "Send feedback about Safety",
+    });
+    expect(bellButton).toBeInTheDocument();
+  });
+
+  it("shows a FeedbackBell with aria-label matching slot heading inside the slot help popover", async () => {
+    render(() => (
+      <SectionGroup
+        label="Safety"
+        slugs={["safety__moderation"]}
+        sections={{}}
+        render={{}}
+      />
+    ));
+
+    const helpTrigger = screen.getByTestId("slot-help-safety__moderation");
+    await fireEvent.click(helpTrigger);
+
+    const content = screen.getByTestId("slot-help-content-safety__moderation");
+    const bellButton = within(content).getByRole("button", {
+      name: "Send feedback about Moderation",
+    });
+    expect(bellButton).toBeInTheDocument();
+  });
+});

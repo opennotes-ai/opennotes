@@ -30,6 +30,7 @@ import {
   slotHelp,
   type SidebarHelpCopy,
 } from "./help";
+import { FeedbackBell } from "~/components/feedback/FeedbackBell";
 
 export type SlugToSlots = PartialSectionSlots;
 
@@ -149,12 +150,27 @@ function slugHeadingLabel(slug: SectionSlugLiteral): string {
   }
 }
 
+type HelpPopoverScope =
+  | { kind: "section"; label: string }
+  | { kind: "slot"; slug: SectionSlugLiteral; heading: string };
+
 function HelpPopover(props: {
   copy: SidebarHelpCopy | null;
   triggerTestId: string;
   contentTestId: string;
   label: string;
+  scope: HelpPopoverScope;
 }) {
+  const bellLocation = () =>
+    props.scope.kind === "section"
+      ? `help:section:${props.scope.label}`
+      : `help:slot:${props.scope.slug}`;
+
+  const ariaContext = () =>
+    props.scope.kind === "section"
+      ? props.scope.label
+      : props.scope.heading;
+
   return (
     <Show when={props.copy}>
       {(copy) => (
@@ -177,7 +193,7 @@ function HelpPopover(props: {
           </PopoverTrigger>
           <PopoverContent
             data-testid={props.contentTestId}
-            class="max-w-xs space-y-2 text-xs leading-relaxed"
+            class="relative max-w-xs space-y-2 pb-8 pr-8 text-xs leading-relaxed"
           >
             <p>
               <span class="font-semibold text-foreground">
@@ -191,6 +207,7 @@ function HelpPopover(props: {
               </span>{" "}
               {copy().means}
             </p>
+            <FeedbackBell bell_location={bellLocation()} ariaContext={ariaContext()} />
           </PopoverContent>
         </Popover>
       )}
@@ -324,6 +341,7 @@ export default function SectionGroup(props: SectionGroupProps): JSX.Element {
             triggerTestId={`section-help-${props.label}`}
             contentTestId={`section-help-content-${props.label}`}
             label={props.label}
+            scope={{ kind: "section", label: props.label }}
           />
         </div>
         <Show when={totalCount() > 0}>
@@ -463,6 +481,7 @@ export default function SectionGroup(props: SectionGroupProps): JSX.Element {
                     triggerTestId={`slot-help-${slug}`}
                     contentTestId={`slot-help-content-${slug}`}
                     label={heading}
+                    scope={{ kind: "slot", slug, heading }}
                   />
                 </div>
                 <Show when={isOpen()}>
