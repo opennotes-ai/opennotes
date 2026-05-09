@@ -35,6 +35,7 @@ import { ALL_SECTION_SLUGS } from "./fixtures/quizlet";
 
 const RESOLUTION_JOB_ID = "77777777-7777-7777-8777-777777777777";
 const NULL_WEATHER_JOB_ID = "88888888-8888-7888-8888-888888888888";
+const SKELETON_JOB_ID = "aaaaaaaa-aaaa-7aaa-8aaa-aaaaaaaaaaaa";
 const ATTEMPT_ID = "99999999-9999-7999-8999-999999999999";
 const SOURCE_URL = "https://quizlet.com/blog/groups-are-now-classes/";
 
@@ -44,6 +45,7 @@ let webBaseUrl = "";
 let webProcess: ChildProcess | null = null;
 let webLogs = "";
 let pollCounts = new Map<string, number>();
+let skeletonReleased = false;
 
 async function listenOnRandomPort(server: Server): Promise<number> {
   server.listen(0, "127.0.0.1");
@@ -287,6 +289,26 @@ test.beforeAll(async () => {
     }
     if (
       request.method === "GET" &&
+      requestUrl.pathname === `/api/analyze/${SKELETON_JOB_ID}`
+    ) {
+      response.writeHead(200, { "content-type": "application/json" });
+      const state = skeletonReleased
+        ? doneState(SKELETON_JOB_ID, { withWeather: true })
+        : pendingState(SKELETON_JOB_ID);
+      response.end(JSON.stringify(state));
+      return;
+    }
+    if (
+      request.method === "POST" &&
+      requestUrl.pathname === "/api/test/release-skeleton"
+    ) {
+      skeletonReleased = true;
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end(JSON.stringify({ ok: true }));
+      return;
+    }
+    if (
+      request.method === "GET" &&
       requestUrl.pathname === "/api/frame-compat"
     ) {
       response.writeHead(200, { "content-type": "application/json" });
@@ -345,6 +367,7 @@ test.afterAll(async () => {
 
 test.beforeEach(() => {
   pollCounts = new Map<string, number>();
+  skeletonReleased = false;
 });
 
 test("AC1+AC2+AC3: skeletons appear, shimmer animates, then resolve to real headline + weather", async ({
@@ -541,7 +564,7 @@ test("AC1 no-empty-container invariant: lead-in always has skeleton or content a
   await assertNoEmptyContainers(page);
 });
 
-test("AC2 tooltip hover: hovering a weather-axis row reveals axis name + interpretation copy", async ({
+test("AC2 row click: clicking a weather-axis row reveals axis expansion copy (TASK-1569.09.04 popover-on-click)", async ({
   page,
 }) => {
   await page.goto(`${webBaseUrl}/analyze?job=${RESOLUTION_JOB_ID}`);
@@ -549,30 +572,18 @@ test("AC2 tooltip hover: hovering a weather-axis row reveals axis name + interpr
     timeout: 15_000,
   });
 
-  type AxisCheck = { axisType: string; copyMatch: RegExp };
+  type AxisCheck = { axisType: string; expansion: RegExp };
   const checks: AxisCheck[] = [
-    { axisType: "truth", copyMatch: /sourced|misleading|epistemic stance/i },
-    {
-      axisType: "relevance",
-      copyMatch: /insightful|on topic|drifting/i,
-    },
-    {
-      axisType: "sentiment",
-      copyMatch: /supportive|neutral|critical|oppositional|emotional stance/i,
-    },
+    { axisType: "truth", expansion: /direct, lived experience/i },
+    { axisType: "relevance", expansion: /stays close to the source/i },
+    { axisType: "sentiment", expansion: /not taking a strong emotional stance/i },
   ];
 
-  for (const { axisType, copyMatch } of checks) {
+  for (const { axisType, expansion } of checks) {
     const row = page.locator(`[data-testid="weather-axis-card-${axisType}"]`);
-    await row.hover();
-    const tooltip = page.locator('[role="tooltip"]').first();
-    await expect(tooltip).toBeVisible({ timeout: 5_000 });
-    await expect(tooltip).toContainText(
-      new RegExp(`^${axisType.charAt(0).toUpperCase() + axisType.slice(1)}`),
-    );
-    await expect(tooltip).toContainText(copyMatch);
-    // Move pointer away so the next hover triggers a fresh open.
-    await page.mouse.move(0, 0);
+    await row.click();
+    await expect(page.getByText(expansion)).toBeVisible({ timeout: 5_000 });
+    await page.keyboard.press("Escape");
     await page.waitForTimeout(150);
   }
 });
@@ -602,4 +613,94 @@ test("AC3 null-weather case: no empty weather card appears at any tick", async (
     await assertNoEmptyContainers(page);
     await page.waitForTimeout(100);
   }
+});
+
+/**
+ * TASK-1569.09 — Weather row redesign: expansion popovers, help button,
+ * word-shape skeleton, and no classic-primary class names.
+ */
+
+test("AC1 .07: clicking a weather row opens an expansion popover with plain-language copy", async ({
+  page,
+}) => {
+  await page.goto(`${webBaseUrl}/analyze?job=${RESOLUTION_JOB_ID}`);
+  const weatherReport = page.locator('[data-testid="weather-report"]');
+  await expect(weatherReport).toBeVisible({ timeout: 15_000 });
+
+  const truthRow = page.locator('[data-testid="weather-axis-card-truth"]');
+  await expect(truthRow).toBeVisible();
+  await truthRow.click();
+
+  await expect(page.getByText(/direct, lived experience/i)).toBeVisible();
+});
+
+test("AC2 .07: help button popover renders the abstract Truth/Relevance/Sentiment copy", async ({
+  page,
+}) => {
+  await page.goto(`${webBaseUrl}/analyze?job=${RESOLUTION_JOB_ID}`);
+  const helpButton = page.getByRole("button", { name: /explain.*weather/i });
+  await expect(helpButton).toBeVisible({ timeout: 15_000 });
+  await helpButton.click();
+
+  await expect(page.getByText(/Truth/).first()).toBeVisible();
+  await expect(page.getByText(/Relevance/).first()).toBeVisible();
+  await expect(page.getByText(/Sentiment/).first()).toBeVisible();
+  await expect(
+    page.getByText(/Epistemic stance|Whether claims are sourced/i),
+  ).toBeVisible();
+});
+
+test("AC3 .07: weather skeleton word-shape eval cells contain Skeleton primitives", async ({
+  page,
+}) => {
+  // Use SKELETON_JOB_ID which stays in pending state until the release
+  // endpoint is called. This eliminates the race between the 500 ms pending
+  // window (2 polls × next_poll_ms=250) and the test's navigation cost.
+  await page.goto(`${webBaseUrl}/analyze?job=${SKELETON_JOB_ID}`);
+  const weatherSkeleton = page.locator('[data-testid="weather-report-skeleton"]');
+  await expect(weatherSkeleton).toBeVisible({ timeout: 5_000 });
+
+  // Capture all counts atomically while the skeleton is guaranteed to be
+  // in the DOM (latch not yet released).
+  const snapshot = await weatherSkeleton.evaluate((el) => {
+    const wordCounts: Record<string, number> = {};
+    for (const axis of ["truth", "relevance", "sentiment"]) {
+      const cell = el.querySelector(`[data-testid="weather-skeleton-${axis}-words"]`);
+      wordCounts[axis] = cell
+        ? cell.querySelectorAll("[data-opennotes-skeleton]").length
+        : 0;
+    }
+    const labels: Record<string, string> = {};
+    for (const axis of ["truth", "relevance", "sentiment"]) {
+      const cell = el.querySelector(`[data-testid="weather-skeleton-${axis}-label"]`);
+      labels[axis] = cell?.textContent?.trim() ?? "";
+    }
+    return { wordCounts, labels };
+  });
+
+  expect(snapshot.wordCounts["truth"]).toBeGreaterThanOrEqual(1);
+  expect(snapshot.wordCounts["relevance"]).toBeGreaterThanOrEqual(1);
+  expect(snapshot.wordCounts["sentiment"]).toBe(1);
+
+  expect(snapshot.labels["truth"]).toBe("TRUTH");
+  expect(snapshot.labels["relevance"]).toBe("RELEVANCE");
+  expect(snapshot.labels["sentiment"]).toBe("SENTIMENT");
+
+  // Release the latch so the job resolves to done.
+  await fetch(`${apiBaseUrl}/api/test/release-skeleton`, { method: "POST" });
+  await expect(
+    page.locator('[data-testid="weather-report"]'),
+  ).toBeVisible({ timeout: 10_000 });
+});
+
+test("AC4 .07: resolved weather report contains no classic-primary text-blue/green/rose-700 classes", async ({
+  page,
+}) => {
+  await page.goto(`${webBaseUrl}/analyze?job=${RESOLUTION_JOB_ID}`);
+  const weatherReport = page.locator('[data-testid="weather-report"]');
+  await expect(weatherReport).toBeVisible({ timeout: 15_000 });
+  const html = await weatherReport.evaluate((el) => el.outerHTML);
+  expect(html).not.toMatch(/text-blue-700/);
+  expect(html).not.toMatch(/text-green-700/);
+  expect(html).not.toMatch(/text-rose-700/);
 });
