@@ -515,4 +515,43 @@ describe("<Sidebar /> payload synthesis fallback", () => {
     expect(screen.getByTestId("retry-safety__web_risk")).toBeDefined();
     expect(getSlotState("safety__moderation")).toBe("done");
   });
+
+  it("renders legacy subjective_claims via HighlightsReport fallback when payload has no highlights", () => {
+    render(() => (
+      <Sidebar
+        sections={undefined}
+        payloadComplete={true}
+        payload={makePayload({
+          opinions_sentiments: {
+            opinions_report: {
+              sentiment_stats: {
+                per_utterance: [],
+                positive_pct: 0,
+                negative_pct: 0,
+                neutral_pct: 0,
+                mean_valence: 0,
+              },
+              subjective_claims: [
+                {
+                  claim_text: "This tax policy is deeply unjust.",
+                  stance: "opposes",
+                  utterance_id: "legacy-utt-1",
+                },
+              ],
+            },
+            trends_oppositions: {
+              trends: [],
+              oppositions: [],
+              input_cluster_count: 0,
+              skipped_for_cap: 0,
+            },
+          },
+        })}
+      />
+    ));
+
+    expect(getSlotState("opinions_sentiments__highlights")).toBe("done");
+    expect(screen.getByTestId("report-opinions_sentiments__subjective")).toBeDefined();
+    expect(screen.getByText("This tax policy is deeply unjust.")).toBeDefined();
+  });
 });

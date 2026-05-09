@@ -185,13 +185,6 @@ function synthesizeSectionsFromPayload(
       EMPTY_TRENDS_OPPOSITIONS_REPORT,
   };
   const highlights = payload.opinions_sentiments?.highlights;
-  const highlightSection = highlights
-    ? {
-        opinions_sentiments__highlights: doneSlot(attemptId, {
-          highlights_report: highlights,
-        }),
-      }
-    : {};
   return {
     safety__moderation: doneSlot(attemptId, safetyData),
     safety__web_risk: doneSlot(attemptId, webRiskData),
@@ -217,7 +210,9 @@ function synthesizeSectionsFromPayload(
       attemptId,
       trendsOppositionsData,
     ),
-    ...highlightSection,
+    opinions_sentiments__highlights: doneSlot(attemptId, {
+      highlights_report: highlights ?? null,
+    }),
   };
 }
 
