@@ -128,6 +128,7 @@ function SafetyAxisRow(props: {
 
   const onFocusClick = () => {
     setPopoverOpen(false);
+    props.store?.setHighlightedGroup(null);
     props.store?.isolateGroup(props.targetGroup);
     queueMicrotask(() => triggerRef?.focus());
   };
@@ -165,7 +166,11 @@ function SafetyAxisRow(props: {
                 open={popoverOpen()}
                 onOpenChange={(o) => {
                   setPopoverOpen(o);
-                  props.store?.setHighlightedGroup(o ? props.targetGroup : null);
+                  if (o) {
+                    props.store?.setHighlightedGroup(props.targetGroup);
+                  } else if (props.store?.highlightedGroup() === props.targetGroup) {
+                    props.store?.setHighlightedGroup(null);
+                  }
                 }}
               >
                 <PopoverTrigger
@@ -268,6 +273,7 @@ function AxisRow(props: AxisRowProps): JSX.Element {
 
   const onFocusClick = () => {
     setPopoverOpen(false);
+    store?.setHighlightedGroup(null);
     store?.isolateGroup(targetGroup);
     queueMicrotask(() => triggerRef?.focus());
   };
@@ -305,7 +311,11 @@ function AxisRow(props: AxisRowProps): JSX.Element {
                 open={popoverOpen()}
                 onOpenChange={(o) => {
                   setPopoverOpen(o);
-                  store?.setHighlightedGroup(o ? targetGroup : null);
+                  if (o) {
+                    store?.setHighlightedGroup(targetGroup);
+                  } else if (store?.highlightedGroup() === targetGroup) {
+                    store?.setHighlightedGroup(null);
+                  }
                 }}
               >
                 <PopoverTrigger

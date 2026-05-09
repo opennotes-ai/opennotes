@@ -894,6 +894,68 @@ describe("WeatherReport", () => {
     });
   });
 
+  describe("Highlight cleanup", () => {
+    it("clicking the Focus button clears highlightedGroup immediately (focus-button leak fix)", async () => {
+      let capturedStore: ReturnType<typeof useSidebarStore> = null;
+      function StoreProbe() {
+        capturedStore = useSidebarStore();
+        return null;
+      }
+      render(() => (
+        <SidebarStoreProvider>
+          <StoreProbe />
+          <WeatherReport
+            report={makeWeatherReport()}
+            safetyRecommendation={makeSafetyRecommendation()}
+          />
+        </SidebarStoreProvider>
+      ));
+
+      const truthTrigger = screen.getByTestId("weather-axis-card-truth");
+      fireEvent.click(truthTrigger);
+
+      await waitFor(() => {
+        expect(capturedStore!.highlightedGroup()).toBe("Facts/claims");
+      });
+
+      const focusBtn = screen.getByTestId("weather-truth-focus");
+      fireEvent.click(focusBtn);
+
+      expect(capturedStore!.highlightedGroup()).toBeNull();
+    });
+
+    it("switching directly from one axis popover to another leaves highlightedGroup on the new axis, never null (axis-switch race fix)", async () => {
+      let capturedStore: ReturnType<typeof useSidebarStore> = null;
+      function StoreProbe() {
+        capturedStore = useSidebarStore();
+        return null;
+      }
+      render(() => (
+        <SidebarStoreProvider>
+          <StoreProbe />
+          <WeatherReport
+            report={makeWeatherReport()}
+            safetyRecommendation={makeSafetyRecommendation()}
+          />
+        </SidebarStoreProvider>
+      ));
+
+      const truthTrigger = screen.getByTestId("weather-axis-card-truth");
+      fireEvent.click(truthTrigger);
+
+      await waitFor(() => {
+        expect(capturedStore!.highlightedGroup()).toBe("Facts/claims");
+      });
+
+      const sentimentTrigger = screen.getByTestId("weather-axis-card-sentiment");
+      fireEvent.click(sentimentTrigger);
+
+      await waitFor(() => {
+        expect(capturedStore!.highlightedGroup()).toBe("Opinions/sentiments");
+      });
+    });
+  });
+
   describe("SidebarStore integration", () => {
     it("opening a truth popover inside SidebarStoreProvider sets highlightedGroup to Facts/claims", async () => {
       let capturedStore: ReturnType<typeof useSidebarStore> = null;
