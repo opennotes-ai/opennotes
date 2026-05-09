@@ -126,28 +126,27 @@ Tool usage (markdown-first):
 - Call each tool at most once per run. Do not loop.
 """
 
-CORAL_COMMENTS_PROMPT_ADDENDUM = """\
+COMMENTS_PROMPT_ADDENDUM = """\
 
-Coral comment extraction:
-- The scrape contains a `[data-coral-comments]` marker copied from an embedded
-  Coral comment widget.
+Comment extraction:
+- The scrape contains a `[data-platform-comments]` marker copied from an embedded
+  reader-reply widget.
 - Treat each `article.comment` inside that marker as a separate top-level
   `kind='comment'` utterance.
 - Use `get_html()` if markdown does not preserve the marker's `article.comment`
   structure clearly.
 """
 
-CORAL_COMMENTS_IGNORE_ADDENDUM = """\
+COMMENTS_IGNORE_ADDENDUM = """\
 
-Coral comment extraction:
-- The scrape contains only Coral comment widget shell/chrome, not loaded user
-  comments.
+Comment extraction:
+- The scrape contains only comment widget shell/chrome, not loaded user comments.
 - Do not emit `kind='comment'` utterances from moderation guidelines, counters,
   sort controls, or placeholder `Commenter` rows.
 """
 
-_CORAL_MARKER_RE = re.compile(
-    r"<(?P<tag>section|div)\b(?P<attrs>[^>]*)\bdata-coral-comments\b(?P<attrs_after>[^>]*)>"
+_PLATFORM_MARKER_RE = re.compile(
+    r"<(?P<tag>section|div)\b(?P<attrs>[^>]*)\b(?:data-platform-comments|data-coral-comments)\b(?P<attrs_after>[^>]*)>"
     r"(?P<body>.*?)</(?P=tag)>",
     re.IGNORECASE | re.DOTALL,
 )
@@ -317,34 +316,40 @@ def _has_real_coral_comment_article(marker_body: str) -> bool:
     return False
 
 
-def _coral_comments_prompt_addendum(scrape: CachedScrape) -> str | None:
+def _platform_comments_prompt_addendum(scrape: CachedScrape) -> str | None:
     html_text = scrape.html or ""
-    saw_marker = "data-coral-comments" in html_text or "data-coral-comments" in (
-        scrape.markdown or ""
+    markdown_text = scrape.markdown or ""
+    saw_marker = (
+        "data-platform-comments" in html_text
+        or "data-coral-comments" in html_text
+        or "data-platform-comments" in markdown_text
+        or "data-coral-comments" in markdown_text
     )
     saw_shell_marker = False
-    for match in _CORAL_MARKER_RE.finditer(html_text):
+    for match in _PLATFORM_MARKER_RE.finditer(html_text):
         attrs = f"{match.group('attrs')} {match.group('attrs_after')}"
-        status = _extract_attr_value(attrs, "data-coral-status")
+        status = _extract_attr_value(attrs, "data-platform-status")
+        if status is None:
+            status = _extract_attr_value(attrs, "data-coral-status")
         body = match.group("body")
         if status == "copied":
             if _has_real_coral_comment_article(body):
-                return CORAL_COMMENTS_PROMPT_ADDENDUM
+                return COMMENTS_PROMPT_ADDENDUM
             saw_shell_marker = True
         elif status in {"shell_only", "shadow_empty", "timeout", "clicked_no_match"}:
             saw_shell_marker = True
         elif status is None:
-            return CORAL_COMMENTS_PROMPT_ADDENDUM
+            return COMMENTS_PROMPT_ADDENDUM
 
     if saw_shell_marker:
-        return CORAL_COMMENTS_IGNORE_ADDENDUM
+        return COMMENTS_IGNORE_ADDENDUM
     if saw_marker:
-        return CORAL_COMMENTS_PROMPT_ADDENDUM
+        return COMMENTS_PROMPT_ADDENDUM
     return None
 
 
 def _agent_user_prompt(markdown: str, scrape: CachedScrape) -> str:
-    addendum = _coral_comments_prompt_addendum(scrape)
+    addendum = _platform_comments_prompt_addendum(scrape)
     if addendum is None:
         return markdown
     return f"{addendum}\n\n{markdown}"

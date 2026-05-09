@@ -1839,7 +1839,7 @@ function makeElement(tagName, init = {}) {
             if (child.innerHTML) {
                 this.innerHTML = normalizeText(`${this.innerHTML} ${child.innerHTML}`);
             }
-            if (this.attributes["data-coral-comments"] === "true") {
+            if (this.attributes["data-platform-comments"] === "true") {
                 markerHtml = this.innerHTML || this.textContent;
             }
             return child;
@@ -1948,7 +1948,7 @@ function makeShadowRoot(state) {
 const article = makeElement("article");
 const body = makeElement("body");
 body.appendChild = (child) => {
-    if (child.attributes?.["data-coral-comments"] === "true") {
+    if (child.attributes?.["data-platform-comments"] === "true") {
         markerHtml = child.innerHTML || child.textContent;
     }
     return child;
@@ -1966,7 +1966,7 @@ global.document = {
         if (selector === "article") {
             return article;
         }
-        if (selector === "[data-coral-comments]") {
+        if (selector === "[data-platform-comments]") {
             return markerHtml === null ? null : { remove() { markerHtml = null; } };
         }
         if (!matchingSelectors.has(selector) && !selectorMatchesFixture(selector)) {
@@ -2040,7 +2040,7 @@ console.log(JSON.stringify(output));
     return output["result"], output["clickedSelector"], output["markerHtml"]
 
 
-def _sample_coral_signal() -> CoralSignal:
+def _sample_platform_signal() -> CoralSignal:
     return CoralSignal(
         iframe_src=(
             "https://talk.example.com/embed/stream/?storyURL="
@@ -2061,10 +2061,10 @@ def test_tier2_actions_for_default_waits_only() -> None:
     assert _tier2_actions_for(None) == [{"type": "wait", "milliseconds": 3000}]
 
 
-def test_tier2_actions_for_coral_signal_expands_comment_stream() -> None:
+def test_tier2_actions_for_platform_signal_expands_comment_stream() -> None:
     """Coral detection switches Tier 2 actions to stream-expansion steps."""
 
-    actions = _tier2_actions_for(_sample_coral_signal())
+    actions = _tier2_actions_for(_sample_platform_signal())
 
     assert actions[0] == {"type": "wait", "milliseconds": 2000}
     assert actions[1] == {"type": "scroll", "direction": "down"}
@@ -2100,10 +2100,10 @@ def test_tier2_actions_for_coral_signal_expands_comment_stream() -> None:
     assert len(actions) == 5
 
 
-def test_tier2_actions_for_coral_signal_expands_generic_mother_jones_shape() -> None:
+def test_tier2_actions_for_platform_signal_expands_generic_mother_jones_shape() -> None:
     """Coral shapes with `#coral_thread` use it as a root and click the opener."""
 
-    actions = _tier2_actions_for(_sample_coral_signal())
+    actions = _tier2_actions_for(_sample_platform_signal())
     js = actions[2]["script"]
     _assert_generated_js_contains_selector(js, "#coral-display-comments")
 
@@ -2135,10 +2135,10 @@ def test_tier2_actions_for_coral_signal_expands_generic_mother_jones_shape() -> 
     assert "This public-land context belongs in the discussion." in marker
 
 
-def test_tier2_actions_for_coral_signal_expands_la_times_ps_comments() -> None:
+def test_tier2_actions_for_platform_signal_expands_la_times_ps_comments() -> None:
     """Coral Tier 2 actions click LA Times `ps-comments` Show Comments controls."""
 
-    actions = _tier2_actions_for(_sample_coral_signal())
+    actions = _tier2_actions_for(_sample_platform_signal())
     js = actions[2]["script"]
 
     returned, clicked, marker = _eval_execute_javascript(
@@ -2160,10 +2160,10 @@ def test_tier2_actions_for_coral_signal_expands_la_times_ps_comments() -> None:
     assert marker == "Comments"
 
 
-def test_tier2_actions_for_coral_signal_returns_shell_only_for_guideline_only_shadow_root() -> None:
+def test_tier2_actions_for_platform_signal_returns_shell_only_for_guideline_only_shadow_root() -> None:
     """A shadow root with only Coral UI chrome is surfaced as shell-only."""
 
-    actions = _tier2_actions_for(_sample_coral_signal())
+    actions = _tier2_actions_for(_sample_platform_signal())
     js = actions[2]["script"]
 
     returned, clicked, marker = _eval_execute_javascript(
@@ -2184,10 +2184,10 @@ def test_tier2_actions_for_coral_signal_returns_shell_only_for_guideline_only_sh
     assert marker == "Comments"
 
 
-def test_tier2_actions_for_coral_signal_reports_shadow_failure_statuses() -> None:
+def test_tier2_actions_for_platform_signal_reports_shadow_failure_statuses() -> None:
     """Host and shadow-root failures remain visible as final action statuses."""
 
-    actions = _tier2_actions_for(_sample_coral_signal())
+    actions = _tier2_actions_for(_sample_platform_signal())
     js = actions[2]["script"]
 
     returned, clicked, marker = _eval_execute_javascript(
@@ -2209,10 +2209,10 @@ def test_tier2_actions_for_coral_signal_reports_shadow_failure_statuses() -> Non
     assert marker == "Comments"
 
 
-def test_tier2_actions_for_coral_signal_copies_shadow_comments_to_light_dom() -> None:
+def test_tier2_actions_for_platform_signal_copies_shadow_comments_to_light_dom() -> None:
     """Coral Tier 2 only copies real comment rows, not shell chrome."""
 
-    actions = _tier2_actions_for(_sample_coral_signal())
+    actions = _tier2_actions_for(_sample_platform_signal())
     js = actions[2]["script"]
 
     returned, clicked, marker = _eval_execute_javascript(
@@ -2245,10 +2245,10 @@ def test_tier2_actions_for_coral_signal_copies_shadow_comments_to_light_dom() ->
     assert "johntomas" in marker
 
 
-def test_tier2_actions_for_coral_signal_copies_text_only_coral_comments() -> None:
+def test_tier2_actions_for_platform_signal_copies_text_only_coral_comments() -> None:
     """The LA Times textContent shape is enough when DOM classes are unstable."""
 
-    actions = _tier2_actions_for(_sample_coral_signal())
+    actions = _tier2_actions_for(_sample_platform_signal())
     js = actions[2]["script"]
 
     returned, clicked, marker = _eval_execute_javascript(
@@ -2281,10 +2281,10 @@ def test_tier2_actions_for_coral_signal_copies_text_only_coral_comments() -> Non
     assert "There is nothing unusual about that clause." in marker
 
 
-def test_tier2_actions_for_coral_signal_copies_wapo_light_dom_comments() -> None:
+def test_tier2_actions_for_platform_signal_copies_wapo_light_dom_comments() -> None:
     """Washington Post Coral can render into #comments without a shadow root."""
 
-    actions = _tier2_actions_for(_sample_coral_signal())
+    actions = _tier2_actions_for(_sample_platform_signal())
     js = actions[2]["script"]
 
     returned, clicked, marker = _eval_execute_javascript(
@@ -2311,10 +2311,10 @@ def test_tier2_actions_for_coral_signal_copies_wapo_light_dom_comments() -> None
     assert "The Strait of Hormuz context matters here." in marker
 
 
-def test_tier2_actions_for_coral_signal_copies_generic_shadow_root_comments() -> None:
+def test_tier2_actions_for_platform_signal_copies_generic_shadow_root_comments() -> None:
     """Coral Tier 2 finds live Wapo-style open shadow roots beyond one id."""
 
-    actions = _tier2_actions_for(_sample_coral_signal())
+    actions = _tier2_actions_for(_sample_platform_signal())
     js = actions[2]["script"]
     assert "#coral-shadow-root" in js
 
@@ -2342,10 +2342,10 @@ def test_tier2_actions_for_coral_signal_copies_generic_shadow_root_comments() ->
     assert "Trump and Hegseth are playing chicken, with our troops as pawns." in marker
 
 
-def test_tier2_actions_for_coral_signal_waits_for_real_comments_after_click() -> None:
+def test_tier2_actions_for_platform_signal_waits_for_real_comments_after_click() -> None:
     """Click path keeps polling until hydrated comments are visible."""
 
-    actions = _tier2_actions_for(_sample_coral_signal())
+    actions = _tier2_actions_for(_sample_platform_signal())
     js = actions[2]["script"]
 
     returned, clicked, marker = _eval_execute_javascript(
@@ -2385,7 +2385,7 @@ def test_tier2_actions_for_coral_signal_waits_for_real_comments_after_click() ->
     assert "johntomas" in marker
 
 
-async def test_run_tier2_default_actions_recorded_without_coral_signal() -> None:
+async def test_run_tier2_default_actions_recorded_without_platform_signal() -> None:
     """`_run_tier2` with no Coral signal sends the legacy default action list."""
 
     url = "https://example.com/article"
@@ -2416,7 +2416,7 @@ async def test_run_tier2_records_coral_specific_actions() -> None:
         url,
         cast(FirecrawlClient, cast(object, interact_client)),
         cast(SupabaseScrapeCache, cast(object, cache)),
-        coral_signal=_sample_coral_signal(),
+        platform_signal=_sample_platform_signal(),
     )
 
     assert result.cached is not None
@@ -2465,7 +2465,7 @@ async def test_run_tier2_records_coral_action_status_from_script_outputs() -> No
         url,
         cast(FirecrawlClient, cast(object, interact_client)),
         cast(SupabaseScrapeCache, cast(object, cache)),
-        coral_signal=_sample_coral_signal(),
+        platform_signal=_sample_platform_signal(),
     )
 
     assert result.cached is not None
@@ -2491,7 +2491,7 @@ async def test_run_tier2_records_shell_only_action_status_from_script_output() -
         url,
         cast(FirecrawlClient, cast(object, interact_client)),
         cast(SupabaseScrapeCache, cast(object, cache)),
-        coral_signal=_sample_coral_signal(),
+        platform_signal=_sample_platform_signal(),
     )
 
     assert result.cached is not None
@@ -2686,8 +2686,8 @@ async def test_scrape_step_la_times_partial_coral_routes_to_interact_without_scr
     assert (url, "scrape") not in cache.puts
     assert span.attrs.get("tier_attempted") == ["scrape", "interact"]
     assert span.attrs.get("tier_success") == "interact"
-    assert span.attrs.get("coral_detected") is True
-    assert span.attrs.get("coral_outcome") == "render_only"
+    assert span.attrs.get("platform_detected") is True
+    assert span.attrs.get("platform_outcome") == "coral_render_only"
     assert span.attrs.get("escalation_reason") == "coral_graphql_unsupported"
 
 
@@ -2758,7 +2758,7 @@ async def test_scrape_step_tier1_coral_truncated_marker_stays_cached(
     assert "[comments truncated]" in markdown
     cached_markdown = _require_markdown(cache.store[(url, "scrape")])
     assert "[comments truncated]" in cached_markdown
-    assert span.attrs.get("coral_outcome") == "merged"
+    assert span.attrs.get("platform_outcome") == "coral_merged"
     assert len(interact_client.interact_calls) == 0
 
 
@@ -3717,8 +3717,8 @@ async def test_scrape_step_logfire_span_records_attributes_on_ok(
     assert span.attrs.get("tier_success") == "scrape"
     assert span.attrs.get("escalation_reason") is None
     assert span.attrs.get("final_classification") == "ok"
-    assert span.attrs.get("coral_detected") is False
-    assert span.attrs.get("coral_outcome") is None
+    assert span.attrs.get("platform_detected") is False
+    assert span.attrs.get("platform_outcome") is None
 
 
 async def test_scrape_step_logfire_span_records_coral_merge_attributes(
@@ -3757,8 +3757,8 @@ async def test_scrape_step_logfire_span_records_coral_merge_attributes(
 
     await _call_scrape_step(url, scrape_client, interact_client, cache)
 
-    assert span.attrs.get("coral_detected") is True
-    assert span.attrs.get("coral_outcome") == "merged"
+    assert span.attrs.get("platform_detected") is True
+    assert span.attrs.get("platform_outcome") == "coral_merged"
     assert span.attrs.get("tier_attempted") == ["scrape"]
     assert span.attrs.get("tier_success") == "scrape"
     assert span.attrs.get("escalation_reason") is None
@@ -3767,7 +3767,7 @@ async def test_scrape_step_logfire_span_records_coral_merge_attributes(
 async def test_scrape_step_logfire_span_records_coral_graphql_failed_attributes(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Coral GraphQL failure path sets `coral_outcome='graphql_failed'`."""
+    """Coral GraphQL failure path sets `platform_outcome='coral_graphql_failed'`."""
 
     from src.jobs import orchestrator
 
@@ -3796,8 +3796,8 @@ async def test_scrape_step_logfire_span_records_coral_graphql_failed_attributes(
 
     await _call_scrape_step(url, scrape_client, interact_client, cache)
 
-    assert span.attrs.get("coral_detected") is True
-    assert span.attrs.get("coral_outcome") == "graphql_failed"
+    assert span.attrs.get("platform_detected") is True
+    assert span.attrs.get("platform_outcome") == "coral_graphql_failed"
     assert span.attrs.get("tier_attempted") == ["scrape", "interact"]
     assert span.attrs.get("tier_success") == "interact"
     assert span.attrs.get("escalation_reason") == "coral_graphql_failed"
