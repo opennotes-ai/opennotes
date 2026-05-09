@@ -43,7 +43,6 @@ type FlashpointMatch = components["schemas"]["FlashpointMatch"];
 type SCDReport = components["schemas"]["SCDReport"];
 type FactCheckMatch = components["schemas"]["FactCheckMatch"];
 type SentimentStats = components["schemas"]["SentimentStatsReport"];
-type SubjectiveClaim = components["schemas"]["SubjectiveClaim"];
 type TrendsOppositionsReportData =
   components["schemas"]["TrendsOppositionsReport"];
 type OpinionsHighlightsReport =
@@ -298,9 +297,6 @@ function extractSentimentStats(data: unknown): SentimentStats {
   return (asRecord(data).sentiment_stats ?? EMPTY_SENTIMENT_STATS) as SentimentStats;
 }
 
-function extractSubjectiveClaims(data: unknown): SubjectiveClaim[] {
-  return (asRecord(data).subjective_claims ?? []) as SubjectiveClaim[];
-}
 function extractTrendsOppositionsReport(
   data: unknown,
 ): TrendsOppositionsReportData {
@@ -514,9 +510,6 @@ export default function Sidebar(props: SidebarProps) {
   const canJump = () => props.canJumpToUtterance === true;
   const utterances = (): UtteranceAnchor[] => props.payload?.utterances ?? [];
   const liveSections = createMemo(() => asStrictSectionSlots(props.sections));
-  const hasLiveSectionSlots = createMemo(
-    () => props.sections !== undefined && Object.keys(props.sections).length > 0,
-  );
   const hasPayloadHighlights = createMemo(
     () => props.payload?.opinions_sentiments?.highlights != null,
   );
@@ -534,14 +527,6 @@ export default function Sidebar(props: SidebarProps) {
           ?.highlights as OpinionsHighlightsReport)
       : liveHighlightsReport(),
   );
-  const currentHighlightsCapable = createMemo(() => {
-    if (hasPayloadHighlights()) return true;
-    if (liveHighlightsSlot()) return true;
-    return (
-      hasLiveSectionSlots() &&
-      (props.jobStatus === "extracting" || props.jobStatus === "analyzing")
-    );
-  });
   const opinionsRenderRevision = createMemo(() =>
     [
       canJump(),
