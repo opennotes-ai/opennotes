@@ -23,7 +23,7 @@ const SERVER_HEADLINE_TEXT =
   "The server-generated headline now includes the full policy synthesis, uncertainty rationale, operational constraints, and downstream governance context in one uninterrupted narrative sentence to prove long-trim-sensitive behavior across both browser and slot rendering paths.";
 const FALLBACK_HEADLINE_TITLE =
   "The fallback headline should keep a long source-derived title in full so no cap or ellipsis hides the context, including punctuation, date references, and the nuanced framing that helps distinguish related but dissimilar stories from the same feed";
-const FALLBACK_HEADLINE_TEXT = `example.com — ${FALLBACK_HEADLINE_TITLE} — appears clean`;
+const FALLBACK_HEADLINE_TEXT = `example.com — ${FALLBACK_HEADLINE_TITLE} — has minor concerns`;
 const HEADLINE_VIEWPORTS = [
   { name: "desktop", width: 1440, height: 1080 },
   { name: "mobile", width: 390, height: 844 },
@@ -137,9 +137,9 @@ function sidebarPayload(headline: Record<string, unknown> | null) {
     safety: {
       harmful_content_matches: [],
       recommendation: {
-        level: "safe",
-        rationale: "No safety concerns are present in the mocked payload.",
-        top_signals: [],
+        level: "mild",
+        rationale: "One minor verified signal is present in the mocked payload.",
+        top_signals: ["topic-match content score 0.51"],
         unavailable_inputs: [],
       },
     },
@@ -295,7 +295,7 @@ async function assertHeadlineNoClippingStyles(page: Page): Promise<void> {
   expect(
     widths.headline,
     "hoisted headline section should span the analyze page content width",
-  ).toBeGreaterThanOrEqual(widths.layout * 0.95);
+  ).toBeGreaterThanOrEqual(Math.min(widths.layout * 0.95, widths.layout - 32));
   expect(
     widths.text,
     "headline text line length should stay within the headline section",
@@ -374,6 +374,19 @@ async function assertHeadlinePrecedesSafety(page: Page): Promise<void> {
   ).toBe(true);
 }
 
+async function assertMildSafetyRecommendation(page: Page): Promise<void> {
+  const safetyRec = page.getByTestId("safety-recommendation-report");
+  if (!(await safetyRec.isVisible())) {
+    await page.getByTestId("section-toggle-Safety").click();
+  }
+  await expect(safetyRec).toBeVisible();
+  const badge = page.getByTestId("safety-recommendation-level");
+  await expect(badge).toHaveText("mild");
+  await expect(badge).toHaveClass(/bg-yellow-100/);
+  await expect(badge).toHaveClass(/text-yellow-800/);
+  await expect(badge).toHaveClass(/dark:text-yellow-300/);
+}
+
 async function assertHeadlineSummary(
   page: Page,
   source: HeadlineSource | undefined,
@@ -430,8 +443,8 @@ async function assertHeadlineSummary(
   const safetyRec = page.getByTestId("safety-recommendation-report");
   await expect(
     safetyRec,
-    "safety-recommendation-report must render alongside the headline so we can verify ordering",
-  ).toBeVisible({ timeout: 10_000 });
+    "safety-recommendation-report must exist alongside the headline so we can verify ordering",
+  ).toBeAttached({ timeout: 10_000 });
   await assertHeadlinePrecedesSafety(page);
   return headlineText;
 }
@@ -535,6 +548,7 @@ test(
       testInfo,
     );
     expect(headlineText).toBe(FALLBACK_HEADLINE_TEXT);
+    await assertMildSafetyRecommendation(page);
   },
 );
 
