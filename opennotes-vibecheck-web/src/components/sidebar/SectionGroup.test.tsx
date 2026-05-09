@@ -1489,6 +1489,28 @@ describe("SectionGroup", () => {
     expect(toggle.getAttribute("aria-expanded")).toBe("true");
     expectHasAttribute(body, "hidden", false);
   });
+
+  it("controlled-without-setter: toggle falls through to internal state when open is provided but onOpenChange is absent", async () => {
+    render(() => (
+      <SectionGroup
+        label="Safety"
+        slugs={["safety__moderation"]}
+        sections={{}}
+        render={{}}
+        open={true}
+      />
+    ));
+
+    const toggle = screen.getByTestId("section-toggle-Safety");
+    const body = screen.getByTestId("section-group-body-safety");
+
+    expect(toggle.getAttribute("aria-expanded")).toBe("true");
+    expectHasAttribute(body, "hidden", false);
+
+    await fireEvent.click(toggle);
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    expectHasAttribute(body, "hidden", true);
+  });
 });
 
 describe("Sidebar", () => {

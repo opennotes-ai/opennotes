@@ -1,10 +1,13 @@
 import { createSignal } from "solid-js";
 
-export type SectionGroupLabel =
-  | "Safety"
-  | "Tone/dynamics"
-  | "Facts/claims"
-  | "Opinions/sentiments";
+const ALL_LABELS = [
+  "Safety",
+  "Tone/dynamics",
+  "Facts/claims",
+  "Opinions/sentiments",
+] as const;
+
+export type SectionGroupLabel = (typeof ALL_LABELS)[number];
 
 export interface SidebarStore {
   isOpen: (label: SectionGroupLabel) => boolean;
@@ -14,13 +17,6 @@ export interface SidebarStore {
   highlightedGroup: () => SectionGroupLabel | null;
   setHighlightedGroup: (label: SectionGroupLabel | null) => void;
 }
-
-const ALL_LABELS: SectionGroupLabel[] = [
-  "Safety",
-  "Tone/dynamics",
-  "Facts/claims",
-  "Opinions/sentiments",
-];
 
 export function createSidebarStore(opts?: { defaultOpen?: boolean }): SidebarStore {
   const defaultOpen = opts?.defaultOpen !== false;

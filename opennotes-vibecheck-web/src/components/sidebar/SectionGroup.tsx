@@ -250,7 +250,8 @@ export default function SectionGroup(props: SectionGroupProps): JSX.Element {
   const [announcement, setAnnouncement] = createSignal("");
   const [internalGroupOpen, setInternalGroupOpen] = createSignal(props.defaultOpen !== false);
   const [userToggledGroupOpen, setUserToggledGroupOpen] = createSignal(false);
-  const groupOpen = () => props.open ?? internalGroupOpen();
+  // Only honour props.open when a setter is also provided; without a setter the click falls through to internal toggle.
+  const groupOpen = () => (props.open !== undefined && props.onOpenChange ? props.open : internalGroupOpen());
   const labelSlug = slugify(props.label);
   const groupBodyId = `section-group-body-${labelSlug}`;
   const sectionToggleLabel = () =>
@@ -334,12 +335,11 @@ export default function SectionGroup(props: SectionGroupProps): JSX.Element {
               aria-expanded={groupOpen() ? "true" : "false"}
               aria-controls={groupBodyId}
               onClick={() => {
-                const next = !groupOpen();
                 if (props.onOpenChange) {
-                  props.onOpenChange(next);
+                  props.onOpenChange(!groupOpen());
                 } else {
                   setUserToggledGroupOpen(true);
-                  setInternalGroupOpen(next);
+                  setInternalGroupOpen((prev) => !prev);
                 }
               }}
               class="flex h-auto min-w-0 items-center gap-1.5 -mx-2 px-2 py-1 rounded-md text-sm font-semibold text-foreground hover:bg-muted/60 dark:hover:bg-muted hover:text-foreground"
