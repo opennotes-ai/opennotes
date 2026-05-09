@@ -282,7 +282,6 @@ describe("AC4: Retry button aria-label uses section display name", () => {
     ["facts_claims__dedup", "Retry Claims"],
     ["facts_claims__known_misinfo", "Retry Known misinfo"],
     ["opinions_sentiments__sentiment", "Retry Sentiment"],
-    ["opinions_sentiments__subjective", "Retry Subjective claims"],
   ];
 
   for (const [slug, expected] of cases) {

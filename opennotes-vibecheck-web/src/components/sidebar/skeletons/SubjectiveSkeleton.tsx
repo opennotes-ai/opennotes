@@ -1,3 +1,4 @@
+// @deprecated — kept only for HighlightsReport's legacy subjective_claims fallback; remove once legacy data is no longer expected.
 import { For } from "solid-js";
 
 export default function SubjectiveSkeleton() {

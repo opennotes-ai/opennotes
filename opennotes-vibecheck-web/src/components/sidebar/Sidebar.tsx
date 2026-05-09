@@ -29,7 +29,6 @@ import {
   ClaimsDedupReport,
   KnownMisinfoReport,
   SentimentReport,
-  SubjectiveReport,
   TrendsOppositionsReport,
   EMPTY_TRENDS_OPPOSITIONS_REPORT,
   HighlightsReport,
@@ -86,7 +85,6 @@ const OPINIONS_SLUGS: SectionSlugLiteral[] = [
   "opinions_sentiments__sentiment",
   "opinions_sentiments__trends_oppositions",
   "opinions_sentiments__highlights",
-  "opinions_sentiments__subjective",
 ];
 
 function doneSlot(attemptId: string, data: unknown): SectionSlot {
@@ -477,8 +475,6 @@ const OPINIONS_EMPTINESS: Partial<
       stats.neutral_pct === 0
     );
   },
-  opinions_sentiments__subjective: (data) =>
-    extractSubjectiveClaims(data).length === 0,
   opinions_sentiments__trends_oppositions: (data) => {
     const report = extractTrendsOppositionsReport(data);
     return report.trends.length === 0 && report.oppositions.length === 0;
@@ -493,10 +489,6 @@ const OPINIONS_COUNTS: Partial<
   opinions_sentiments__sentiment: (data) => {
     const total = extractSentimentStats(data).per_utterance.length;
     return { total, kind: "sentences" };
-  },
-  opinions_sentiments__subjective: (data) => {
-    const total = extractSubjectiveClaims(data).length;
-    return { total };
   },
   opinions_sentiments__trends_oppositions: (data) => {
     const report = extractTrendsOppositionsReport(data);
@@ -628,15 +620,6 @@ export default function Sidebar(props: SidebarProps) {
         stats={extractSentimentStats(data)}
         anchors={utterances()}
       />
-    ),
-    opinions_sentiments__subjective: (data) => (
-      currentHighlightsCapable() ? null : (
-        <SubjectiveReport
-          claims={extractSubjectiveClaims(data)}
-          onUtteranceClick={props.onUtteranceClick}
-          canJumpToUtterance={canJump()}
-        />
-      )
     ),
     opinions_sentiments__trends_oppositions: (data) => (
       <TrendsOppositionsReport

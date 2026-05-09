@@ -18,7 +18,6 @@ const SECTION_SLUGS = [
   "facts_claims__dedup",
   "facts_claims__known_misinfo",
   "opinions_sentiments__sentiment",
-  "opinions_sentiments__subjective",
   "opinions_sentiments__trends_oppositions",
 ] as const;
 

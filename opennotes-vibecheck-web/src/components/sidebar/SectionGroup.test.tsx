@@ -1482,7 +1482,7 @@ describe("Sidebar", () => {
     expect(byLabel("Safety")?.textContent).toBe("4/4");
     expect(byLabel("Tone/dynamics")?.textContent).toBe("2/2");
     expect(byLabel("Facts/claims")?.textContent).toBe("2/2");
-    expect(byLabel("Opinions/sentiments")?.textContent).toBe("4/4");
+    expect(byLabel("Opinions/sentiments")?.textContent).toBe("3/3");
 
     const ALL_SLUGS = [
       "safety__moderation",
@@ -1496,7 +1496,6 @@ describe("Sidebar", () => {
       "opinions_sentiments__sentiment",
       "opinions_sentiments__trends_oppositions",
       "opinions_sentiments__highlights",
-      "opinions_sentiments__subjective",
     ] as const;
 
     for (const slug of ALL_SLUGS) {
@@ -1576,7 +1575,6 @@ describe("Sidebar", () => {
           facts_claims__premises: { state: "running", attempt_id: "a6" },
           facts_claims__known_misinfo: { state: "running", attempt_id: "a7" },
           opinions_sentiments__sentiment: { state: "running", attempt_id: "a6" },
-          opinions_sentiments__subjective: { state: "running", attempt_id: "a7" },
           opinions_sentiments__trends_oppositions: {
             state: "running",
             attempt_id: "a8",
@@ -1591,9 +1589,6 @@ describe("Sidebar", () => {
 
     expect(
       screen.getByTestId("slot-safety__moderation").getAttribute("data-slot-state"),
-    ).toBe("running");
-    expect(
-      screen.getByTestId("slot-opinions_sentiments__subjective").getAttribute("data-slot-state"),
     ).toBe("running");
     expect(
       screen.getByTestId("slot-opinions_sentiments__trends_oppositions").getAttribute("data-slot-state"),
@@ -1864,11 +1859,7 @@ describe("Sidebar (done slots, per-slug reports)", () => {
       within(sentimentReport).queryByTestId("sentiment-mean-valence"),
     ).toBeNull();
 
-    const subjectiveReport = screen.getByTestId(
-      "report-opinions_sentiments__subjective",
-    );
-    expect(subjectiveReport.textContent).toContain("subjective-claim-one");
-    expect(subjectiveReport.textContent).not.toContain("mean valence");
+    expect(screen.queryByTestId("slot-toggle-opinions_sentiments__subjective")).toBeNull();
 
     const trendsReport = screen.getByTestId(
       "report-opinions_sentiments__trends_oppositions",
@@ -1878,7 +1869,7 @@ describe("Sidebar (done slots, per-slug reports)", () => {
     expect(trendsReport.textContent).toContain("Counter-positions");
   });
 
-  it("suppresses stale subjective output when current highlights arrive after section data", async () => {
+  it("never renders the standalone subjective section regardless of highlights state", async () => {
     const sections: SlugToSlots = {
       opinions_sentiments__subjective: {
         state: "done",
@@ -1964,6 +1955,7 @@ describe("Sidebar (done slots, per-slug reports)", () => {
     ));
 
     expect(screen.queryByText("legacy subjective dump")).toBeNull();
+    expect(screen.queryByTestId("slot-toggle-opinions_sentiments__subjective")).toBeNull();
     expect(screen.getByText("current curated highlight")).toBeDefined();
 
     setPayload(currentPayload);
@@ -1971,13 +1963,14 @@ describe("Sidebar (done slots, per-slug reports)", () => {
     await waitFor(() => {
       expect(screen.queryByText("legacy subjective dump")).toBeNull();
     });
+    expect(screen.queryByTestId("slot-toggle-opinions_sentiments__subjective")).toBeNull();
     expect(
       screen.getByTestId("report-opinions_sentiments__highlights"),
     ).toBeDefined();
     expect(screen.getByText("current curated highlight")).toBeDefined();
   });
 
-  it("keeps legacy subjective fallback for completed payloads without highlights", () => {
+  it("does not render a standalone subjective section for completed payloads without highlights", () => {
     const payload: SidebarPayload = {
       ...makeTonePayload(),
       opinions_sentiments: {
@@ -1997,7 +1990,7 @@ describe("Sidebar (done slots, per-slug reports)", () => {
 
     render(() => <Sidebar payload={payload} payloadComplete={true} />);
 
-    expect(screen.getByText("legacy subjective dump")).toBeDefined();
+    expect(screen.queryByTestId("slot-toggle-opinions_sentiments__subjective")).toBeNull();
     expect(
       screen.queryByTestId("report-opinions_sentiments__highlights"),
     ).toBeNull();
@@ -2292,7 +2285,6 @@ describe("Sidebar (done slots, per-slug reports)", () => {
     await fireEvent.click(screen.getByTestId("slot-toggle-tone_dynamics__flashpoint"));
     await fireEvent.click(screen.getByTestId("slot-toggle-facts_claims__dedup"));
     await fireEvent.click(screen.getByTestId("slot-toggle-facts_claims__known_misinfo"));
-    await fireEvent.click(screen.getByTestId("slot-toggle-opinions_sentiments__subjective"));
     const trendsOppositionsToggle = screen.getByTestId(
       "slot-toggle-opinions_sentiments__trends_oppositions",
     );
@@ -2314,9 +2306,6 @@ describe("Sidebar (done slots, per-slug reports)", () => {
     ).toBeDefined();
     expect(
       screen.getByLabelText("Sentiment: 10% positive, 10% negative, 80% neutral"),
-    ).toBeDefined();
-    expect(
-      screen.getByTestId("report-opinions_sentiments__subjective"),
     ).toBeDefined();
     expect(
       screen.getByTestId("report-opinions_sentiments__trends_oppositions"),
@@ -2385,7 +2374,6 @@ describe("Sidebar (extracting-phase indicator)", () => {
     "opinions_sentiments__sentiment",
     "opinions_sentiments__trends_oppositions",
     "opinions_sentiments__highlights",
-    "opinions_sentiments__subjective",
   ] as const;
 
   it("renders the extracting indicator and per-slug skeletons when jobStatus is extracting and sections is empty", () => {
