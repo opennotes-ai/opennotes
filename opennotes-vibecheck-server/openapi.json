@@ -2109,7 +2109,7 @@
               }
             ],
             "title": "Page Title",
-            "description": "Extracted page title, sourced from vibecheck_job_utterances. Null until the extractor runs."
+            "description": "Extracted page title, sourced from vibecheck_jobs."
           },
           "page_kind": {
             "anyOf": [
@@ -2120,7 +2120,7 @@
                 "type": "null"
               }
             ],
-            "description": "Extracted page shape, sourced from vibecheck_job_utterances. Null until the extractor runs."
+            "description": "Extracted page shape, sourced from vibecheck_jobs."
           },
           "utterance_stream_type": {
             "anyOf": [
@@ -2131,7 +2131,7 @@
                 "type": "null"
               }
             ],
-            "description": "Extracted utterance-stream shape, sourced from vibecheck_job_utterances. Null until the extractor runs."
+            "description": "Extracted utterance-stream shape, sourced from vibecheck_jobs."
           },
           "utterance_count": {
             "type": "integer",
@@ -2377,6 +2377,16 @@
             "anyOf": [
               {
                 "$ref": "#/components/schemas/WeatherReport"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "safety_recommendation": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SafetyRecommendation"
               },
               {
                 "type": "null"
