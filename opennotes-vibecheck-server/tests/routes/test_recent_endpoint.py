@@ -123,14 +123,15 @@ async def _seed_done_job(
             """
             INSERT INTO vibecheck_jobs
                 (url, normalized_url, host, status, sections, finished_at,
-                 preview_description)
-            VALUES ($1, $1, 'example.com', 'done', $2::jsonb, $3, $4)
+                 preview_description, page_title)
+            VALUES ($1, $1, 'example.com', 'done', $2::jsonb, $3, $4, $5)
             RETURNING job_id
             """,
             url,
             json.dumps(_full_done_sections()),
             finished,
             preview,
+            page_title,
         )
         await conn.execute(
             """

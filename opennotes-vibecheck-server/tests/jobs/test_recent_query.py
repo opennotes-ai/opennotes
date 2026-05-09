@@ -329,6 +329,7 @@ async def _seed_job(
     pool: Any,
     *,
     url: str,
+    page_title: str | None = "Job Page Title",
     status: str = "done",
     source_type: str = "url",
     sections: dict[str, dict[str, str]] | None = None,
@@ -345,8 +346,9 @@ async def _seed_job(
             """
             INSERT INTO vibecheck_jobs
                 (url, normalized_url, host, status, sections, finished_at,
-                 preview_description, source_type, expired_at, sidebar_payload)
-            VALUES ($1, $1, 'example.com', $2, $3::jsonb, $4, $5, $6, $7, $8::jsonb)
+                 preview_description, source_type, expired_at, sidebar_payload,
+                 page_title)
+            VALUES ($1, $1, 'example.com', $2, $3::jsonb, $4, $5, $6, $7, $8::jsonb, $9)
             RETURNING job_id
             """,
             url,
@@ -357,6 +359,7 @@ async def _seed_job(
             source_type,
             expired_at,
             json.dumps(sidebar_payload) if sidebar_payload is not None else None,
+            page_title,
         )
 
 
@@ -402,12 +405,13 @@ class TestListRecentEmpty:
 class TestListRecentDoneJobs:
     async def test_done_job_with_scrape_appears(self, db_pool: Any) -> None:
         url = "https://example.com/done"
-        job_id = await _seed_job(db_pool, url=url)
-        await _seed_scrape(db_pool, url=url)
+        job_id = await _seed_job(db_pool, url=url, page_title="Job Title")
+        await _seed_scrape(db_pool, url=url, page_title="Scrape Title")
         result = await list_recent(db_pool, limit=5, signer=_StubSigner())
         assert len(result) == 1
         assert result[0].job_id == job_id
         assert result[0].source_url == url
+        assert result[0].page_title == "Job Title"
         assert result[0].screenshot_url.startswith("https://signed.example/")
 
     async def test_done_job_surfaces_headline_and_weather_report(
@@ -668,11 +672,11 @@ class TestListRecentTierPreference:
         self, db_pool: Any
     ) -> None:
         """Both tier='scrape' and tier='interact' rows exist for the same
-        URL — the gallery returns the interact-tier asset (page_title +
-        screenshot_storage_key), not the cached interstitial.
+        URL — the gallery returns the interact-tier asset but keeps the
+        canonical job title.
         """
         url = "https://example.com/cf-then-interact-success"
-        await _seed_job(db_pool, url=url)
+        await _seed_job(db_pool, url=url, page_title="Job Article Title")
         await _seed_scrape(
             db_pool,
             url=url,
@@ -689,7 +693,7 @@ class TestListRecentTierPreference:
         )
         result = await list_recent(db_pool, limit=5, signer=_StubSigner())
         assert len(result) == 1
-        assert result[0].page_title == "Real Article Title"
+        assert result[0].page_title == "Job Article Title"
         assert "real-content.png" in result[0].screenshot_url
 
     async def test_falls_back_to_scrape_tier_when_interact_missing(
@@ -700,7 +704,7 @@ class TestListRecentTierPreference:
         the interact row.
         """
         url = "https://example.com/scrape-only"
-        await _seed_job(db_pool, url=url)
+        await _seed_job(db_pool, url=url, page_title="Scrape Only Job Title")
         await _seed_scrape(
             db_pool,
             url=url,
@@ -710,7 +714,7 @@ class TestListRecentTierPreference:
         )
         result = await list_recent(db_pool, limit=5, signer=_StubSigner())
         assert len(result) == 1
-        assert result[0].page_title == "Plain Article"
+        assert result[0].page_title == "Scrape Only Job Title"
 
     async def test_falls_back_to_scrape_when_interact_expired(
         self, db_pool: Any
@@ -720,7 +724,7 @@ class TestListRecentTierPreference:
         preference.
         """
         url = "https://example.com/interact-expired"
-        await _seed_job(db_pool, url=url)
+        await _seed_job(db_pool, url=url, page_title="Fresh Job Title")
         await _seed_scrape(
             db_pool,
             url=url,
@@ -738,7 +742,7 @@ class TestListRecentTierPreference:
         )
         result = await list_recent(db_pool, limit=5, signer=_StubSigner())
         assert len(result) == 1
-        assert result[0].page_title == "Fresh Scrape"
+        assert result[0].page_title == "Fresh Job Title"
 
 
 class TestListRecentPrivacyFilters:

@@ -518,17 +518,8 @@ _POLL_DELAY_BY_STATUS: dict[JobStatus, int] = {
 # the GET endpoint must pick exact columns so adding a new column to
 # vibecheck_jobs doesn't silently widen the response and leak fields.
 #
-# Page metadata (page_title, page_kind) comes from vibecheck_job_utterances
-# via a LEFT JOIN LATERAL ordered by position so both fields always come from
-# the SAME utterance row. TASK-1473.60: the prior two unordered correlated
-# subqueries could mix title from row A and kind from row B; after
-# persist_utterances (1473.57) every row carries identical metadata so
-# grabbing position-0 deterministically returns the payload's metadata.
-# A job with zero utterance rows gets meta.page_title=NULL, meta.page_kind=NULL
-# via the LEFT JOIN — the poll response treats both fields as absent.
-# utterance_count remains a separate scalar subquery to avoid a GROUP BY.
-# Codex W4 P2-2; defensive row.keys() checks in _row_to_job_state are now
-# no-ops (LATERAL always projects the alias) but retained for safety.
+# Page metadata is stored once on vibecheck_jobs. utterance_count remains a
+# separate scalar subquery because it is utterance-scoped and avoids GROUP BY.
 _SELECT_JOB_SQL = """
 SELECT
     j.job_id,
@@ -550,11 +541,11 @@ SELECT
     j.last_stage,
     j.heartbeat_at,
     j.expired_at,
+    j.page_title,
+    j.page_kind,
+    j.utterance_stream_type,
     ib.conversion_status AS image_conversion_status,
     ib.generated_pdf_gcs_key AS image_generated_pdf_gcs_key,
-    meta.page_title,
-    meta.page_kind,
-    meta.utterance_stream_type,
     (
         SELECT COUNT(*)
         FROM vibecheck_job_utterances u
@@ -562,13 +553,6 @@ SELECT
     ) AS utterance_count
 FROM vibecheck_jobs j
 LEFT JOIN vibecheck_image_upload_batches ib ON ib.job_id = j.job_id
-LEFT JOIN LATERAL (
-    SELECT u.page_title, u.page_kind, u.utterance_stream_type
-    FROM vibecheck_job_utterances u
-    WHERE u.job_id = j.job_id
-    ORDER BY u.position
-    LIMIT 1
-) AS meta ON TRUE
 WHERE j.job_id = $1
 """
 

@@ -60,13 +60,6 @@ CREATE TABLE vibecheck_job_utterances (
     timestamp_at TIMESTAMPTZ,
     parent_id TEXT,
     position INT NOT NULL DEFAULT 0,
-    -- Page-level metadata snapshotted by the extractor onto each utterance
-    -- row (codex W4 P2-2). The GET endpoint reads the first non-null value
-    -- via correlated subqueries to populate JobState.page_title /
-    -- .page_kind without multiplying the projection.
-    page_title TEXT,
-    page_kind TEXT NOT NULL DEFAULT 'other',
-    utterance_stream_type TEXT NOT NULL DEFAULT 'unknown',
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 """
@@ -432,17 +425,26 @@ async def test_rate_limit_is_keyed_per_job_id(
 async def test_job_state_includes_page_title_when_utterances_exist(
     client: httpx.AsyncClient, db_pool: Any
 ) -> None:
-    """JobState must expose page_title/page_kind/utterance_count joined from
-    vibecheck_job_utterances (codex W4 P2-2)."""
+    """JobState exposes job-level page metadata alongside utterance_count."""
     url = "https://example.com/with-utterances"
     job_id = await _insert_job(db_pool, status="analyzing", url=url)
     async with db_pool.acquire() as conn:
+        await conn.execute(
+            """
+            UPDATE vibecheck_jobs
+            SET page_title = 'Example Title',
+                page_kind = 'article',
+                utterance_stream_type = 'article_or_monologue'
+            WHERE job_id = $1
+            """,
+            job_id,
+        )
         for i in range(3):
             await conn.execute(
                 """
                 INSERT INTO vibecheck_job_utterances
-                    (job_id, kind, text, position, page_title, page_kind)
-                VALUES ($1, 'post', $2, $3, 'Example Title', 'article')
+                    (job_id, kind, text, position)
+                VALUES ($1, 'post', $2, $3)
                 """,
                 job_id,
                 f"utterance {i}",
@@ -454,21 +456,22 @@ async def test_job_state_includes_page_title_when_utterances_exist(
     body = resp.json()
     assert body["page_title"] == "Example Title"
     assert body["page_kind"] == "article"
+    assert body["utterance_stream_type"] == "article_or_monologue"
     assert body["utterance_count"] == 3
 
 
 async def test_job_state_page_fields_null_before_extraction(
     client: httpx.AsyncClient, db_pool: Any
 ) -> None:
-    """Before the extractor runs, page_title/page_kind must be null and
-    utterance_count must be 0 (codex W4 P2-2)."""
+    """Before the extractor runs, title is null and default metadata is returned."""
     job_id = await _insert_job(db_pool, status="pending")
 
     resp = await client.get(f"/api/analyze/{job_id}")
     assert resp.status_code == 200
     body = resp.json()
     assert body["page_title"] is None
-    assert body["page_kind"] is None
+    assert body["page_kind"] == "other"
+    assert body["utterance_stream_type"] == "unknown"
     assert body["utterance_count"] == 0
 
 

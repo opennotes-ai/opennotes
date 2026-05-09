@@ -15,9 +15,11 @@ from src.analyses.schemas import (
     FactsClaimsSection,
     JobStatus,
     OpinionsSection,
+    PageKind,
     SafetySection,
     SidebarPayload,
     ToneDynamicsSection,
+    UtteranceStreamType,
     WebRiskSection,
 )
 from src.analyses.tone._scd_schemas import SCDReport
@@ -148,6 +150,34 @@ def _derive_cache_preview(sidebar_payload: dict[str, Any]) -> str:
         return _CACHE_PREVIEW_FALLBACK
 
 
+def _metadata_from_sidebar_payload(
+    sidebar_payload: dict[str, Any],
+) -> tuple[str | None, str, str]:
+    page_title = sidebar_payload.get("page_title")
+    if not isinstance(page_title, str):
+        page_title = None
+
+    page_kind_raw = sidebar_payload.get("page_kind")
+    stream_type_raw = sidebar_payload.get("utterance_stream_type")
+    page_kind = PageKind.OTHER
+    utterance_stream_type = UtteranceStreamType.UNKNOWN
+    if isinstance(page_kind_raw, str):
+        try:
+            page_kind = PageKind(page_kind_raw)
+        except ValueError:
+            pass
+    if isinstance(stream_type_raw, str):
+        try:
+            utterance_stream_type = UtteranceStreamType(stream_type_raw)
+        except ValueError:
+            pass
+    return (
+        page_title,
+        page_kind.value,
+        utterance_stream_type.value,
+    )
+
+
 async def _insert_cached_done_job(
     conn: Any,
     *,
@@ -172,13 +202,17 @@ async def _insert_cached_done_job(
     do carry preview text.
     """
     preview_description = _derive_cache_preview(sidebar_payload)
+    page_title, page_kind, utterance_stream_type = _metadata_from_sidebar_payload(
+        sidebar_payload
+    )
     job_id = await conn.fetchval(
         """
         INSERT INTO vibecheck_jobs (
             url, normalized_url, host, status, sidebar_payload,
-            preview_description, cached, finished_at
+            preview_description, cached, finished_at,
+            page_title, page_kind, utterance_stream_type
         )
-        VALUES ($1, $2, $3, 'done', $4::jsonb, $5, true, now())
+        VALUES ($1, $2, $3, 'done', $4::jsonb, $5, true, now(), $6, $7, $8)
         ON CONFLICT (normalized_url)
             WHERE status = 'done' AND cached = true
             DO NOTHING
@@ -189,6 +223,9 @@ async def _insert_cached_done_job(
         host,
         json.dumps(sidebar_payload),
         preview_description,
+        page_title,
+        page_kind,
+        utterance_stream_type,
     )
     if job_id is None:
         # Concurrent submitter beat us to the insert. Re-fetch the
@@ -385,14 +422,30 @@ async def _copy_utterances_to_job(
         """
         INSERT INTO vibecheck_job_utterances (
             job_id, utterance_id, kind, text, author, timestamp_at,
-            parent_id, position, page_title, page_kind
+            parent_id, position
         )
         SELECT
             $2, utterance_id, kind, text, author, timestamp_at,
-            parent_id, position, page_title, page_kind
+            parent_id, position
         FROM vibecheck_job_utterances
         WHERE job_id = $1
           AND NOT EXISTS (
+              SELECT 1 FROM vibecheck_job_utterances WHERE job_id = $2
+          )
+        """,
+        source_job_id,
+        target_job_id,
+    )
+    await conn.execute(
+        """
+        UPDATE vibecheck_jobs target
+        SET page_title = source.page_title,
+            page_kind = source.page_kind,
+            utterance_stream_type = source.utterance_stream_type
+        FROM vibecheck_jobs source
+        WHERE source.job_id = $1
+          AND target.job_id = $2
+          AND EXISTS (
               SELECT 1 FROM vibecheck_job_utterances WHERE job_id = $2
           )
         """,

@@ -39,11 +39,20 @@ _DELETE_UTTERANCES_SQL = """
 DELETE FROM vibecheck_job_utterances WHERE job_id = $1
 """
 
+_UPDATE_JOB_METADATA_SQL = """
+UPDATE vibecheck_jobs
+SET page_title = $2,
+    page_kind = $3,
+    utterance_stream_type = $4,
+    updated_at = now()
+WHERE job_id = $1
+"""
+
 _INSERT_UTTERANCE_SQL = """
 INSERT INTO vibecheck_job_utterances
   (job_id, utterance_id, kind, text, author,
-   timestamp_at, parent_id, position, page_title, page_kind, utterance_stream_type)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+   timestamp_at, parent_id, position)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 """
 
 
@@ -77,6 +86,13 @@ async def persist_utterances(
                 f"persist_utterances: attempt drift for job {job_id} "
                 f"(expected={expected_attempt}, actual={row['attempt_id']})"
             )
+        await conn.execute(
+            _UPDATE_JOB_METADATA_SQL,
+            job_id,
+            payload.page_title,
+            payload.page_kind.value,
+            payload.utterance_stream_type.value,
+        )
         await conn.execute(_DELETE_UTTERANCES_SQL, job_id)
         for idx, utt in enumerate(payload.utterances):
             await conn.execute(
@@ -89,7 +105,4 @@ async def persist_utterances(
                 utt.timestamp,
                 utt.parent_id,
                 idx,
-                payload.page_title,
-                payload.page_kind.value,
-                payload.utterance_stream_type.value,
             )

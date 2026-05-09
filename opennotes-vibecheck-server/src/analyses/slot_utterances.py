@@ -15,10 +15,8 @@ ORDER BY position, created_at, utterance_pk
 
 _LOAD_STREAM_TYPE_SQL = """
 SELECT utterance_stream_type
-FROM vibecheck_job_utterances
+FROM vibecheck_jobs
 WHERE job_id = $1
-ORDER BY position, created_at, utterance_pk
-LIMIT 1
 """
 
 

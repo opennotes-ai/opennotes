@@ -46,10 +46,7 @@ CREATE TABLE vibecheck_job_utterances (
     timestamp_at TIMESTAMPTZ,
     parent_id TEXT,
     position INT NOT NULL DEFAULT 0,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    page_title TEXT,
-    page_kind TEXT,
-    utterance_stream_type TEXT
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 """
 )
@@ -206,9 +203,13 @@ async def _insert_job(pool: Any, *, attempt_id: UUID, url: str) -> UUID:
         job_id = await conn.fetchval(
             """
             INSERT INTO vibecheck_jobs (
-                url, normalized_url, host, status, attempt_id, source_type, sections
+                url, normalized_url, host, status, attempt_id, source_type, sections,
+                page_title, page_kind, utterance_stream_type
             )
-            VALUES ($1, $1, 'example.com', 'analyzing', $2, 'url', $3::jsonb)
+            VALUES (
+                $1, $1, 'example.com', 'analyzing', $2, 'url', $3::jsonb,
+                'Finalized Example', 'article', 'article_or_monologue'
+            )
             RETURNING job_id
             """,
             url,

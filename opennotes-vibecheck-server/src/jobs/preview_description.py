@@ -33,9 +33,9 @@ _FALLBACK_PLACEHOLDER = "Analysis complete."
 class DerivationContext:
     """Out-of-band fields not on SidebarPayload but needed for fallbacks.
 
-    `page_title` and `first_utterance_text` are loaded once at finalize
-    time from `vibecheck_scrapes` / `vibecheck_job_utterances` and passed
-    in alongside the assembled payload.
+    `page_title` and `first_utterance_text` are loaded once at finalize time
+    from `vibecheck_jobs` / `vibecheck_job_utterances` and passed in alongside
+    the assembled payload.
     """
 
     page_title: str | None

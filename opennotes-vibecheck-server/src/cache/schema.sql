@@ -154,6 +154,9 @@ CREATE TABLE IF NOT EXISTS public.vibecheck_jobs (
     sidebar_payload JSONB,
     cached BOOLEAN NOT NULL DEFAULT false,
     source_type TEXT NOT NULL DEFAULT 'url',
+    page_title TEXT,
+    page_kind TEXT NOT NULL DEFAULT 'other',
+    utterance_stream_type TEXT NOT NULL DEFAULT 'unknown',
     extract_transient_attempts INT NOT NULL DEFAULT 0,
     created_at TIMESTAMPTZ NOT NULL DEFAULT pg_catalog.now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT pg_catalog.now(),
@@ -175,6 +178,16 @@ CREATE TABLE IF NOT EXISTS public.vibecheck_jobs (
         ),
     CONSTRAINT vibecheck_jobs_source_type_check
         CHECK (source_type IN ('url', 'pdf', 'browser_html')),
+    CONSTRAINT vibecheck_jobs_page_kind_check
+        CHECK (page_kind IN (
+            'blog_post', 'forum_thread', 'hierarchical_thread',
+            'blog_index', 'article', 'other'
+        )),
+    CONSTRAINT vibecheck_jobs_utterance_stream_type_check
+        CHECK (utterance_stream_type IN (
+            'dialogue', 'comment_section', 'article_or_monologue',
+            'mixed', 'unknown'
+        )),
     CONSTRAINT vibecheck_jobs_terminal_finished_at
         CHECK (
             (status NOT IN ('done', 'partial', 'failed') AND finished_at IS NULL)
@@ -394,11 +407,40 @@ ALTER TABLE public.vibecheck_jobs
 ALTER TABLE public.vibecheck_jobs
     ADD COLUMN IF NOT EXISTS source_type TEXT NOT NULL DEFAULT 'url';
 
+-- TASK-1558.03: page-level metadata belongs to the job, not every utterance.
+-- These columns are added before the legacy backfill/drop below so old rows
+-- survive the storage move and future schema re-applies never depend on the
+-- retired vibecheck_job_utterances columns.
+ALTER TABLE public.vibecheck_jobs
+    ADD COLUMN IF NOT EXISTS page_title TEXT;
+ALTER TABLE public.vibecheck_jobs
+    ADD COLUMN IF NOT EXISTS page_kind TEXT NOT NULL DEFAULT 'other';
+ALTER TABLE public.vibecheck_jobs
+    ADD COLUMN IF NOT EXISTS utterance_stream_type TEXT NOT NULL DEFAULT 'unknown';
+
 ALTER TABLE public.vibecheck_jobs
     DROP CONSTRAINT IF EXISTS vibecheck_jobs_source_type_check;
 ALTER TABLE public.vibecheck_jobs
     ADD CONSTRAINT vibecheck_jobs_source_type_check
     CHECK (source_type IN ('url', 'pdf', 'browser_html'));
+
+ALTER TABLE public.vibecheck_jobs
+    DROP CONSTRAINT IF EXISTS vibecheck_jobs_page_kind_check;
+ALTER TABLE public.vibecheck_jobs
+    ADD CONSTRAINT vibecheck_jobs_page_kind_check
+    CHECK (page_kind IN (
+        'blog_post', 'forum_thread', 'hierarchical_thread',
+        'blog_index', 'article', 'other'
+    ));
+
+ALTER TABLE public.vibecheck_jobs
+    DROP CONSTRAINT IF EXISTS vibecheck_jobs_utterance_stream_type_check;
+ALTER TABLE public.vibecheck_jobs
+    ADD CONSTRAINT vibecheck_jobs_utterance_stream_type_check
+    CHECK (utterance_stream_type IN (
+        'dialogue', 'comment_section', 'article_or_monologue',
+        'mixed', 'unknown'
+    ));
 
 -- TASK-1474.23.03: in-row backstop counter for the extract-stage retry path.
 -- The orchestrator increments this column each time the utterance-extract
@@ -753,36 +795,65 @@ CREATE TABLE IF NOT EXISTS public.vibecheck_job_utterances (
         CHECK (kind IN ('post', 'comment', 'reply'))
 );
 
--- TASK-1473.36 (PR #407 BLOCKER): the GET /api/analyze/{job_id} poll
--- selector reads `u.page_title` / `u.page_kind` via correlated subqueries
--- to populate JobState (codex W4 P2-2). The columns lived only on
--- `vibecheck_scrapes` originally, so a fresh non-cached job's poll raised
--- asyncpg UndefinedColumn in production. Add as nullable text columns
--- with `page_kind` defaulting to the same `'other'` sentinel the scrape
--- bundle uses; existing rows backfill to `(NULL, 'other')` which the
--- selector's `IS NOT NULL` predicate already filters out.
-ALTER TABLE public.vibecheck_job_utterances
-    ADD COLUMN IF NOT EXISTS page_title TEXT;
-ALTER TABLE public.vibecheck_job_utterances
-    ADD COLUMN IF NOT EXISTS page_kind TEXT NOT NULL DEFAULT 'other';
-ALTER TABLE public.vibecheck_job_utterances
-    ADD COLUMN IF NOT EXISTS utterance_stream_type TEXT NOT NULL DEFAULT 'unknown';
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1
+        FROM pg_catalog.pg_attribute
+        WHERE attrelid = 'public.vibecheck_job_utterances'::regclass
+          AND attname = 'page_title'
+          AND NOT attisdropped
+    )
+    AND EXISTS (
+        SELECT 1
+        FROM pg_catalog.pg_attribute
+        WHERE attrelid = 'public.vibecheck_job_utterances'::regclass
+          AND attname = 'page_kind'
+          AND NOT attisdropped
+    )
+    AND EXISTS (
+        SELECT 1
+        FROM pg_catalog.pg_attribute
+        WHERE attrelid = 'public.vibecheck_job_utterances'::regclass
+          AND attname = 'utterance_stream_type'
+          AND NOT attisdropped
+    ) THEN
+        EXECUTE $backfill$
+            WITH first_utterance AS (
+                SELECT DISTINCT ON (u.job_id)
+                    u.job_id,
+                    u.page_title,
+                    u.page_kind,
+                    u.utterance_stream_type
+                FROM public.vibecheck_job_utterances u
+                ORDER BY u.job_id, u.position, u.created_at, u.utterance_pk
+            )
+            UPDATE public.vibecheck_jobs j
+            SET page_title = COALESCE(j.page_title, first_utterance.page_title),
+                page_kind = CASE
+                    WHEN j.page_kind = 'other' AND first_utterance.page_kind IS NOT NULL
+                        THEN first_utterance.page_kind
+                    ELSE j.page_kind
+                END,
+                utterance_stream_type = CASE
+                    WHEN j.utterance_stream_type = 'unknown'
+                         AND first_utterance.utterance_stream_type IS NOT NULL
+                        THEN first_utterance.utterance_stream_type
+                    ELSE j.utterance_stream_type
+                END
+            FROM first_utterance
+            WHERE j.job_id = first_utterance.job_id
+        $backfill$;
+    END IF;
+END
+$$;
 
--- TASK-1473.60: the NOT NULL DEFAULT 'other' from 1473.36 made every
--- backfilled row look "populated" to the IS NOT NULL poll selector.
--- Going forward, page_kind is only set when real extraction writes
--- utterances via persist_utterances (TASK-1473.57), so the column is
--- nullable and the default is dropped. Existing rows with
--- page_kind='other' (from the prior default) remain valid but are
--- distinguishable from NULL by the new selector.
 ALTER TABLE public.vibecheck_job_utterances
-    ALTER COLUMN page_kind DROP DEFAULT;
+    DROP COLUMN IF EXISTS page_title;
 ALTER TABLE public.vibecheck_job_utterances
-    ALTER COLUMN page_kind DROP NOT NULL;
+    DROP COLUMN IF EXISTS page_kind;
 ALTER TABLE public.vibecheck_job_utterances
-    ALTER COLUMN utterance_stream_type DROP DEFAULT;
-ALTER TABLE public.vibecheck_job_utterances
-    ALTER COLUMN utterance_stream_type DROP NOT NULL;
+    DROP COLUMN IF EXISTS utterance_stream_type;
 
 ALTER TABLE public.vibecheck_job_utterances ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.vibecheck_job_utterances FORCE ROW LEVEL SECURITY;

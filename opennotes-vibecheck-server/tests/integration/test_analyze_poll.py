@@ -1,16 +1,4 @@
-"""Poll endpoint metadata correctness tests (TASK-1473.60).
-
-Exercises the LATERAL JOIN rewrite in _SELECT_JOB_SQL:
-
-  1. Empty utterances  -> page_title and page_kind are NULL in poll row.
-  2. Seeded utterances -> poll row carries the exact values written.
-  3. Multiple rows with differing page_title -> position=0 row wins
-     deterministically (ORDER BY u.position LIMIT 1 contract).
-
-These run against a real Postgres (testcontainers) since the LATERAL
-syntax and ORDER BY LIMIT 1 behaviour must be validated against an actual
-query planner, not mocked SQL.
-"""
+"""Poll endpoint metadata correctness tests."""
 from __future__ import annotations
 
 import json
@@ -31,20 +19,40 @@ async def _insert_utterance(
     *,
     job_id: UUID,
     position: int,
-    page_title: str | None,
-    page_kind: str | None,
 ) -> None:
     async with pool.acquire() as conn:
         await conn.execute(
             """
             INSERT INTO vibecheck_job_utterances
-                (job_id, kind, text, position, page_title, page_kind)
-            VALUES ($1, 'post', 'dummy text', $2, $3, $4)
+                (job_id, kind, text, position)
+            VALUES ($1, 'post', 'dummy text', $2)
             """,
             job_id,
             position,
+        )
+
+
+async def _set_job_metadata(
+    pool: Any,
+    *,
+    job_id: UUID,
+    page_title: str | None,
+    page_kind: str,
+    utterance_stream_type: str = "unknown",
+) -> None:
+    async with pool.acquire() as conn:
+        await conn.execute(
+            """
+            UPDATE vibecheck_jobs
+            SET page_title = $2,
+                page_kind = $3,
+                utterance_stream_type = $4
+            WHERE job_id = $1
+            """,
+            job_id,
             page_title,
             page_kind,
+            utterance_stream_type,
         )
 
 
@@ -82,6 +90,7 @@ def _mock_poll_row(
         "source_type": source_type,
         "page_title": None,
         "page_kind": None,
+        "utterance_stream_type": None,
         "utterance_count": 0,
     }
     if source_type is None:
@@ -282,8 +291,8 @@ def test_row_to_job_state_falls_back_when_payload_unrecoverable() -> None:
     assert job.sidebar_payload_complete is False
 
 
-async def test_empty_utterances_gives_null_metadata(db_pool: Any) -> None:
-    """A job with no utterance rows must surface NULL page_title / page_kind."""
+async def test_empty_utterances_surfaces_job_metadata_defaults(db_pool: Any) -> None:
+    """A job with no utterance rows still projects job metadata columns."""
     job_id, _ = await insert_pending_job(
         db_pool, url="https://example.com/poll-empty"
     )
@@ -291,55 +300,62 @@ async def test_empty_utterances_gives_null_metadata(db_pool: Any) -> None:
     row = await _fetch_poll_row(db_pool, job_id)
 
     assert row["page_title"] is None
-    assert row["page_kind"] is None
+    assert row["page_kind"] == "other"
+    assert row["utterance_stream_type"] == "unknown"
     assert int(row["utterance_count"]) == 0
 
 
-async def test_seeded_utterances_give_correct_metadata(db_pool: Any) -> None:
-    """A job with one utterance row surfaces its page_title and page_kind."""
+async def test_job_metadata_and_utterance_count_are_projected(db_pool: Any) -> None:
+    """Poll row combines job-level metadata with utterance-scoped count."""
     job_id, _ = await insert_pending_job(
         db_pool, url="https://example.com/poll-seeded"
+    )
+    await _set_job_metadata(
+        db_pool,
+        job_id=job_id,
+        page_title="Fresh Title",
+        page_kind="blog_post",
+        utterance_stream_type="comment_section",
     )
     await _insert_utterance(
         db_pool,
         job_id=job_id,
         position=0,
-        page_title="Fresh Title",
-        page_kind="blog_post",
     )
 
     row = await _fetch_poll_row(db_pool, job_id)
 
     assert row["page_title"] == "Fresh Title"
     assert row["page_kind"] == "blog_post"
+    assert row["utterance_stream_type"] == "comment_section"
     assert int(row["utterance_count"]) == 1
 
 
-async def test_multiple_rows_position_zero_wins(db_pool: Any) -> None:
-    """When multiple utterance rows exist, position=0 row wins (ORDER BY
-    position LIMIT 1). This documents the deterministic-winner contract.
-    """
+async def test_utterance_rows_do_not_supply_page_metadata(db_pool: Any) -> None:
+    """Utterance rows only affect utterance_count after the metadata move."""
     job_id, _ = await insert_pending_job(
         db_pool, url="https://example.com/poll-multi"
     )
-    await _insert_utterance(
+    await _set_job_metadata(
         db_pool,
         job_id=job_id,
-        position=0,
-        page_title="First Title",
+        page_title="Job Title",
         page_kind="article",
     )
     await _insert_utterance(
         db_pool,
         job_id=job_id,
+        position=0,
+    )
+    await _insert_utterance(
+        db_pool,
+        job_id=job_id,
         position=1,
-        page_title="Second Title",
-        page_kind="blog_post",
     )
 
     row = await _fetch_poll_row(db_pool, job_id)
 
-    assert row["page_title"] == "First Title"
+    assert row["page_title"] == "Job Title"
     assert row["page_kind"] == "article"
     assert int(row["utterance_count"]) == 2
 

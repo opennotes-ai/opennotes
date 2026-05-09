@@ -319,6 +319,60 @@ async def test_schema_apply_idempotent_after_constraint_sync(
     )
 
 
+async def test_schema_backfills_job_metadata_and_drops_legacy_utterance_columns(
+    legacy_conn: asyncpg.Connection,
+) -> None:
+    legacy_job_id = await legacy_conn.fetchval(
+        """
+        INSERT INTO public.vibecheck_jobs
+            (url, normalized_url, host, status)
+        VALUES ($1, $1, 'example.com', 'extracting')
+        RETURNING job_id
+        """,
+        "https://example.com/legacy-metadata",
+    )
+    await legacy_conn.execute(
+        """
+        INSERT INTO public.vibecheck_job_utterances
+            (job_id, kind, text, position, page_title, page_kind, utterance_stream_type)
+        VALUES
+            ($1, 'post', 'later text', 5, 'Later Title', 'other', 'unknown'),
+            ($1, 'post', 'first text', 0, 'Canonical Title', 'article', 'article_or_monologue')
+        """,
+        legacy_job_id,
+    )
+
+    await legacy_conn.execute(_schema_sql_for_test())
+    await legacy_conn.execute(_schema_sql_for_test())
+
+    row = await legacy_conn.fetchrow(
+        """
+        SELECT page_title, page_kind, utterance_stream_type
+        FROM public.vibecheck_jobs
+        WHERE job_id = $1
+        """,
+        legacy_job_id,
+    )
+    assert row is not None
+    assert row["page_title"] == "Canonical Title"
+    assert row["page_kind"] == "article"
+    assert row["utterance_stream_type"] == "article_or_monologue"
+
+    remaining_columns = {
+        record["column_name"]
+        for record in await legacy_conn.fetch(
+            """
+            SELECT column_name
+            FROM information_schema.columns
+            WHERE table_schema = 'public'
+              AND table_name = 'vibecheck_job_utterances'
+              AND column_name IN ('page_title', 'page_kind', 'utterance_stream_type')
+            """
+        )
+    }
+    assert remaining_columns == set()
+
+
 async def test_terminal_finished_at_allows_partial_with_finished_at(
     legacy_conn: asyncpg.Connection,
 ) -> None:
