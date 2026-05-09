@@ -39,8 +39,8 @@ from src.utterances.errors import (
     UtteranceExtractionError,
 )
 from src.utterances.extractor import (
-    CORAL_COMMENTS_IGNORE_ADDENDUM,
-    CORAL_COMMENTS_PROMPT_ADDENDUM,
+    COMMENTS_IGNORE_ADDENDUM,
+    COMMENTS_PROMPT_ADDENDUM,
     EXTRACTOR_SYSTEM_PROMPT,
     ExtractorDeps,
     ZeroUtterancesError,
@@ -339,7 +339,7 @@ async def test_extract_utterances_adds_coral_marker_guidance(
         markdown="# Article\n\nBody\n\nComments\n\nJane: first\nPat: second",
         html=(
             "<article><p>Body</p></article>"
-            '<section data-coral-comments="true" data-coral-status="copied">'
+            '<section data-platform-comments="true" data-platform-status="copied">'
             '<article class="comment"><header>Jane</header><p>first</p></article>'
             '<article class="comment"><header>Pat</header><p>second</p></article>'
             "</section>"
@@ -367,8 +367,42 @@ async def test_extract_utterances_adds_coral_marker_guidance(
         "comment",
     ]
     assert fake_agent.prompts
-    assert CORAL_COMMENTS_PROMPT_ADDENDUM.strip() in fake_agent.prompts[0]
+    assert COMMENTS_PROMPT_ADDENDUM.strip() in fake_agent.prompts[0]
     assert "article.comment" in fake_agent.prompts[0]
+
+
+@pytest.mark.asyncio
+async def test_extract_utterances_adds_guidance_for_legacy_coral_marker(
+    monkeypatch: pytest.MonkeyPatch, settings: Settings
+) -> None:
+    """Legacy cached Coral markers still tell Gemini to parse comments."""
+
+    cached = _cached_scrape(
+        markdown="# Article\n\nBody\n\nComments\n\nJane: first",
+        html=(
+            "<article><p>Body</p></article>"
+            '<section data-coral-comments="true" data-coral-status="copied">'
+            '<article class="comment"><header>Jane</header><p>first</p></article>'
+            "</section>"
+        ),
+    )
+    client = _FakeFirecrawlClient()
+    cache = _FakeScrapeCache(cached=cached)
+    fake_agent = _stub_agent(
+        monkeypatch,
+        _payload(
+            page_kind=PageKind.BLOG_POST,
+            utterances=[
+                Utterance(utterance_id=None, kind="post", text="Body"),
+                Utterance(utterance_id=None, kind="comment", text="first"),
+            ],
+        ),
+    )
+
+    await _call(TARGET_URL, client, cache, settings)
+
+    assert fake_agent.prompts
+    assert COMMENTS_PROMPT_ADDENDUM.strip() in fake_agent.prompts[0]
 
 
 @pytest.mark.asyncio
@@ -381,7 +415,7 @@ async def test_extract_utterances_ignores_shell_only_coral_marker(
         markdown="# Article\n\nBody",
         html=(
             "<article><p>Body</p></article>"
-            '<section data-coral-comments="true" data-coral-status="shell_only">'
+            '<section data-platform-comments="true" data-platform-status="shell_only">'
             "<h2>Comments</h2>"
             "</section>"
         ),
@@ -393,8 +427,8 @@ async def test_extract_utterances_ignores_shell_only_coral_marker(
     await _call(TARGET_URL, client, cache, settings)
 
     assert fake_agent.prompts
-    assert CORAL_COMMENTS_PROMPT_ADDENDUM.strip() not in fake_agent.prompts[0]
-    assert CORAL_COMMENTS_IGNORE_ADDENDUM.strip() in fake_agent.prompts[0]
+    assert COMMENTS_PROMPT_ADDENDUM.strip() not in fake_agent.prompts[0]
+    assert COMMENTS_IGNORE_ADDENDUM.strip() in fake_agent.prompts[0]
 
 
 @pytest.mark.asyncio
@@ -407,7 +441,7 @@ async def test_extract_utterances_ignores_coral_boilerplate_comment_rows(
         markdown="# Article\n\nBody\n\nComments\n\nCommenter: All Comments(172)",
         html=(
             "<article><p>Body</p></article>"
-            '<section data-coral-comments="true" data-coral-status="copied">'
+            '<section data-platform-comments="true" data-platform-status="copied">'
             '<article class="comment"><header>Commenter</header>'
             "<p>Our comments are moderated. Let's have a nice conversation.</p>"
             "</article>"
@@ -423,8 +457,8 @@ async def test_extract_utterances_ignores_coral_boilerplate_comment_rows(
     await _call(TARGET_URL, client, cache, settings)
 
     assert fake_agent.prompts
-    assert CORAL_COMMENTS_PROMPT_ADDENDUM.strip() not in fake_agent.prompts[0]
-    assert CORAL_COMMENTS_IGNORE_ADDENDUM.strip() in fake_agent.prompts[0]
+    assert COMMENTS_PROMPT_ADDENDUM.strip() not in fake_agent.prompts[0]
+    assert COMMENTS_IGNORE_ADDENDUM.strip() in fake_agent.prompts[0]
 
 
 # ---------------------------------------------------------------------------
