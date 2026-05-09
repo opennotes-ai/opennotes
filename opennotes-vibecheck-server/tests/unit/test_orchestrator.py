@@ -1038,6 +1038,55 @@ async def test_run_pipeline_logs_traceback_on_unclassified_post_gemini_failure(
     assert crash_records[0].exc_info is not None
 
 
+async def test_run_pipeline_names_post_extraction_spans_by_available_utterances(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """After utterance extraction succeeds, the following orchestration spans
+    should be named for the logical state the pipeline is in: utterances are
+    now available.
+    """
+    from src.jobs import orchestrator
+
+    _stub_pre_gemini(monkeypatch)
+
+    async def noop(*args: Any, **kwargs: Any) -> None:
+        return None
+
+    async def noop_finalize(*args: Any, **kwargs: Any) -> bool:
+        return True
+
+    span_names: list[str] = []
+
+    def record_span(name: str, **kwargs: Any) -> _RecordingSpan:
+        span_names.append(name)
+        return _RecordingSpan()
+
+    monkeypatch.setattr(orchestrator.logfire, "span", record_span)
+    monkeypatch.setattr(orchestrator, "_set_last_stage", noop)
+    monkeypatch.setattr(orchestrator, "persist_utterances", noop)
+    monkeypatch.setattr(orchestrator, "_set_analyzing", noop)
+    monkeypatch.setattr(orchestrator, "_run_all_sections", noop)
+    monkeypatch.setattr(orchestrator, "_run_safety_recommendation_step", noop)
+    monkeypatch.setattr(orchestrator, "_run_headline_summary_step", noop)
+    monkeypatch.setattr(orchestrator, "_run_weather_report_step", noop)
+    monkeypatch.setattr(orchestrator, "maybe_finalize_job", noop_finalize)
+
+    await orchestrator._run_pipeline(
+        MagicMock(), uuid4(), uuid4(), "https://example.com", MagicMock()
+    )
+
+    assert span_names == [
+        "vibecheck.with_utterances",
+        "vibecheck.with_utterances.persist_utterances",
+        "vibecheck.with_utterances.set_analyzing",
+        "vibecheck.with_utterances.run_sections",
+        "vibecheck.with_utterances.safety_recommendation",
+        "vibecheck.with_utterances.headline_summary",
+        "vibecheck.with_utterances.weather_report",
+        "vibecheck.with_utterances.finalize",
+    ]
+
+
 async def test_run_pipeline_writes_last_stage_breadcrumb_at_persist_utterances(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

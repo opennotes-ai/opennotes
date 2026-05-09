@@ -2842,12 +2842,12 @@ async def _run_pipeline(  # noqa: PLR0912
     # ------------------------------------------------------------------
     try:
         with logfire.span(
-            "vibecheck.post_gemini",
+            "vibecheck.with_utterances",
             job_id=str(job_id),
             attempt_id=str(task_attempt),
         ):
             with logfire.span(
-                "vibecheck.post_gemini.persist_utterances",
+                "vibecheck.with_utterances.persist_utterances",
                 job_id=str(job_id),
                 attempt_id=str(task_attempt),
             ):
@@ -2866,7 +2866,7 @@ async def _run_pipeline(  # noqa: PLR0912
                     raise HandlerSuperseded() from exc
 
             with logfire.span(
-                "vibecheck.post_gemini.set_analyzing",
+                "vibecheck.with_utterances.set_analyzing",
                 job_id=str(job_id),
                 attempt_id=str(task_attempt),
             ):
@@ -2878,7 +2878,7 @@ async def _run_pipeline(  # noqa: PLR0912
                 await _set_analyzing(pool, job_id, task_attempt)
 
             with logfire.span(
-                "vibecheck.post_gemini.run_sections",
+                "vibecheck.with_utterances.run_sections",
                 job_id=str(job_id),
                 attempt_id=str(task_attempt),
             ):
@@ -2894,7 +2894,7 @@ async def _run_pipeline(  # noqa: PLR0912
                 )
 
             with logfire.span(
-                "vibecheck.post_gemini.safety_recommendation",
+                "vibecheck.with_utterances.safety_recommendation",
                 job_id=str(job_id),
                 attempt_id=str(task_attempt),
             ):
@@ -2906,11 +2906,11 @@ async def _run_pipeline(  # noqa: PLR0912
                 )
 
             await _run_headline_weather_steps(
-                pool, job_id, task_attempt, settings, stage_prefix="vibecheck.post_gemini"
+                pool, job_id, task_attempt, settings, stage_prefix="vibecheck.with_utterances"
             )
 
             with logfire.span(
-                "vibecheck.post_gemini.finalize",
+                "vibecheck.with_utterances.finalize",
                 job_id=str(job_id),
                 attempt_id=str(task_attempt),
             ):
