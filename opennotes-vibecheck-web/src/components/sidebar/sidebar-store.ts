@@ -10,6 +10,7 @@ export interface SidebarStore {
   isOpen: (label: SectionGroupLabel) => boolean;
   setOpen: (label: SectionGroupLabel, open: boolean) => void;
   isolateGroup: (label: SectionGroupLabel) => void;
+  reset: () => void;
   highlightedGroup: () => SectionGroupLabel | null;
   setHighlightedGroup: (label: SectionGroupLabel | null) => void;
 }
@@ -44,5 +45,11 @@ export function createSidebarStore(opts?: { defaultOpen?: boolean }): SidebarSto
     }
   }
 
-  return { isOpen, setOpen, isolateGroup, highlightedGroup, setHighlightedGroup };
+  function reset(): void {
+    for (const label of ALL_LABELS) {
+      signals.get(label)![1](defaultOpen);
+    }
+  }
+
+  return { isOpen, setOpen, isolateGroup, reset, highlightedGroup, setHighlightedGroup };
 }

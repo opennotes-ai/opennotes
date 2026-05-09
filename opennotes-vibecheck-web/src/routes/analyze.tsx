@@ -761,7 +761,7 @@ function AnalyzePageContent(props: { initialJobState: JobState | null }) {
               <Show
                 when={showFailure()}
                 fallback={
-                  <SidebarStoreProvider>
+                  <SidebarStoreProvider opts={{ collapseAllByDefault: shouldCollapseSidebarGroups(), jobId: jobId() || undefined }}>
                     <Show when={showHeadlineLeadIn()}>
                       <HeadlineLeadIn
                         headline={headline()}

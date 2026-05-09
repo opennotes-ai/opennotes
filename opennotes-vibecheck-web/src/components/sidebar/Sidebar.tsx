@@ -1,4 +1,4 @@
-import { Show, createEffect, createMemo, type JSX } from "solid-js";
+import { Show, createMemo, type JSX } from "solid-js";
 import { useSidebarStore } from "./SidebarStoreProvider";
 import type {
   JobState,
@@ -563,19 +563,10 @@ function fillMissingSlotsAsRunning(base: SlugToSlots): SlugToSlots {
   return out;
 }
 
-const ALL_GROUP_LABELS = ["Safety", "Tone/dynamics", "Facts/claims", "Opinions/sentiments"] as const;
-
 export default function Sidebar(props: SidebarProps) {
   const store = useSidebarStore();
   const canJump = () => props.canJumpToUtterance === true;
 
-  createEffect(() => {
-    if (store && props.collapseTopLevelByDefault) {
-      for (const label of ALL_GROUP_LABELS) {
-        store.setOpen(label, false);
-      }
-    }
-  });
   const utterances = (): UtteranceAnchor[] => props.payload?.utterances ?? [];
   const liveSections = createMemo(() => asStrictSectionSlots(props.sections));
   const hasLiveSectionSlots = createMemo(

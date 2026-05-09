@@ -121,4 +121,42 @@ describe("createSidebarStore", () => {
       dispose();
     });
   });
+
+  it("reset() restores all groups to defaultOpen=true when no opts given", () => {
+    createRoot((dispose) => {
+      const store = createSidebarStore();
+      store.setOpen("Safety", false);
+      store.setOpen("Tone/dynamics", false);
+      store.reset();
+      const labels: SectionGroupLabel[] = [
+        "Safety",
+        "Tone/dynamics",
+        "Facts/claims",
+        "Opinions/sentiments",
+      ];
+      for (const label of labels) {
+        expect(store.isOpen(label)).toBe(true);
+      }
+      dispose();
+    });
+  });
+
+  it("reset() restores all groups to defaultOpen=false when store was created with collapseAllByDefault", () => {
+    createRoot((dispose) => {
+      const store = createSidebarStore({ defaultOpen: false });
+      store.setOpen("Safety", true);
+      store.setOpen("Facts/claims", true);
+      store.reset();
+      const labels: SectionGroupLabel[] = [
+        "Safety",
+        "Tone/dynamics",
+        "Facts/claims",
+        "Opinions/sentiments",
+      ];
+      for (const label of labels) {
+        expect(store.isOpen(label)).toBe(false);
+      }
+      dispose();
+    });
+  });
 });
