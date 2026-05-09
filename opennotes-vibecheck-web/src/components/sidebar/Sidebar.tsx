@@ -80,8 +80,6 @@ const TONE_SLUGS: SectionSlugLiteral[] = [
 ];
 const FACTS_SLUGS: SectionSlugLiteral[] = [
   "facts_claims__dedup",
-  "facts_claims__evidence",
-  "facts_claims__premises",
   "facts_claims__known_misinfo",
 ];
 const OPINIONS_SLUGS: SectionSlugLiteral[] = [
@@ -442,16 +440,6 @@ const FACTS_RENDER: Partial<
   facts_claims__dedup: (data) => (
     <ClaimsDedupReport claimsReport={extractClaimsReport(data)} />
   ),
-  facts_claims__evidence: () => (
-    <p data-testid="report-facts_claims__evidence" class="text-xs text-muted-foreground">
-      Evidence is merged into deduped claims.
-    </p>
-  ),
-  facts_claims__premises: () => (
-    <p data-testid="report-facts_claims__premises" class="text-xs text-muted-foreground">
-      Premises are merged into deduped claims.
-    </p>
-  ),
   facts_claims__known_misinfo: (data) => (
     <KnownMisinfoReport matches={extractKnownMisinfo(data)} />
   ),
@@ -461,16 +449,6 @@ const FACTS_EMPTINESS: Partial<
   Record<SectionSlugLiteral, (data: unknown) => boolean>
 > = {
   facts_claims__dedup: (data) => extractClaimsReport(data).deduped_claims.length === 0,
-  facts_claims__evidence: (data) =>
-    extractClaimsReport(data).deduped_claims.every(
-      (claim) =>
-        (claim.supporting_facts ?? []).length === 0 &&
-        (claim.facts_to_verify ?? 0) === 0,
-    ),
-  facts_claims__premises: (data) =>
-    extractClaimsReport(data).deduped_claims.every(
-      (claim) => (claim.premise_ids ?? []).length === 0,
-    ),
   facts_claims__known_misinfo: (data) => extractKnownMisinfo(data).length === 0,
 };
 
@@ -479,23 +457,6 @@ const FACTS_COUNTS: Partial<
 > = {
   facts_claims__dedup: (data) => {
     const total = extractClaimsReport(data).deduped_claims.length;
-    return { total };
-  },
-  facts_claims__evidence: (data) => {
-    const total = extractClaimsReport(data).deduped_claims.reduce(
-      (count, claim) =>
-        count +
-        (claim.supporting_facts ?? []).length +
-        (claim.facts_to_verify ?? 0),
-      0,
-    );
-    return { total };
-  },
-  facts_claims__premises: (data) => {
-    const total = extractClaimsReport(data).deduped_claims.reduce(
-      (count, claim) => count + (claim.premise_ids ?? []).length,
-      0,
-    );
     return { total };
   },
   facts_claims__known_misinfo: (data) => {
@@ -654,16 +615,6 @@ export default function Sidebar(props: SidebarProps) {
           effectiveSections().facts_claims__evidence?.state === "done"
         }
       />
-    ),
-    facts_claims__evidence: () => (
-      <p data-testid="report-facts_claims__evidence" class="text-xs text-muted-foreground">
-        Evidence is merged into deduped claims.
-      </p>
-    ),
-    facts_claims__premises: () => (
-      <p data-testid="report-facts_claims__premises" class="text-xs text-muted-foreground">
-        Premises are merged into deduped claims.
-      </p>
     ),
     facts_claims__known_misinfo: (data) => (
       <KnownMisinfoReport matches={extractKnownMisinfo(data)} />

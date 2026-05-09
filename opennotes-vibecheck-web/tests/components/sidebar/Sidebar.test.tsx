@@ -16,8 +16,6 @@ const SECTION_SLUGS = [
   "tone_dynamics__flashpoint",
   "tone_dynamics__scd",
   "facts_claims__dedup",
-  "facts_claims__evidence",
-  "facts_claims__premises",
   "facts_claims__known_misinfo",
   "opinions_sentiments__sentiment",
   "opinions_sentiments__subjective",
@@ -409,7 +407,7 @@ describe("<Sidebar /> payload synthesis fallback", () => {
     expect(screen.queryByTestId("deduped-claim-no-sources")).toBeNull();
   });
 
-  it("keeps evidence slots open with nonzero facts-to-verify counts", () => {
+  it("does not render a standalone evidence section heading in the Facts/claims group", () => {
     const sections = {
       facts_claims__evidence: {
         state: "done",
@@ -437,13 +435,7 @@ describe("<Sidebar /> payload synthesis fallback", () => {
 
     render(() => <Sidebar sections={sections} payload={makePayload()} />);
 
-    expect(
-      screen.getByTestId("slot-toggle-facts_claims__evidence").getAttribute("aria-expanded"),
-    ).toBe("true");
-    expect(screen.getByTestId("slot-count-facts_claims__evidence").textContent).toBe(
-      "4 results",
-    );
-    expect(screen.getByTestId("report-facts_claims__evidence")).toBeDefined();
+    expect(screen.queryByTestId("slot-toggle-facts_claims__evidence")).toBeNull();
   });
 
   it("synthesizes evidence slot as failed when payload.evidence_status is 'failed' and suppresses 'No sources extracted'", () => {
@@ -478,8 +470,8 @@ describe("<Sidebar /> payload synthesis fallback", () => {
       />
     ));
 
-    expect(getSlotState("facts_claims__evidence")).toBe("failed");
-    expect(getSlotState("facts_claims__premises")).toBe("done");
+    expect(screen.queryByTestId("slot-toggle-facts_claims__evidence")).toBeNull();
+    expect(screen.queryByTestId("slot-toggle-facts_claims__premises")).toBeNull();
     expect(screen.queryByTestId("deduped-claim-no-sources")).toBeNull();
   });
 
@@ -492,8 +484,8 @@ describe("<Sidebar /> payload synthesis fallback", () => {
       />
     ));
 
-    expect(getSlotState("facts_claims__evidence")).toBe("done");
-    expect(getSlotState("facts_claims__premises")).toBe("done");
+    expect(screen.queryByTestId("slot-toggle-facts_claims__evidence")).toBeNull();
+    expect(screen.queryByTestId("slot-toggle-facts_claims__premises")).toBeNull();
   });
 
   it("surfaces failed section names on partial jobs while keeping retry controls", () => {

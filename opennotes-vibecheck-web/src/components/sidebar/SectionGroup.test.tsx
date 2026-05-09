@@ -1481,7 +1481,7 @@ describe("Sidebar", () => {
       );
     expect(byLabel("Safety")?.textContent).toBe("4/4");
     expect(byLabel("Tone/dynamics")?.textContent).toBe("2/2");
-    expect(byLabel("Facts/claims")?.textContent).toBe("4/4");
+    expect(byLabel("Facts/claims")?.textContent).toBe("2/2");
     expect(byLabel("Opinions/sentiments")?.textContent).toBe("4/4");
 
     const ALL_SLUGS = [
@@ -1492,8 +1492,6 @@ describe("Sidebar", () => {
       "tone_dynamics__flashpoint",
       "tone_dynamics__scd",
       "facts_claims__dedup",
-      "facts_claims__evidence",
-      "facts_claims__premises",
       "facts_claims__known_misinfo",
       "opinions_sentiments__sentiment",
       "opinions_sentiments__trends_oppositions",
@@ -2383,8 +2381,6 @@ describe("Sidebar (extracting-phase indicator)", () => {
     "tone_dynamics__flashpoint",
     "tone_dynamics__scd",
     "facts_claims__dedup",
-    "facts_claims__evidence",
-    "facts_claims__premises",
     "facts_claims__known_misinfo",
     "opinions_sentiments__sentiment",
     "opinions_sentiments__trends_oppositions",
