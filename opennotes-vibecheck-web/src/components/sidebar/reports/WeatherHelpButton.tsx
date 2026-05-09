@@ -7,7 +7,7 @@ import {
   PopoverTrigger,
 } from "@opennotes/ui/components/ui/popover";
 
-const TOOLTIP_COPY = {
+export const TOOLTIP_COPY = {
   truth:
     "Epistemic stance, not verdict. Whether claims are sourced, first-person, second-hand, or actively misleading — how the knowledge is held, regardless of whether it's ultimately right.",
   relevance:

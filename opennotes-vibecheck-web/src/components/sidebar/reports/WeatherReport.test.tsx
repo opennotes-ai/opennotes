@@ -173,22 +173,27 @@ describe("WeatherReport", () => {
     expect(screen.queryByText(/direct, lived experience/i)).toBeNull();
   });
 
-  it("axis row trigger is a button with aria-label combining axis context and visible value", () => {
-    render(() => <WeatherReport report={makeWeatherReport()} />);
+  it("axis row trigger is a button with aria-label combining axis context, visible value, and confidence when present", () => {
+    render(() => (
+      <WeatherReport
+        report={makeWeatherReport({
+          truth: { label: "first_person", logprob: -0.40, alternatives: [] },
+          relevance: { label: "on_topic", logprob: null, alternatives: [] },
+        })}
+      />
+    ));
 
-    const expected: Array<{ axis: string; value: string }> = [
-      { axis: "Truth", value: "First-Person" },
-      { axis: "Relevance", value: "On Topic" },
-    ];
-    for (const { axis, value } of expected) {
-      const trigger = screen.getByTestId(
-        `weather-axis-card-${axis.toLowerCase()}`,
-      );
-      expect(trigger).toBeDefined();
-      const ariaLabel = trigger.getAttribute("aria-label") ?? "";
-      expect(ariaLabel).toMatch(new RegExp(axis, "i"));
-      expect(ariaLabel).toMatch(new RegExp(value, "i"));
-    }
+    const truthTrigger = screen.getByTestId("weather-axis-card-truth");
+    const truthLabel = truthTrigger.getAttribute("aria-label") ?? "";
+    expect(truthLabel).toMatch(/Truth/i);
+    expect(truthLabel).toMatch(/First-Person/i);
+    expect(truthLabel).toMatch(/\d+(\.\d+)?%/);
+
+    const relevanceTrigger = screen.getByTestId("weather-axis-card-relevance");
+    const relevanceLabel = relevanceTrigger.getAttribute("aria-label") ?? "";
+    expect(relevanceLabel).toMatch(/Relevance/i);
+    expect(relevanceLabel).toMatch(/On Topic/i);
+    expect(relevanceLabel).not.toMatch(/%/);
   });
 
   it("does not put role=button or aria-haspopup on the underlying TableRow", () => {
@@ -416,7 +421,7 @@ describe("WeatherReport", () => {
     );
   });
 
-  it("axis heading appears on the RIGHT as an aria-hidden hint span in each row that has a button trigger", () => {
+  it("axis heading appears on the RIGHT as an aria-hidden hint span OUTSIDE the trigger button in each interactive row", () => {
     render(() => <WeatherReport report={makeWeatherReport()} />);
 
     const root = screen.getByTestId("weather-report");
@@ -424,14 +429,16 @@ describe("WeatherReport", () => {
     const expectedHeadings: Array<{ axis: string; heading: string }> = [
       { axis: "truth", heading: "TRUTH" },
       { axis: "relevance", heading: "RELEVANCE" },
+      { axis: "sentiment", heading: "SENTIMENT" },
     ];
 
     for (const { axis, heading } of expectedHeadings) {
       const trigger = screen.getByTestId(`weather-axis-card-${axis}`);
-      const hintSpans = Array.from(
-        trigger.querySelectorAll<HTMLSpanElement>("span[aria-hidden='true']"),
+      const td = trigger.closest("td")!;
+      const allHintSpans = Array.from(
+        td.querySelectorAll<HTMLSpanElement>("span[aria-hidden='true']"),
       );
-      const hintSpan = hintSpans.find(
+      const hintSpan = allHintSpans.find(
         (s) => s.textContent?.trim().toUpperCase() === heading,
       );
       expect(hintSpan).toBeDefined();
@@ -440,6 +447,8 @@ describe("WeatherReport", () => {
       expect(hintSpan!.className).toContain("tracking-[0.06em]");
       expect(hintSpan!.className).toContain("text-muted-foreground");
       expect(hintSpan!.className).toContain("text-xs");
+
+      expect(trigger.contains(hintSpan!)).toBe(false);
     }
 
     const cells = root.querySelectorAll("td");
@@ -456,8 +465,9 @@ describe("WeatherReport", () => {
     expect(evalSpan.className).toContain("font-condensed");
 
     const trigger = screen.getByTestId("weather-axis-card-truth");
+    const td = trigger.closest("td")!;
     const hintSpans = Array.from(
-      trigger.querySelectorAll<HTMLSpanElement>("span[aria-hidden='true']"),
+      td.querySelectorAll<HTMLSpanElement>("span[aria-hidden='true']"),
     );
     for (const hint of hintSpans) {
       expect(hint.className).not.toContain("font-condensed");
@@ -509,7 +519,7 @@ describe("WeatherReport", () => {
     expect(item!.className).not.toContain("text-[10px]");
   });
 
-  it("rows with a known expansion label render a button trigger; rows with unknown label render no button", () => {
+  it("all rows with axis data render a button trigger, even free-form labels not in weather-labels.json", () => {
     render(() => (
       <WeatherReport
         report={makeWeatherReport({
@@ -520,11 +530,43 @@ describe("WeatherReport", () => {
 
     expect(screen.getByTestId("weather-axis-card-truth")).toBeDefined();
     expect(screen.getByTestId("weather-axis-card-relevance")).toBeDefined();
-    expect(screen.queryByTestId("weather-axis-card-sentiment")).toBeNull();
+    expect(screen.getByTestId("weather-axis-card-sentiment")).toBeDefined();
 
     const sentimentValue = screen.getByTestId("weather-sentiment-value");
     expect(sentimentValue).toBeDefined();
-    expect(sentimentValue.closest("button")).toBeNull();
+    expect(sentimentValue.closest("button")).not.toBeNull();
+  });
+
+  it("clicking a row with a free-form label (not in weather-labels.json) falls back to axis-level TOOLTIP_COPY content", async () => {
+    render(() => (
+      <WeatherReport
+        report={makeWeatherReport({
+          sentiment: { label: "warmly skeptical", logprob: null, alternatives: [] },
+        })}
+      />
+    ));
+
+    const sentimentRow = screen.getByTestId("weather-axis-card-sentiment");
+    fireEvent.click(sentimentRow);
+    await screen.findByText(/emotional register/i);
+  });
+
+  it("alternatives ul is NOT a descendant of the trigger button (valid HTML5)", () => {
+    render(() => (
+      <WeatherReport
+        report={makeWeatherReport({
+          truth: {
+            label: "sourced",
+            logprob: null,
+            alternatives: [{ label: "factual_claims", logprob: null }],
+          },
+        })}
+      />
+    ));
+
+    const trigger = screen.getByTestId("weather-axis-card-truth");
+    const altsList = screen.getByTestId("weather-truth-alternatives");
+    expect(trigger.contains(altsList)).toBe(false);
   });
 
   it("trigger button has hover:bg-muted/40 class for whole-row hover band", () => {

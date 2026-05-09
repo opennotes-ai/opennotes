@@ -1,6 +1,6 @@
 import { For, Show, type JSX } from "solid-js";
 import { Card, CardContent } from "@opennotes/ui/components/ui/card";
-import { WeatherHelpButton } from "./WeatherHelpButton";
+import { WeatherHelpButton, TOOLTIP_COPY } from "./WeatherHelpButton";
 import {
   Table,
   TableBody,
@@ -106,50 +106,14 @@ function AxisRow(props: AxisRowProps): JSX.Element {
     return formatWeatherExpansion(data.label as WeatherAxisLabel);
   };
 
-  const evalContent = () => {
+  const ariaLabel = () => {
     const data = axisData();
-    return (
-      <span class="flex flex-wrap items-baseline gap-2">
-        <span
-          data-testid={`weather-${props.axis.axisType}-value`}
-          class="font-condensed text-lg font-semibold"
-        >
-          {data ? formatWeatherLabel(data.label) : "Not available"}
-        </span>
-        <Show when={data && confidence() !== null}>
-          <span
-            data-testid={`weather-${props.axis.axisType}-confidence`}
-            class="text-xs text-muted-foreground"
-          >
-            {confidence()}
-          </span>
-        </Show>
-        <Show when={alternatives().length > 0}>
-          <ul
-            data-testid={`weather-${props.axis.axisType}-alternatives`}
-            class="flex flex-wrap gap-1"
-          >
-            <For each={alternatives()}>
-              {(alternative) => {
-                const alternativeLabel = formatWeatherLabel(
-                  alternative.label as WeatherAxisLabel,
-                );
-                const alternativeConfidence =
-                  formatLogprobProbability(alternative.logprob);
-                return (
-                  <li class="inline-flex rounded-md bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
-                    {alternativeLabel}
-                    <Show when={alternativeConfidence !== null}>
-                      <span> ({alternativeConfidence})</span>
-                    </Show>
-                  </li>
-                );
-              }}
-            </For>
-          </ul>
-        </Show>
-      </span>
-    );
+    if (!data) return props.axis.heading;
+    const label = formatWeatherLabel(data.label);
+    const conf = confidence();
+    return conf
+      ? `${props.axis.heading}: ${label}, ${conf}`
+      : `${props.axis.heading}: ${label}`;
   };
 
   const placement = () =>
@@ -158,11 +122,18 @@ function AxisRow(props: AxisRowProps): JSX.Element {
   return (
     <TableRow class="group">
       <Show
-        when={axisData() && expansion() !== null}
+        when={axisData()}
         fallback={
           <td colSpan={2} class="p-0">
             <div class="flex w-full items-center justify-between gap-3 px-2 py-1.5">
-              {evalContent()}
+              <span class="flex flex-wrap items-baseline gap-2">
+                <span
+                  data-testid={`weather-${props.axis.axisType}-value`}
+                  class="font-condensed text-lg font-semibold"
+                >
+                  Not available
+                </span>
+              </span>
               <span
                 aria-hidden="true"
                 class="pr-3 text-xs uppercase tracking-[0.06em] text-muted-foreground/70"
@@ -173,28 +144,69 @@ function AxisRow(props: AxisRowProps): JSX.Element {
           </td>
         }
       >
-        <td colSpan={2} class="p-0">
-          <Popover placement={placement()}>
-            <PopoverTrigger
-              as="button"
-              type="button"
-              data-testid={`weather-axis-card-${props.axis.axisType}`}
-              aria-label={`${props.axis.heading}: ${axisData() ? formatWeatherLabel(axisData()!.label) : ""}`}
-              class="flex w-full items-center justify-between gap-3 rounded-md px-2 py-1.5 text-left hover:bg-muted/40 focus-visible:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-            >
-              {evalContent()}
+        {(data) => (
+          <td colSpan={2} class="p-0">
+            <div class="flex w-full items-center gap-3 px-2 py-1.5">
+              <Popover placement={placement()}>
+                <PopoverTrigger
+                  as="button"
+                  type="button"
+                  data-testid={`weather-axis-card-${props.axis.axisType}`}
+                  aria-label={ariaLabel()}
+                  class="flex items-center gap-2 rounded-md text-left hover:bg-muted/40 focus-visible:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 px-2 py-1.5"
+                >
+                  <span
+                    data-testid={`weather-${props.axis.axisType}-value`}
+                    class="font-condensed text-lg font-semibold"
+                  >
+                    {formatWeatherLabel(data().label)}
+                  </span>
+                  <Show when={confidence() !== null}>
+                    <span
+                      data-testid={`weather-${props.axis.axisType}-confidence`}
+                      class="text-xs text-muted-foreground"
+                    >
+                      {confidence()}
+                    </span>
+                  </Show>
+                </PopoverTrigger>
+                <PopoverContent class="max-w-xs text-sm leading-snug">
+                  {expansion() ?? TOOLTIP_COPY[props.axis.axisType]}
+                </PopoverContent>
+              </Popover>
+              <Show when={alternatives().length > 0}>
+                <ul
+                  data-testid={`weather-${props.axis.axisType}-alternatives`}
+                  class="flex flex-wrap gap-1"
+                >
+                  <For each={alternatives()}>
+                    {(alternative) => {
+                      const alternativeLabel = formatWeatherLabel(
+                        alternative.label as WeatherAxisLabel,
+                      );
+                      const alternativeConfidence =
+                        formatLogprobProbability(alternative.logprob);
+                      return (
+                        <li class="inline-flex rounded-md bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
+                          {alternativeLabel}
+                          <Show when={alternativeConfidence !== null}>
+                            <span> ({alternativeConfidence})</span>
+                          </Show>
+                        </li>
+                      );
+                    }}
+                  </For>
+                </ul>
+              </Show>
               <span
                 aria-hidden="true"
-                class="pr-3 text-xs uppercase tracking-[0.06em] text-muted-foreground/70"
+                class="ml-auto pr-3 text-xs uppercase tracking-[0.06em] text-muted-foreground/70"
               >
                 {props.axis.heading}
               </span>
-            </PopoverTrigger>
-            <PopoverContent class="max-w-xs text-sm leading-snug">
-              {expansion()}
-            </PopoverContent>
-          </Popover>
-        </td>
+            </div>
+          </td>
+        )}
       </Show>
     </TableRow>
   );
