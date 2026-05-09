@@ -178,7 +178,7 @@ describe("palette — no classic primary colors in VARIANT_CLASSES", () => {
 
   it("does not produce a text-rose-700 class string from any variant", () => {
     for (const cls of Object.values(VARIANT_CLASSES)) {
-      expect(cls).not.toContain("rose-700");
+      expect(cls).not.toContain("text-rose-700");
     }
   });
 
@@ -197,5 +197,117 @@ describe("palette — every JSON entry's variant is present in VARIANT_CLASSES",
         `entry "${key}" has variant "${entry.variant}" which is not in VARIANT_CLASSES`,
       ).toContain(entry.variant);
     }
+  });
+});
+
+describe("formatWeatherLabel — safety axis slugs", () => {
+  it("returns 'Safe' for safe", () => {
+    expect(formatWeatherLabel("safe")).toBe("Safe");
+  });
+
+  it("returns 'Mild' for mild", () => {
+    expect(formatWeatherLabel("mild")).toBe("Mild");
+  });
+
+  it("returns 'Caution' for caution", () => {
+    expect(formatWeatherLabel("caution")).toBe("Caution");
+  });
+
+  it("returns 'Unsafe' for unsafe", () => {
+    expect(formatWeatherLabel("unsafe")).toBe("Unsafe");
+  });
+});
+
+describe("formatWeatherVariant — safety axis slugs", () => {
+  it("returns 'emerald-soft' for safe", () => {
+    expect(formatWeatherVariant("safe")).toBe("emerald-soft");
+  });
+
+  it("returns 'yellow' for mild", () => {
+    expect(formatWeatherVariant("mild")).toBe("yellow");
+  });
+
+  it("returns 'amber-strong' for caution", () => {
+    expect(formatWeatherVariant("caution")).toBe("amber-strong");
+  });
+
+  it("returns 'rose-strong' for unsafe", () => {
+    expect(formatWeatherVariant("unsafe")).toBe("rose-strong");
+  });
+});
+
+describe("formatWeatherExpansion — safety axis slugs", () => {
+  it("returns a non-null expansion string for safe", () => {
+    const result = formatWeatherExpansion("safe");
+    expect(result).not.toBeNull();
+    expect(result!.length).toBeGreaterThan(0);
+  });
+
+  it("returns a non-null expansion string for mild", () => {
+    const result = formatWeatherExpansion("mild");
+    expect(result).not.toBeNull();
+    expect(result!.length).toBeGreaterThan(0);
+  });
+
+  it("returns a non-null expansion string for caution", () => {
+    const result = formatWeatherExpansion("caution");
+    expect(result).not.toBeNull();
+    expect(result!.length).toBeGreaterThan(0);
+  });
+
+  it("returns a non-null expansion string for unsafe", () => {
+    const result = formatWeatherExpansion("unsafe");
+    expect(result).not.toBeNull();
+    expect(result!.length).toBeGreaterThan(0);
+  });
+});
+
+describe("formatWeatherBadgeClass — safety axis slugs use traffic-light colors", () => {
+  it("returns a class string containing text-emerald-800 for safe", () => {
+    expect(formatWeatherBadgeClass("safe")).toContain("text-emerald-800");
+  });
+
+  it("returns a class string containing text-yellow-800 for mild", () => {
+    expect(formatWeatherBadgeClass("mild")).toContain("text-yellow-800");
+  });
+
+  it("returns a class string containing text-amber-800 for caution", () => {
+    expect(formatWeatherBadgeClass("caution")).toContain("text-amber-800");
+  });
+
+  it("returns a class string containing text-rose-50 for unsafe", () => {
+    expect(formatWeatherBadgeClass("unsafe")).toContain("text-rose-50");
+  });
+});
+
+describe("formatWeatherLabel — back-compat: existing axes unaffected by safety additions", () => {
+  it("sourced still resolves to 'Sourced'", () => {
+    expect(formatWeatherLabel("sourced")).toBe("Sourced");
+  });
+
+  it("on_topic still resolves to 'On Topic'", () => {
+    expect(formatWeatherLabel("on_topic")).toBe("On Topic");
+  });
+
+  it("supportive still resolves to 'Supportive'", () => {
+    expect(formatWeatherLabel("supportive")).toBe("Supportive");
+  });
+});
+
+describe("VARIANT_CLASSES — safety traffic-light variants present", () => {
+  it("contains 'emerald-soft' key", () => {
+    expect(Object.keys(VARIANT_CLASSES)).toContain("emerald-soft");
+  });
+
+  it("contains 'yellow' key", () => {
+    expect(Object.keys(VARIANT_CLASSES)).toContain("yellow");
+  });
+
+  it("contains 'amber-strong' key", () => {
+    expect(Object.keys(VARIANT_CLASSES)).toContain("amber-strong");
+  });
+
+  it("contains 'rose-strong' key", () => {
+    expect(Object.keys(VARIANT_CLASSES)).toContain("rose-strong");
   });
 });

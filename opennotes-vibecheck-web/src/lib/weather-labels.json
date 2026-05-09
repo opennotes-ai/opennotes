@@ -12,5 +12,9 @@
   "supportive":   { "axis": "sentiment", "label": "Supportive",          "variant": "amber",   "expansion": "Participants are mostly encouraging the topic, or each other." },
   "neutral":      { "axis": "sentiment", "label": "Neutral",             "variant": "slate",   "expansion": "Participants are not taking a strong emotional stance." },
   "critical":     { "axis": "sentiment", "label": "Critical",            "variant": "orange",  "expansion": "Participants are mostly criticizing a topic, or each other." },
-  "oppositional": { "axis": "sentiment", "label": "Oppositional",        "variant": "violet",  "expansion": "Participants are taking adversarial stances toward the topic, or each other." }
+  "oppositional": { "axis": "sentiment", "label": "Oppositional",        "variant": "violet",       "expansion": "Participants are taking adversarial stances toward the topic, or each other." },
+  "safe":         { "axis": "safety",    "label": "Safe",                 "variant": "emerald-soft",  "expansion": "Moderation, web risk, image, and video checks all came back clean." },
+  "mild":         { "axis": "safety",    "label": "Mild",                 "variant": "yellow",        "expansion": "Minor concerns surfaced — review the Safety section for context." },
+  "caution":      { "axis": "safety",    "label": "Caution",              "variant": "amber-strong",  "expansion": "Multiple signals worth a careful read — see the Safety section." },
+  "unsafe":       { "axis": "safety",    "label": "Unsafe",               "variant": "rose-strong",   "expansion": "Strong signals of harmful content — open the Safety section for details." }
 }

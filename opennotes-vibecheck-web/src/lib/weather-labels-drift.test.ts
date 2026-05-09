@@ -3,7 +3,7 @@ import type { components } from "~/lib/generated-types";
 import weatherLabelsJson from "./weather-labels.json";
 import { VARIANT_CLASSES } from "./weather-labels";
 
-const VALID_AXES = new Set(["truth", "relevance", "sentiment"] as const);
+const VALID_AXES = new Set(["truth", "relevance", "sentiment", "safety"] as const);
 const VALID_VARIANTS = new Set(Object.keys(VARIANT_CLASSES));
 
 type WeatherAxisTruth = components["schemas"]["WeatherAxisTruth"];
@@ -44,10 +44,18 @@ const SENTIMENT_SLUGS = [
   "oppositional",
 ] as const;
 
+const SAFETY_SLUGS = [
+  "safe",
+  "mild",
+  "caution",
+  "unsafe",
+] as const;
+
 const ALL_EXPECTED_SLUGS: ReadonlyArray<string> = [
   ...TRUTH_SLUGS,
   ...RELEVANCE_SLUGS,
   ...SENTIMENT_SLUGS,
+  ...SAFETY_SLUGS,
 ];
 
 const JSON_KEYS = Object.keys(weatherLabelsJson);
