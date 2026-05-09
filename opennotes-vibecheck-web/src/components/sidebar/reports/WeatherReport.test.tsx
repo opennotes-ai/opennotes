@@ -9,6 +9,7 @@ import {
 } from "@solidjs/testing-library";
 import type { components } from "~/lib/generated-types";
 import WeatherReport from "./WeatherReport";
+import { SidebarStoreProvider, useSidebarStore } from "../SidebarStoreProvider";
 
 type WeatherReportData = components["schemas"]["WeatherReport"];
 type SafetyRecommendation = components["schemas"]["SafetyRecommendation"];
@@ -797,6 +798,91 @@ describe("WeatherReport", () => {
 
       expect(screen.getByTestId("weather-skeleton-safety")).toBeDefined();
       expect(screen.getByTestId("weather-skeleton-safety-label").textContent).toBe("SAFETY");
+    });
+  });
+
+  describe("SidebarStore integration", () => {
+    it("opening a truth popover inside SidebarStoreProvider sets highlightedGroup to Facts/claims", async () => {
+      let capturedStore: ReturnType<typeof useSidebarStore> = null;
+      function StoreProbe() {
+        capturedStore = useSidebarStore();
+        return null;
+      }
+      render(() => (
+        <SidebarStoreProvider>
+          <StoreProbe />
+          <WeatherReport
+            report={makeWeatherReport()}
+            safetyRecommendation={makeSafetyRecommendation()}
+          />
+        </SidebarStoreProvider>
+      ));
+
+      expect(capturedStore).not.toBeNull();
+      expect(capturedStore!.highlightedGroup()).toBeNull();
+
+      const truthTrigger = screen.getByTestId("weather-axis-card-truth");
+      fireEvent.click(truthTrigger);
+
+      await waitFor(() => {
+        expect(capturedStore!.highlightedGroup()).toBe("Facts/claims");
+      });
+
+      fireEvent.keyDown(document.activeElement ?? document.body, { key: "Escape" });
+
+      await waitFor(() => {
+        expect(capturedStore!.highlightedGroup()).toBeNull();
+      });
+    });
+
+    it("opening a relevance popover inside SidebarStoreProvider sets highlightedGroup to Tone/dynamics", async () => {
+      let capturedStore: ReturnType<typeof useSidebarStore> = null;
+      function StoreProbe() {
+        capturedStore = useSidebarStore();
+        return null;
+      }
+      render(() => (
+        <SidebarStoreProvider>
+          <StoreProbe />
+          <WeatherReport
+            report={makeWeatherReport()}
+            safetyRecommendation={makeSafetyRecommendation()}
+          />
+        </SidebarStoreProvider>
+      ));
+
+      const relevanceTrigger = screen.getByTestId("weather-axis-card-relevance");
+      fireEvent.click(relevanceTrigger);
+
+      await waitFor(() => {
+        expect(capturedStore!.highlightedGroup()).toBe("Tone/dynamics");
+      });
+
+      fireEvent.keyDown(document.activeElement ?? document.body, { key: "Escape" });
+
+      await waitFor(() => {
+        expect(capturedStore!.highlightedGroup()).toBeNull();
+      });
+    });
+
+    it("AxisRow without a provider does not throw and popover still opens", async () => {
+      expect(() => {
+        render(() => <WeatherReport report={makeWeatherReport()} />);
+      }).not.toThrow();
+
+      const truthTrigger = screen.getByTestId("weather-axis-card-truth");
+      fireEvent.click(truthTrigger);
+      await screen.findByText(/direct, lived experience/i);
+    });
+
+    it("useSidebarStore returns null outside the provider", () => {
+      let capturedStore: ReturnType<typeof useSidebarStore> = undefined as unknown as null;
+      function Probe() {
+        capturedStore = useSidebarStore();
+        return null;
+      }
+      render(() => <Probe />);
+      expect(capturedStore).toBeNull();
     });
   });
 });

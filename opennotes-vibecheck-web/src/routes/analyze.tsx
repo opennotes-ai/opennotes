@@ -30,6 +30,7 @@ import type {
 } from "~/components/PageFrame";
 import Sidebar from "~/components/sidebar/Sidebar";
 import { HeadlineLeadIn } from "~/components/sidebar/reports";
+import { SidebarStoreProvider } from "~/components/sidebar/SidebarStoreProvider";
 import type {
   JobState,
   PublicErrorCode,
@@ -760,7 +761,7 @@ function AnalyzePageContent(props: { initialJobState: JobState | null }) {
               <Show
                 when={showFailure()}
                 fallback={
-                  <>
+                  <SidebarStoreProvider>
                     <Show when={showHeadlineLeadIn()}>
                       <HeadlineLeadIn
                         headline={headline()}
@@ -983,7 +984,7 @@ function AnalyzePageContent(props: { initialJobState: JobState | null }) {
                         class="order-1 lg:order-2"
                       />
                     </div>
-                  </>
+                  </SidebarStoreProvider>
                 }
               >
                 {(_ready) => {

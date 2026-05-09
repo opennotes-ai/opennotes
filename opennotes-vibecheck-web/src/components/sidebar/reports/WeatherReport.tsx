@@ -19,6 +19,8 @@ import {
   formatWeatherExpansion,
   formatWeatherLabel,
 } from "~/lib/weather-labels";
+import { useSidebarStore } from "../SidebarStoreProvider";
+import type { SectionGroupLabel } from "../sidebar-store";
 
 type WeatherReportData = components["schemas"]["WeatherReport"];
 type WeatherAxisTruth = components["schemas"]["WeatherAxisTruth"];
@@ -40,6 +42,13 @@ type WeatherAxisAlternative =
   | WeatherAxisAlternativeSentiment;
 
 type AxisType = "safety" | "truth" | "relevance" | "sentiment";
+
+const AXIS_TO_GROUP: Record<AxisType, SectionGroupLabel> = {
+  safety: "Safety",
+  truth: "Facts/claims",
+  relevance: "Tone/dynamics",
+  sentiment: "Opinions/sentiments",
+};
 
 export interface WeatherReportProps {
   report: WeatherReportData | null;
@@ -94,7 +103,7 @@ interface AxisRowProps {
   safetyRecommendation?: SafetyRecommendation | null;
 }
 
-function SafetyAxisRow(props: { safetyRecommendation: SafetyRecommendation | null | undefined; heading: string }): JSX.Element {
+function SafetyAxisRow(props: { safetyRecommendation: SafetyRecommendation | null | undefined; heading: string; onPopoverOpenChange?: (open: boolean) => void }): JSX.Element {
   const recommendation = () => props.safetyRecommendation ?? null;
 
   const expansion = (): string | null => {
@@ -137,7 +146,7 @@ function SafetyAxisRow(props: { safetyRecommendation: SafetyRecommendation | nul
         {(rec) => (
           <td colSpan={2} class="p-0">
             <div class="flex w-full items-center gap-3 px-2 py-1.5">
-              <Popover placement="bottom-start">
+              <Popover placement="bottom-start" onOpenChange={props.onPopoverOpenChange}>
                 <PopoverTrigger
                   as="button"
                   type="button"
@@ -171,11 +180,16 @@ function SafetyAxisRow(props: { safetyRecommendation: SafetyRecommendation | nul
 }
 
 function AxisRow(props: AxisRowProps): JSX.Element {
+  const store = useSidebarStore();
+
   if (props.axis.axisType === "safety") {
     return (
       <SafetyAxisRow
         safetyRecommendation={props.safetyRecommendation}
         heading={props.axis.heading}
+        onPopoverOpenChange={(open) => {
+          store?.setHighlightedGroup(open ? AXIS_TO_GROUP[props.axis.axisType] : null);
+        }}
       />
     );
   }
@@ -214,6 +228,10 @@ function AxisRow(props: AxisRowProps): JSX.Element {
   const placement = () =>
     props.axis.axisType === "sentiment" ? "top-start" : "bottom-start";
 
+  const handleOpenChange = (open: boolean) => {
+    store?.setHighlightedGroup(open ? AXIS_TO_GROUP[props.axis.axisType] : null);
+  };
+
   return (
     <TableRow class="group">
       <Show
@@ -242,7 +260,7 @@ function AxisRow(props: AxisRowProps): JSX.Element {
         {(data) => (
           <td colSpan={2} class="p-0">
             <div class="flex w-full items-center gap-3 px-2 py-1.5">
-              <Popover placement={placement()}>
+              <Popover placement={placement()} onOpenChange={handleOpenChange}>
                 <PopoverTrigger
                   as="button"
                   type="button"

@@ -1,4 +1,5 @@
-import { Show, createMemo, type JSX } from "solid-js";
+import { Show, createEffect, createMemo, type JSX } from "solid-js";
+import { useSidebarStore } from "./SidebarStoreProvider";
 import type {
   JobState,
   JobStatus,
@@ -562,8 +563,19 @@ function fillMissingSlotsAsRunning(base: SlugToSlots): SlugToSlots {
   return out;
 }
 
+const ALL_GROUP_LABELS = ["Safety", "Tone/dynamics", "Facts/claims", "Opinions/sentiments"] as const;
+
 export default function Sidebar(props: SidebarProps) {
+  const store = useSidebarStore();
   const canJump = () => props.canJumpToUtterance === true;
+
+  createEffect(() => {
+    if (store && props.collapseTopLevelByDefault) {
+      for (const label of ALL_GROUP_LABELS) {
+        store.setOpen(label, false);
+      }
+    }
+  });
   const utterances = (): UtteranceAnchor[] => props.payload?.utterances ?? [];
   const liveSections = createMemo(() => asStrictSectionSlots(props.sections));
   const hasLiveSectionSlots = createMemo(
@@ -796,6 +808,13 @@ export default function Sidebar(props: SidebarProps) {
         onRetry={props.onRetry}
         cachedHint={props.cachedHint}
         renderRevision={canJump()}
+        {...(store
+          ? {
+              open: store.isOpen("Safety"),
+              onOpenChange: (o: boolean) => store.setOpen("Safety", o),
+              highlighted: store.highlightedGroup() === "Safety",
+            }
+          : {})}
       />
       <SectionGroup
         label="Tone/dynamics"
@@ -809,6 +828,13 @@ export default function Sidebar(props: SidebarProps) {
         onRetry={props.onRetry}
         cachedHint={props.cachedHint}
         renderRevision={canJump()}
+        {...(store
+          ? {
+              open: store.isOpen("Tone/dynamics"),
+              onOpenChange: (o: boolean) => store.setOpen("Tone/dynamics", o),
+              highlighted: store.highlightedGroup() === "Tone/dynamics",
+            }
+          : {})}
       />
       <SectionGroup
         label="Facts/claims"
@@ -830,6 +856,13 @@ export default function Sidebar(props: SidebarProps) {
         }:${
           effectiveSections().facts_claims__premises?.state ?? ""
         }`}
+        {...(store
+          ? {
+              open: store.isOpen("Facts/claims"),
+              onOpenChange: (o: boolean) => store.setOpen("Facts/claims", o),
+              highlighted: store.highlightedGroup() === "Facts/claims",
+            }
+          : {})}
       />
       <SectionGroup
         label="Opinions/sentiments"
@@ -843,6 +876,13 @@ export default function Sidebar(props: SidebarProps) {
         onRetry={props.onRetry}
         cachedHint={props.cachedHint}
         renderRevision={opinionsRenderRevision()}
+        {...(store
+          ? {
+              open: store.isOpen("Opinions/sentiments"),
+              onOpenChange: (o: boolean) => store.setOpen("Opinions/sentiments", o),
+              highlighted: store.highlightedGroup() === "Opinions/sentiments",
+            }
+          : {})}
       />
     </aside>
   );
