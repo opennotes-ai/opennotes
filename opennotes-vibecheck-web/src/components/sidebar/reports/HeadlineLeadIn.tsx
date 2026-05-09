@@ -7,10 +7,12 @@ import HeadlineSummaryReport from "./HeadlineSummaryReport";
 import WeatherReport from "./WeatherReport";
 
 type WeatherReportData = components["schemas"]["WeatherReport"];
+type SafetyRecommendation = components["schemas"]["SafetyRecommendation"];
 
 export interface HeadlineLeadInProps {
   headline: ResolvedHeadline | null;
   weatherReport: WeatherReportData | null;
+  safetyRecommendation?: SafetyRecommendation | null;
   showHeadlineSkeleton?: boolean;
   showWeatherSkeleton?: boolean;
   class?: string;
@@ -60,6 +62,7 @@ export default function HeadlineLeadIn(props: HeadlineLeadInProps): JSX.Element 
       <Show when={weatherSlotVisible()}>
         <WeatherReport
           report={props.showWeatherSkeleton ? null : props.weatherReport}
+          safetyRecommendation={props.safetyRecommendation}
         />
       </Show>
       <Show when={hasHeadline()}>

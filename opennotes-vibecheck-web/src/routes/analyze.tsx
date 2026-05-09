@@ -765,6 +765,7 @@ function AnalyzePageContent(props: { initialJobState: JobState | null }) {
                       <HeadlineLeadIn
                         headline={headline()}
                         weatherReport={weatherReport()}
+                        safetyRecommendation={sidebarPayload()?.safety?.recommendation ?? null}
                         showHeadlineSkeleton={showHeadlineSkeleton()}
                         showWeatherSkeleton={showWeatherSkeleton()}
                         class="mb-0"

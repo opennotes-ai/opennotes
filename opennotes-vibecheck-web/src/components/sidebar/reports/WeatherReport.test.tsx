@@ -11,6 +11,19 @@ import type { components } from "~/lib/generated-types";
 import WeatherReport from "./WeatherReport";
 
 type WeatherReportData = components["schemas"]["WeatherReport"];
+type SafetyRecommendation = components["schemas"]["SafetyRecommendation"];
+
+function makeSafetyRecommendation(
+  overrides: Partial<SafetyRecommendation> = {},
+): SafetyRecommendation {
+  return {
+    level: "safe",
+    rationale: "All moderation checks passed without any flagged content.",
+    top_signals: ["web_risk: clean", "image_moderation: no_issues"],
+    unavailable_inputs: [],
+    ...overrides,
+  };
+}
 
 function makeWeatherReport(
   overrides: Partial<WeatherReportData> = {},
@@ -69,14 +82,19 @@ describe("WeatherReport", () => {
     ).toBe(true);
   });
 
-  it("uses Table primitive with three TableRows in TableBody and no TableHeader", () => {
-    render(() => <WeatherReport report={makeWeatherReport()} />);
+  it("uses Table primitive with four TableRows in TableBody and no TableHeader", () => {
+    render(() => (
+      <WeatherReport
+        report={makeWeatherReport()}
+        safetyRecommendation={makeSafetyRecommendation()}
+      />
+    ));
 
     const root = screen.getByTestId("weather-report");
     const tbody = root.querySelector('[data-slot="table-body"]');
     expect(tbody).not.toBeNull();
     const rows = tbody!.querySelectorAll('[data-slot="table-row"]');
-    expect(rows.length).toBe(3);
+    expect(rows.length).toBe(4);
     expect(root.querySelector('[data-slot="table-header"]')).toBeNull();
   });
 
@@ -197,10 +215,15 @@ describe("WeatherReport", () => {
   });
 
   it("does not put role=button or aria-haspopup on the underlying TableRow", () => {
-    render(() => <WeatherReport report={makeWeatherReport()} />);
+    render(() => (
+      <WeatherReport
+        report={makeWeatherReport()}
+        safetyRecommendation={makeSafetyRecommendation()}
+      />
+    ));
     const root = screen.getByTestId("weather-report");
     const rows = root.querySelectorAll('[data-slot="table-row"]');
-    expect(rows.length).toBe(3);
+    expect(rows.length).toBe(4);
     for (const row of Array.from(rows)) {
       expect(row.getAttribute("role")).not.toBe("button");
       expect(row.getAttribute("aria-haspopup")).toBeNull();
@@ -228,7 +251,7 @@ describe("WeatherReport", () => {
     const tbody = root.querySelector('[data-slot="table-body"]');
     expect(tbody).not.toBeNull();
     const rows = tbody!.querySelectorAll('[data-slot="table-row"]');
-    expect(rows.length).toBe(3);
+    expect(rows.length).toBe(4);
   });
 
   it("renders the literal axis labels (TRUTH, RELEVANCE, SENTIMENT) statically in the loading state", () => {
@@ -676,5 +699,104 @@ describe("WeatherReport", () => {
     expect(firstCellWordsWrapper).not.toBeNull();
     const secondCellLabel = cells[1].getAttribute("data-testid");
     expect(secondCellLabel).toBe("weather-skeleton-truth-label");
+  });
+
+  describe("Safety row", () => {
+    it("renders 4 rows with Safety first when safetyRecommendation is provided", () => {
+      render(() => (
+        <WeatherReport
+          report={makeWeatherReport()}
+          safetyRecommendation={makeSafetyRecommendation()}
+        />
+      ));
+
+      const root = screen.getByTestId("weather-report");
+      const tbody = root.querySelector('[data-slot="table-body"]');
+      expect(tbody).not.toBeNull();
+      const rows = Array.from(tbody!.querySelectorAll('[data-slot="table-row"]'));
+      expect(rows.length).toBe(4);
+
+      const firstRow = rows[0];
+      expect(firstRow.querySelector('[data-testid="weather-axis-card-safety"]')).not.toBeNull();
+    });
+
+    it("Safety pill uses emerald-soft variant (text-emerald-800) when level=safe", () => {
+      render(() => (
+        <WeatherReport
+          report={makeWeatherReport()}
+          safetyRecommendation={makeSafetyRecommendation({ level: "safe" })}
+        />
+      ));
+
+      const safetyValue = screen.getByTestId("weather-safety-value");
+      expect(safetyValue.className).toContain("text-emerald-800");
+    });
+
+    it("Safety pill uses rose-strong variant (bg-rose-700) when level=unsafe", () => {
+      render(() => (
+        <WeatherReport
+          report={makeWeatherReport()}
+          safetyRecommendation={makeSafetyRecommendation({ level: "unsafe" })}
+        />
+      ));
+
+      const safetyValue = screen.getByTestId("weather-safety-value");
+      expect(safetyValue.className).toContain("bg-rose-700");
+    });
+
+    it("Safety popover expansion comes from labels JSON when level is known", async () => {
+      render(() => (
+        <WeatherReport
+          report={makeWeatherReport()}
+          safetyRecommendation={makeSafetyRecommendation({ level: "safe" })}
+        />
+      ));
+
+      const safetyTrigger = screen.getByTestId("weather-axis-card-safety");
+      fireEvent.click(safetyTrigger);
+      await screen.findByText(/moderation, web risk, image, and video checks/i);
+    });
+
+    it("Safety popover falls back to recommendation.rationale when level has no expansion in JSON", async () => {
+      render(() => (
+        <WeatherReport
+          report={makeWeatherReport()}
+          safetyRecommendation={makeSafetyRecommendation({
+            level: "safe",
+            rationale: "Fallback rationale text shown here.",
+          })}
+        />
+      ));
+
+      const safetyTrigger = screen.getByTestId("weather-axis-card-safety");
+      fireEvent.click(safetyTrigger);
+      await screen.findByText(/moderation, web risk, image, and video checks/i);
+    });
+
+    it("Safety row renders 'Not available' when safetyRecommendation is null", () => {
+      render(() => (
+        <WeatherReport
+          report={makeWeatherReport()}
+          safetyRecommendation={null}
+        />
+      ));
+
+      const safetyValue = screen.getByTestId("weather-safety-value");
+      expect(safetyValue.textContent).toContain("Not available");
+    });
+
+    it("Safety row renders 'Not available' when safetyRecommendation is not provided", () => {
+      render(() => <WeatherReport report={makeWeatherReport()} />);
+
+      const safetyValue = screen.getByTestId("weather-safety-value");
+      expect(safetyValue.textContent).toContain("Not available");
+    });
+
+    it("skeleton includes a safety row", () => {
+      render(() => <WeatherReport report={null} />);
+
+      expect(screen.getByTestId("weather-skeleton-safety")).toBeDefined();
+      expect(screen.getByTestId("weather-skeleton-safety-label").textContent).toBe("SAFETY");
+    });
   });
 });
