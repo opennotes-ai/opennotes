@@ -12,6 +12,7 @@ export interface SubjectiveReportProps {
   canJumpToUtterance?: boolean;
 }
 
+/** @deprecated Kept only for HighlightsReport's legacy subjective_claims fallback; remove once legacy data is no longer expected. */
 export default function SubjectiveReport(props: SubjectiveReportProps) {
   const claims = (): SubjectiveClaim[] => props.claims ?? [];
 

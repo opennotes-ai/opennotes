@@ -29,7 +29,6 @@ import {
   ClaimsDedupReport,
   KnownMisinfoReport,
   SentimentReport,
-  SubjectiveReport,
   TrendsOppositionsReport,
   EMPTY_TRENDS_OPPOSITIONS_REPORT,
   HighlightsReport,
@@ -44,7 +43,6 @@ type FlashpointMatch = components["schemas"]["FlashpointMatch"];
 type SCDReport = components["schemas"]["SCDReport"];
 type FactCheckMatch = components["schemas"]["FactCheckMatch"];
 type SentimentStats = components["schemas"]["SentimentStatsReport"];
-type SubjectiveClaim = components["schemas"]["SubjectiveClaim"];
 type TrendsOppositionsReportData =
   components["schemas"]["TrendsOppositionsReport"];
 type OpinionsHighlightsReport =
@@ -80,15 +78,12 @@ const TONE_SLUGS: SectionSlugLiteral[] = [
 ];
 const FACTS_SLUGS: SectionSlugLiteral[] = [
   "facts_claims__dedup",
-  "facts_claims__evidence",
-  "facts_claims__premises",
   "facts_claims__known_misinfo",
 ];
 const OPINIONS_SLUGS: SectionSlugLiteral[] = [
   "opinions_sentiments__sentiment",
   "opinions_sentiments__trends_oppositions",
   "opinions_sentiments__highlights",
-  "opinions_sentiments__subjective",
 ];
 
 function doneSlot(attemptId: string, data: unknown): SectionSlot {
@@ -189,13 +184,6 @@ function synthesizeSectionsFromPayload(
       EMPTY_TRENDS_OPPOSITIONS_REPORT,
   };
   const highlights = payload.opinions_sentiments?.highlights;
-  const highlightSection = highlights
-    ? {
-        opinions_sentiments__highlights: doneSlot(attemptId, {
-          highlights_report: highlights,
-        }),
-      }
-    : {};
   return {
     safety__moderation: doneSlot(attemptId, safetyData),
     safety__web_risk: doneSlot(attemptId, webRiskData),
@@ -221,7 +209,9 @@ function synthesizeSectionsFromPayload(
       attemptId,
       trendsOppositionsData,
     ),
-    ...highlightSection,
+    opinions_sentiments__highlights: doneSlot(attemptId, {
+      highlights_report: highlights ?? null,
+    }),
   };
 }
 
@@ -307,9 +297,6 @@ function extractSentimentStats(data: unknown): SentimentStats {
   return (asRecord(data).sentiment_stats ?? EMPTY_SENTIMENT_STATS) as SentimentStats;
 }
 
-function extractSubjectiveClaims(data: unknown): SubjectiveClaim[] {
-  return (asRecord(data).subjective_claims ?? []) as SubjectiveClaim[];
-}
 function extractTrendsOppositionsReport(
   data: unknown,
 ): TrendsOppositionsReportData {
@@ -442,16 +429,6 @@ const FACTS_RENDER: Partial<
   facts_claims__dedup: (data) => (
     <ClaimsDedupReport claimsReport={extractClaimsReport(data)} />
   ),
-  facts_claims__evidence: () => (
-    <p data-testid="report-facts_claims__evidence" class="text-xs text-muted-foreground">
-      Evidence is merged into deduped claims.
-    </p>
-  ),
-  facts_claims__premises: () => (
-    <p data-testid="report-facts_claims__premises" class="text-xs text-muted-foreground">
-      Premises are merged into deduped claims.
-    </p>
-  ),
   facts_claims__known_misinfo: (data) => (
     <KnownMisinfoReport matches={extractKnownMisinfo(data)} />
   ),
@@ -461,16 +438,6 @@ const FACTS_EMPTINESS: Partial<
   Record<SectionSlugLiteral, (data: unknown) => boolean>
 > = {
   facts_claims__dedup: (data) => extractClaimsReport(data).deduped_claims.length === 0,
-  facts_claims__evidence: (data) =>
-    extractClaimsReport(data).deduped_claims.every(
-      (claim) =>
-        (claim.supporting_facts ?? []).length === 0 &&
-        (claim.facts_to_verify ?? 0) === 0,
-    ),
-  facts_claims__premises: (data) =>
-    extractClaimsReport(data).deduped_claims.every(
-      (claim) => (claim.premise_ids ?? []).length === 0,
-    ),
   facts_claims__known_misinfo: (data) => extractKnownMisinfo(data).length === 0,
 };
 
@@ -479,23 +446,6 @@ const FACTS_COUNTS: Partial<
 > = {
   facts_claims__dedup: (data) => {
     const total = extractClaimsReport(data).deduped_claims.length;
-    return { total };
-  },
-  facts_claims__evidence: (data) => {
-    const total = extractClaimsReport(data).deduped_claims.reduce(
-      (count, claim) =>
-        count +
-        (claim.supporting_facts ?? []).length +
-        (claim.facts_to_verify ?? 0),
-      0,
-    );
-    return { total };
-  },
-  facts_claims__premises: (data) => {
-    const total = extractClaimsReport(data).deduped_claims.reduce(
-      (count, claim) => count + (claim.premise_ids ?? []).length,
-      0,
-    );
     return { total };
   },
   facts_claims__known_misinfo: (data) => {
@@ -516,8 +466,6 @@ const OPINIONS_EMPTINESS: Partial<
       stats.neutral_pct === 0
     );
   },
-  opinions_sentiments__subjective: (data) =>
-    extractSubjectiveClaims(data).length === 0,
   opinions_sentiments__trends_oppositions: (data) => {
     const report = extractTrendsOppositionsReport(data);
     return report.trends.length === 0 && report.oppositions.length === 0;
@@ -532,10 +480,6 @@ const OPINIONS_COUNTS: Partial<
   opinions_sentiments__sentiment: (data) => {
     const total = extractSentimentStats(data).per_utterance.length;
     return { total, kind: "sentences" };
-  },
-  opinions_sentiments__subjective: (data) => {
-    const total = extractSubjectiveClaims(data).length;
-    return { total };
   },
   opinions_sentiments__trends_oppositions: (data) => {
     const report = extractTrendsOppositionsReport(data);
@@ -566,9 +510,6 @@ export default function Sidebar(props: SidebarProps) {
   const canJump = () => props.canJumpToUtterance === true;
   const utterances = (): UtteranceAnchor[] => props.payload?.utterances ?? [];
   const liveSections = createMemo(() => asStrictSectionSlots(props.sections));
-  const hasLiveSectionSlots = createMemo(
-    () => props.sections !== undefined && Object.keys(props.sections).length > 0,
-  );
   const hasPayloadHighlights = createMemo(
     () => props.payload?.opinions_sentiments?.highlights != null,
   );
@@ -586,14 +527,6 @@ export default function Sidebar(props: SidebarProps) {
           ?.highlights as OpinionsHighlightsReport)
       : liveHighlightsReport(),
   );
-  const currentHighlightsCapable = createMemo(() => {
-    if (hasPayloadHighlights()) return true;
-    if (liveHighlightsSlot()) return true;
-    return (
-      hasLiveSectionSlots() &&
-      (props.jobStatus === "extracting" || props.jobStatus === "analyzing")
-    );
-  });
   const opinionsRenderRevision = createMemo(() =>
     [
       canJump(),
@@ -655,16 +588,6 @@ export default function Sidebar(props: SidebarProps) {
         }
       />
     ),
-    facts_claims__evidence: () => (
-      <p data-testid="report-facts_claims__evidence" class="text-xs text-muted-foreground">
-        Evidence is merged into deduped claims.
-      </p>
-    ),
-    facts_claims__premises: () => (
-      <p data-testid="report-facts_claims__premises" class="text-xs text-muted-foreground">
-        Premises are merged into deduped claims.
-      </p>
-    ),
     facts_claims__known_misinfo: (data) => (
       <KnownMisinfoReport matches={extractKnownMisinfo(data)} />
     ),
@@ -677,15 +600,6 @@ export default function Sidebar(props: SidebarProps) {
         stats={extractSentimentStats(data)}
         anchors={utterances()}
       />
-    ),
-    opinions_sentiments__subjective: (data) => (
-      currentHighlightsCapable() ? null : (
-        <SubjectiveReport
-          claims={extractSubjectiveClaims(data)}
-          onUtteranceClick={props.onUtteranceClick}
-          canJumpToUtterance={canJump()}
-        />
-      )
     ),
     opinions_sentiments__trends_oppositions: (data) => (
       <TrendsOppositionsReport

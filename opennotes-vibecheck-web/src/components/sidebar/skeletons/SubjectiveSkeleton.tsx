@@ -1,5 +1,6 @@
 import { For } from "solid-js";
 
+/** @deprecated Referenced from the SKELETONS map in skeletons/index.ts for the opinions_sentiments__subjective slot; remove once that slot is retired. */
 export default function SubjectiveSkeleton() {
   const rows = [0, 1, 2];
   return (
