@@ -4740,9 +4740,9 @@ def test_build_headline_summary_inputs_propagates_safety_recommendation(monkeypa
     inputs = orchestrator._build_headline_summary_inputs(
         sections,
         {
-            "level": "caution",
-            "rationale": "Some inputs were unavailable.",
-            "top_signals": [],
+            "level": "mild",
+            "rationale": "One minor verified signal.",
+            "top_signals": ["topic-match content score 0.51"],
             "unavailable_inputs": [],
         },
         "Title",
@@ -4750,7 +4750,7 @@ def test_build_headline_summary_inputs_propagates_safety_recommendation(monkeypa
     )
 
     assert inputs.safety_recommendation is not None
-    assert inputs.safety_recommendation.level == SafetyLevel.CAUTION
+    assert inputs.safety_recommendation.level == SafetyLevel.MILD
     assert "safety_recommendation" not in inputs.unavailable_inputs
 
 

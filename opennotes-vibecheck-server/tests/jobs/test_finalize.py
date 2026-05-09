@@ -508,16 +508,18 @@ class TestAssemblePayloadWiresNewSafetySections:
             "https://test",
             self._sections_with_new_safety(),
             {
-                "level": "caution",
-                "rationale": "Some inputs were unavailable.",
-                "top_signals": ["web risk unavailable"],
-                "unavailable_inputs": ["web_risk"],
+                "level": "mild",
+                "rationale": "One minor verified signal.",
+                "top_signals": ["topic-match content score 0.51"],
+                "unavailable_inputs": [],
             },
         )
 
         assert sidebar.safety.recommendation is not None
-        assert sidebar.safety.recommendation.level == SafetyLevel.CAUTION
-        assert sidebar.safety.recommendation.unavailable_inputs == ["web_risk"]
+        assert sidebar.safety.recommendation.level == SafetyLevel.MILD
+        assert sidebar.safety.recommendation.top_signals == [
+            "topic-match content score 0.51"
+        ]
 
     def test_null_safety_recommendation_stays_none(self):
         from src.jobs.finalize import _assemble_payload
