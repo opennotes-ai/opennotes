@@ -16,6 +16,7 @@ const mockAnalyses: RecentAnalysis[] = [
     preview_description: "A test description",
     screenshot_url: "https://example.com/screenshot.png",
     weather_report: null,
+    completed_at: "2026-05-08T00:00:00Z",
   },
 ];
 
