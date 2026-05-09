@@ -10,6 +10,7 @@ export interface SafetyRecommendationReportProps {
 
 const LEVEL_CLASSES: Record<SafetyRecommendation["level"], string> = {
   safe: "bg-muted text-muted-foreground",
+  mild: "bg-yellow-100 text-yellow-800 dark:text-yellow-300",
   caution: "bg-amber-500/10 text-amber-700 dark:text-amber-400",
   unsafe: "bg-destructive/10 text-destructive",
 };

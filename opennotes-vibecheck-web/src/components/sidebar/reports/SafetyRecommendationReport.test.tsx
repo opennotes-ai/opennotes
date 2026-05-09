@@ -92,6 +92,19 @@ describe("SafetyRecommendationReport", () => {
     );
   });
 
+  it("renders the mild badge with the light amber palette", () => {
+    render(() => (
+      <SafetyRecommendationReport
+        recommendation={makeRecommendation({ level: "mild" })}
+      />
+    ));
+    const badge = screen.getByTestId("safety-recommendation-level");
+    expect(badge.textContent).toBe("mild");
+    expect(badge.className).toContain("bg-yellow-100");
+    expect(badge.className).toContain("text-yellow-800");
+    expect(badge.className).toContain("dark:text-yellow-300");
+  });
+
   it("renders top signals (capped at 3) and a +N more indicator", () => {
     render(() => (
       <SafetyRecommendationReport
