@@ -2688,6 +2688,8 @@ async def test_scrape_step_la_times_partial_coral_routes_to_interact_without_scr
     assert span.attrs.get("tier_success") == "interact"
     assert span.attrs.get("platform_detected") is True
     assert span.attrs.get("platform_outcome") == "coral_render_only"
+    assert span.attrs.get("coral_detected") is True
+    assert span.attrs.get("coral_outcome") == "render_only"
     assert span.attrs.get("escalation_reason") == "coral_graphql_unsupported"
 
 
@@ -2759,6 +2761,7 @@ async def test_scrape_step_tier1_coral_truncated_marker_stays_cached(
     cached_markdown = _require_markdown(cache.store[(url, "scrape")])
     assert "[comments truncated]" in cached_markdown
     assert span.attrs.get("platform_outcome") == "coral_merged"
+    assert span.attrs.get("coral_outcome") == "merged"
     assert len(interact_client.interact_calls) == 0
 
 
@@ -3759,6 +3762,8 @@ async def test_scrape_step_logfire_span_records_coral_merge_attributes(
 
     assert span.attrs.get("platform_detected") is True
     assert span.attrs.get("platform_outcome") == "coral_merged"
+    assert span.attrs.get("coral_detected") is True
+    assert span.attrs.get("coral_outcome") == "merged"
     assert span.attrs.get("tier_attempted") == ["scrape"]
     assert span.attrs.get("tier_success") == "scrape"
     assert span.attrs.get("escalation_reason") is None
@@ -3798,6 +3803,8 @@ async def test_scrape_step_logfire_span_records_coral_graphql_failed_attributes(
 
     assert span.attrs.get("platform_detected") is True
     assert span.attrs.get("platform_outcome") == "coral_graphql_failed"
+    assert span.attrs.get("coral_detected") is True
+    assert span.attrs.get("coral_outcome") == "graphql_failed"
     assert span.attrs.get("tier_attempted") == ["scrape", "interact"]
     assert span.attrs.get("tier_success") == "interact"
     assert span.attrs.get("escalation_reason") == "coral_graphql_failed"

@@ -38,12 +38,14 @@ def build_viafoura_actions(signal: ViafouraSignal) -> list[dict[str, Any]]:
                         "button[data-testid='vf-conversations-reply-button']",
                         "button[aria-label*='more' i]",
                     ];
-                    const commentSelectors = [
+                    const commentContainerSelectors = [
                         "[data-testid='vf-comment']",
                         ".vf-comment",
+                        "article",
+                    ];
+                    const commentTextFallbackSelectors = [
                         ".vf-comment__content-editor",
                         ".vf-content-text",
-                        "article",
                     ];
                     const isBoilerplateText = (text) => (
                         !text
@@ -89,13 +91,17 @@ def build_viafoura_actions(signal: ViafouraSignal) -> list[dict[str, Any]]:
                     };
                     const collectComments = (root) => {
                         const comments = [];
-                        const nodes = Array.from(root.querySelectorAll?.(commentSelectors.join(",")) || []);
+                        let nodes = Array.from(root.querySelectorAll?.(commentContainerSelectors.join(",")) || []);
+                        if (nodes.length === 0) {
+                            nodes = Array.from(root.querySelectorAll?.(commentTextFallbackSelectors.join(",")) || []);
+                        }
                         for (const node of nodes) {
                             const text = normalizeText(node.textContent);
                             if (isBoilerplateText(text)) {
                                 continue;
                             }
-                            const authorNode = node.closest?.("[data-testid='vf-comment']")
+                            const commentRoot = node.closest?.("[data-testid='vf-comment'],.vf-comment") || node;
+                            const authorNode = commentRoot
                                 ?.querySelector?.("[data-testid*='author'],.vf-username,.vf-author");
                             const author = normalizeText(authorNode?.textContent) || "anonymous";
                             comments.push({author, text});

@@ -86,6 +86,7 @@ class _ViafouraMarkerParser(HTMLParser):
     def signal(self) -> ViafouraSignal | None:
         if not (
             self.has_loader_script
+            or self.has_viafoura_class
             or self.has_conversations_component
             or self.container_id
             or self.iframe_src

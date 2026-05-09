@@ -276,7 +276,7 @@ async def fetch_viafoura_comments(
         is not None
     ]
     markdown = render_to_markdown(nodes)
-    if parsed_comments.more_available and len(parsed_comments.contents) >= max_comments:
+    if parsed_comments.more_available:
         markdown = f"{markdown.rstrip()}\n{_TRUNCATION_MARKER}"
 
     return ViafouraComments(

@@ -32,6 +32,8 @@ def test_build_viafoura_actions_mounts_expands_and_marks_comments() -> None:
     assert 'data-platform", "viafoura"' in script
     assert "vf-conversations-load-more-button" in script
     assert "viafoura_status:" in script
+    assert "commentContainerSelectors" in script
+    assert "commentTextFallbackSelectors" in script
 
 
 def test_tier2_actions_for_dispatches_viafoura_signal() -> None:

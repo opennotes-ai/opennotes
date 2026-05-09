@@ -1556,6 +1556,21 @@ def _platform_action_status_from(scrape: ScrapeResult) -> str | None:
     return None
 
 
+def _legacy_coral_outcome(platform_outcome: str | None) -> str | None:
+    """Map generalized platform outcomes back to legacy Coral span values."""
+    match platform_outcome:
+        case "coral_render_only":
+            return "render_only"
+        case "coral_iframe_merged":
+            return "iframe_merged"
+        case "coral_graphql_failed":
+            return "graphql_failed"
+        case "coral_merged":
+            return "merged"
+        case _:
+            return None
+
+
 async def _run_tier2(
     url: str,
     interact_client: FirecrawlClient,
@@ -1687,6 +1702,8 @@ async def _scrape_step(
     final_classification: str = "ok"
     platform_detected = False
     platform_outcome: str | None = None
+    coral_detected = False
+    coral_outcome: str | None = None
     coral_action_status: str | None = None
 
     span = logfire.span("vibecheck.scrape_step", url=url)
@@ -1723,6 +1740,8 @@ async def _scrape_step(
                 final_classification = cached_t1.final_classification
                 platform_detected = cached_t1.platform_signal is not None
                 platform_outcome = cached_t1.platform_outcome
+                coral_detected = isinstance(cached_t1.platform_signal, CoralSignal)
+                coral_outcome = _legacy_coral_outcome(platform_outcome)
                 if cached_t1.cached is not None:
                     tier_success = cached_tier
                     return cached_t1.cached
@@ -1756,6 +1775,8 @@ async def _scrape_step(
             final_classification = t1.final_classification
             platform_detected = t1.platform_signal is not None
             platform_outcome = t1.platform_outcome
+            coral_detected = isinstance(t1.platform_signal, CoralSignal)
+            coral_outcome = _legacy_coral_outcome(platform_outcome)
             if t1.cached is not None:
                 tier_success = "scrape"
                 return t1.cached
@@ -1790,6 +1811,8 @@ async def _scrape_step(
             span.set_attribute("final_classification", final_classification)
             span.set_attribute("platform_detected", platform_detected)
             span.set_attribute("platform_outcome", platform_outcome)
+            span.set_attribute("coral_detected", coral_detected)
+            span.set_attribute("coral_outcome", coral_outcome)
             span.set_attribute("coral_action_status", coral_action_status)
 
 

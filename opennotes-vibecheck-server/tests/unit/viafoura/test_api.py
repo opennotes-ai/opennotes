@@ -98,6 +98,7 @@ async def test_fetch_viafoura_comments_fetches_and_renders_public_api(
     assert isinstance(result.fetched_at, datetime)
     assert "[6007f8a1-1c67-4be2-8336-27650bb5d4ff] author=apreader" in result.comments_markdown
     assert "So, they totally ignored what the people voted for." in result.comments_markdown
+    assert result.comments_markdown.endswith("[comments truncated]")
 
     bootstrap_request = httpx_mock.get_requests(url=BOOTSTRAP_URL, method="POST")[0]
     assert json.loads(bootstrap_request.content) == {

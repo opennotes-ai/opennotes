@@ -49,6 +49,20 @@ def test_detect_viafoura_returns_partial_signal_for_loader_script() -> None:
     )
 
 
+def test_detect_viafoura_returns_signal_for_web_component_only_embed() -> None:
+    html = '<div class="viafoura"><vf-tray></vf-tray></div>'
+
+    signal = detect_viafoura(html)
+
+    assert signal == ViafouraSignal(
+        container_id=None,
+        site_domain=None,
+        embed_origin="https://cdn.viafoura.net",
+        iframe_src=None,
+        has_conversations_component=False,
+    )
+
+
 def test_detect_viafoura_ignores_article_without_embed() -> None:
     assert detect_viafoura("<article>Only article text.</article>") is None
 
