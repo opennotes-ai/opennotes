@@ -225,10 +225,29 @@ class TestStatusCheckConstraint:
         ):
             assert f"'{kind}'" in schema_sql
 
+    def test_jobs_define_page_metadata_columns(self, schema_sql: str) -> None:
+        assert "ADD COLUMN IF NOT EXISTS page_title TEXT" in schema_sql
+        assert "ADD COLUMN IF NOT EXISTS page_kind TEXT NOT NULL DEFAULT 'other'" in schema_sql
+        assert (
+            "ADD COLUMN IF NOT EXISTS utterance_stream_type TEXT NOT NULL DEFAULT 'unknown'"
+            in schema_sql
+        )
+        assert "vibecheck_jobs_page_kind_check" in schema_sql
+        assert "vibecheck_jobs_utterance_stream_type_check" in schema_sql
+
     def test_utterances_kind_check(self, schema_sql: str) -> None:
         assert "vibecheck_job_utterances_kind_check" in schema_sql
         for kind in ("post", "comment", "reply"):
             assert f"'{kind}'" in schema_sql
+
+    def test_utterance_metadata_columns_are_backfilled_then_dropped(
+        self, schema_sql: str
+    ) -> None:
+        assert "FROM pg_catalog.pg_attribute" in schema_sql
+        assert "first_utterance AS" in schema_sql
+        assert "DROP COLUMN IF EXISTS page_title" in schema_sql
+        assert "DROP COLUMN IF EXISTS page_kind" in schema_sql
+        assert "DROP COLUMN IF EXISTS utterance_stream_type" in schema_sql
 
 
 class TestSweeperFunctions:

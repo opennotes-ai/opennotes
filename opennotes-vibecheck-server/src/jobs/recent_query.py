@@ -87,7 +87,7 @@ SELECT
     j.sidebar_payload->'weather_report' AS weather_report_json,
     j.sections,
     j.status,
-    s.page_title,
+    j.page_title,
     s.screenshot_storage_key
 FROM vibecheck_jobs j
 INNER JOIN (
@@ -102,7 +102,6 @@ INNER JOIN (
     -- shadowing a viable scrape row.
     SELECT DISTINCT ON (normalized_url)
         normalized_url,
-        page_title,
         screenshot_storage_key,
         expires_at
     FROM vibecheck_scrapes

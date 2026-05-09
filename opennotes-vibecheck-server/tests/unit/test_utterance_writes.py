@@ -16,6 +16,7 @@ import pytest
 from testcontainers.postgres import PostgresContainer
 
 from src.analyses.schemas import PageKind
+from src.analyses.stream_types import UtteranceStreamType
 from src.jobs.utterance_writes import UtterancePersistenceSuperseded, persist_utterances
 from src.utterances.schema import Utterance, UtterancesPayload
 from tests.conftest import VIBECHECK_JOBS_DDL
@@ -46,9 +47,6 @@ CREATE TABLE vibecheck_job_utterances (
     timestamp_at TIMESTAMPTZ,
     parent_id TEXT,
     position INT NOT NULL DEFAULT 0,
-    page_title TEXT,
-    page_kind TEXT NOT NULL DEFAULT 'other',
-    utterance_stream_type TEXT NOT NULL DEFAULT 'unknown',
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 """
@@ -111,6 +109,18 @@ async def _fetch_utterances(pool: Any, job_id: UUID) -> list[Any]:
     async with pool.acquire() as conn:
         return await conn.fetch(
             "SELECT * FROM vibecheck_job_utterances WHERE job_id = $1 ORDER BY position",
+            job_id,
+        )
+
+
+async def _fetch_job_metadata(pool: Any, job_id: UUID) -> Any:
+    async with pool.acquire() as conn:
+        return await conn.fetchrow(
+            """
+            SELECT page_title, page_kind, utterance_stream_type
+            FROM vibecheck_jobs
+            WHERE job_id = $1
+            """,
             job_id,
         )
 
@@ -215,11 +225,11 @@ async def test_persist_utterances_job_not_found_raises(db_pool: Any) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Page metadata — every inserted row carries same page_title and page_kind.
+# Page metadata — stored once on the job row.
 # ---------------------------------------------------------------------------
 
 
-async def test_persist_utterances_page_metadata_per_row(db_pool: Any) -> None:
+async def test_persist_utterances_stores_page_metadata_on_job(db_pool: Any) -> None:
     attempt_id = uuid4()
     job_id = await _insert_job(db_pool, attempt_id)
     payload = _make_payload(
@@ -230,8 +240,15 @@ async def test_persist_utterances_page_metadata_per_row(db_pool: Any) -> None:
 
     await persist_utterances(db_pool, job_id, attempt_id, payload)
 
+    job_metadata = await _fetch_job_metadata(db_pool, job_id)
+    assert job_metadata is not None
+    assert job_metadata["page_title"] == "My Forum Thread"
+    assert job_metadata["page_kind"] == PageKind.HIERARCHICAL_THREAD.value
+    assert job_metadata["utterance_stream_type"] == UtteranceStreamType.UNKNOWN.value
+
     rows = await _fetch_utterances(db_pool, job_id)
     assert len(rows) == 3
     for row in rows:
-        assert row["page_title"] == "My Forum Thread"
-        assert row["page_kind"] == PageKind.HIERARCHICAL_THREAD.value
+        assert "page_title" not in row
+        assert "page_kind" not in row
+        assert "utterance_stream_type" not in row

@@ -46,9 +46,8 @@ _CACHE_TTL = timedelta(hours=72)
 # drifted from the worker's expected envelope before assembling + UPSERTing.
 #
 # `page_title_meta` and `first_utterance_text` feed DerivationContext for
-# preview_description fallback branches (TASK-1485.02). The LATERAL joins
-# stay non-locking; both subqueries return NULL for fresh jobs without
-# extracted utterances and the derivation function tolerates that.
+# preview_description fallback branches (TASK-1485.02). Page metadata comes
+# from the job row; the first-utterance lateral join remains text-only.
 _LOAD_SQL = """
 SELECT
     j.url,
@@ -61,18 +60,11 @@ SELECT
     j.headline_summary,
     j.weather_report,
     j.sidebar_payload IS NOT NULL AS already_finalized,
-    meta.page_title AS page_title_meta,
-    meta.page_kind AS page_kind_meta,
-    meta.utterance_stream_type AS utterance_stream_type_meta,
+    j.page_title AS page_title_meta,
+    j.page_kind AS page_kind_meta,
+    j.utterance_stream_type AS utterance_stream_type_meta,
     first_utt.text AS first_utterance_text
 FROM vibecheck_jobs j
-LEFT JOIN LATERAL (
-    SELECT u.page_title, u.page_kind, u.utterance_stream_type
-    FROM vibecheck_job_utterances u
-    WHERE u.job_id = j.job_id
-    ORDER BY u.position
-    LIMIT 1
-) AS meta ON TRUE
 LEFT JOIN LATERAL (
     SELECT u.text
     FROM vibecheck_job_utterances u

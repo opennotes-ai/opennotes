@@ -401,23 +401,15 @@ WHERE job_id = $1
 """
 
 # TASK-1508.04.03: load all section data plus the freshly-written safety
-# recommendation and page metadata so the headline summarizer can synthesize
-# from the structured outputs without re-reading raw utterances. The page
-# metadata LATERAL join mirrors finalize.py's load.
+# recommendation and job-level page metadata so the headline summarizer can
+# synthesize from the structured outputs without re-reading raw utterances.
 _LOAD_HEADLINE_INPUTS_SQL = """
 SELECT
     j.sections,
     j.safety_recommendation,
-    meta.page_title AS page_title,
-    meta.page_kind AS page_kind
+    j.page_title AS page_title,
+    j.page_kind AS page_kind
 FROM vibecheck_jobs j
-LEFT JOIN LATERAL (
-    SELECT u.page_title, u.page_kind
-    FROM vibecheck_job_utterances u
-    WHERE u.job_id = j.job_id
-    ORDER BY u.position
-    LIMIT 1
-) AS meta ON TRUE
 WHERE j.job_id = $1
   AND j.attempt_id = $2
 """

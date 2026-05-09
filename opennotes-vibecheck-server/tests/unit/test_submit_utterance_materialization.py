@@ -57,9 +57,6 @@ CREATE TABLE vibecheck_job_utterances (
     timestamp_at TIMESTAMPTZ,
     parent_id TEXT,
     position INT NOT NULL DEFAULT 0,
-    page_title TEXT,
-    page_kind TEXT,
-    utterance_stream_type TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 """
@@ -69,6 +66,9 @@ _SIDEBAR_WITH_COMMENT_REFS = json.dumps(
     {
         "source_url": "https://latimes.example.com/coral-article",
         "scraped_at": "2026-05-01T00:00:00+00:00",
+        "page_title": "Cached Coral Article",
+        "page_kind": "article",
+        "utterance_stream_type": "comment_section",
         "utterances": [],
         "facts_claims": {
             "claims": [
@@ -85,6 +85,9 @@ _SIDEBAR_WITHOUT_COMMENT_REFS = json.dumps(
     {
         "source_url": "https://latimes.example.com/no-coral",
         "scraped_at": "2026-05-01T00:00:00+00:00",
+        "page_title": "Cached No Coral",
+        "page_kind": "blog_post",
+        "utterance_stream_type": "article_or_monologue",
         "utterances": [],
         "facts_claims": {"claims": []},
     }
@@ -116,15 +119,28 @@ async def pool(_pg: PostgresContainer) -> AsyncIterator[Any]:
         await p.close()
 
 
-async def _insert_fresh_done_job(pool: Any, normalized_url: str) -> UUID:
+async def _insert_fresh_done_job(
+    pool: Any,
+    normalized_url: str,
+    *,
+    page_title: str = "Source Coral Article",
+    page_kind: str = "article",
+    utterance_stream_type: str = "comment_section",
+) -> UUID:
     async with pool.acquire() as conn:
         job_id = await conn.fetchval(
             """
-            INSERT INTO vibecheck_jobs (url, normalized_url, host, status, cached, finished_at)
-            VALUES ($1, $1, 'latimes.example.com', 'done', false, now())
+            INSERT INTO vibecheck_jobs (
+                url, normalized_url, host, status, cached, finished_at,
+                page_title, page_kind, utterance_stream_type
+            )
+            VALUES ($1, $1, 'latimes.example.com', 'done', false, now(), $2, $3, $4)
             RETURNING job_id
             """,
             normalized_url,
+            page_title,
+            page_kind,
+            utterance_stream_type,
         )
     assert isinstance(job_id, UUID)
     return job_id
@@ -183,6 +199,18 @@ async def _utterance_count(pool: Any, job_id: UUID) -> int:
     async with pool.acquire() as conn:
         return await conn.fetchval(
             "SELECT COUNT(*) FROM vibecheck_job_utterances WHERE job_id = $1", job_id
+        )
+
+
+async def _job_metadata(pool: Any, job_id: UUID) -> Any:
+    async with pool.acquire() as conn:
+        return await conn.fetchrow(
+            """
+            SELECT page_title, page_kind, utterance_stream_type
+            FROM vibecheck_jobs
+            WHERE job_id = $1
+            """,
+            job_id,
         )
 
 
@@ -250,6 +278,11 @@ class TestCacheHitUtteranceMaterialization:
         assert cached_job_id is not None
         count = await _utterance_count(pool, cached_job_id)
         assert count == 3
+        metadata = await _job_metadata(pool, cached_job_id)
+        assert metadata is not None
+        assert metadata["page_title"] == "Source Coral Article"
+        assert metadata["page_kind"] == "article"
+        assert metadata["utterance_stream_type"] == "comment_section"
 
     async def test_cache_hit_backfills_existing_broken_cached_job(
         self, pool: Any
@@ -287,6 +320,11 @@ class TestCacheHitUtteranceMaterialization:
 
         count = await _utterance_count(pool, broken_job_id)
         assert count == 2
+        metadata = await _job_metadata(pool, broken_job_id)
+        assert metadata is not None
+        assert metadata["page_title"] == "Source Coral Article"
+        assert metadata["page_kind"] == "article"
+        assert metadata["utterance_stream_type"] == "comment_section"
 
     async def test_cache_hit_without_comment_refs_does_not_copy_utterances(
         self, pool: Any
@@ -308,6 +346,11 @@ class TestCacheHitUtteranceMaterialization:
         assert cached_job_id is not None
         count = await _utterance_count(pool, cached_job_id)
         assert count == 0
+        metadata = await _job_metadata(pool, cached_job_id)
+        assert metadata is not None
+        assert metadata["page_title"] == "Cached No Coral"
+        assert metadata["page_kind"] == "blog_post"
+        assert metadata["utterance_stream_type"] == "article_or_monologue"
 
     async def test_cache_hit_with_comment_refs_but_no_source_utterances_evicts_cache(
         self, pool: Any

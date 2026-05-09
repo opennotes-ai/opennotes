@@ -94,6 +94,9 @@ CREATE TABLE IF NOT EXISTS vibecheck_jobs (
     sidebar_payload JSONB,
     cached BOOLEAN NOT NULL DEFAULT false,
     source_type TEXT NOT NULL DEFAULT 'url',
+    page_title TEXT,
+    page_kind TEXT NOT NULL DEFAULT 'other',
+    utterance_stream_type TEXT NOT NULL DEFAULT 'unknown',
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     heartbeat_at TIMESTAMPTZ,
@@ -124,6 +127,16 @@ CREATE TABLE IF NOT EXISTS vibecheck_jobs (
         ),
     CONSTRAINT vibecheck_jobs_source_type_check
         CHECK (source_type IN ('url', 'pdf', 'browser_html')),
+    CONSTRAINT vibecheck_jobs_page_kind_check
+        CHECK (page_kind IN (
+            'blog_post', 'forum_thread', 'hierarchical_thread',
+            'blog_index', 'article', 'other'
+        )),
+    CONSTRAINT vibecheck_jobs_utterance_stream_type_check
+        CHECK (utterance_stream_type IN (
+            'dialogue', 'comment_section', 'article_or_monologue',
+            'mixed', 'unknown'
+        )),
     CONSTRAINT vibecheck_jobs_terminal_finished_at
         CHECK (
             (status NOT IN ('done', 'partial', 'failed') AND finished_at IS NULL)
@@ -201,9 +214,6 @@ CREATE TABLE IF NOT EXISTS vibecheck_job_utterances (
     timestamp_at TIMESTAMPTZ,
     parent_id TEXT,
     position INT NOT NULL DEFAULT 0,
-    page_title TEXT,
-    page_kind TEXT,
-    utterance_stream_type TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     CONSTRAINT vibecheck_job_utterances_kind_check
         CHECK (kind IN ('post', 'comment', 'reply'))
