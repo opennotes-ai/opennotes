@@ -1030,12 +1030,12 @@ export interface components {
             next_poll_ms: number;
             /**
              * Page Title
-             * @description Extracted page title, sourced from vibecheck_job_utterances. Null until the extractor runs.
+             * @description Extracted page title, sourced from vibecheck_jobs.
              */
             page_title?: string | null;
-            /** @description Extracted page shape, sourced from vibecheck_job_utterances. Null until the extractor runs. */
+            /** @description Extracted page shape, sourced from vibecheck_jobs. */
             page_kind?: components["schemas"]["PageKind"] | null;
-            /** @description Extracted utterance-stream shape, sourced from vibecheck_job_utterances. Null until the extractor runs. */
+            /** @description Extracted utterance-stream shape, sourced from vibecheck_jobs. */
             utterance_stream_type?: components["schemas"]["UtteranceStreamType"] | null;
             /**
              * Utterance Count
@@ -1151,6 +1151,7 @@ export interface components {
             /** Headline Summary */
             headline_summary?: string | null;
             weather_report?: components["schemas"]["WeatherReport"] | null;
+            safety_recommendation?: components["schemas"]["SafetyRecommendation"] | null;
             /**
              * Completed At
              * Format: date-time

@@ -18,6 +18,7 @@ import asyncpg
 import pytest
 from testcontainers.postgres import PostgresContainer
 
+from src.analyses.safety._schemas import SafetyLevel
 from src.jobs.recent_query import (
     _has_secret_query_param,
     _is_blocked_url,
@@ -325,6 +326,15 @@ def _weather_report() -> dict[str, Any]:
     }
 
 
+def _safety_recommendation(level: str = "safe") -> dict[str, Any]:
+    return {
+        "level": level,
+        "rationale": "No harmful content detected.",
+        "top_signals": [],
+        "unavailable_inputs": [],
+    }
+
+
 async def _seed_job(
     pool: Any,
     *,
@@ -505,6 +515,83 @@ class TestListRecentDoneJobs:
             and record.levelname == "WARNING"
         ]
         assert warning_records, "expected a structured warning for invalid payload"
+        assert any(str(job_id) in record.getMessage() for record in warning_records)
+
+    async def test_done_job_surfaces_safety_recommendation(
+        self, db_pool: Any
+    ) -> None:
+        url = "https://example.com/with-safety-recommendation"
+        await _seed_job(
+            db_pool,
+            url=url,
+            sidebar_payload={
+                "safety": {
+                    "recommendation": _safety_recommendation(level="caution"),
+                },
+            },
+        )
+        await _seed_scrape(db_pool, url=url)
+
+        result = await list_recent(db_pool, limit=5, signer=_StubSigner())
+
+        assert len(result) == 1
+        assert result[0].safety_recommendation is not None
+        assert result[0].safety_recommendation.level == SafetyLevel.CAUTION
+
+    async def test_missing_safety_in_sidebar_payload_leaves_recommendation_none(
+        self, db_pool: Any
+    ) -> None:
+        url = "https://example.com/no-safety-field"
+        await _seed_job(
+            db_pool,
+            url=url,
+            sidebar_payload={
+                "headline": {
+                    "text": "Some headline.",
+                    "kind": "synthesized",
+                    "unavailable_inputs": [],
+                },
+            },
+        )
+        await _seed_scrape(db_pool, url=url)
+
+        result = await list_recent(db_pool, limit=5, signer=_StubSigner())
+
+        assert len(result) == 1
+        assert result[0].safety_recommendation is None
+
+    async def test_invalid_safety_recommendation_returns_none_and_warns(
+        self, db_pool: Any, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        url = "https://example.com/invalid-safety-recommendation"
+        job_id = await _seed_job(
+            db_pool,
+            url=url,
+            sidebar_payload={
+                "safety": {
+                    "recommendation": {
+                        "level": "not-a-real-level",
+                        "rationale": "bad",
+                        "top_signals": [],
+                        "unavailable_inputs": [],
+                    },
+                },
+            },
+        )
+        await _seed_scrape(db_pool, url=url)
+
+        with caplog.at_level("WARNING", logger="src.jobs.recent_query"):
+            result = await list_recent(db_pool, limit=5, signer=_StubSigner())
+
+        assert len(result) == 1
+        assert result[0].safety_recommendation is None
+        warning_records = [
+            record
+            for record in caplog.records
+            if record.name == "src.jobs.recent_query"
+            and record.levelname == "WARNING"
+        ]
+        assert warning_records, "expected a structured warning for invalid safety payload"
         assert any(str(job_id) in record.getMessage() for record in warning_records)
 
     async def test_truncates_to_limit(self, db_pool: Any) -> None:
