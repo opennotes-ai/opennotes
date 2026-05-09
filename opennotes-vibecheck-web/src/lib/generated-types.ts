@@ -1288,7 +1288,7 @@ export interface components {
          * SafetyLevel
          * @enum {string}
          */
-        SafetyLevel: "safe" | "caution" | "unsafe";
+        SafetyLevel: "safe" | "mild" | "caution" | "unsafe";
         /** SafetyRecommendation */
         SafetyRecommendation: {
             level: components["schemas"]["SafetyLevel"];

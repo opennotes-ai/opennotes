@@ -2562,6 +2562,7 @@
         "type": "string",
         "enum": [
           "safe",
+          "mild",
           "caution",
           "unsafe"
         ],
