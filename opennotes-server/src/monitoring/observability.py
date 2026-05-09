@@ -51,7 +51,7 @@ def setup_observability(
         logfire_token: Logfire write token (also reads LOGFIRE_TOKEN env var)
         trace_content: Enable logging prompts/completions in traces
         sample_rate: Logfire tail sampling background rate 0.0-1.0
-        dbos_datastore_logfire_sample_rate: DBOS-worker datastore Logfire sample rate, capped at 0.01
+        dbos_datastore_logfire_sample_rate: Datastore Logfire sample rate, capped at 0.01
         use_gcp_exporters: Use GCP-native exporters on Cloud Run
         enable_console_export: Enable console span export for debugging
         tail_level_threshold: Min log level that always passes tail sampling

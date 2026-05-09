@@ -117,7 +117,7 @@ def test_genai_span_keeps_elevated_sample_rate() -> None:
     assert rate == 0.2
 
 
-def test_non_worker_datastore_span_uses_background_sample_rate() -> None:
+def test_server_postgres_span_uses_datastore_sample_rate() -> None:
     sampler = build_logfire_tail_sampler(
         service_name="opennotes-server",
         background_sample_rate=0.4,
@@ -128,4 +128,74 @@ def test_non_worker_datastore_span_uses_background_sample_rate() -> None:
 
     rate = sampler(make_span_info(attributes={"db.system": "postgresql"}))
 
-    assert rate == 0.4
+    assert rate == 0.0
+
+
+def test_server_redis_span_uses_datastore_sample_rate() -> None:
+    sampler = build_logfire_tail_sampler(
+        service_name="opennotes-server",
+        background_sample_rate=0.4,
+        dbos_datastore_sample_rate=0.006,
+        tail_level_threshold="warning",
+        tail_duration_threshold=5.0,
+    )
+
+    rate = sampler(make_span_info(scope="opentelemetry.instrumentation.redis"))
+
+    assert rate == 0.006
+
+
+def test_server_sqlalchemy_span_clamps_datastore_sample_rate() -> None:
+    sampler = build_logfire_tail_sampler(
+        service_name="opennotes-server",
+        background_sample_rate=0.4,
+        dbos_datastore_sample_rate=0.5,
+        tail_level_threshold="warning",
+        tail_duration_threshold=5.0,
+    )
+
+    rate = sampler(make_span_info(scope="opentelemetry.instrumentation.sqlalchemy"))
+
+    assert rate == 0.01
+
+
+def test_warning_server_datastore_span_passes_to_logfire() -> None:
+    sampler = build_logfire_tail_sampler(
+        service_name="opennotes-server",
+        background_sample_rate=0.4,
+        dbos_datastore_sample_rate=0.0,
+        tail_level_threshold="warning",
+        tail_duration_threshold=5.0,
+    )
+
+    rate = sampler(make_span_info(attributes={"db.system": "redis"}, level="warning"))
+
+    assert rate == 1.0
+
+
+def test_slow_server_datastore_span_passes_to_logfire() -> None:
+    sampler = build_logfire_tail_sampler(
+        service_name="opennotes-server",
+        background_sample_rate=0.4,
+        dbos_datastore_sample_rate=0.0,
+        tail_level_threshold="warning",
+        tail_duration_threshold=5.0,
+    )
+
+    rate = sampler(make_span_info(attributes={"db.system": "postgresql"}, duration=6.0))
+
+    assert rate == 1.0
+
+
+def test_server_genai_span_keeps_elevated_sample_rate() -> None:
+    sampler = build_logfire_tail_sampler(
+        service_name="opennotes-server",
+        background_sample_rate=0.4,
+        dbos_datastore_sample_rate=0.0,
+        tail_level_threshold="warning",
+        tail_duration_threshold=5.0,
+    )
+
+    rate = sampler(make_span_info(name="openai chat completion"))
+
+    assert rate == 0.2
