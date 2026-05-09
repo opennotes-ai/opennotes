@@ -214,6 +214,43 @@ def _log_synthesis_prompt_length(prompt_length: int) -> None:
     )
 
 
+def _log_sanity_prompt_length(prompt_length: int) -> None:
+    logfire.info(
+        "vibecheck.evidence.sanity_prompt_length",
+        prompt_length=prompt_length,
+    )
+
+
+def _log_grounded_fetch_failed(group_size: int, error_type: str) -> None:
+    logfire.info(
+        "vibecheck.evidence.grounded_fetch_failed",
+        group_size=group_size,
+        error_type=error_type,
+    )
+
+
+def _log_grounded_fetch_summary(groups_total: int, groups_failed: int) -> None:
+    logfire.info(
+        "vibecheck.evidence.grounded_fetch_summary",
+        groups_total=groups_total,
+        groups_failed=groups_failed,
+    )
+
+
+def _log_sanity_failed(error_type: str) -> None:
+    logfire.info(
+        "vibecheck.evidence.sanity_failed",
+        error_type=error_type,
+    )
+
+
+def _log_curate_failed(error_type: str) -> None:
+    logfire.info(
+        "vibecheck.evidence.curate_failed",
+        error_type=error_type,
+    )
+
+
 def _log_grounded_url_filter_drop(claim_text: str, source_ref: str, reason: str) -> None:
     logfire.info(
         "vibecheck.evidence.grounded_url_filter_drop",
@@ -307,11 +344,18 @@ async def _fetch_grounded_candidates_for_groups(
     )
 
     candidates: list[_ExternalEvidenceCandidate] = []
-    for result in results:
+    groups_failed = 0
+    for call_groups, result in zip(grouped_calls, results, strict=True):
         if isinstance(result, BaseException):
+            groups_failed += 1
             logger.warning("external evidence grounded fetch failed: %s", result)
+            _log_grounded_fetch_failed(
+                sum(len(group) for group in call_groups),
+                type(result).__name__,
+            )
             continue
         candidates.extend(result)
+    _log_grounded_fetch_summary(len(grouped_calls), groups_failed)
     return candidates
 
 
@@ -374,6 +418,14 @@ async def _dedupe_and_sanity_check_candidates(
     unique_candidates = _dedupe_candidates(candidates)
     if len(unique_candidates) <= 1:
         return unique_candidates
+    grouped = _capped_candidates_by_claim(
+        unique_candidates, settings.EVIDENCE_SYNTHESIS_CANDIDATE_CAP
+    )
+    capped_candidates = [
+        candidate for claim_candidates in grouped.values() for candidate in claim_candidates
+    ]
+    if not capped_candidates:
+        return []
 
     agent = build_agent(
         settings,
@@ -382,15 +434,21 @@ async def _dedupe_and_sanity_check_candidates(
         name="vibecheck.claims_evidence_sanity",
         tier="fast",
     )
-    prompt = _format_candidate_prompt(unique_candidates)
-    async with vertex_slot(settings):
-        result = await run_vertex_agent_with_retry(agent, prompt)
+    prompt = _format_candidate_prompt(capped_candidates)
+    _log_sanity_prompt_length(len(prompt))
+    try:
+        async with vertex_slot(settings):
+            result = await run_vertex_agent_with_retry(agent, prompt)
+    except Exception as exc:
+        logger.warning("external evidence sanity check failed: %s", exc)
+        _log_sanity_failed(type(exc).__name__)
+        return unique_candidates
     response = result.output
     if not isinstance(response, _SanityResponse):
         return unique_candidates
 
-    allowed_keys = {_candidate_key(candidate) for candidate in unique_candidates}
-    input_claim_texts = {candidate.canonical_text for candidate in unique_candidates}
+    allowed_keys = {_candidate_key(candidate) for candidate in capped_candidates}
+    input_claim_texts = {candidate.canonical_text for candidate in capped_candidates}
     out: list[_ExternalEvidenceCandidate] = []
     seen: set[tuple[str, str, str]] = set()
     for candidate in response.candidates:
@@ -459,8 +517,13 @@ async def _curate_supporting_facts_synthesis(
         name="vibecheck.claims_evidence_curate",
         tier="synthesis",
     )
-    async with vertex_slot(settings):
-        result = await run_vertex_agent_with_retry(agent, prompt)
+    try:
+        async with vertex_slot(settings):
+            result = await run_vertex_agent_with_retry(agent, prompt)
+    except Exception as exc:
+        logger.warning("external evidence curation failed: %s", exc)
+        _log_curate_failed(type(exc).__name__)
+        return {}
     response = result.output
     if not isinstance(response, _CurateResponse):
         return {}

@@ -74,7 +74,6 @@ class Settings(BaseSettings):
     # TASK-1483.24: Frame findings for a given video URL are stable; mirror
     # the image cache TTL. Lower if videos at a stable URL get re-edited.
     VISION_VIDEO_CACHE_TTL_HOURS: int = 168
-    EVIDENCE_MAX_EXTERNAL_RETRIEVALS: int = 5
     EVIDENCE_MAX_EXTERNAL_CLAIMS: int = 10
     # Starting synthesis cap; revisit after production telemetry shows typical
     # candidate distributions and prompt lengths.

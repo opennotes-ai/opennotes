@@ -461,7 +461,7 @@ async def test_fetch_grounded_candidates_keeps_successes_and_logs_drops(
     settings: Settings,
 ) -> None:
     calls: list[_AgentCall] = []
-    drop_events: list[dict[str, object]] = []
+    telemetry: list[tuple[str, dict[str, object]]] = []
 
     def fake_build_agent(
         _settings: Settings,
@@ -505,8 +505,8 @@ async def test_fetch_grounded_candidates_keeps_successes_and_logs_drops(
         )
 
     def fake_logfire_info(event_name: str, **kwargs: object) -> None:
-        if event_name == "vibecheck.evidence.grounded_url_filter_drop":
-            drop_events.append(kwargs)
+        if event_name.startswith("vibecheck.evidence.grounded_"):
+            telemetry.append((event_name, kwargs))
 
     monkeypatch.setattr(evidence, "build_agent", fake_build_agent)
     monkeypatch.setattr(evidence, "run_vertex_agent_with_retry", fake_run)
@@ -528,12 +528,23 @@ async def test_fetch_grounded_candidates_keeps_successes_and_logs_drops(
         ("vibecheck.claims_evidence_fetch", "fast"),
         ("vibecheck.claims_evidence_fetch", "fast"),
     ]
-    assert drop_events == [
-        {
-            "claim_text": "claim one",
-            "source_ref": "https://example.test/missing",
-            "reason": "not_in_grounded_metadata",
-        }
+    assert telemetry == [
+        (
+            "vibecheck.evidence.grounded_url_filter_drop",
+            {
+                "claim_text": "claim one",
+                "source_ref": "https://example.test/missing",
+                "reason": "not_in_grounded_metadata",
+            },
+        ),
+        (
+            "vibecheck.evidence.grounded_fetch_failed",
+            {"group_size": 1, "error_type": "RuntimeError"},
+        ),
+        (
+            "vibecheck.evidence.grounded_fetch_summary",
+            {"groups_total": 2, "groups_failed": 1},
+        ),
     ]
 
 
@@ -607,6 +618,140 @@ async def test_dedupe_and_sanity_check_candidates_returns_subset(
             "statement": "Supported fact.",
             "source_ref": "https://example.test/source/",
         }
+    ]
+
+
+@pytest.mark.asyncio
+async def test_dedupe_and_sanity_check_candidates_caps_prompt_and_logs_length(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    prompts: list[str] = []
+    telemetry: list[tuple[str, dict[str, object]]] = []
+
+    def fake_build_agent(
+        _settings: Settings,
+        *,
+        output_type: type[Any],
+        system_prompt: str | None = None,
+        name: str | None = None,
+        tier: str = "fast",
+        builtin_tools: list[Any] | tuple[Any, ...] = (),
+        **_kwargs: object,
+    ) -> _AgentCall:
+        del system_prompt
+        return _AgentCall(
+            name=name or "",
+            tier=tier,
+            output_type=output_type,
+            builtin_tools=list(builtin_tools),
+        )
+
+    async def fake_run(_agent: _AgentCall, prompt: str) -> _RunResult:
+        prompts.append(prompt)
+        return _RunResult(evidence._SanityResponse(candidates=[]))
+
+    def fake_logfire_info(event_name: str, **kwargs: object) -> None:
+        telemetry.append((event_name, kwargs))
+
+    monkeypatch.setattr(evidence, "build_agent", fake_build_agent)
+    monkeypatch.setattr(evidence, "run_vertex_agent_with_retry", fake_run)
+    monkeypatch.setattr(evidence.logfire, "info", fake_logfire_info)
+
+    candidates = [
+        evidence._ExternalEvidenceCandidate(
+            canonical_text=f"claim {claim_index}",
+            statement=f"candidate {claim_index}-{candidate_index}",
+            source_ref=f"https://example.test/{claim_index}/{candidate_index}",
+        )
+        for claim_index in range(3)
+        for candidate_index in range(10)
+    ]
+
+    clean = await evidence._dedupe_and_sanity_check_candidates(
+        candidates,
+        Settings(EVIDENCE_SYNTHESIS_CANDIDATE_CAP=5),
+    )
+
+    assert clean == []
+    assert len(prompts) == 1
+    assert prompts[0].count("canonical_text:") == 5
+    assert telemetry == [
+        (
+            "vibecheck.evidence.sanity_prompt_length",
+            {"prompt_length": len(prompts[0])},
+        )
+    ]
+
+
+@pytest.mark.asyncio
+async def test_dedupe_and_sanity_check_candidates_keeps_unique_candidates_when_sanity_fails(
+    monkeypatch: pytest.MonkeyPatch,
+    settings: Settings,
+) -> None:
+    telemetry: list[tuple[str, dict[str, object]]] = []
+
+    def fake_build_agent(
+        _settings: Settings,
+        *,
+        output_type: type[Any],
+        system_prompt: str | None = None,
+        name: str | None = None,
+        tier: str = "fast",
+        builtin_tools: list[Any] | tuple[Any, ...] = (),
+        **_kwargs: object,
+    ) -> _AgentCall:
+        del system_prompt
+        return _AgentCall(
+            name=name or "",
+            tier=tier,
+            output_type=output_type,
+            builtin_tools=list(builtin_tools),
+        )
+
+    async def fake_run(_agent: _AgentCall, _prompt: str) -> _RunResult:
+        raise ValueError("sanity model unavailable")
+
+    def fake_logfire_info(event_name: str, **kwargs: object) -> None:
+        telemetry.append((event_name, kwargs))
+
+    monkeypatch.setattr(evidence, "build_agent", fake_build_agent)
+    monkeypatch.setattr(evidence, "run_vertex_agent_with_retry", fake_run)
+    monkeypatch.setattr(evidence.logfire, "info", fake_logfire_info)
+
+    candidates = [
+        evidence._ExternalEvidenceCandidate(
+            canonical_text="claim one",
+            statement="Supported fact.",
+            source_ref="https://example.test/source",
+        ),
+        evidence._ExternalEvidenceCandidate(
+            canonical_text="claim one",
+            statement="Supported fact.",
+            source_ref="https://example.test/source/",
+        ),
+        evidence._ExternalEvidenceCandidate(
+            canonical_text="claim two",
+            statement="Another fact.",
+            source_ref="https://example.test/other",
+        ),
+    ]
+
+    clean = await evidence._dedupe_and_sanity_check_candidates(candidates, settings)
+
+    assert [candidate.model_dump() for candidate in clean] == [
+        {
+            "canonical_text": "claim one",
+            "statement": "Supported fact.",
+            "source_ref": "https://example.test/source",
+        },
+        {
+            "canonical_text": "claim two",
+            "statement": "Another fact.",
+            "source_ref": "https://example.test/other",
+        },
+    ]
+    assert [event for event in telemetry if event[0] == "vibecheck.evidence.sanity_failed"] == [
+        ("vibecheck.evidence.sanity_failed", {"error_type": "ValueError"})
     ]
 
 
@@ -689,6 +834,56 @@ async def test_curate_supporting_facts_uses_one_synthesis_call_and_external_kind
     assert [event_name for event_name, _kwargs in telemetry] == [
         "vibecheck.evidence.synthesis_prompt_length",
         "vibecheck.evidence.synthesis_curate",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_curate_supporting_facts_returns_empty_when_curate_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    telemetry: list[tuple[str, dict[str, object]]] = []
+
+    def fake_build_agent(
+        _settings: Settings,
+        *,
+        output_type: type[Any],
+        system_prompt: str | None = None,
+        name: str | None = None,
+        tier: str = "fast",
+        builtin_tools: list[Any] | tuple[Any, ...] = (),
+        **_kwargs: object,
+    ) -> _AgentCall:
+        del system_prompt
+        return _AgentCall(
+            name=name or "",
+            tier=tier,
+            output_type=output_type,
+            builtin_tools=list(builtin_tools),
+        )
+
+    async def fake_run(_agent: _AgentCall, _prompt: str) -> _RunResult:
+        raise RuntimeError("curate model unavailable")
+
+    def fake_logfire_info(event_name: str, **kwargs: object) -> None:
+        telemetry.append((event_name, kwargs))
+
+    monkeypatch.setattr(evidence, "build_agent", fake_build_agent)
+    monkeypatch.setattr(evidence, "run_vertex_agent_with_retry", fake_run)
+    monkeypatch.setattr(evidence.logfire, "info", fake_logfire_info)
+
+    candidates = [
+        evidence._ExternalEvidenceCandidate(
+            canonical_text="claim one",
+            statement="Supported fact.",
+            source_ref="https://example.test/source",
+        )
+    ]
+
+    facts = await evidence._curate_supporting_facts_synthesis(candidates, Settings())
+
+    assert facts == {}
+    assert [event for event in telemetry if event[0] == "vibecheck.evidence.curate_failed"] == [
+        ("vibecheck.evidence.curate_failed", {"error_type": "RuntimeError"})
     ]
 
 
