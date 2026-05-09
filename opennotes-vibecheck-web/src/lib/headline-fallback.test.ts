@@ -73,6 +73,13 @@ describe("buildHeadlineFallback", () => {
     });
     expect(safe.text).toBe("example.com — Title — appears clean");
 
+    const mild = buildHeadlineFallback({
+      url: "https://example.com/article",
+      pageTitle: "Title",
+      recommendation: recommendation("mild"),
+    });
+    expect(mild.text).toBe("example.com — Title — has minor concerns");
+
     const caution = buildHeadlineFallback({
       url: "https://example.com/article",
       pageTitle: "Title",
