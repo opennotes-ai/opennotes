@@ -40,6 +40,9 @@ export interface SectionGroupProps {
   sections: SlugToSlots;
   render: Partial<Record<SectionSlugLiteral, (data: unknown) => JSX.Element>>;
   defaultOpen?: boolean;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  highlighted?: boolean;
   summary?: {
     label?: string;
     content: () => JSX.Element;
@@ -245,8 +248,10 @@ export default function SectionGroup(props: SectionGroupProps): JSX.Element {
   let announcedJobId = props.jobId ?? "";
   let initializedAnnouncements = false;
   const [announcement, setAnnouncement] = createSignal("");
-  const [groupOpen, setGroupOpen] = createSignal(props.defaultOpen !== false);
+  const [internalGroupOpen, setInternalGroupOpen] = createSignal(props.defaultOpen !== false);
   const [userToggledGroupOpen, setUserToggledGroupOpen] = createSignal(false);
+  // Only honour props.open when a setter is also provided; without a setter the click falls through to internal toggle.
+  const groupOpen = () => (props.open !== undefined && props.onOpenChange ? props.open : internalGroupOpen());
   const labelSlug = slugify(props.label);
   const groupBodyId = `section-group-body-${labelSlug}`;
   const sectionToggleLabel = () =>
@@ -264,6 +269,7 @@ export default function SectionGroup(props: SectionGroupProps): JSX.Element {
       initializedAnnouncements = false;
       setAnnouncement("");
       setUserToggledGroupOpen(false);
+      setInternalGroupOpen(props.defaultOpen !== false);
     }
 
     for (const slug of props.slugs) {
@@ -308,13 +314,15 @@ export default function SectionGroup(props: SectionGroupProps): JSX.Element {
 
   createEffect(() => {
     if (userToggledGroupOpen()) return;
-    setGroupOpen(props.defaultOpen !== false);
+    setInternalGroupOpen(props.defaultOpen !== false);
   });
 
   return (
     <section
       data-testid={`section-group-${props.label}`}
-      class="flex flex-col gap-4 rounded-lg bg-card p-4 text-card-foreground shadow-sm"
+      data-section-group={props.label}
+      data-highlighted={props.highlighted ? "true" : undefined}
+      class={`flex flex-col gap-4 rounded-lg bg-card p-4 text-card-foreground shadow-sm${props.highlighted ? " weather-pulse" : ""}`}
     >
       <header class="flex items-start justify-between gap-2">
         <div class="flex min-w-0 items-center gap-1.5">
@@ -327,8 +335,12 @@ export default function SectionGroup(props: SectionGroupProps): JSX.Element {
               aria-expanded={groupOpen() ? "true" : "false"}
               aria-controls={groupBodyId}
               onClick={() => {
-                setUserToggledGroupOpen(true);
-                setGroupOpen((current) => !current);
+                if (props.onOpenChange) {
+                  props.onOpenChange(!groupOpen());
+                } else {
+                  setUserToggledGroupOpen(true);
+                  setInternalGroupOpen((prev) => !prev);
+                }
               }}
               class="flex h-auto min-w-0 items-center gap-1.5 -mx-2 px-2 py-1 rounded-md text-sm font-semibold text-foreground hover:bg-muted/60 dark:hover:bg-muted hover:text-foreground"
             >

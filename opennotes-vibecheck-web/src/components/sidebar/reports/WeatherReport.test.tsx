@@ -1,5 +1,5 @@
 import { createSignal } from "solid-js";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   cleanup,
   fireEvent,
@@ -9,8 +9,23 @@ import {
 } from "@solidjs/testing-library";
 import type { components } from "~/lib/generated-types";
 import WeatherReport from "./WeatherReport";
+import { SidebarStoreProvider, useSidebarStore } from "../SidebarStoreProvider";
+import * as weatherLabels from "~/lib/weather-labels";
 
 type WeatherReportData = components["schemas"]["WeatherReport"];
+type SafetyRecommendation = components["schemas"]["SafetyRecommendation"];
+
+function makeSafetyRecommendation(
+  overrides: Partial<SafetyRecommendation> = {},
+): SafetyRecommendation {
+  return {
+    level: "safe",
+    rationale: "All moderation checks passed without any flagged content.",
+    top_signals: ["web_risk: clean", "image_moderation: no_issues"],
+    unavailable_inputs: [],
+    ...overrides,
+  };
+}
 
 function makeWeatherReport(
   overrides: Partial<WeatherReportData> = {},
@@ -69,14 +84,19 @@ describe("WeatherReport", () => {
     ).toBe(true);
   });
 
-  it("uses Table primitive with three TableRows in TableBody and no TableHeader", () => {
-    render(() => <WeatherReport report={makeWeatherReport()} />);
+  it("uses Table primitive with four TableRows in TableBody and no TableHeader", () => {
+    render(() => (
+      <WeatherReport
+        report={makeWeatherReport()}
+        safetyRecommendation={makeSafetyRecommendation()}
+      />
+    ));
 
     const root = screen.getByTestId("weather-report");
     const tbody = root.querySelector('[data-slot="table-body"]');
     expect(tbody).not.toBeNull();
     const rows = tbody!.querySelectorAll('[data-slot="table-row"]');
-    expect(rows.length).toBe(3);
+    expect(rows.length).toBe(4);
     expect(root.querySelector('[data-slot="table-header"]')).toBeNull();
   });
 
@@ -197,10 +217,15 @@ describe("WeatherReport", () => {
   });
 
   it("does not put role=button or aria-haspopup on the underlying TableRow", () => {
-    render(() => <WeatherReport report={makeWeatherReport()} />);
+    render(() => (
+      <WeatherReport
+        report={makeWeatherReport()}
+        safetyRecommendation={makeSafetyRecommendation()}
+      />
+    ));
     const root = screen.getByTestId("weather-report");
     const rows = root.querySelectorAll('[data-slot="table-row"]');
-    expect(rows.length).toBe(3);
+    expect(rows.length).toBe(4);
     for (const row of Array.from(rows)) {
       expect(row.getAttribute("role")).not.toBe("button");
       expect(row.getAttribute("aria-haspopup")).toBeNull();
@@ -228,7 +253,7 @@ describe("WeatherReport", () => {
     const tbody = root.querySelector('[data-slot="table-body"]');
     expect(tbody).not.toBeNull();
     const rows = tbody!.querySelectorAll('[data-slot="table-row"]');
-    expect(rows.length).toBe(3);
+    expect(rows.length).toBe(4);
   });
 
   it("renders the literal axis labels (TRUTH, RELEVANCE, SENTIMENT) statically in the loading state", () => {
@@ -481,6 +506,28 @@ describe("WeatherReport", () => {
     expect(className).not.toMatch(/(?:^|\s)bg-/);
   });
 
+  it("primary axis values apply per-label color classes (first_person, on_topic, neutral)", () => {
+    render(() => (
+      <WeatherReport
+        report={makeWeatherReport({
+          truth: { label: "first_person", logprob: null, alternatives: [] },
+          relevance: { label: "on_topic", logprob: null, alternatives: [] },
+          sentiment: { label: "neutral", logprob: null, alternatives: [] },
+        })}
+      />
+    ));
+
+    expect(screen.getByTestId("weather-truth-value").className).toContain(
+      "text-indigo-700",
+    );
+    expect(screen.getByTestId("weather-relevance-value").className).toContain(
+      "text-lime-700",
+    );
+    expect(screen.getByTestId("weather-sentiment-value").className).toContain(
+      "text-slate-700",
+    );
+  });
+
   it("renders confidence at text-xs (no arbitrary text-[11px])", () => {
     render(() => (
       <WeatherReport
@@ -676,5 +723,402 @@ describe("WeatherReport", () => {
     expect(firstCellWordsWrapper).not.toBeNull();
     const secondCellLabel = cells[1].getAttribute("data-testid");
     expect(secondCellLabel).toBe("weather-skeleton-truth-label");
+  });
+
+  describe("Safety row", () => {
+    it("renders 4 rows with Safety first when safetyRecommendation is provided", () => {
+      render(() => (
+        <WeatherReport
+          report={makeWeatherReport()}
+          safetyRecommendation={makeSafetyRecommendation()}
+        />
+      ));
+
+      const root = screen.getByTestId("weather-report");
+      const tbody = root.querySelector('[data-slot="table-body"]');
+      expect(tbody).not.toBeNull();
+      const rows = Array.from(tbody!.querySelectorAll('[data-slot="table-row"]'));
+      expect(rows.length).toBe(4);
+
+      const firstRow = rows[0];
+      expect(firstRow.querySelector('[data-testid="weather-axis-card-safety"]')).not.toBeNull();
+    });
+
+    it("Safety pill uses emerald-soft variant (text-emerald-800) when level=safe", () => {
+      render(() => (
+        <WeatherReport
+          report={makeWeatherReport()}
+          safetyRecommendation={makeSafetyRecommendation({ level: "safe" })}
+        />
+      ));
+
+      const safetyValue = screen.getByTestId("weather-safety-value");
+      expect(safetyValue.className).toContain("text-emerald-800");
+    });
+
+    it("Safety pill uses rose-strong variant (bg-rose-700) when level=unsafe", () => {
+      render(() => (
+        <WeatherReport
+          report={makeWeatherReport()}
+          safetyRecommendation={makeSafetyRecommendation({ level: "unsafe" })}
+        />
+      ));
+
+      const safetyValue = screen.getByTestId("weather-safety-value");
+      expect(safetyValue.className).toContain("bg-rose-700");
+    });
+
+    it("Safety pill uses yellow variant (text-yellow family) when level=mild", () => {
+      render(() => (
+        <WeatherReport
+          report={makeWeatherReport()}
+          safetyRecommendation={makeSafetyRecommendation({ level: "mild" })}
+        />
+      ));
+
+      const safetyValue = screen.getByTestId("weather-safety-value");
+      expect(weatherLabels.formatWeatherVariant("mild")).toBe("yellow");
+      expect(safetyValue.className).toMatch(/text-yellow/);
+    });
+
+    it("Safety popover for mild renders JSON expansion text", async () => {
+      render(() => (
+        <WeatherReport
+          report={makeWeatherReport()}
+          safetyRecommendation={makeSafetyRecommendation({ level: "mild" })}
+        />
+      ));
+
+      const safetyTrigger = screen.getByTestId("weather-axis-card-safety");
+      fireEvent.click(safetyTrigger);
+      await screen.findByText(/minor concerns surfaced/i);
+    });
+
+    it("Safety pill uses amber-strong variant (text-amber-800 family) when level=caution", () => {
+      render(() => (
+        <WeatherReport
+          report={makeWeatherReport()}
+          safetyRecommendation={makeSafetyRecommendation({ level: "caution" })}
+        />
+      ));
+
+      const safetyValue = screen.getByTestId("weather-safety-value");
+      expect(weatherLabels.formatWeatherVariant("caution")).toBe("amber-strong");
+      expect(safetyValue.className).toMatch(/text-amber-800/);
+    });
+
+    it("Safety popover for caution renders JSON expansion text", async () => {
+      render(() => (
+        <WeatherReport
+          report={makeWeatherReport()}
+          safetyRecommendation={makeSafetyRecommendation({ level: "caution" })}
+        />
+      ));
+
+      const safetyTrigger = screen.getByTestId("weather-axis-card-safety");
+      fireEvent.click(safetyTrigger);
+      await screen.findByText(/multiple signals worth a careful read/i);
+    });
+
+    it("Safety popover expansion comes from labels JSON when level is known", async () => {
+      render(() => (
+        <WeatherReport
+          report={makeWeatherReport()}
+          safetyRecommendation={makeSafetyRecommendation({ level: "safe" })}
+        />
+      ));
+
+      const safetyTrigger = screen.getByTestId("weather-axis-card-safety");
+      fireEvent.click(safetyTrigger);
+      await screen.findByText(/moderation, web risk, image, and video checks/i);
+    });
+
+    it("Safety popover falls back to recommendation.rationale when formatWeatherExpansion returns null", async () => {
+      const spy = vi
+        .spyOn(weatherLabels, "formatWeatherExpansion")
+        .mockReturnValueOnce(null);
+
+      render(() => (
+        <WeatherReport
+          report={makeWeatherReport()}
+          safetyRecommendation={makeSafetyRecommendation({
+            level: "safe",
+            rationale: "Fallback rationale text shown here.",
+          })}
+        />
+      ));
+
+      const safetyTrigger = screen.getByTestId("weather-axis-card-safety");
+      fireEvent.click(safetyTrigger);
+      await screen.findByText(/fallback rationale text shown here/i);
+
+      spy.mockRestore();
+    });
+
+    it("Safety row renders 'Not available' when safetyRecommendation is null", () => {
+      render(() => (
+        <WeatherReport
+          report={makeWeatherReport()}
+          safetyRecommendation={null}
+        />
+      ));
+
+      const safetyValue = screen.getByTestId("weather-safety-value");
+      expect(safetyValue.textContent).toContain("Not available");
+    });
+
+    it("Safety row renders 'Not available' when safetyRecommendation is not provided", () => {
+      render(() => <WeatherReport report={makeWeatherReport()} />);
+
+      const safetyValue = screen.getByTestId("weather-safety-value");
+      expect(safetyValue.textContent).toContain("Not available");
+    });
+
+    it("skeleton includes a safety row", () => {
+      render(() => <WeatherReport report={null} />);
+
+      expect(screen.getByTestId("weather-skeleton-safety")).toBeDefined();
+      expect(screen.getByTestId("weather-skeleton-safety-label").textContent).toBe("SAFETY");
+    });
+  });
+
+  describe("Focus button", () => {
+    it("Focus button is hidden when rendered without SidebarStoreProvider", async () => {
+      render(() => <WeatherReport report={makeWeatherReport()} />);
+      const truthTrigger = screen.getByTestId("weather-axis-card-truth");
+      fireEvent.click(truthTrigger);
+      await screen.findByText(/direct, lived experience/i);
+      expect(screen.queryByTestId("weather-truth-focus")).toBeNull();
+    });
+
+    it("Focus button is visible when rendered inside SidebarStoreProvider", async () => {
+      render(() => (
+        <SidebarStoreProvider>
+          <WeatherReport report={makeWeatherReport()} />
+        </SidebarStoreProvider>
+      ));
+      const truthTrigger = screen.getByTestId("weather-axis-card-truth");
+      fireEvent.click(truthTrigger);
+      await screen.findByText(/direct, lived experience/i);
+      expect(screen.getByTestId("weather-truth-focus")).toBeDefined();
+    });
+
+    it("clicking Focus button closes the popover and calls isolateGroup for truth axis", async () => {
+      let capturedStore: ReturnType<typeof useSidebarStore> = null;
+      function StoreProbe() {
+        capturedStore = useSidebarStore();
+        return null;
+      }
+      render(() => (
+        <SidebarStoreProvider>
+          <StoreProbe />
+          <WeatherReport
+            report={makeWeatherReport()}
+            safetyRecommendation={makeSafetyRecommendation()}
+          />
+        </SidebarStoreProvider>
+      ));
+
+      const truthTrigger = screen.getByTestId("weather-axis-card-truth");
+      fireEvent.click(truthTrigger);
+      await screen.findByText(/direct, lived experience/i);
+      expect(capturedStore!.highlightedGroup()).toBe("Facts/claims");
+
+      const focusBtn = screen.getByTestId("weather-truth-focus");
+      fireEvent.click(focusBtn);
+
+      await waitFor(() => {
+        expect(screen.queryByText(/direct, lived experience/i)).toBeNull();
+      });
+
+      expect(capturedStore!.isOpen("Facts/claims")).toBe(true);
+      expect(capturedStore!.isOpen("Safety")).toBe(false);
+      expect(capturedStore!.isOpen("Tone/dynamics")).toBe(false);
+      expect(capturedStore!.isOpen("Opinions/sentiments")).toBe(false);
+    });
+
+    it("clicking Focus button returns focus to the trigger element", async () => {
+      render(() => (
+        <SidebarStoreProvider>
+          <WeatherReport report={makeWeatherReport()} />
+        </SidebarStoreProvider>
+      ));
+
+      const truthTrigger = screen.getByTestId("weather-axis-card-truth");
+      fireEvent.click(truthTrigger);
+      await screen.findByText(/direct, lived experience/i);
+
+      const focusBtn = screen.getByTestId("weather-truth-focus");
+      focusBtn.focus();
+      fireEvent.click(focusBtn);
+
+      await waitFor(() => {
+        expect(screen.queryByText(/direct, lived experience/i)).toBeNull();
+      });
+
+      await waitFor(() => {
+        expect(document.activeElement).toBe(truthTrigger);
+      });
+    });
+
+    it("Focus button has aria-label='Focus this section'", async () => {
+      render(() => (
+        <SidebarStoreProvider>
+          <WeatherReport report={makeWeatherReport()} />
+        </SidebarStoreProvider>
+      ));
+      const truthTrigger = screen.getByTestId("weather-axis-card-truth");
+      fireEvent.click(truthTrigger);
+      await screen.findByText(/direct, lived experience/i);
+      const focusBtn = screen.getByTestId("weather-truth-focus");
+      expect(focusBtn.getAttribute("aria-label")).toBe("Focus this section");
+    });
+  });
+
+  describe("Highlight cleanup", () => {
+    it("clicking the Focus button clears highlightedGroup immediately (focus-button leak fix)", async () => {
+      let capturedStore: ReturnType<typeof useSidebarStore> = null;
+      function StoreProbe() {
+        capturedStore = useSidebarStore();
+        return null;
+      }
+      render(() => (
+        <SidebarStoreProvider>
+          <StoreProbe />
+          <WeatherReport
+            report={makeWeatherReport()}
+            safetyRecommendation={makeSafetyRecommendation()}
+          />
+        </SidebarStoreProvider>
+      ));
+
+      const truthTrigger = screen.getByTestId("weather-axis-card-truth");
+      fireEvent.click(truthTrigger);
+
+      await waitFor(() => {
+        expect(capturedStore!.highlightedGroup()).toBe("Facts/claims");
+      });
+
+      const focusBtn = screen.getByTestId("weather-truth-focus");
+      fireEvent.click(focusBtn);
+
+      expect(capturedStore!.highlightedGroup()).toBeNull();
+    });
+
+    it("switching directly from one axis popover to another leaves highlightedGroup on the new axis, never null (axis-switch race fix)", async () => {
+      let capturedStore: ReturnType<typeof useSidebarStore> = null;
+      function StoreProbe() {
+        capturedStore = useSidebarStore();
+        return null;
+      }
+      render(() => (
+        <SidebarStoreProvider>
+          <StoreProbe />
+          <WeatherReport
+            report={makeWeatherReport()}
+            safetyRecommendation={makeSafetyRecommendation()}
+          />
+        </SidebarStoreProvider>
+      ));
+
+      const truthTrigger = screen.getByTestId("weather-axis-card-truth");
+      fireEvent.click(truthTrigger);
+
+      await waitFor(() => {
+        expect(capturedStore!.highlightedGroup()).toBe("Facts/claims");
+      });
+
+      const sentimentTrigger = screen.getByTestId("weather-axis-card-sentiment");
+      fireEvent.click(sentimentTrigger);
+
+      await waitFor(() => {
+        expect(capturedStore!.highlightedGroup()).toBe("Opinions/sentiments");
+      });
+    });
+  });
+
+  describe("SidebarStore integration", () => {
+    it("opening a truth popover inside SidebarStoreProvider sets highlightedGroup to Facts/claims", async () => {
+      let capturedStore: ReturnType<typeof useSidebarStore> = null;
+      function StoreProbe() {
+        capturedStore = useSidebarStore();
+        return null;
+      }
+      render(() => (
+        <SidebarStoreProvider>
+          <StoreProbe />
+          <WeatherReport
+            report={makeWeatherReport()}
+            safetyRecommendation={makeSafetyRecommendation()}
+          />
+        </SidebarStoreProvider>
+      ));
+
+      expect(capturedStore).not.toBeNull();
+      expect(capturedStore!.highlightedGroup()).toBeNull();
+
+      const truthTrigger = screen.getByTestId("weather-axis-card-truth");
+      fireEvent.click(truthTrigger);
+
+      await waitFor(() => {
+        expect(capturedStore!.highlightedGroup()).toBe("Facts/claims");
+      });
+
+      fireEvent.keyDown(document.activeElement ?? document.body, { key: "Escape" });
+
+      await waitFor(() => {
+        expect(capturedStore!.highlightedGroup()).toBeNull();
+      });
+    });
+
+    it("opening a relevance popover inside SidebarStoreProvider sets highlightedGroup to Tone/dynamics", async () => {
+      let capturedStore: ReturnType<typeof useSidebarStore> = null;
+      function StoreProbe() {
+        capturedStore = useSidebarStore();
+        return null;
+      }
+      render(() => (
+        <SidebarStoreProvider>
+          <StoreProbe />
+          <WeatherReport
+            report={makeWeatherReport()}
+            safetyRecommendation={makeSafetyRecommendation()}
+          />
+        </SidebarStoreProvider>
+      ));
+
+      const relevanceTrigger = screen.getByTestId("weather-axis-card-relevance");
+      fireEvent.click(relevanceTrigger);
+
+      await waitFor(() => {
+        expect(capturedStore!.highlightedGroup()).toBe("Tone/dynamics");
+      });
+
+      fireEvent.keyDown(document.activeElement ?? document.body, { key: "Escape" });
+
+      await waitFor(() => {
+        expect(capturedStore!.highlightedGroup()).toBeNull();
+      });
+    });
+
+    it("AxisRow without a provider does not throw and popover still opens", async () => {
+      expect(() => {
+        render(() => <WeatherReport report={makeWeatherReport()} />);
+      }).not.toThrow();
+
+      const truthTrigger = screen.getByTestId("weather-axis-card-truth");
+      fireEvent.click(truthTrigger);
+      await screen.findByText(/direct, lived experience/i);
+    });
+
+    it("useSidebarStore returns null outside the provider", () => {
+      let capturedStore: ReturnType<typeof useSidebarStore> = undefined as unknown as null;
+      function Probe() {
+        capturedStore = useSidebarStore();
+        return null;
+      }
+      render(() => <Probe />);
+      expect(capturedStore).toBeNull();
+    });
   });
 });

@@ -59,6 +59,22 @@
   to { width: 100%; }
 }
 
+[data-section-group][data-highlighted="true"] {
+  background-color: color-mix(in srgb, var(--color-ring) 14%, var(--color-card));
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  @keyframes weather-pulse-kf {
+    0%   { background-color: color-mix(in srgb, var(--color-ring) 8%, var(--color-card)); }
+    100% { background-color: color-mix(in srgb, var(--color-ring) 18%, var(--color-card)); }
+  }
+
+  .weather-pulse {
+    animation: weather-pulse-kf 1400ms ease-in-out infinite alternate;
+    will-change: background-color;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .skeleton-pulse {
     animation: none;

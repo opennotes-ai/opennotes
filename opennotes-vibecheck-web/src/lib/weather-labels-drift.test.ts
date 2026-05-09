@@ -3,7 +3,7 @@ import type { components } from "~/lib/generated-types";
 import weatherLabelsJson from "./weather-labels.json";
 import { VARIANT_CLASSES } from "./weather-labels";
 
-const VALID_AXES = new Set(["truth", "relevance", "sentiment"] as const);
+const VALID_AXES = new Set(["truth", "relevance", "sentiment", "safety"] as const);
 const VALID_VARIANTS = new Set(Object.keys(VARIANT_CLASSES));
 
 type WeatherAxisTruth = components["schemas"]["WeatherAxisTruth"];
@@ -44,10 +44,18 @@ const SENTIMENT_SLUGS = [
   "oppositional",
 ] as const;
 
+const SAFETY_SLUGS = [
+  "safe",
+  "mild",
+  "caution",
+  "unsafe",
+] as const;
+
 const ALL_EXPECTED_SLUGS: ReadonlyArray<string> = [
   ...TRUTH_SLUGS,
   ...RELEVANCE_SLUGS,
   ...SENTIMENT_SLUGS,
+  ...SAFETY_SLUGS,
 ];
 
 const JSON_KEYS = Object.keys(weatherLabelsJson);
@@ -117,7 +125,7 @@ describe("weather-labels JSON drift guard", () => {
     for (const [slug, entry] of Object.entries(weatherLabelsJson)) {
       const axis = (entry as Record<string, unknown>)["axis"] as string;
       expect(
-        VALID_AXES.has(axis as "truth" | "relevance" | "sentiment"),
+        VALID_AXES.has(axis as "truth" | "relevance" | "sentiment" | "safety"),
         `JSON entry "${slug}" has invalid axis "${axis}" — must be one of: ${[...VALID_AXES].join(", ")}`,
       ).toBe(true);
     }
