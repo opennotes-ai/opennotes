@@ -98,6 +98,36 @@ describe("SidebarStoreProvider", () => {
     });
   });
 
+  it("when collapseAllByDefault transitions false→true, all groups are closed", async () => {
+    const [collapse, setCollapse] = createSignal(false);
+    let capturedStore: ReturnType<typeof useSidebarStore> | undefined;
+
+    const TestConsumer = () => {
+      capturedStore = useSidebarStore();
+      return null;
+    };
+
+    render(() => (
+      <SidebarStoreProvider opts={{ collapseAllByDefault: collapse() }}>
+        <TestConsumer />
+      </SidebarStoreProvider>
+    ));
+
+    expect(capturedStore!.isOpen("Safety")).toBe(true);
+    expect(capturedStore!.isOpen("Tone/dynamics")).toBe(true);
+    expect(capturedStore!.isOpen("Facts/claims")).toBe(true);
+    expect(capturedStore!.isOpen("Opinions/sentiments")).toBe(true);
+
+    setCollapse(true);
+
+    await waitFor(() => {
+      expect(capturedStore!.isOpen("Safety")).toBe(false);
+      expect(capturedStore!.isOpen("Tone/dynamics")).toBe(false);
+      expect(capturedStore!.isOpen("Facts/claims")).toBe(false);
+      expect(capturedStore!.isOpen("Opinions/sentiments")).toBe(false);
+    });
+  });
+
   it("when collapseAllByDefault changes false→true, user group state is preserved (no over-correction)", async () => {
     const [collapse, setCollapse] = createSignal(false);
     let capturedStore: ReturnType<typeof useSidebarStore> | undefined;

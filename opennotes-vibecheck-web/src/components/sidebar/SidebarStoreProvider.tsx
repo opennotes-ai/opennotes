@@ -1,5 +1,5 @@
 import { createContext, createEffect, useContext, type JSX } from "solid-js";
-import { createSidebarStore, type SidebarStore } from "./sidebar-store";
+import { createSidebarStore, ALL_LABELS, type SidebarStore } from "./sidebar-store";
 
 export interface SidebarStoreProviderOpts {
   collapseAllByDefault?: boolean;
@@ -22,6 +22,16 @@ export function SidebarStoreProvider(props: {
       store.reset();
     }
     return currentJobId;
+  }, undefined);
+
+  createEffect<boolean | undefined>((prev) => {
+    const current = props.opts?.collapseAllByDefault;
+    if (prev !== undefined && current === true && prev !== true) {
+      for (const label of ALL_LABELS) {
+        store.setOpen(label, false);
+      }
+    }
+    return current;
   }, undefined);
 
   return (

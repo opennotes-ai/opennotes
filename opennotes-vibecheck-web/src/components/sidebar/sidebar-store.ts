@@ -1,6 +1,6 @@
 import { createSignal } from "solid-js";
 
-const ALL_LABELS = [
+export const ALL_LABELS = [
   "Safety",
   "Tone/dynamics",
   "Facts/claims",
