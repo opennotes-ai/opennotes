@@ -442,7 +442,8 @@ describe("WeatherReport", () => {
       expect(hintSpan!.className).toContain("text-xs");
     }
 
-    const cells = root.querySelectorAll('[data-slot="table-cell"]');
+    const cells = root.querySelectorAll("td");
+    expect(cells.length).toBeGreaterThan(0);
     for (const cell of Array.from(cells)) {
       expect(cell.getAttribute("aria-hidden")).toBeNull();
     }
