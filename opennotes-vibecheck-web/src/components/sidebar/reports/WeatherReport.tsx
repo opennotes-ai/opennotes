@@ -1,4 +1,5 @@
-import { For, Show, type JSX } from "solid-js";
+import { For, Show, createSignal, type JSX } from "solid-js";
+import { ChevronRight } from "lucide-solid";
 import { Card, CardContent } from "@opennotes/ui/components/ui/card";
 import { WeatherHelpButton, TOOLTIP_COPY } from "./WeatherHelpButton";
 import {
@@ -20,7 +21,7 @@ import {
   formatWeatherLabel,
 } from "~/lib/weather-labels";
 import { useSidebarStore } from "../SidebarStoreProvider";
-import type { SectionGroupLabel } from "../sidebar-store";
+import type { SectionGroupLabel, SidebarStore } from "../sidebar-store";
 
 type WeatherReportData = components["schemas"]["WeatherReport"];
 type WeatherAxisTruth = components["schemas"]["WeatherAxisTruth"];
@@ -103,8 +104,15 @@ interface AxisRowProps {
   safetyRecommendation?: SafetyRecommendation | null;
 }
 
-function SafetyAxisRow(props: { safetyRecommendation: SafetyRecommendation | null | undefined; heading: string; onPopoverOpenChange?: (open: boolean) => void }): JSX.Element {
+function SafetyAxisRow(props: {
+  safetyRecommendation: SafetyRecommendation | null | undefined;
+  heading: string;
+  store: SidebarStore | null;
+  targetGroup: SectionGroupLabel;
+}): JSX.Element {
   const recommendation = () => props.safetyRecommendation ?? null;
+  const [popoverOpen, setPopoverOpen] = createSignal(false);
+  let triggerRef: HTMLButtonElement | undefined;
 
   const expansion = (): string | null => {
     const rec = recommendation();
@@ -116,6 +124,12 @@ function SafetyAxisRow(props: { safetyRecommendation: SafetyRecommendation | nul
     const rec = recommendation();
     if (!rec) return props.heading;
     return `${props.heading}: ${formatWeatherLabel(rec.level)}`;
+  };
+
+  const onFocusClick = () => {
+    setPopoverOpen(false);
+    props.store?.isolateGroup(props.targetGroup);
+    queueMicrotask(() => triggerRef?.focus());
   };
 
   return (
@@ -146,9 +160,17 @@ function SafetyAxisRow(props: { safetyRecommendation: SafetyRecommendation | nul
         {(rec) => (
           <td colSpan={2} class="p-0">
             <div class="flex w-full items-center gap-3 px-2 py-1.5">
-              <Popover placement="bottom-start" onOpenChange={props.onPopoverOpenChange}>
+              <Popover
+                placement="bottom-start"
+                open={popoverOpen()}
+                onOpenChange={(o) => {
+                  setPopoverOpen(o);
+                  props.store?.setHighlightedGroup(o ? props.targetGroup : null);
+                }}
+              >
                 <PopoverTrigger
                   as="button"
+                  ref={(el: HTMLButtonElement) => { triggerRef = el; }}
                   type="button"
                   data-testid="weather-axis-card-safety"
                   aria-label={ariaLabel()}
@@ -161,8 +183,21 @@ function SafetyAxisRow(props: { safetyRecommendation: SafetyRecommendation | nul
                     {formatWeatherLabel(rec().level)}
                   </span>
                 </PopoverTrigger>
-                <PopoverContent class="max-w-xs text-sm leading-snug">
-                  {expansion() ?? props.heading}
+                <PopoverContent class="max-w-xs text-sm leading-snug pr-2 pb-2">
+                  <div class="flex items-end gap-2">
+                    <p class="flex-1">{expansion() ?? props.heading}</p>
+                    <Show when={props.store !== null}>
+                      <button
+                        type="button"
+                        data-testid="weather-safety-focus"
+                        aria-label="Focus this section"
+                        class="shrink-0 rounded-md p-1 text-muted-foreground hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                        onClick={onFocusClick}
+                      >
+                        <ChevronRight class="size-4" aria-hidden="true" />
+                      </button>
+                    </Show>
+                  </div>
                 </PopoverContent>
               </Popover>
               <span
@@ -181,18 +216,21 @@ function SafetyAxisRow(props: { safetyRecommendation: SafetyRecommendation | nul
 
 function AxisRow(props: AxisRowProps): JSX.Element {
   const store = useSidebarStore();
+  const targetGroup = AXIS_TO_GROUP[props.axis.axisType];
 
   if (props.axis.axisType === "safety") {
     return (
       <SafetyAxisRow
         safetyRecommendation={props.safetyRecommendation}
         heading={props.axis.heading}
-        onPopoverOpenChange={(open) => {
-          store?.setHighlightedGroup(open ? AXIS_TO_GROUP[props.axis.axisType] : null);
-        }}
+        store={store}
+        targetGroup={targetGroup}
       />
     );
   }
+
+  const [popoverOpen, setPopoverOpen] = createSignal(false);
+  let triggerRef: HTMLButtonElement | undefined;
 
   const axisData = (): WeatherAxis | null => {
     switch (props.axis.axisType) {
@@ -228,8 +266,10 @@ function AxisRow(props: AxisRowProps): JSX.Element {
   const placement = () =>
     props.axis.axisType === "sentiment" ? "top-start" : "bottom-start";
 
-  const handleOpenChange = (open: boolean) => {
-    store?.setHighlightedGroup(open ? AXIS_TO_GROUP[props.axis.axisType] : null);
+  const onFocusClick = () => {
+    setPopoverOpen(false);
+    store?.isolateGroup(targetGroup);
+    queueMicrotask(() => triggerRef?.focus());
   };
 
   return (
@@ -260,9 +300,17 @@ function AxisRow(props: AxisRowProps): JSX.Element {
         {(data) => (
           <td colSpan={2} class="p-0">
             <div class="flex w-full items-center gap-3 px-2 py-1.5">
-              <Popover placement={placement()} onOpenChange={handleOpenChange}>
+              <Popover
+                placement={placement()}
+                open={popoverOpen()}
+                onOpenChange={(o) => {
+                  setPopoverOpen(o);
+                  store?.setHighlightedGroup(o ? targetGroup : null);
+                }}
+              >
                 <PopoverTrigger
                   as="button"
+                  ref={(el: HTMLButtonElement) => { triggerRef = el; }}
                   type="button"
                   data-testid={`weather-axis-card-${props.axis.axisType}`}
                   aria-label={ariaLabel()}
@@ -283,8 +331,21 @@ function AxisRow(props: AxisRowProps): JSX.Element {
                     </span>
                   </Show>
                 </PopoverTrigger>
-                <PopoverContent class="max-w-xs text-sm leading-snug">
-                  {expansion() ?? TOOLTIP_COPY[props.axis.axisType as keyof typeof TOOLTIP_COPY]}
+                <PopoverContent class="max-w-xs text-sm leading-snug pr-2 pb-2">
+                  <div class="flex items-end gap-2">
+                    <p class="flex-1">{expansion() ?? TOOLTIP_COPY[props.axis.axisType as keyof typeof TOOLTIP_COPY]}</p>
+                    <Show when={store !== null}>
+                      <button
+                        type="button"
+                        data-testid={`weather-${props.axis.axisType}-focus`}
+                        aria-label="Focus this section"
+                        class="shrink-0 rounded-md p-1 text-muted-foreground hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                        onClick={onFocusClick}
+                      >
+                        <ChevronRight class="size-4" aria-hidden="true" />
+                      </button>
+                    </Show>
+                  </div>
                 </PopoverContent>
               </Popover>
               <Show when={alternatives().length > 0}>

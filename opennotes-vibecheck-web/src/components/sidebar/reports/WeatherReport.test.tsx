@@ -801,6 +801,99 @@ describe("WeatherReport", () => {
     });
   });
 
+  describe("Focus button", () => {
+    it("Focus button is hidden when rendered without SidebarStoreProvider", async () => {
+      render(() => <WeatherReport report={makeWeatherReport()} />);
+      const truthTrigger = screen.getByTestId("weather-axis-card-truth");
+      fireEvent.click(truthTrigger);
+      await screen.findByText(/direct, lived experience/i);
+      expect(screen.queryByTestId("weather-truth-focus")).toBeNull();
+    });
+
+    it("Focus button is visible when rendered inside SidebarStoreProvider", async () => {
+      render(() => (
+        <SidebarStoreProvider>
+          <WeatherReport report={makeWeatherReport()} />
+        </SidebarStoreProvider>
+      ));
+      const truthTrigger = screen.getByTestId("weather-axis-card-truth");
+      fireEvent.click(truthTrigger);
+      await screen.findByText(/direct, lived experience/i);
+      expect(screen.getByTestId("weather-truth-focus")).toBeDefined();
+    });
+
+    it("clicking Focus button closes the popover and calls isolateGroup for truth axis", async () => {
+      let capturedStore: ReturnType<typeof useSidebarStore> = null;
+      function StoreProbe() {
+        capturedStore = useSidebarStore();
+        return null;
+      }
+      render(() => (
+        <SidebarStoreProvider>
+          <StoreProbe />
+          <WeatherReport
+            report={makeWeatherReport()}
+            safetyRecommendation={makeSafetyRecommendation()}
+          />
+        </SidebarStoreProvider>
+      ));
+
+      const truthTrigger = screen.getByTestId("weather-axis-card-truth");
+      fireEvent.click(truthTrigger);
+      await screen.findByText(/direct, lived experience/i);
+      expect(capturedStore!.highlightedGroup()).toBe("Facts/claims");
+
+      const focusBtn = screen.getByTestId("weather-truth-focus");
+      fireEvent.click(focusBtn);
+
+      await waitFor(() => {
+        expect(screen.queryByText(/direct, lived experience/i)).toBeNull();
+      });
+
+      expect(capturedStore!.isOpen("Facts/claims")).toBe(true);
+      expect(capturedStore!.isOpen("Safety")).toBe(false);
+      expect(capturedStore!.isOpen("Tone/dynamics")).toBe(false);
+      expect(capturedStore!.isOpen("Opinions/sentiments")).toBe(false);
+    });
+
+    it("clicking Focus button returns focus to the trigger element", async () => {
+      render(() => (
+        <SidebarStoreProvider>
+          <WeatherReport report={makeWeatherReport()} />
+        </SidebarStoreProvider>
+      ));
+
+      const truthTrigger = screen.getByTestId("weather-axis-card-truth");
+      fireEvent.click(truthTrigger);
+      await screen.findByText(/direct, lived experience/i);
+
+      const focusBtn = screen.getByTestId("weather-truth-focus");
+      focusBtn.focus();
+      fireEvent.click(focusBtn);
+
+      await waitFor(() => {
+        expect(screen.queryByText(/direct, lived experience/i)).toBeNull();
+      });
+
+      await waitFor(() => {
+        expect(document.activeElement).toBe(truthTrigger);
+      });
+    });
+
+    it("Focus button has aria-label='Focus this section'", async () => {
+      render(() => (
+        <SidebarStoreProvider>
+          <WeatherReport report={makeWeatherReport()} />
+        </SidebarStoreProvider>
+      ));
+      const truthTrigger = screen.getByTestId("weather-axis-card-truth");
+      fireEvent.click(truthTrigger);
+      await screen.findByText(/direct, lived experience/i);
+      const focusBtn = screen.getByTestId("weather-truth-focus");
+      expect(focusBtn.getAttribute("aria-label")).toBe("Focus this section");
+    });
+  });
+
   describe("SidebarStore integration", () => {
     it("opening a truth popover inside SidebarStoreProvider sets highlightedGroup to Facts/claims", async () => {
       let capturedStore: ReturnType<typeof useSidebarStore> = null;

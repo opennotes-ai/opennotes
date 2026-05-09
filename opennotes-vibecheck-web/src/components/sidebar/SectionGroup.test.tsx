@@ -2424,6 +2424,64 @@ describe("Sidebar (done slots, per-slug reports)", () => {
   });
 });
 
+describe("SectionGroup highlighted prop", () => {
+  it("highlighted=true sets data-highlighted='true' on the outer section element", () => {
+    render(() => (
+      <SectionGroup
+        label="Facts/claims"
+        slugs={["facts_claims__dedup"]}
+        sections={{}}
+        render={{}}
+        highlighted={true}
+      />
+    ));
+    const section = screen.getByTestId("section-group-Facts/claims");
+    expect(section.getAttribute("data-highlighted")).toBe("true");
+  });
+
+  it("highlighted=false does not set data-highlighted on the outer section element", () => {
+    render(() => (
+      <SectionGroup
+        label="Facts/claims"
+        slugs={["facts_claims__dedup"]}
+        sections={{}}
+        render={{}}
+        highlighted={false}
+      />
+    ));
+    const section = screen.getByTestId("section-group-Facts/claims");
+    expect(section.getAttribute("data-highlighted")).toBeNull();
+  });
+
+  it("highlighted=true applies weather-pulse class on the outer section element", () => {
+    render(() => (
+      <SectionGroup
+        label="Facts/claims"
+        slugs={["facts_claims__dedup"]}
+        sections={{}}
+        render={{}}
+        highlighted={true}
+      />
+    ));
+    const section = screen.getByTestId("section-group-Facts/claims");
+    expect(section.classList.contains("weather-pulse")).toBe(true);
+  });
+
+  it("highlighted=false does not apply weather-pulse class", () => {
+    render(() => (
+      <SectionGroup
+        label="Facts/claims"
+        slugs={["facts_claims__dedup"]}
+        sections={{}}
+        render={{}}
+        highlighted={false}
+      />
+    ));
+    const section = screen.getByTestId("section-group-Facts/claims");
+    expect(section.classList.contains("weather-pulse")).toBe(false);
+  });
+});
+
 describe("app.css motion rules", () => {
   it("defines .skeleton-pulse and .section-reveal keyframes", async () => {
     const resolveCss =
@@ -2466,6 +2524,45 @@ describe("app.css motion rules", () => {
     expect(appCss).toMatch(/\.skeleton-pulse-delay-3\b/);
     expect(appCss).toMatch(
       /@media\s*\(prefers-reduced-motion:\s*reduce\)[\s\S]*?\.skeleton-pulse-delay-\d[\s\S]*?animation:\s*none/,
+    );
+  });
+
+  it("defines .weather-pulse keyframe wrapped in prefers-reduced-motion: no-preference", async () => {
+    const resolveCss =
+      Reflect.get(import.meta, "resolve") as
+        | ((url: string) => string | Promise<string>)
+        | undefined;
+    let appCssPath: string | undefined;
+    if (resolveCss) {
+      try {
+        const appCssUrl = await resolveCss("../../app.css");
+        if (appCssUrl.startsWith("file:")) {
+          appCssPath = fileURLToPath(appCssUrl);
+        }
+      } catch {
+        // module runner environments may not support import.meta.resolve.
+      }
+    }
+    if (!appCssPath) {
+      const appCssUrl = new URL("../../app.css", import.meta.url);
+      if (appCssUrl.protocol === "file:") {
+        appCssPath = fileURLToPath(appCssUrl);
+      } else if (appCssUrl.pathname.startsWith("/@fs/")) {
+        appCssPath = decodeURIComponent(appCssUrl.pathname.slice("/@fs/".length));
+      } else if (appCssUrl.pathname.startsWith("/src/")) {
+        const localTestPath = fileURLToPath(import.meta.url);
+        appCssPath = resolvePath(dirname(localTestPath), "../../app.css");
+      }
+    }
+    if (!appCssPath) {
+      throw new Error(`Unable to resolve app.css path from ${import.meta.url}`);
+    }
+
+    const appCss = readFileSync(appCssPath, "utf8");
+    expect(appCss).toMatch(/@keyframes\s+weather-pulse-kf\b/);
+    expect(appCss).toMatch(/\.weather-pulse\b/);
+    expect(appCss).toMatch(
+      /@media\s*\(prefers-reduced-motion:\s*no-preference\)[\s\S]*?\.weather-pulse[\s\S]*?animation:/,
     );
   });
 });
