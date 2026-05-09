@@ -555,8 +555,9 @@ class Settings(BaseSettings):
     )
     LOGFIRE_DBOS_DATASTORE_SAMPLE_RATE: float = Field(
         default=0.0,
-        description="Logfire tail sampling rate for DBOS-worker internal Redis/PostgreSQL spans. "
-        "Capped at 0.01 so DBOS datastore telemetry remains suppressed in Logfire by default.",
+        description="Logfire tail sampling rate for high-volume Redis/PostgreSQL/SQLAlchemy "
+        "datastore spans. Capped at 0.01 so datastore telemetry remains suppressed in Logfire "
+        "by default.",
         ge=0.0,
         le=0.01,
     )
