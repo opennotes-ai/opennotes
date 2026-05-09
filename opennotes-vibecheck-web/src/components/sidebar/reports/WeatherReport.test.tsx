@@ -506,6 +506,28 @@ describe("WeatherReport", () => {
     expect(className).not.toMatch(/(?:^|\s)bg-/);
   });
 
+  it("primary axis values apply per-label color classes (first_person, on_topic, neutral)", () => {
+    render(() => (
+      <WeatherReport
+        report={makeWeatherReport({
+          truth: { label: "first_person", logprob: null, alternatives: [] },
+          relevance: { label: "on_topic", logprob: null, alternatives: [] },
+          sentiment: { label: "neutral", logprob: null, alternatives: [] },
+        })}
+      />
+    ));
+
+    expect(screen.getByTestId("weather-truth-value").className).toContain(
+      "text-indigo-700",
+    );
+    expect(screen.getByTestId("weather-relevance-value").className).toContain(
+      "text-lime-700",
+    );
+    expect(screen.getByTestId("weather-sentiment-value").className).toContain(
+      "text-slate-700",
+    );
+  });
+
   it("renders confidence at text-xs (no arbitrary text-[11px])", () => {
     render(() => (
       <WeatherReport

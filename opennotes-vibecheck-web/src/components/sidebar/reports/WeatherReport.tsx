@@ -328,7 +328,7 @@ function AxisRow(props: AxisRowProps): JSX.Element {
                 >
                   <span
                     data-testid={`weather-${props.axis.axisType}-value`}
-                    class="font-condensed text-lg font-semibold"
+                    class={`font-condensed ${formatWeatherBadgeClass(data().label)}`}
                   >
                     {formatWeatherLabel(data().label)}
                   </span>
