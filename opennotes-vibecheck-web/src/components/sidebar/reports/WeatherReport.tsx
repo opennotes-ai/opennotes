@@ -1,13 +1,7 @@
 import { For, Show, createSignal, type JSX } from "solid-js";
 import { ChevronRight } from "lucide-solid";
-import { Card, CardContent } from "@opennotes/ui/components/ui/card";
 import { WeatherHelpButton, TOOLTIP_COPY } from "./WeatherHelpButton";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableRow,
-} from "@opennotes/ui/components/ui/table";
+import { WeatherSymbol, type SafetyLevel } from "./WeatherSymbol";
 import {
   Popover,
   PopoverContent,
@@ -18,7 +12,7 @@ import type { components } from "~/lib/generated-types";
 import {
   formatWeatherExpansion,
   formatWeatherLabel,
-  formatWeatherTextClass,
+  formatWeatherVariant,
 } from "~/lib/weather-labels";
 import { useSidebarStore } from "../SidebarStoreProvider";
 import type { SectionGroupLabel, SidebarStore } from "../sidebar-store";
@@ -63,23 +57,43 @@ interface AxisDefinition {
 }
 
 const AXES: AxisDefinition[] = [
-  {
-    axisType: "safety",
-    heading: "Safety",
-  },
-  {
-    axisType: "truth",
-    heading: "Truth",
-  },
-  {
-    axisType: "relevance",
-    heading: "Relevance",
-  },
-  {
-    axisType: "sentiment",
-    heading: "Sentiment",
-  },
+  { axisType: "safety",    heading: "Safety" },
+  { axisType: "truth",     heading: "Truth" },
+  { axisType: "relevance", heading: "Relevance" },
+  { axisType: "sentiment", heading: "Sentiment" },
 ];
+
+const VARIANT_HEX: Record<string, string> = {
+  sky:            "#0ea5e9",
+  indigo:         "#6366f1",
+  stone:          "#78716c",
+  emerald:        "#10b981",
+  teal:           "#14b8a6",
+  cyan:           "#06b6d4",
+  lime:           "#84cc16",
+  fuchsia:        "#d946ef",
+  amber:          "#f59e0b",
+  slate:          "#64748b",
+  orange:         "#f97316",
+  violet:         "#8b5cf6",
+  "emerald-soft": "#10b981",
+  yellow:         "#eab308",
+  "amber-strong": "#f59e0b",
+  "rose-strong":  "#e11d48",
+};
+
+function variantHex(label: string): string {
+  const variant = formatWeatherVariant(label);
+  return VARIANT_HEX[variant] ?? "#64748b";
+}
+
+function safetyLevel(rec: SafetyRecommendation | null | undefined): SafetyLevel {
+  const level = rec?.level;
+  if (level === "safe" || level === "mild" || level === "caution" || level === "unsafe") {
+    return level;
+  }
+  return "safe";
+}
 
 function formatLogprobProbability(value: number | null | undefined): string | null {
   if (value == null || !Number.isFinite(value)) {
@@ -134,87 +148,91 @@ function SafetyAxisRow(props: {
   };
 
   return (
-    <TableRow class="group">
+    <div class="pair">
       <Show
         when={recommendation()}
         fallback={
-          <td colSpan={2} class="p-0">
-            <div class="flex w-full items-center justify-between gap-3 px-2 py-1.5">
-              <span class="flex flex-wrap items-baseline gap-2">
-                <span
-                  data-testid="weather-safety-value"
-                  class="font-condensed text-lg font-semibold"
-                >
-                  Not available
-                </span>
-              </span>
-              <span
-                aria-hidden="true"
-                class="cursor-default select-none pr-3 text-xs uppercase tracking-[0.06em] text-muted-foreground/70"
-              >
-                {props.heading}
-              </span>
-            </div>
-          </td>
+          <div class="flex flex-col items-center">
+            <span
+              aria-hidden="true"
+              class="cursor-default select-none text-[0.72rem] uppercase tracking-[0.14em] text-muted-foreground font-condensed font-medium leading-tight"
+            >
+              {props.heading}
+            </span>
+            <span
+              data-testid="weather-safety-value"
+              class="font-serif font-semibold text-[1.05rem] text-foreground leading-snug mt-0.5"
+            >
+              Not available
+            </span>
+          </div>
         }
       >
         {(rec) => (
-          <td colSpan={2} class="p-0">
-            <Popover
-              placement="bottom-start"
-              open={popoverOpen()}
-              onOpenChange={(o) => {
-                setPopoverOpen(o);
-                if (o) {
-                  props.store?.setHighlightedGroup(props.targetGroup);
-                } else if (props.store?.highlightedGroup() === props.targetGroup) {
-                  props.store?.setHighlightedGroup(null);
-                }
-              }}
+          <Popover
+            placement="bottom-start"
+            open={popoverOpen()}
+            onOpenChange={(o) => {
+              setPopoverOpen(o);
+              if (o) {
+                props.store?.setHighlightedGroup(props.targetGroup);
+              } else if (props.store?.highlightedGroup() === props.targetGroup) {
+                props.store?.setHighlightedGroup(null);
+              }
+            }}
+          >
+            <PopoverTrigger
+              as="button"
+              ref={(el: HTMLButtonElement) => { triggerRef = el; }}
+              type="button"
+              data-testid="weather-axis-card-safety"
+              aria-label={ariaLabel()}
+              class="flex flex-col items-center w-full rounded-md hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 px-1 py-0.5"
             >
-              <PopoverTrigger
-                as="button"
-                ref={(el: HTMLButtonElement) => { triggerRef = el; }}
-                type="button"
-                data-testid="weather-axis-card-safety"
-                aria-label={ariaLabel()}
-                class="flex w-full items-center gap-3 px-2 py-1.5 text-left rounded-md hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+              <span
+                aria-hidden="true"
+                class="cursor-default select-none text-[0.72rem] uppercase tracking-[0.14em] text-muted-foreground font-condensed font-medium leading-tight"
               >
-                <span
-                  data-testid="weather-safety-value"
-                  class={formatWeatherTextClass(rec().level) + " font-condensed text-lg font-semibold"}
-                >
-                  {formatWeatherLabel(rec().level)}
-                </span>
-                <span
-                  aria-hidden="true"
-                  class="cursor-default ml-auto pr-3 select-none text-xs uppercase tracking-[0.06em] text-muted-foreground/70"
-                >
-                  {props.heading}
-                </span>
-              </PopoverTrigger>
-              <PopoverContent class="max-w-xs text-sm leading-snug pr-2 pb-2">
-                <div class="flex items-end gap-2">
-                  <p class="flex-1">{expansion() ?? props.heading}</p>
-                  <Show when={props.store !== null}>
-                    <button
-                      type="button"
-                      data-testid="weather-safety-focus"
-                      aria-label="Focus this section"
-                      class="shrink-0 rounded-md p-1 text-muted-foreground hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                      onClick={onFocusClick}
-                    >
-                      <ChevronRight class="size-4" aria-hidden="true" />
-                    </button>
-                  </Show>
-                </div>
-              </PopoverContent>
-            </Popover>
-          </td>
+                {props.heading}
+              </span>
+              <span
+                data-testid="weather-safety-value"
+                class={`font-serif font-semibold text-[1.05rem] leading-snug mt-0.5 ${formatSafetyTextClass(rec().level)}`}
+              >
+                {formatWeatherLabel(rec().level)}
+              </span>
+            </PopoverTrigger>
+            <PopoverContent class="max-w-xs text-sm leading-snug pr-2 pb-2">
+              <div class="flex items-end gap-2">
+                <p class="flex-1">{expansion() ?? props.heading}</p>
+                <Show when={props.store !== null}>
+                  <button
+                    type="button"
+                    data-testid="weather-safety-focus"
+                    aria-label="Focus this section"
+                    class="shrink-0 rounded-md p-1 text-muted-foreground hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    onClick={onFocusClick}
+                  >
+                    <ChevronRight class="size-4" aria-hidden="true" />
+                  </button>
+                </Show>
+              </div>
+            </PopoverContent>
+          </Popover>
         )}
       </Show>
-    </TableRow>
+    </div>
   );
+}
+
+function formatSafetyTextClass(level: string): string {
+  switch (level) {
+    case "safe":    return "text-emerald-700 dark:text-emerald-300";
+    case "mild":    return "text-yellow-700 dark:text-yellow-300";
+    case "caution": return "text-amber-700 dark:text-amber-300";
+    case "unsafe":  return "text-rose-700 dark:text-rose-300";
+    default:        return "text-foreground";
+  }
 }
 
 function AxisRow(props: AxisRowProps): JSX.Element {
@@ -277,164 +295,153 @@ function AxisRow(props: AxisRowProps): JSX.Element {
   };
 
   return (
-    <TableRow class="group">
+    <div class="pair">
       <Show
         when={axisData()}
         fallback={
-          <td colSpan={2} class="p-0">
-            <div class="flex w-full items-center justify-between gap-3 px-2 py-1.5">
-              <span class="flex flex-wrap items-baseline gap-2">
-                <span
-                  data-testid={`weather-${props.axis.axisType}-value`}
-                  class="font-condensed text-lg font-semibold"
-                >
-                  Not available
-                </span>
-              </span>
-              <span
-                aria-hidden="true"
-                class="cursor-default select-none pr-3 text-xs uppercase tracking-[0.06em] text-muted-foreground/70"
-              >
-                {props.axis.heading}
-              </span>
-            </div>
-          </td>
+          <div class="flex flex-col items-center">
+            <span
+              aria-hidden="true"
+              class="cursor-default select-none text-[0.72rem] uppercase tracking-[0.14em] text-muted-foreground font-condensed font-medium leading-tight"
+            >
+              {props.axis.heading}
+            </span>
+            <span
+              data-testid={`weather-${props.axis.axisType}-value`}
+              class="font-serif font-semibold text-[1.05rem] text-foreground leading-snug mt-0.5"
+            >
+              Not available
+            </span>
+          </div>
         }
       >
         {(data) => (
-          <td colSpan={2} class="p-0">
-            <Popover
-              placement={placement()}
-              open={popoverOpen()}
-              onOpenChange={(o) => {
-                setPopoverOpen(o);
-                if (o) {
-                  store?.setHighlightedGroup(targetGroup);
-                } else if (store?.highlightedGroup() === targetGroup) {
-                  store?.setHighlightedGroup(null);
-                }
-              }}
+          <Popover
+            placement={placement()}
+            open={popoverOpen()}
+            onOpenChange={(o) => {
+              setPopoverOpen(o);
+              if (o) {
+                store?.setHighlightedGroup(targetGroup);
+              } else if (store?.highlightedGroup() === targetGroup) {
+                store?.setHighlightedGroup(null);
+              }
+            }}
+          >
+            <PopoverTrigger
+              as="button"
+              ref={(el: HTMLButtonElement) => { triggerRef = el; }}
+              type="button"
+              data-testid={`weather-axis-card-${props.axis.axisType}`}
+              aria-label={ariaLabel()}
+              class="flex flex-col items-center w-full rounded-md hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 px-1 py-0.5"
             >
-              <PopoverTrigger
-                as="button"
-                ref={(el: HTMLButtonElement) => { triggerRef = el; }}
-                type="button"
-                data-testid={`weather-axis-card-${props.axis.axisType}`}
-                aria-label={ariaLabel()}
-                class="flex w-full items-center gap-3 px-2 py-1.5 text-left rounded-md hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+              <span
+                aria-hidden="true"
+                class="cursor-default select-none text-[0.72rem] uppercase tracking-[0.14em] text-muted-foreground font-condensed font-medium leading-tight"
               >
-                <span
-                  data-testid={`weather-${props.axis.axisType}-value`}
-                  class={`font-condensed ${formatWeatherTextClass(data().label)}`}
-                >
-                  {formatWeatherLabel(data().label)}
-                </span>
-                <Show when={confidence() !== null}>
-                  <span
-                    data-testid={`weather-${props.axis.axisType}-confidence`}
-                    class="text-xs text-muted-foreground"
+                {props.axis.heading}
+              </span>
+              <span
+                data-testid={`weather-${props.axis.axisType}-value`}
+                class="font-serif font-semibold text-[1.05rem] text-foreground leading-snug mt-0.5"
+              >
+                {formatWeatherLabel(data().label)}
+              </span>
+            </PopoverTrigger>
+            <Show when={alternatives().length > 0}>
+              <ul
+                data-testid={`weather-${props.axis.axisType}-alternatives`}
+                class="flex flex-wrap gap-1"
+              >
+                <For each={alternatives()}>
+                  {(alternative) => {
+                    const alternativeLabel = formatWeatherLabel(
+                      alternative.label as WeatherAxisLabel,
+                    );
+                    const alternativeConfidence =
+                      formatLogprobProbability(alternative.logprob);
+                    return (
+                      <li class="inline-flex rounded-md bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
+                        {alternativeLabel}
+                        <Show when={alternativeConfidence !== null}>
+                          <span> ({alternativeConfidence})</span>
+                        </Show>
+                      </li>
+                    );
+                  }}
+                </For>
+              </ul>
+            </Show>
+            <PopoverContent class="max-w-xs text-sm leading-snug pr-2 pb-2">
+              <div class="flex items-end gap-2">
+                <p class="flex-1">{expansion() ?? TOOLTIP_COPY[props.axis.axisType as keyof typeof TOOLTIP_COPY]}</p>
+                <Show when={store !== null}>
+                  <button
+                    type="button"
+                    data-testid={`weather-${props.axis.axisType}-focus`}
+                    aria-label="Focus this section"
+                    class="shrink-0 rounded-md p-1 text-muted-foreground hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    onClick={onFocusClick}
                   >
-                    {confidence()}
-                  </span>
+                    <ChevronRight class="size-4" aria-hidden="true" />
+                  </button>
                 </Show>
-                <span
-                  aria-hidden="true"
-                  class="cursor-default ml-auto pr-3 select-none text-xs uppercase tracking-[0.06em] text-muted-foreground/70"
-                >
-                  {props.axis.heading}
-                </span>
-              </PopoverTrigger>
-              <Show when={alternatives().length > 0}>
-                <ul
-                  data-testid={`weather-${props.axis.axisType}-alternatives`}
-                  class="flex flex-wrap gap-1"
-                >
-                  <For each={alternatives()}>
-                    {(alternative) => {
-                      const alternativeLabel = formatWeatherLabel(
-                        alternative.label as WeatherAxisLabel,
-                      );
-                      const alternativeConfidence =
-                        formatLogprobProbability(alternative.logprob);
-                      return (
-                        <li class="inline-flex rounded-md bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
-                          {alternativeLabel}
-                          <Show when={alternativeConfidence !== null}>
-                            <span> ({alternativeConfidence})</span>
-                          </Show>
-                        </li>
-                      );
-                    }}
-                  </For>
-                </ul>
-              </Show>
-              <PopoverContent class="max-w-xs text-sm leading-snug pr-2 pb-2">
-                <div class="flex items-end gap-2">
-                  <p class="flex-1">{expansion() ?? TOOLTIP_COPY[props.axis.axisType as keyof typeof TOOLTIP_COPY]}</p>
-                  <Show when={store !== null}>
-                    <button
-                      type="button"
-                      data-testid={`weather-${props.axis.axisType}-focus`}
-                      aria-label="Focus this section"
-                      class="shrink-0 rounded-md p-1 text-muted-foreground hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                      onClick={onFocusClick}
-                    >
-                      <ChevronRight class="size-4" aria-hidden="true" />
-                    </button>
-                  </Show>
-                </div>
-              </PopoverContent>
-            </Popover>
-          </td>
+              </div>
+            </PopoverContent>
+          </Popover>
         )}
       </Show>
-    </TableRow>
+    </div>
   );
 }
 
-const WORD_SHAPES: Record<AxisType, number[]> = {
-  safety: [56],
-  truth: [80, 56],
+const SKELETON_WORD_SHAPES: Record<AxisType, number[]> = {
+  safety:    [56],
+  truth:     [80, 56],
   relevance: [72, 48],
   sentiment: [64],
 };
 
 function WeatherReportSkeleton(props: { class?: string }): JSX.Element {
   return (
-    <Card
+    <div
       data-testid="weather-report-skeleton"
-      class={`relative border border-border/50 ${props.class ?? ""}`.trim()}
+      class={`relative inline-flex items-center gap-[10px] rounded-[14px] border border-border/50 bg-card px-[22px] py-4 ${props.class ?? ""}`.trim()}
     >
-      <CardContent class="p-2" aria-hidden="true">
-        <Table>
-          <TableBody>
-            <For each={AXES}>
-              {(axis) => (
-                <TableRow data-testid={`weather-skeleton-${axis.axisType}`}>
-                  <TableCell class="w-full px-2 py-1.5">
-                    <div
-                      data-testid={`weather-skeleton-${axis.axisType}-words`}
-                      class="flex items-center gap-1.5"
-                    >
-                      <For each={WORD_SHAPES[axis.axisType]}>
-                        {(w) => <Skeleton class="h-4 rounded bg-muted-foreground/25" style={{ width: `${w}px` }} />}
-                      </For>
-                    </div>
-                  </TableCell>
-                  <TableCell
-                    data-testid={`weather-skeleton-${axis.axisType}-label`}
-                    class="whitespace-nowrap pr-3 text-xs font-semibold uppercase tracking-[0.06em] text-muted-foreground/70 text-right"
-                  >
-                    {axis.heading.toUpperCase()}
-                  </TableCell>
-                </TableRow>
-              )}
-            </For>
-          </TableBody>
-        </Table>
-      </CardContent>
+      <div class="flex-none flex items-center justify-center" style="width:128px;height:128px;">
+        <Skeleton class="rounded-full" style="width:128px;height:128px;" />
+      </div>
+      <div aria-hidden="true" class="flex flex-col gap-[14px] text-center min-w-[180px]">
+        <For each={AXES}>
+          {(axis) => (
+            <div
+              data-testid={`weather-skeleton-${axis.axisType}`}
+              data-slot="table-row"
+              class="flex flex-col items-center"
+            >
+              <span
+                data-testid={`weather-skeleton-${axis.axisType}-label`}
+                data-slot="table-cell"
+                class="text-[0.72rem] uppercase tracking-[0.14em] text-muted-foreground/70 font-condensed font-medium"
+              >
+                {axis.heading.toUpperCase()}
+              </span>
+              <div
+                data-testid={`weather-skeleton-${axis.axisType}-words`}
+                data-slot="table-cell"
+                class="flex items-center gap-1.5 mt-0.5"
+              >
+                <For each={SKELETON_WORD_SHAPES[axis.axisType]}>
+                  {(w) => <Skeleton class="h-4 rounded bg-muted-foreground/25" style={{ width: `${w}px` }} />}
+                </For>
+              </div>
+            </div>
+          )}
+        </For>
+      </div>
       <WeatherHelpButton />
-    </Card>
+    </div>
   );
 }
 
@@ -444,26 +451,51 @@ export default function WeatherReport(props: WeatherReportProps): JSX.Element {
       when={props.report}
       fallback={<WeatherReportSkeleton class={props.class} />}
     >
-      {(report) => (
-        <Card data-testid="weather-report" class={`relative border border-border/50 pb-8 ${props.class ?? ""}`.trim()}>
-          <CardContent class="p-2">
-            <Table>
-              <TableBody>
-                <For each={AXES}>
-                  {(axis) => (
-                    <AxisRow
-                      report={report()}
-                      axis={axis}
-                      safetyRecommendation={props.safetyRecommendation}
-                    />
-                  )}
-                </For>
-              </TableBody>
-            </Table>
-          </CardContent>
-          <WeatherHelpButton />
-        </Card>
-      )}
+      {(report) => {
+        const truthLabel = () => report().truth?.label ?? "";
+        const relevanceLabel = () => report().relevance?.label ?? "";
+        const sentimentLabel = () => report().sentiment?.label ?? "";
+
+        const lobeColors = (): [string, string, string] => [
+          variantHex(truthLabel()),
+          variantHex(relevanceLabel()),
+          variantHex(sentimentLabel()),
+        ];
+
+        const level = () => safetyLevel(props.safetyRecommendation);
+
+        return (
+          <div
+            data-testid="weather-report"
+            class={`relative inline-flex items-center gap-[10px] rounded-[14px] border border-border/50 bg-card px-[22px] py-4 pb-8 ${props.class ?? ""}`.trim()}
+          >
+            <div
+              class="flex-none flex items-center justify-center"
+              data-testid="weather-symbol-cell"
+              style="width:clamp(80px,12.8vw,128px)"
+            >
+              <WeatherSymbol
+                level={level()}
+                lobeColors={lobeColors()}
+                size="100%"
+                class="block w-full h-auto"
+              />
+            </div>
+            <div class="flex flex-col gap-[14px] text-center min-w-[120px]">
+              <For each={AXES}>
+                {(axis) => (
+                  <AxisRow
+                    report={report()}
+                    axis={axis}
+                    safetyRecommendation={props.safetyRecommendation}
+                  />
+                )}
+              </For>
+            </div>
+            <WeatherHelpButton />
+          </div>
+        );
+      }}
     </Show>
   );
 }
