@@ -13,6 +13,8 @@ import {
   formatWeatherExpansion,
   formatWeatherLabel,
   formatWeatherVariant,
+  getVariantHex,
+  AXIS_DEFINITIONS,
 } from "~/lib/weather-labels";
 import { useSidebarStore } from "../SidebarStoreProvider";
 import type { SectionGroupLabel, SidebarStore } from "../sidebar-store";
@@ -57,34 +59,15 @@ interface AxisDefinition {
 }
 
 const AXES: AxisDefinition[] = [
-  { axisType: "safety",    heading: "Safety" },
-  { axisType: "truth",     heading: "Truth" },
-  { axisType: "relevance", heading: "Relevance" },
-  { axisType: "sentiment", heading: "Sentiment" },
+  { axisType: "safety",    heading: AXIS_DEFINITIONS.safety.heading },
+  { axisType: "truth",     heading: AXIS_DEFINITIONS.truth.heading },
+  { axisType: "relevance", heading: AXIS_DEFINITIONS.relevance.heading },
+  { axisType: "sentiment", heading: AXIS_DEFINITIONS.sentiment.heading },
 ];
-
-const VARIANT_HEX: Record<string, string> = {
-  sky:            "#0ea5e9",
-  indigo:         "#6366f1",
-  stone:          "#78716c",
-  emerald:        "#10b981",
-  teal:           "#14b8a6",
-  cyan:           "#06b6d4",
-  lime:           "#84cc16",
-  fuchsia:        "#d946ef",
-  amber:          "#f59e0b",
-  slate:          "#64748b",
-  orange:         "#f97316",
-  violet:         "#8b5cf6",
-  "emerald-soft": "#10b981",
-  yellow:         "#eab308",
-  "amber-strong": "#f59e0b",
-  "rose-strong":  "#e11d48",
-};
 
 function variantHex(label: string): string {
   const variant = formatWeatherVariant(label);
-  return VARIANT_HEX[variant] ?? "#64748b";
+  return getVariantHex(variant);
 }
 
 function safetyLevel(rec: SafetyRecommendation | null | undefined): SafetyLevel {

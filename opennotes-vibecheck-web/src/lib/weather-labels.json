@@ -16,5 +16,31 @@
   "safe":         { "axis": "safety",    "label": "Safe",                 "variant": "emerald-soft",  "expansion": "Moderation, web risk, image, and video checks all came back clean." },
   "mild":         { "axis": "safety",    "label": "Mild",                 "variant": "yellow",        "expansion": "Minor concerns surfaced — review the Safety section for context." },
   "caution":      { "axis": "safety",    "label": "Caution",              "variant": "amber-strong",  "expansion": "Multiple signals worth a careful read — see the Safety section." },
-  "unsafe":       { "axis": "safety",    "label": "Unsafe",               "variant": "rose-strong",   "expansion": "Strong signals of harmful content — open the Safety section for details." }
+  "unsafe":       { "axis": "safety",    "label": "Unsafe",               "variant": "rose-strong",   "expansion": "Strong signals of harmful content — open the Safety section for details." },
+
+  "variant_hex_colors": {
+    "sky":            "#0ea5e9",
+    "indigo":         "#6366f1",
+    "stone":          "#78716c",
+    "emerald":        "#10b981",
+    "teal":           "#14b8a6",
+    "cyan":           "#06b6d4",
+    "lime":           "#84cc16",
+    "fuchsia":        "#d946ef",
+    "amber":          "#f59e0b",
+    "slate":          "#64748b",
+    "orange":         "#f97316",
+    "violet":         "#8b5cf6",
+    "emerald-soft":   "#10b981",
+    "yellow":         "#eab308",
+    "amber-strong":   "#f59e0b",
+    "rose-strong":    "#e11d48"
+  },
+
+  "axis_definitions": {
+    "truth":     { "heading": "Truth",     "description": "Whether participants are speaking from evidence, direct experience, or hearsay." },
+    "relevance": { "heading": "Relevance", "description": "How closely the discussion stays on the subject of the source." },
+    "sentiment": { "heading": "Sentiment", "description": "The emotional register of the discussion." },
+    "safety":    { "heading": "Safety",    "description": "Moderation signals including web risk, image, video, and content checks." }
+  }
 }
