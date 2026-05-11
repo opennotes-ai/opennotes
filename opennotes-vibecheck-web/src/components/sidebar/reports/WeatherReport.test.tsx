@@ -951,7 +951,7 @@ describe("WeatherReport", () => {
       expect(firstPair.querySelector('[data-testid="weather-axis-card-safety"]')).not.toBeNull();
     });
 
-    it("Safety value uses text-emerald class when level=safe", () => {
+    it("Safety value uses text-foreground (neutral, same as other axes) for level=safe", () => {
       render(() => (
         <WeatherReport
           report={makeWeatherReport()}
@@ -960,11 +960,12 @@ describe("WeatherReport", () => {
       ));
 
       const safetyValue = screen.getByTestId("weather-safety-value");
-      expect(safetyValue.className).toContain("text-emerald");
+      expect(safetyValue.className).toContain("text-foreground");
+      expect(safetyValue.className).not.toMatch(/text-emerald/);
       expect(safetyValue.className).not.toMatch(/(?:^|\s)bg-/);
     });
 
-    it("Safety value uses text-rose class when level=unsafe", () => {
+    it("Safety value uses text-foreground (neutral, same as other axes) for level=unsafe", () => {
       render(() => (
         <WeatherReport
           report={makeWeatherReport()}
@@ -973,11 +974,12 @@ describe("WeatherReport", () => {
       ));
 
       const safetyValue = screen.getByTestId("weather-safety-value");
-      expect(safetyValue.className).toContain("text-rose");
+      expect(safetyValue.className).toContain("text-foreground");
+      expect(safetyValue.className).not.toMatch(/text-rose/);
       expect(safetyValue.className).not.toMatch(/(?:^|\s)bg-/);
     });
 
-    it("Safety value uses text-yellow class when level=mild", () => {
+    it("Safety value uses text-foreground (neutral, same as other axes) for level=mild", () => {
       render(() => (
         <WeatherReport
           report={makeWeatherReport()}
@@ -986,8 +988,8 @@ describe("WeatherReport", () => {
       ));
 
       const safetyValue = screen.getByTestId("weather-safety-value");
-      expect(weatherLabels.formatWeatherVariant("mild")).toBe("yellow");
-      expect(safetyValue.className).toMatch(/text-yellow/);
+      expect(safetyValue.className).toContain("text-foreground");
+      expect(safetyValue.className).not.toMatch(/text-yellow/);
       expect(safetyValue.className).not.toMatch(/(?:^|\s)bg-/);
     });
 
@@ -1004,7 +1006,7 @@ describe("WeatherReport", () => {
       await screen.findByText(/minor concerns surfaced/i);
     });
 
-    it("Safety value uses text-amber class when level=caution", () => {
+    it("Safety value uses text-foreground (neutral, same as other axes) for level=caution", () => {
       render(() => (
         <WeatherReport
           report={makeWeatherReport()}
@@ -1013,8 +1015,8 @@ describe("WeatherReport", () => {
       ));
 
       const safetyValue = screen.getByTestId("weather-safety-value");
-      expect(weatherLabels.formatWeatherVariant("caution")).toBe("amber-strong");
-      expect(safetyValue.className).toMatch(/text-amber/);
+      expect(safetyValue.className).toContain("text-foreground");
+      expect(safetyValue.className).not.toMatch(/text-amber/);
       expect(safetyValue.className).not.toMatch(/(?:^|\s)bg-/);
     });
 

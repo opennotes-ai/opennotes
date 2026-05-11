@@ -197,7 +197,7 @@ function SafetyAxisRow(props: {
               </span>
               <span
                 data-testid="weather-safety-value"
-                class={`font-serif font-semibold text-[1.05rem] leading-snug mt-0.5 ${formatSafetyTextClass(rec().level)}`}
+                class="font-serif font-semibold text-[1.05rem] text-foreground leading-snug mt-0.5"
               >
                 {formatWeatherLabel(rec().level)}
               </span>
@@ -225,15 +225,6 @@ function SafetyAxisRow(props: {
   );
 }
 
-function formatSafetyTextClass(level: string): string {
-  switch (level) {
-    case "safe":    return "text-emerald-700 dark:text-emerald-300";
-    case "mild":    return "text-yellow-700 dark:text-yellow-300";
-    case "caution": return "text-amber-700 dark:text-amber-300";
-    case "unsafe":  return "text-rose-700 dark:text-rose-300";
-    default:        return "text-foreground";
-  }
-}
 
 function AxisRow(props: AxisRowProps): JSX.Element {
   const store = useSidebarStore();
