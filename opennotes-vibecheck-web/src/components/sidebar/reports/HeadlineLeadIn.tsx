@@ -29,9 +29,9 @@ function HeadlineSummarySkeleton(): JSX.Element {
         class="space-y-2"
         aria-hidden="true"
       >
-        <Skeleton class="h-4 w-full" />
-        <Skeleton class="h-4 w-11/12" />
-        <Skeleton class="h-4 w-4/5" />
+        <Skeleton class="h-4 w-full bg-muted-foreground/15" />
+        <Skeleton class="h-4 w-11/12 bg-muted-foreground/15" />
+        <Skeleton class="h-4 w-4/5 bg-muted-foreground/15" />
       </section>
     </Card>
   );

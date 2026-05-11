@@ -227,6 +227,62 @@ describe("HeadlineLeadIn weather-column collapse", () => {
   });
 });
 
+describe("HeadlineLeadIn skeleton visibility (TASK-1605)", () => {
+  it("renders both headline and weather skeleton testids when both skeleton flags are set", () => {
+    render(() => (
+      <HeadlineLeadIn
+        headline={null}
+        weatherReport={null}
+        showHeadlineSkeleton
+        showWeatherSkeleton
+      />
+    ));
+    expect(screen.getByTestId("headline-summary-skeleton")).toBeDefined();
+    expect(screen.getByTestId("weather-report-skeleton")).toBeDefined();
+  });
+
+  it("headline skeleton bars use a higher-contrast class than bg-muted alone (bg-muted-foreground/15)", () => {
+    render(() => (
+      <HeadlineLeadIn
+        headline={null}
+        weatherReport={null}
+        showHeadlineSkeleton
+      />
+    ));
+    const skeleton = screen.getByTestId("headline-summary-skeleton");
+    const bars = skeleton.querySelectorAll("[data-opennotes-skeleton]");
+    expect(bars.length).toBeGreaterThanOrEqual(2);
+    bars.forEach((bar) => {
+      const cls = bar.getAttribute("class") ?? "";
+      expect(cls).toMatch(/bg-muted-foreground\/15/);
+    });
+  });
+
+  it("weather skeleton bars use a higher-contrast class than bg-muted alone (bg-muted-foreground/15)", () => {
+    render(() => (
+      <HeadlineLeadIn
+        headline={null}
+        weatherReport={null}
+        showWeatherSkeleton
+        showHeadlineSkeleton
+      />
+    ));
+    const wordsCells = [
+      screen.getByTestId("weather-skeleton-truth-words"),
+      screen.getByTestId("weather-skeleton-relevance-words"),
+      screen.getByTestId("weather-skeleton-sentiment-words"),
+    ];
+    for (const cell of wordsCells) {
+      const skeletons = cell.querySelectorAll("[data-opennotes-skeleton]");
+      expect(skeletons.length).toBeGreaterThanOrEqual(1);
+      skeletons.forEach((bar) => {
+        const cls = bar.getAttribute("class") ?? "";
+        expect(cls).toMatch(/bg-muted-foreground\/15/);
+      });
+    }
+  });
+});
+
 describe("HeadlineLeadIn feedback bell card anchoring", () => {
   it("headline-summary-chrome card has relative pb-8 pr-8 (bell anchor classes)", () => {
     render(() => (

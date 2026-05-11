@@ -421,7 +421,7 @@ function WeatherReportSkeleton(props: { class?: string }): JSX.Element {
                       class="flex items-center gap-1.5"
                     >
                       <For each={WORD_SHAPES[axis.axisType]}>
-                        {(w) => <Skeleton class="h-4 rounded" style={{ width: `${w}px` }} />}
+                        {(w) => <Skeleton class="h-4 rounded bg-muted-foreground/15" style={{ width: `${w}px` }} />}
                       </For>
                     </div>
                   </TableCell>
