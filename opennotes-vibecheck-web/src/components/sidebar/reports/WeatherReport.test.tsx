@@ -725,6 +725,19 @@ describe("WeatherReport", () => {
     expect(secondCellLabel).toBe("weather-skeleton-truth-label");
   });
 
+  it("outer card has pb-8 but NOT pr-8 (help button has bottom padding only)", () => {
+    render(() => <WeatherReport report={makeWeatherReport()} />);
+    const root = screen.getByTestId("weather-report");
+    expect(root.className).toContain("pb-8");
+    expect(root.className).not.toContain("pr-8");
+  });
+
+  it("skeleton outer card does NOT have pr-8", () => {
+    render(() => <WeatherReport report={null} />);
+    const root = screen.getByTestId("weather-report-skeleton");
+    expect(root.className).not.toContain("pr-8");
+  });
+
   describe("Safety row", () => {
     it("renders 4 rows with Safety first when safetyRecommendation is provided", () => {
       render(() => (
