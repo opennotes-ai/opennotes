@@ -1334,4 +1334,46 @@ describe("WeatherReport", () => {
       expect(capturedStore).toBeNull();
     });
   });
+
+  describe("Responsive sizing contract (AC11 — 320px fit)", () => {
+    it("populated symbol cell uses clamp(80px,12.8vw,128px) inline style", () => {
+      render(() => (
+        <WeatherReport
+          report={makeWeatherReport()}
+          safetyRecommendation={makeSafetyRecommendation()}
+        />
+      ));
+      const symbolCell = screen.getByTestId("weather-symbol-cell");
+      expect(symbolCell.getAttribute("style")).toContain("clamp(80px,12.8vw,128px)");
+    });
+
+    it("skeleton symbol cell uses clamp(80px,12.8vw,128px) inline style (same as populated)", () => {
+      render(() => <WeatherReport report={null} />);
+      const skeletonRoot = screen.getByTestId("weather-report-skeleton");
+      const symbolCell = skeletonRoot.querySelector('[data-testid="weather-skeleton-symbol-cell"]');
+      expect(symbolCell).not.toBeNull();
+      expect(symbolCell?.getAttribute("style")).toContain("clamp(80px,12.8vw,128px)");
+    });
+
+    it("populated axis stack uses min-w-[120px]", () => {
+      render(() => (
+        <WeatherReport
+          report={makeWeatherReport()}
+          safetyRecommendation={makeSafetyRecommendation()}
+        />
+      ));
+      const root = screen.getByTestId("weather-report");
+      const axisStack = root.querySelector('[data-testid="weather-axis-stack"]');
+      expect(axisStack).not.toBeNull();
+      expect(axisStack?.className).toContain("min-w-[120px]");
+    });
+
+    it("skeleton axis stack uses min-w-[120px] (same as populated, no width jump)", () => {
+      render(() => <WeatherReport report={null} />);
+      const root = screen.getByTestId("weather-report-skeleton");
+      const axisStack = root.querySelector('[data-testid="weather-skeleton-axis-stack"]');
+      expect(axisStack).not.toBeNull();
+      expect(axisStack?.className).toContain("min-w-[120px]");
+    });
+  });
 });

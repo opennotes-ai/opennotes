@@ -400,10 +400,14 @@ function WeatherReportSkeleton(props: { class?: string }): JSX.Element {
       data-testid="weather-report-skeleton"
       class={`relative inline-flex items-center gap-[10px] rounded-[14px] border border-border/50 bg-card px-[22px] py-4 ${props.class ?? ""}`.trim()}
     >
-      <div class="flex-none flex items-center justify-center" style="width:128px;height:128px;">
-        <Skeleton class="rounded-full" style="width:128px;height:128px;" />
+      <div
+        data-testid="weather-skeleton-symbol-cell"
+        class="flex-none flex items-center justify-center"
+        style="width:clamp(80px,12.8vw,128px)"
+      >
+        <Skeleton class="rounded-full" style="width:clamp(80px,12.8vw,128px);height:clamp(80px,12.8vw,128px);" />
       </div>
-      <div aria-hidden="true" class="flex flex-col gap-[14px] text-center min-w-[180px]">
+      <div aria-hidden="true" data-testid="weather-skeleton-axis-stack" class="flex flex-col gap-[14px] text-center min-w-[120px]">
         <For each={AXES}>
           {(axis) => (
             <div
@@ -472,7 +476,7 @@ export default function WeatherReport(props: WeatherReportProps): JSX.Element {
                 class="block w-full h-auto"
               />
             </div>
-            <div class="flex flex-col gap-[14px] text-center min-w-[120px]">
+            <div data-testid="weather-axis-stack" class="flex flex-col gap-[14px] text-center min-w-[120px]">
               <For each={AXES}>
                 {(axis) => (
                   <AxisRow
