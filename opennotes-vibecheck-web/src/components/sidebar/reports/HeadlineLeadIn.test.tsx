@@ -254,7 +254,7 @@ describe("HeadlineLeadIn skeleton visibility (TASK-1605)", () => {
     expect(bars.length).toBeGreaterThanOrEqual(2);
     bars.forEach((bar) => {
       const cls = bar.getAttribute("class") ?? "";
-      expect(cls).toMatch(/bg-muted-foreground\/15/);
+      expect(cls).toMatch(/bg-muted-foreground\/25/);
     });
   });
 
@@ -277,7 +277,7 @@ describe("HeadlineLeadIn skeleton visibility (TASK-1605)", () => {
       expect(skeletons.length).toBeGreaterThanOrEqual(1);
       skeletons.forEach((bar) => {
         const cls = bar.getAttribute("class") ?? "";
-        expect(cls).toMatch(/bg-muted-foreground\/15/);
+        expect(cls).toMatch(/bg-muted-foreground\/25/);
       });
     }
   });
