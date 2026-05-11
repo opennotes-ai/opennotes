@@ -382,6 +382,7 @@ class RecentAnalysis(BaseModel):
     )
     headline_summary: str | None = None
     weather_report: WeatherReport | None = None
+    safety_recommendation: SafetyRecommendation | None = None
     completed_at: datetime
 
 

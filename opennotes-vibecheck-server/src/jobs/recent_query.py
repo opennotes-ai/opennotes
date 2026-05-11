@@ -40,6 +40,7 @@ from uuid import UUID
 
 from pydantic import ValidationError
 
+from src.analyses.safety._schemas import SafetyRecommendation
 from src.analyses.schemas import RecentAnalysis
 from src.analyses.synthesis._weather_schemas import WeatherReport
 from src.utils.url_security import InvalidURL, validate_public_http_url
@@ -85,6 +86,7 @@ SELECT
     j.preview_description,
     j.sidebar_payload->'headline'->>'text' AS headline_summary_text,
     j.sidebar_payload->'weather_report' AS weather_report_json,
+    j.sidebar_payload->'safety'->'recommendation' AS safety_recommendation_json,
     j.sections,
     j.status,
     j.page_title,
@@ -249,6 +251,31 @@ def _weather_report_from_row(value: Any, *, job_id: UUID) -> WeatherReport | Non
         return None
 
 
+def _safety_recommendation_from_row(
+    value: Any, *, job_id: UUID
+) -> SafetyRecommendation | None:
+    """Parse a safety recommendation JSONB column, tolerating schema drift.
+
+    Pre-existing rows may carry safety payloads from older label sets. A
+    raised ValidationError here would 500 the gallery for one bad row, so
+    log and degrade to None instead — the caller still surfaces the row
+    without a safety recommendation strip.
+    """
+    if value is None:
+        return None
+    data = json.loads(value) if isinstance(value, str) else value
+    try:
+        return SafetyRecommendation.model_validate(data)
+    except ValidationError as exc:
+        logger.warning(
+            "Invalid safety recommendation payload on job %s; surfacing row without "
+            "safety recommendation. errors=%s",
+            job_id,
+            exc.errors(include_url=False, include_context=False),
+        )
+        return None
+
+
 async def list_recent(
     pool: Any,
     *,
@@ -307,6 +334,9 @@ async def list_recent(
                 headline_summary=row["headline_summary_text"],
                 weather_report=_weather_report_from_row(
                     row["weather_report_json"], job_id=row["job_id"]
+                ),
+                safety_recommendation=_safety_recommendation_from_row(
+                    row["safety_recommendation_json"], job_id=row["job_id"]
                 ),
                 completed_at=row["finished_at"],
             )

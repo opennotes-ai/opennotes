@@ -69,6 +69,29 @@ export function formatWeatherExpansion(value: WeatherAxisLabel | string): string
   return null;
 }
 
+export const VARIANT_TEXT_CLASSES = {
+  sky:            "text-sky-700 dark:text-sky-300",
+  indigo:         "text-indigo-700 dark:text-indigo-300",
+  stone:          "text-stone-700 dark:text-stone-300",
+  emerald:        "text-emerald-700 dark:text-emerald-300",
+  teal:           "text-teal-700 dark:text-teal-300",
+  cyan:           "text-cyan-700 dark:text-cyan-300",
+  lime:           "text-lime-700 dark:text-lime-300",
+  fuchsia:        "text-fuchsia-700 dark:text-fuchsia-300",
+  amber:          "text-amber-700 dark:text-amber-300",
+  slate:          "text-slate-700 dark:text-slate-300",
+  orange:         "text-orange-700 dark:text-orange-300",
+  violet:         "text-violet-700 dark:text-violet-300",
+  "emerald-soft": "text-emerald-700 dark:text-emerald-300",
+  yellow:         "text-yellow-700 dark:text-yellow-300",
+  "amber-strong": "text-amber-700 dark:text-amber-300",
+  "rose-strong":  "text-rose-700 dark:text-rose-300",
+} as const satisfies Record<WeatherVariant, string>;
+
+export function formatWeatherTextClass(value: WeatherAxisLabel | string): string {
+  return VARIANT_TEXT_CLASSES[formatWeatherVariant(value)] ?? VARIANT_TEXT_CLASSES[DEFAULT_VARIANT];
+}
+
 export function formatWeatherReadout(report: WeatherReport): string {
   return [
     formatWeatherLabel(report.truth.label),

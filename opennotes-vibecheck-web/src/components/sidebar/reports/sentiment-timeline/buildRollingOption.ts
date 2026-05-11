@@ -55,6 +55,25 @@ export function buildRollingOption(buckets: SentimentBucket[]): EChartsOption {
   const lastBucket = buckets[buckets.length - 1];
   const bucketByStartMs = new Map(buckets.map((bucket) => [bucket.startMs, bucket]));
 
+  const spansMultipleDays =
+    firstBucket != null &&
+    lastBucket != null &&
+    new Date(firstBucket.startMs).toDateString() !== new Date(lastBucket.endMs).toDateString();
+
+  const hourMinuteFormatter = new Intl.DateTimeFormat(undefined, {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+
+  const dateHourMinuteFormatter = new Intl.DateTimeFormat(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+
   return {
     grid: { top: 8, right: 8, bottom: 24, left: 32 },
     tooltip: {
@@ -95,11 +114,9 @@ export function buildRollingOption(buckets: SentimentBucket[]): EChartsOption {
       max: lastBucket?.endMs,
       axisLabel: {
         formatter: (value: number) =>
-          new Intl.DateTimeFormat(undefined, {
-            hour: "2-digit",
-            minute: "2-digit",
-            hour12: false,
-          }).format(value),
+          spansMultipleDays
+            ? dateHourMinuteFormatter.format(value).replace(",", "")
+            : hourMinuteFormatter.format(value),
       },
     },
     yAxis: {

@@ -40,11 +40,11 @@ export function EChart(props: EChartProps) {
   onMount(() => {
     chart = echarts.init(containerRef, props.theme ?? "vintage");
 
-    const handleResize = () => chart?.resize();
-    window.addEventListener("resize", handleResize);
+    const ro = new ResizeObserver(() => chart?.resize());
+    ro.observe(containerRef);
 
     onCleanup(() => {
-      window.removeEventListener("resize", handleResize);
+      ro.disconnect();
       chart?.dispose();
     });
   });
