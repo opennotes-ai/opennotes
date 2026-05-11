@@ -109,6 +109,10 @@ function buildRightColumn(job: JobState): ElementLike | null {
       buildAxisGroup("Truth", formatWeatherLabel(report.truth.label)),
       buildAxisGroup("Relevance", formatWeatherLabel(report.relevance.label)),
       buildAxisGroup("Sentiment", formatWeatherLabel(report.sentiment.label)),
+      buildAxisGroup(
+        "Safety",
+        formatWeatherLabel(job.sidebar_payload?.safety?.recommendation?.level ?? "—"),
+      ),
     ],
   );
 }
