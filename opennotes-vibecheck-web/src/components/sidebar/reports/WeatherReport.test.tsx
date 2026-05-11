@@ -748,6 +748,16 @@ describe("WeatherReport", () => {
       ));
       expect(screen.getByTestId("weather-symbol-unsafe")).toBeDefined();
     });
+
+    it("unknown level renders a rhombus symbol (data-testid=weather-symbol-unknown)", () => {
+      render(() => (
+        <WeatherSymbol level="unknown" lobeColors={["#64748b", "#64748b", "#64748b"]} />
+      ));
+      expect(screen.getByTestId("weather-symbol-unknown")).toBeDefined();
+      const svg = screen.getByTestId("weather-symbol-unknown");
+      expect(svg.querySelector("polygon")).not.toBeNull();
+      expect(svg.querySelector("circle")).toBeNull();
+    });
   });
 
   describe("WeatherSymbol palette and trefoil colors", () => {
@@ -785,6 +795,19 @@ describe("WeatherReport", () => {
       const svg = screen.getByTestId("weather-symbol-unsafe");
       const shapePath = svg.querySelector("path");
       expect(shapePath?.getAttribute("fill")).toBe("#c0392b");
+    });
+
+    it("unknown symbol uses gray-200 fill (#e5e7eb) and gray-500 outline (#6b7280)", () => {
+      render(() => (
+        <WeatherSymbol level="unknown" lobeColors={["#64748b", "#64748b", "#64748b"]} />
+      ));
+      const svg = screen.getByTestId("weather-symbol-unknown");
+      const poly = svg.querySelector("polygon");
+      expect(poly?.getAttribute("fill")).toBe("#e5e7eb");
+      const outlinePoly = Array.from(svg.querySelectorAll("polygon")).find(
+        (p) => p.getAttribute("fill") === "none",
+      );
+      expect(outlinePoly?.getAttribute("stroke")).toBe("#6b7280");
     });
 
     it("mild trefoil stroke uses mismatched #f5a672 (not same as outline #fed7aa)", () => {
@@ -855,6 +878,27 @@ describe("WeatherReport", () => {
         const axisIdx = allChildren.findIndex((el) => el === axisContainer || el.contains(axisContainer));
         expect(symbolIdx).toBeLessThan(axisIdx);
       }
+    });
+
+    it("renders unknown (rhombus) symbol when safetyRecommendation is null", () => {
+      render(() => (
+        <WeatherReport
+          report={makeWeatherReport()}
+          safetyRecommendation={null}
+        />
+      ));
+      const root = screen.getByTestId("weather-report");
+      expect(root.querySelector('[data-testid="weather-symbol-unknown"]')).not.toBeNull();
+      expect(root.querySelector('[data-testid="weather-symbol-safe"]')).toBeNull();
+    });
+
+    it("renders unknown (rhombus) symbol when safetyRecommendation is not provided", () => {
+      render(() => (
+        <WeatherReport report={makeWeatherReport()} />
+      ));
+      const root = screen.getByTestId("weather-report");
+      expect(root.querySelector('[data-testid="weather-symbol-unknown"]')).not.toBeNull();
+      expect(root.querySelector('[data-testid="weather-symbol-safe"]')).toBeNull();
     });
 
     it("renders unsafe symbol when safety level is unsafe", () => {

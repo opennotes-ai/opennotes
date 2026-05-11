@@ -1,7 +1,7 @@
 import type { JSX } from "solid-js";
 import { Switch, Match } from "solid-js";
 
-export type SafetyLevel = "safe" | "mild" | "caution" | "unsafe";
+export type SafetyLevel = "safe" | "mild" | "caution" | "unsafe" | "unknown";
 
 interface TrefoilColors {
   lobe0: string;
@@ -21,6 +21,7 @@ const PALETTE: Record<SafetyLevel, SymbolPalette> = {
   mild:    { fill: "#fef9c3", outline: "#fed7aa", trefoilStroke: "#f5a672" },
   caution: { fill: "#facc15", outline: "#8a6608", trefoilStroke: "#8a6608" },
   unsafe:  { fill: "#c0392b", outline: "#fecaca", trefoilStroke: "#fecaca" },
+  unknown: { fill: "#e5e7eb", outline: "#6b7280", trefoilStroke: "#6b7280" },
 };
 
 export interface WeatherSymbolProps {
@@ -159,6 +160,30 @@ export function WeatherSymbol(props: WeatherSymbolProps): JSX.Element {
             transform="translate(8.5 8.5) scale(0.83)"
           />
           <Trefoil colors={trefoilColors()} scale={0.72} tx={50} ty={50} />
+        </svg>
+      </Match>
+      <Match when={props.level === "unknown"}>
+        <svg
+          viewBox="0 0 100 100"
+          width={props.size ?? 128}
+          height={props.size ?? 128}
+          aria-hidden="true"
+          class={props.class}
+          data-testid="weather-symbol-unknown"
+          stroke-linejoin="round"
+          stroke-linecap="round"
+        >
+          <polygon
+            points="50,5 88,50 50,95 12,50"
+            fill={palette().fill}
+          />
+          <polygon
+            points="50,5 88,50 50,95 12,50"
+            fill="none"
+            stroke={palette().outline}
+            stroke-width="5"
+            transform="translate(9 9) scale(0.82)"
+          />
         </svg>
       </Match>
     </Switch>

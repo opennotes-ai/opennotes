@@ -92,7 +92,7 @@ function safetyLevel(rec: SafetyRecommendation | null | undefined): SafetyLevel 
   if (level === "safe" || level === "mild" || level === "caution" || level === "unsafe") {
     return level;
   }
-  return "safe";
+  return "unknown";
 }
 
 function formatLogprobProbability(value: number | null | undefined): string | null {
