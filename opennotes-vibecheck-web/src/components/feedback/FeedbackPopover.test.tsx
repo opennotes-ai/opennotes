@@ -23,6 +23,30 @@ afterEach(() => {
   cleanup();
 });
 
+describe("FeedbackPopover — focus-visible ring on icon buttons", () => {
+  it("three popover icon buttons use focus-visible ring classes (not bare focus:ring)", () => {
+    render(() => (
+      <FeedbackPopover
+        open={true}
+        onOpenChange={() => {}}
+        isDesktop={true}
+        bellLocation="test"
+      >
+        <button type="button">trigger</button>
+      </FeedbackPopover>
+    ));
+
+    const thumbsUp = screen.getByRole("button", { name: "Thumbs up" });
+    const thumbsDown = screen.getByRole("button", { name: "Thumbs down" });
+    const message = screen.getByRole("button", { name: "Send a message" });
+
+    for (const btn of [thumbsUp, thumbsDown, message]) {
+      expect(btn.className).toContain("focus-visible:ring-2");
+      expect(btn.className).not.toMatch(/\bfocus:ring-(?!offset)/);
+    }
+  });
+});
+
 describe("FeedbackPopover — icon button sizing", () => {
   it("three popover icon buttons render at h-8 w-8 (not h-10 w-10)", () => {
     render(() => (
