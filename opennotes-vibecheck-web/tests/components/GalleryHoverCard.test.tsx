@@ -108,6 +108,28 @@ describe("<GalleryHoverCard />", () => {
     expect(screen.getByText("Not available")).toBeTruthy();
   });
 
+  it("renders safety row when safety_recommendation is present but weather_report is null", async () => {
+    render(() => (
+      <GalleryHoverCard
+        item={makeAnalysis({
+          weather_report: null,
+          headline_summary: null,
+          safety_recommendation: { level: "caution", rationale: "Test rationale" },
+        })}
+        href="/analyze?job=job-1"
+      >
+        <span>Example Article</span>
+      </GalleryHoverCard>
+    ));
+
+    await openHoverCard();
+
+    expect(screen.getByTestId("gallery-hover-card")).toBeTruthy();
+    expect(screen.getByText("Safety")).toBeTruthy();
+    expect(screen.getByText("Caution")).toBeTruthy();
+    expect(screen.queryByText("Truth")).toBeNull();
+  });
+
   it("other rows use text-color class with no background pill", async () => {
     render(() => (
       <GalleryHoverCard item={makeAnalysis()} href="/analyze?job=job-1">
