@@ -16,9 +16,9 @@ import {
 import { Skeleton } from "@opennotes/ui/components/ui/skeleton";
 import type { components } from "~/lib/generated-types";
 import {
-  formatWeatherBadgeClass,
   formatWeatherExpansion,
   formatWeatherLabel,
+  formatWeatherTextClass,
 } from "~/lib/weather-labels";
 import { useSidebarStore } from "../SidebarStoreProvider";
 import type { SectionGroupLabel, SidebarStore } from "../sidebar-store";
@@ -183,7 +183,7 @@ function SafetyAxisRow(props: {
                 >
                   <span
                     data-testid="weather-safety-value"
-                    class={formatWeatherBadgeClass(rec().level)}
+                    class={formatWeatherTextClass(rec().level) + " font-condensed text-lg font-semibold"}
                   >
                     {formatWeatherLabel(rec().level)}
                   </span>
@@ -328,7 +328,7 @@ function AxisRow(props: AxisRowProps): JSX.Element {
                 >
                   <span
                     data-testid={`weather-${props.axis.axisType}-value`}
-                    class={`font-condensed ${formatWeatherBadgeClass(data().label)}`}
+                    class={`font-condensed ${formatWeatherTextClass(data().label)}`}
                   >
                     {formatWeatherLabel(data().label)}
                   </span>

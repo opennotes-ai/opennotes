@@ -786,7 +786,7 @@ describe("WeatherReport", () => {
       expect(firstRow.querySelector('[data-testid="weather-axis-card-safety"]')).not.toBeNull();
     });
 
-    it("Safety pill uses emerald-soft variant (text-emerald-800) when level=safe", () => {
+    it("Safety pill uses emerald-soft variant (text-emerald-700) when level=safe", () => {
       render(() => (
         <WeatherReport
           report={makeWeatherReport()}
@@ -795,10 +795,11 @@ describe("WeatherReport", () => {
       ));
 
       const safetyValue = screen.getByTestId("weather-safety-value");
-      expect(safetyValue.className).toContain("text-emerald-800");
+      expect(safetyValue.className).toContain("text-emerald-700");
+      expect(safetyValue.className).not.toMatch(/(?:^|\s)bg-/);
     });
 
-    it("Safety pill uses rose-strong variant (bg-rose-700) when level=unsafe", () => {
+    it("Safety pill uses rose-strong variant (text-rose-700) when level=unsafe", () => {
       render(() => (
         <WeatherReport
           report={makeWeatherReport()}
@@ -807,10 +808,11 @@ describe("WeatherReport", () => {
       ));
 
       const safetyValue = screen.getByTestId("weather-safety-value");
-      expect(safetyValue.className).toContain("bg-rose-700");
+      expect(safetyValue.className).toContain("text-rose-700");
+      expect(safetyValue.className).not.toMatch(/(?:^|\s)bg-/);
     });
 
-    it("Safety pill uses yellow variant (text-yellow family) when level=mild", () => {
+    it("Safety pill uses yellow variant (text-yellow-700 text-only) when level=mild", () => {
       render(() => (
         <WeatherReport
           report={makeWeatherReport()}
@@ -821,6 +823,7 @@ describe("WeatherReport", () => {
       const safetyValue = screen.getByTestId("weather-safety-value");
       expect(weatherLabels.formatWeatherVariant("mild")).toBe("yellow");
       expect(safetyValue.className).toMatch(/text-yellow/);
+      expect(safetyValue.className).not.toMatch(/(?:^|\s)bg-/);
     });
 
     it("Safety popover for mild renders JSON expansion text", async () => {
@@ -836,7 +839,7 @@ describe("WeatherReport", () => {
       await screen.findByText(/minor concerns surfaced/i);
     });
 
-    it("Safety pill uses amber-strong variant (text-amber-800 family) when level=caution", () => {
+    it("Safety pill uses amber-strong variant (text-amber-700 text-only) when level=caution", () => {
       render(() => (
         <WeatherReport
           report={makeWeatherReport()}
@@ -846,7 +849,8 @@ describe("WeatherReport", () => {
 
       const safetyValue = screen.getByTestId("weather-safety-value");
       expect(weatherLabels.formatWeatherVariant("caution")).toBe("amber-strong");
-      expect(safetyValue.className).toMatch(/text-amber-800/);
+      expect(safetyValue.className).toMatch(/text-amber-700/);
+      expect(safetyValue.className).not.toMatch(/(?:^|\s)bg-/);
     });
 
     it("Safety popover for caution renders JSON expansion text", async () => {
