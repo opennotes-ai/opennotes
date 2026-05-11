@@ -150,7 +150,7 @@ function SafetyAxisRow(props: {
               </span>
               <span
                 aria-hidden="true"
-                class="pr-3 text-xs uppercase tracking-[0.06em] text-muted-foreground/70"
+                class="cursor-default select-none pr-3 text-xs uppercase tracking-[0.06em] text-muted-foreground/70"
               >
                 {props.heading}
               </span>
@@ -207,7 +207,7 @@ function SafetyAxisRow(props: {
               </Popover>
               <span
                 aria-hidden="true"
-                class="ml-auto pr-3 text-xs uppercase tracking-[0.06em] text-muted-foreground/70"
+                class="cursor-default ml-auto pr-3 select-none text-xs uppercase tracking-[0.06em] text-muted-foreground/70"
               >
                 {props.heading}
               </span>
@@ -295,7 +295,7 @@ function AxisRow(props: AxisRowProps): JSX.Element {
               </span>
               <span
                 aria-hidden="true"
-                class="pr-3 text-xs uppercase tracking-[0.06em] text-muted-foreground/70"
+                class="cursor-default select-none pr-3 text-xs uppercase tracking-[0.06em] text-muted-foreground/70"
               >
                 {props.axis.heading}
               </span>
@@ -384,7 +384,7 @@ function AxisRow(props: AxisRowProps): JSX.Element {
               </Show>
               <span
                 aria-hidden="true"
-                class="ml-auto pr-3 text-xs uppercase tracking-[0.06em] text-muted-foreground/70"
+                class="cursor-default ml-auto pr-3 select-none text-xs uppercase tracking-[0.06em] text-muted-foreground/70"
               >
                 {props.axis.heading}
               </span>

@@ -483,6 +483,35 @@ describe("WeatherReport", () => {
     }
   });
 
+  it("axis heading hint spans have cursor-default and select-none classes", () => {
+    render(() => (
+      <WeatherReport
+        report={makeWeatherReport()}
+        safetyRecommendation={makeSafetyRecommendation()}
+      />
+    ));
+
+    const root = screen.getByTestId("weather-report");
+
+    const allAxes = [
+      { axis: "safety", heading: "SAFETY" },
+      { axis: "truth", heading: "TRUTH" },
+      { axis: "relevance", heading: "RELEVANCE" },
+      { axis: "sentiment", heading: "SENTIMENT" },
+    ];
+
+    for (const { heading } of allAxes) {
+      const allHintSpans = Array.from(
+        root.querySelectorAll<HTMLSpanElement>("span[aria-hidden='true']"),
+      ).filter((s) => s.textContent?.trim().toUpperCase() === heading);
+      expect(allHintSpans.length).toBeGreaterThanOrEqual(1);
+      for (const span of allHintSpans) {
+        expect(span.className).toContain("cursor-default");
+        expect(span.className).toContain("select-none");
+      }
+    }
+  });
+
   it("eval label uses font-condensed; axis hint span does not", () => {
     render(() => <WeatherReport report={makeWeatherReport()} />);
 
