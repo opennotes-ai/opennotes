@@ -868,16 +868,12 @@ describe("WeatherReport", () => {
           safetyRecommendation={makeSafetyRecommendation({ level: "safe" })}
         />
       ));
-      const root = screen.getByTestId("weather-report");
-      const symbolCell = root.querySelector('[data-testid="weather-symbol-cell"]');
-      const axisContainer = root.querySelector('[data-testid="weather-axis-card-truth"]')?.closest('.flex');
+      const symbolCell = screen.getByTestId("weather-symbol-cell");
+      const axisStack = screen.getByTestId("weather-axis-stack");
       expect(symbolCell).not.toBeNull();
-      if (symbolCell && axisContainer) {
-        const allChildren = Array.from(root.children);
-        const symbolIdx = allChildren.findIndex((el) => el === symbolCell || el.contains(symbolCell));
-        const axisIdx = allChildren.findIndex((el) => el === axisContainer || el.contains(axisContainer));
-        expect(symbolIdx).toBeLessThan(axisIdx);
-      }
+      expect(axisStack).not.toBeNull();
+      const position = symbolCell.compareDocumentPosition(axisStack);
+      expect(position & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     });
 
     it("renders unknown (rhombus) symbol when safetyRecommendation is null", () => {
@@ -912,7 +908,7 @@ describe("WeatherReport", () => {
       expect(root.querySelector('[data-testid="weather-symbol-unsafe"]')).not.toBeNull();
     });
 
-    it("lobe colors in the symbol reflect truth/relevance/sentiment variant hex colors", () => {
+    it("lobe colors in the symbol reflect exact per-axis variant hex: first_person=#6366f1, on_topic=#84cc16, neutral=#64748b", () => {
       render(() => (
         <WeatherReport
           report={makeWeatherReport({
@@ -926,11 +922,13 @@ describe("WeatherReport", () => {
       const root = screen.getByTestId("weather-report");
       const svg = root.querySelector('[data-testid="weather-symbol-safe"]');
       expect(svg).not.toBeNull();
-      const filledPaths = Array.from(svg!.querySelectorAll("path")).filter(
+      const lobePaths = Array.from(svg!.querySelectorAll("path")).filter(
         (p) => p.getAttribute("fill") && p.getAttribute("fill") !== "none" && p.getAttribute("fill") !== "#4ade80",
       );
-      const fills = new Set(filledPaths.map((p) => p.getAttribute("fill")));
-      expect(fills.size).toBeGreaterThanOrEqual(2);
+      const fills = lobePaths.map((p) => p.getAttribute("fill"));
+      expect(fills).toContain("#6366f1");
+      expect(fills).toContain("#84cc16");
+      expect(fills).toContain("#64748b");
     });
   });
 
