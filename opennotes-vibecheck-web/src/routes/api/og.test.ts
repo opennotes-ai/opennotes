@@ -68,6 +68,10 @@ function renderedTreeText(): string {
   return JSON.stringify(vi.mocked(satori).mock.calls.at(-1)?.[0]);
 }
 
+function renderedTextIndex(value: string): number {
+  return renderedTreeText().indexOf(`"${value}"`);
+}
+
 describe("GET /api/og", () => {
   beforeEach(() => {
     vi.mocked(pollJob).mockReset();
@@ -222,6 +226,9 @@ describe("GET /api/og", () => {
     expect(renderedTreeText()).toContain('"On Topic"');
     expect(renderedTreeText()).toContain('"Sentiment"');
     expect(renderedTreeText()).toContain('"Neutral"');
+    expect(renderedTextIndex("Safety")).toBeLessThan(renderedTextIndex("Truth"));
+    expect(renderedTextIndex("Truth")).toBeLessThan(renderedTextIndex("Relevance"));
+    expect(renderedTextIndex("Relevance")).toBeLessThan(renderedTextIndex("Sentiment"));
   });
 
   it("job card: includes Safety fallback when recommendation is missing", async () => {
