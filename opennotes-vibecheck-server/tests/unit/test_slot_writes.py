@@ -684,8 +684,8 @@ def _minimal_slot_payloads() -> dict[SectionSlug, dict[str, Any]]:
                         "supporting_facts": [
                             {
                                 "statement": "sentinel-evidence-stmt",
-                                "source_kind": "utterance",
-                                "source_ref": "utt-claim-evidence-201",
+                                "source_kind": "external",
+                                "source_ref": "https://example.test/evidence",
                             }
                         ],
                     }
