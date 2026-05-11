@@ -152,4 +152,13 @@ describe("HeadlineSummaryReport", () => {
     const cls = text.getAttribute("class") ?? "";
     expect(cls).not.toMatch(/line-clamp-/);
   });
+
+  it("section does not carry relative or bell-reservation padding (delegated to card wrapper)", () => {
+    render(() => <HeadlineSummaryReport headline={makeHeadline()} />);
+    const sectionCls =
+      screen.getByTestId("headline-summary").getAttribute("class") ?? "";
+    expect(sectionCls).not.toMatch(/\brelative\b/);
+    expect(sectionCls).not.toMatch(/\bpb-8\b/);
+    expect(sectionCls).not.toMatch(/\bpr-8\b/);
+  });
 });

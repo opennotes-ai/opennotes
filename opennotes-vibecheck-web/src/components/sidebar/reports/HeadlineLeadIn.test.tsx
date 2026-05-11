@@ -226,3 +226,31 @@ describe("HeadlineLeadIn weather-column collapse", () => {
     expect(cls).not.toMatch(/\bgrid-cols-3\b/);
   });
 });
+
+describe("HeadlineLeadIn feedback bell card anchoring", () => {
+  it("headline-summary-chrome card has relative pb-8 pr-8 (bell anchor classes)", () => {
+    render(() => (
+      <HeadlineLeadIn headline={makeHeadline()} weatherReport={null} />
+    ));
+    const chrome = screen.getByTestId("headline-summary-chrome");
+    const cls = chrome.getAttribute("class") ?? "";
+    expect(cls).toMatch(/\brelative\b/);
+    expect(cls).toMatch(/\bpb-8\b/);
+    expect(cls).toMatch(/\bpr-8\b/);
+  });
+
+  it("skeleton chrome card also has relative pb-8 pr-8", () => {
+    render(() => (
+      <HeadlineLeadIn
+        headline={null}
+        weatherReport={null}
+        showHeadlineSkeleton
+      />
+    ));
+    const chrome = screen.getByTestId("headline-summary-chrome");
+    const cls = chrome.getAttribute("class") ?? "";
+    expect(cls).toMatch(/\brelative\b/);
+    expect(cls).toMatch(/\bpb-8\b/);
+    expect(cls).toMatch(/\bpr-8\b/);
+  });
+});

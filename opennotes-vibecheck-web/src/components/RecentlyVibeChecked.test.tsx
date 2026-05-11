@@ -21,14 +21,12 @@ const mockAnalyses: RecentAnalysis[] = [
 ];
 
 describe("<RecentlyVibeChecked />", () => {
-  it("tile wrapper has pb-8 and pr-8 padding so FeedbackBell clears content", () => {
+  it("does not render a FeedbackBell in gallery items", () => {
     const { container } = render(() => (
       <RecentlyVibeChecked analyses={mockAnalyses} />
     ));
 
-    const wrapper = container.querySelector('[data-testid="recently-vibe-checked"] .relative');
-    expect(wrapper).not.toBeNull();
-    expect(wrapper!.className).toContain("pb-8");
-    expect(wrapper!.className).toContain("pr-8");
+    const bell = container.querySelector('[aria-label*="Send feedback about"]');
+    expect(bell).toBeNull();
   });
 });

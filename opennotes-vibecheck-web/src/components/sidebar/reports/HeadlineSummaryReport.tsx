@@ -16,7 +16,7 @@ export default function HeadlineSummaryReport(
           data-testid="headline-summary"
           data-headline-kind={h().kind}
           data-headline-source={h().source}
-          class="relative w-full space-y-1 pb-8 pr-8"
+          class="w-full space-y-1"
         >
           <p
             data-testid="headline-summary-text"

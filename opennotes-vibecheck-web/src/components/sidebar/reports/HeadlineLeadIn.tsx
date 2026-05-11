@@ -22,7 +22,7 @@ function HeadlineSummarySkeleton(): JSX.Element {
   return (
     <Card
       data-testid="headline-summary-chrome"
-      class="rounded-md border border-border/50 bg-card p-3"
+      class="relative rounded-md border border-border/50 bg-card p-3 pb-8 pr-8"
     >
       <section
         data-testid="headline-summary-skeleton"
@@ -73,7 +73,7 @@ export default function HeadlineLeadIn(props: HeadlineLeadInProps): JSX.Element 
           {(headline) => (
             <Card
               data-testid="headline-summary-chrome"
-              class="rounded-md border border-border/50 bg-card p-3"
+              class="relative rounded-md border border-border/50 bg-card p-3 pb-8 pr-8"
             >
               <HeadlineSummaryReport headline={headline()} />
             </Card>
