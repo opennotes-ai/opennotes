@@ -322,7 +322,7 @@ export default function SectionGroup(props: SectionGroupProps): JSX.Element {
       data-testid={`section-group-${props.label}`}
       data-section-group={props.label}
       data-highlighted={props.highlighted ? "true" : undefined}
-      class={`flex flex-col gap-4 rounded-lg bg-card p-4 text-card-foreground shadow-sm${props.highlighted ? " weather-pulse" : ""}`}
+      class={`flex flex-col gap-4 rounded-lg bg-card p-4 text-card-foreground shadow-sm${props.highlighted ? " weather-pulse weather-highlighted" : ""}`}
     >
       <header class="flex items-start justify-between gap-2">
         <div class="flex min-w-0 items-center gap-1.5">
