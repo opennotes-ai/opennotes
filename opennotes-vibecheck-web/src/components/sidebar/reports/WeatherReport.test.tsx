@@ -446,7 +446,7 @@ describe("WeatherReport", () => {
     );
   });
 
-  it("axis heading appears on the RIGHT as an aria-hidden hint span OUTSIDE the trigger button in each interactive row", () => {
+  it("axis heading appears on the RIGHT as an aria-hidden hint span INSIDE the trigger button in each interactive row", () => {
     render(() => <WeatherReport report={makeWeatherReport()} />);
 
     const root = screen.getByTestId("weather-report");
@@ -473,13 +473,38 @@ describe("WeatherReport", () => {
       expect(hintSpan!.className).toContain("text-muted-foreground");
       expect(hintSpan!.className).toContain("text-xs");
 
-      expect(trigger.contains(hintSpan!)).toBe(false);
+      expect(trigger.contains(hintSpan!)).toBe(true);
     }
 
     const cells = root.querySelectorAll("td");
     expect(cells.length).toBeGreaterThan(0);
     for (const cell of Array.from(cells)) {
       expect(cell.getAttribute("aria-hidden")).toBeNull();
+    }
+  });
+
+  it("clicking anywhere on the heading-text region opens the popover (whole-row trigger)", async () => {
+    render(() => (
+      <WeatherReport
+        report={makeWeatherReport()}
+        safetyRecommendation={makeSafetyRecommendation()}
+      />
+    ));
+
+    for (const { axis, heading, expectedText } of [
+      { axis: "truth", heading: "TRUTH", expectedText: /direct, lived experience/i },
+      { axis: "safety", heading: "SAFETY", expectedText: /moderation, web risk/i },
+    ] as Array<{ axis: string; heading: string; expectedText: RegExp }>) {
+      const trigger = screen.getByTestId(`weather-axis-card-${axis}`);
+      const td = trigger.closest("td")!;
+      const hintSpan = Array.from(
+        td.querySelectorAll<HTMLSpanElement>("span[aria-hidden='true']"),
+      ).find((s) => s.textContent?.trim().toUpperCase() === heading);
+      expect(hintSpan).toBeDefined();
+
+      fireEvent.click(hintSpan!);
+      await screen.findByText(expectedText);
+      fireEvent.keyDown(document.activeElement ?? document.body, { key: "Escape" });
     }
   });
 
