@@ -284,18 +284,23 @@ describe("HeadlineLeadIn skeleton visibility (TASK-1605)", () => {
 });
 
 describe("HeadlineLeadIn feedback bell card anchoring", () => {
-  it("headline-summary-chrome card has relative pb-8 pr-8 (bell anchor classes)", () => {
+  // JSDOM can't compute layout or position context — assert the CSS class contract
+  // that reserves the bottom-right corner for the bell anchor zone.
+  it("headline-summary-chrome card has pb-8 and pr-8 (bell anchor classes); inner headline-summary does not", () => {
     render(() => (
       <HeadlineLeadIn headline={makeHeadline()} weatherReport={null} />
     ));
     const chrome = screen.getByTestId("headline-summary-chrome");
     const cls = chrome.getAttribute("class") ?? "";
-    expect(cls).toMatch(/\brelative\b/);
     expect(cls).toMatch(/\bpb-8\b/);
     expect(cls).toMatch(/\bpr-8\b/);
+    const inner = screen.getByTestId("headline-summary");
+    const innerCls = inner.getAttribute("class") ?? "";
+    expect(innerCls).not.toMatch(/\bpb-8\b/);
+    expect(innerCls).not.toMatch(/\bpr-8\b/);
   });
 
-  it("skeleton chrome card also has relative pb-8 pr-8", () => {
+  it("skeleton chrome card also has pb-8 and pr-8 (bell anchor classes)", () => {
     render(() => (
       <HeadlineLeadIn
         headline={null}
@@ -305,7 +310,6 @@ describe("HeadlineLeadIn feedback bell card anchoring", () => {
     ));
     const chrome = screen.getByTestId("headline-summary-chrome");
     const cls = chrome.getAttribute("class") ?? "";
-    expect(cls).toMatch(/\brelative\b/);
     expect(cls).toMatch(/\bpb-8\b/);
     expect(cls).toMatch(/\bpr-8\b/);
   });

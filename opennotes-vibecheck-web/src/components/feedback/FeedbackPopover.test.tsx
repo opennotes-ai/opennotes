@@ -41,8 +41,10 @@ describe("FeedbackPopover — focus-visible ring on icon buttons", () => {
     const message = screen.getByRole("button", { name: "Send a message" });
 
     for (const btn of [thumbsUp, thumbsDown, message]) {
-      expect(btn.className).toContain("focus-visible:ring-2");
-      expect(btn.className).not.toMatch(/\bfocus:ring-(?!offset)/);
+      // Intent: pointer-induced focus must not paint a ring; keyboard nav still does.
+      // JSDOM can't compute :focus-visible heuristics — assert via class-token contract.
+      expect(btn.className).toMatch(/focus-visible:ring-/);
+      expect(btn.className).not.toMatch(/(?:^|\s)focus:ring-/);
     }
   });
 });

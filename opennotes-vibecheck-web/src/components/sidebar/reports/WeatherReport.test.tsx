@@ -509,6 +509,8 @@ describe("WeatherReport", () => {
   });
 
   it("axis heading hint spans have cursor-default and select-none classes", () => {
+    // JSDOM can't trigger pointer/cursor behaviour — assert via class-token contract
+    // that heading spans suppress pointer cursor and text selection.
     render(() => (
       <WeatherReport
         report={makeWeatherReport()}
@@ -780,6 +782,7 @@ describe("WeatherReport", () => {
   });
 
   it("outer card has pb-8 but NOT pr-8 (help button has bottom padding only)", () => {
+    // JSDOM can't compute layout — assert the class contract for the help-button anchor zone.
     render(() => <WeatherReport report={makeWeatherReport()} />);
     const root = screen.getByTestId("weather-report");
     expect(root.className).toContain("pb-8");
@@ -787,6 +790,7 @@ describe("WeatherReport", () => {
   });
 
   it("skeleton outer card does NOT have pr-8", () => {
+    // JSDOM can't compute layout — assert the class contract for the help-button anchor zone.
     render(() => <WeatherReport report={null} />);
     const root = screen.getByTestId("weather-report-skeleton");
     expect(root.className).not.toContain("pr-8");
