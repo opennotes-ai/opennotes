@@ -59,10 +59,6 @@ export function formatWeatherVariant(value: WeatherAxisLabel | string): WeatherV
   return DEFAULT_VARIANT;
 }
 
-export function formatWeatherBadgeClass(value: WeatherAxisLabel | string): string {
-  return VARIANT_CLASSES[formatWeatherVariant(value)] ?? VARIANT_CLASSES[DEFAULT_VARIANT];
-}
-
 export function formatWeatherExpansion(value: WeatherAxisLabel | string): string | null {
   const entry = WEATHER_LABELS[value as string];
   if (entry) return entry.expansion;

@@ -446,7 +446,7 @@ describe("WeatherReport", () => {
     );
   });
 
-  it("axis heading appears on the RIGHT as an aria-hidden hint span OUTSIDE the trigger button in each interactive row", () => {
+  it("axis heading appears on the RIGHT as an aria-hidden hint span INSIDE the trigger button in each interactive row", () => {
     render(() => <WeatherReport report={makeWeatherReport()} />);
 
     const root = screen.getByTestId("weather-report");
@@ -473,13 +473,69 @@ describe("WeatherReport", () => {
       expect(hintSpan!.className).toContain("text-muted-foreground");
       expect(hintSpan!.className).toContain("text-xs");
 
-      expect(trigger.contains(hintSpan!)).toBe(false);
+      expect(trigger.contains(hintSpan!)).toBe(true);
     }
 
     const cells = root.querySelectorAll("td");
     expect(cells.length).toBeGreaterThan(0);
     for (const cell of Array.from(cells)) {
       expect(cell.getAttribute("aria-hidden")).toBeNull();
+    }
+  });
+
+  it("clicking anywhere on the heading-text region opens the popover (whole-row trigger)", async () => {
+    render(() => (
+      <WeatherReport
+        report={makeWeatherReport()}
+        safetyRecommendation={makeSafetyRecommendation()}
+      />
+    ));
+
+    for (const { axis, heading, expectedText } of [
+      { axis: "truth", heading: "TRUTH", expectedText: /direct, lived experience/i },
+      { axis: "safety", heading: "SAFETY", expectedText: /moderation, web risk/i },
+    ] as Array<{ axis: string; heading: string; expectedText: RegExp }>) {
+      const trigger = screen.getByTestId(`weather-axis-card-${axis}`);
+      const td = trigger.closest("td")!;
+      const hintSpan = Array.from(
+        td.querySelectorAll<HTMLSpanElement>("span[aria-hidden='true']"),
+      ).find((s) => s.textContent?.trim().toUpperCase() === heading);
+      expect(hintSpan).toBeDefined();
+
+      fireEvent.click(hintSpan!);
+      await screen.findByText(expectedText);
+      fireEvent.keyDown(document.activeElement ?? document.body, { key: "Escape" });
+    }
+  });
+
+  it("axis heading hint spans have cursor-default and select-none classes", () => {
+    // JSDOM can't trigger pointer/cursor behaviour — assert via class-token contract
+    // that heading spans suppress pointer cursor and text selection.
+    render(() => (
+      <WeatherReport
+        report={makeWeatherReport()}
+        safetyRecommendation={makeSafetyRecommendation()}
+      />
+    ));
+
+    const root = screen.getByTestId("weather-report");
+
+    const allAxes = [
+      { axis: "safety", heading: "SAFETY" },
+      { axis: "truth", heading: "TRUTH" },
+      { axis: "relevance", heading: "RELEVANCE" },
+      { axis: "sentiment", heading: "SENTIMENT" },
+    ];
+
+    for (const { heading } of allAxes) {
+      const allHintSpans = Array.from(
+        root.querySelectorAll<HTMLSpanElement>("span[aria-hidden='true']"),
+      ).filter((s) => s.textContent?.trim().toUpperCase() === heading);
+      expect(allHintSpans.length).toBeGreaterThanOrEqual(1);
+      for (const span of allHintSpans) {
+        expect(span.className).toContain("cursor-default");
+        expect(span.className).toContain("select-none");
+      }
     }
   });
 
@@ -725,6 +781,21 @@ describe("WeatherReport", () => {
     expect(secondCellLabel).toBe("weather-skeleton-truth-label");
   });
 
+  it("outer card has pb-8 but NOT pr-8 (help button has bottom padding only)", () => {
+    // JSDOM can't compute layout — assert the class contract for the help-button anchor zone.
+    render(() => <WeatherReport report={makeWeatherReport()} />);
+    const root = screen.getByTestId("weather-report");
+    expect(root.className).toContain("pb-8");
+    expect(root.className).not.toContain("pr-8");
+  });
+
+  it("skeleton outer card does NOT have pr-8", () => {
+    // JSDOM can't compute layout — assert the class contract for the help-button anchor zone.
+    render(() => <WeatherReport report={null} />);
+    const root = screen.getByTestId("weather-report-skeleton");
+    expect(root.className).not.toContain("pr-8");
+  });
+
   describe("Safety row", () => {
     it("renders 4 rows with Safety first when safetyRecommendation is provided", () => {
       render(() => (
@@ -744,7 +815,7 @@ describe("WeatherReport", () => {
       expect(firstRow.querySelector('[data-testid="weather-axis-card-safety"]')).not.toBeNull();
     });
 
-    it("Safety pill uses emerald-soft variant (text-emerald-800) when level=safe", () => {
+    it("Safety pill uses emerald-soft variant (text-emerald-700) when level=safe", () => {
       render(() => (
         <WeatherReport
           report={makeWeatherReport()}
@@ -753,10 +824,11 @@ describe("WeatherReport", () => {
       ));
 
       const safetyValue = screen.getByTestId("weather-safety-value");
-      expect(safetyValue.className).toContain("text-emerald-800");
+      expect(safetyValue.className).toContain("text-emerald-700");
+      expect(safetyValue.className).not.toMatch(/(?:^|\s)bg-/);
     });
 
-    it("Safety pill uses rose-strong variant (bg-rose-700) when level=unsafe", () => {
+    it("Safety pill uses rose-strong variant (text-rose-700) when level=unsafe", () => {
       render(() => (
         <WeatherReport
           report={makeWeatherReport()}
@@ -765,10 +837,11 @@ describe("WeatherReport", () => {
       ));
 
       const safetyValue = screen.getByTestId("weather-safety-value");
-      expect(safetyValue.className).toContain("bg-rose-700");
+      expect(safetyValue.className).toContain("text-rose-700");
+      expect(safetyValue.className).not.toMatch(/(?:^|\s)bg-/);
     });
 
-    it("Safety pill uses yellow variant (text-yellow family) when level=mild", () => {
+    it("Safety pill uses yellow variant (text-yellow-700 text-only) when level=mild", () => {
       render(() => (
         <WeatherReport
           report={makeWeatherReport()}
@@ -779,6 +852,7 @@ describe("WeatherReport", () => {
       const safetyValue = screen.getByTestId("weather-safety-value");
       expect(weatherLabels.formatWeatherVariant("mild")).toBe("yellow");
       expect(safetyValue.className).toMatch(/text-yellow/);
+      expect(safetyValue.className).not.toMatch(/(?:^|\s)bg-/);
     });
 
     it("Safety popover for mild renders JSON expansion text", async () => {
@@ -794,7 +868,7 @@ describe("WeatherReport", () => {
       await screen.findByText(/minor concerns surfaced/i);
     });
 
-    it("Safety pill uses amber-strong variant (text-amber-800 family) when level=caution", () => {
+    it("Safety pill uses amber-strong variant (text-amber-700 text-only) when level=caution", () => {
       render(() => (
         <WeatherReport
           report={makeWeatherReport()}
@@ -804,7 +878,8 @@ describe("WeatherReport", () => {
 
       const safetyValue = screen.getByTestId("weather-safety-value");
       expect(weatherLabels.formatWeatherVariant("caution")).toBe("amber-strong");
-      expect(safetyValue.className).toMatch(/text-amber-800/);
+      expect(safetyValue.className).toMatch(/text-amber-700/);
+      expect(safetyValue.className).not.toMatch(/(?:^|\s)bg-/);
     });
 
     it("Safety popover for caution renders JSON expansion text", async () => {

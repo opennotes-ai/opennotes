@@ -2486,6 +2486,34 @@ describe("SectionGroup highlighted prop", () => {
     const section = screen.getByTestId("section-group-Facts/claims");
     expect(section.classList.contains("weather-pulse")).toBe(false);
   });
+
+  it("highlighted=true applies weather-highlighted class on the outer section element", () => {
+    render(() => (
+      <SectionGroup
+        label="Facts/claims"
+        slugs={["facts_claims__dedup"]}
+        sections={{}}
+        render={{}}
+        highlighted={true}
+      />
+    ));
+    const section = screen.getByTestId("section-group-Facts/claims");
+    expect(section.classList.contains("weather-highlighted")).toBe(true);
+  });
+
+  it("highlighted=false does not apply weather-highlighted class", () => {
+    render(() => (
+      <SectionGroup
+        label="Facts/claims"
+        slugs={["facts_claims__dedup"]}
+        sections={{}}
+        render={{}}
+        highlighted={false}
+      />
+    ));
+    const section = screen.getByTestId("section-group-Facts/claims");
+    expect(section.classList.contains("weather-highlighted")).toBe(false);
+  });
 });
 
 describe("app.css motion rules", () => {
@@ -2570,6 +2598,117 @@ describe("app.css motion rules", () => {
     expect(appCss).toMatch(
       /@media\s*\(prefers-reduced-motion:\s*no-preference\)[\s\S]*?\.weather-pulse[\s\S]*?animation:/,
     );
+  });
+
+  it("weather-pulse uses one-shot forwards fill mode (no infinite)", async () => {
+    const resolveCss =
+      Reflect.get(import.meta, "resolve") as
+        | ((url: string) => string | Promise<string>)
+        | undefined;
+    let appCssPath: string | undefined;
+    if (resolveCss) {
+      try {
+        const appCssUrl = await resolveCss("../../app.css");
+        if (appCssUrl.startsWith("file:")) {
+          appCssPath = fileURLToPath(appCssUrl);
+        }
+      } catch {
+        // ignore
+      }
+    }
+    if (!appCssPath) {
+      const appCssUrl = new URL("../../app.css", import.meta.url);
+      if (appCssUrl.protocol === "file:") {
+        appCssPath = fileURLToPath(appCssUrl);
+      } else if (appCssUrl.pathname.startsWith("/@fs/")) {
+        appCssPath = decodeURIComponent(appCssUrl.pathname.slice("/@fs/".length));
+      } else if (appCssUrl.pathname.startsWith("/src/")) {
+        const localTestPath = fileURLToPath(import.meta.url);
+        appCssPath = resolvePath(dirname(localTestPath), "../../app.css");
+      }
+    }
+    if (!appCssPath) {
+      throw new Error(`Unable to resolve app.css path from ${import.meta.url}`);
+    }
+    const appCss = readFileSync(appCssPath, "utf8");
+    expect(appCss).toMatch(
+      /@media\s*\(prefers-reduced-motion:\s*no-preference\)[\s\S]*?\.weather-pulse[\s\S]*?animation:[\s\S]*?\bforwards\b/,
+    );
+    expect(appCss).not.toMatch(
+      /@media\s*\(prefers-reduced-motion:\s*no-preference\)[\s\S]*?\.weather-pulse[\s\S]*?animation:[\s\S]*?\binfinite\b/,
+    );
+  });
+
+  it("weather-highlighted class defines box-shadow outside any media query", async () => {
+    const resolveCss =
+      Reflect.get(import.meta, "resolve") as
+        | ((url: string) => string | Promise<string>)
+        | undefined;
+    let appCssPath: string | undefined;
+    if (resolveCss) {
+      try {
+        const appCssUrl = await resolveCss("../../app.css");
+        if (appCssUrl.startsWith("file:")) {
+          appCssPath = fileURLToPath(appCssUrl);
+        }
+      } catch {
+        // ignore
+      }
+    }
+    if (!appCssPath) {
+      const appCssUrl = new URL("../../app.css", import.meta.url);
+      if (appCssUrl.protocol === "file:") {
+        appCssPath = fileURLToPath(appCssUrl);
+      } else if (appCssUrl.pathname.startsWith("/@fs/")) {
+        appCssPath = decodeURIComponent(appCssUrl.pathname.slice("/@fs/".length));
+      } else if (appCssUrl.pathname.startsWith("/src/")) {
+        const localTestPath = fileURLToPath(import.meta.url);
+        appCssPath = resolvePath(dirname(localTestPath), "../../app.css");
+      }
+    }
+    if (!appCssPath) {
+      throw new Error(`Unable to resolve app.css path from ${import.meta.url}`);
+    }
+    const appCss = readFileSync(appCssPath, "utf8");
+    expect(appCss).toMatch(/\.weather-highlighted\b/);
+    expect(appCss).toMatch(/\.weather-highlighted[\s\S]*?box-shadow:/);
+  });
+
+  it("prefers-reduced-motion: reduce keeps glow (weather-highlighted) but disables pulse", async () => {
+    const resolveCss =
+      Reflect.get(import.meta, "resolve") as
+        | ((url: string) => string | Promise<string>)
+        | undefined;
+    let appCssPath: string | undefined;
+    if (resolveCss) {
+      try {
+        const appCssUrl = await resolveCss("../../app.css");
+        if (appCssUrl.startsWith("file:")) {
+          appCssPath = fileURLToPath(appCssUrl);
+        }
+      } catch {
+        // ignore
+      }
+    }
+    if (!appCssPath) {
+      const appCssUrl = new URL("../../app.css", import.meta.url);
+      if (appCssUrl.protocol === "file:") {
+        appCssPath = fileURLToPath(appCssUrl);
+      } else if (appCssUrl.pathname.startsWith("/@fs/")) {
+        appCssPath = decodeURIComponent(appCssUrl.pathname.slice("/@fs/".length));
+      } else if (appCssUrl.pathname.startsWith("/src/")) {
+        const localTestPath = fileURLToPath(import.meta.url);
+        appCssPath = resolvePath(dirname(localTestPath), "../../app.css");
+      }
+    }
+    if (!appCssPath) {
+      throw new Error(`Unable to resolve app.css path from ${import.meta.url}`);
+    }
+    const appCss = readFileSync(appCssPath, "utf8");
+    expect(appCss).toMatch(
+      /@media\s*\(prefers-reduced-motion:\s*no-preference\)[\s\S]*?\.weather-pulse\b/,
+    );
+    expect(appCss).toMatch(/\.weather-highlighted[\s\S]*?box-shadow:/);
   });
 });
 

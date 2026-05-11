@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  formatWeatherBadgeClass,
   formatWeatherExpansion,
   formatWeatherLabel,
   formatWeatherVariant,
@@ -98,29 +97,6 @@ describe("formatWeatherVariant", () => {
   });
 });
 
-describe("formatWeatherBadgeClass", () => {
-  it("returns a class string containing text-sky-700 for sourced", () => {
-    expect(formatWeatherBadgeClass("sourced")).toContain("text-sky-700");
-  });
-
-  it("returns a class string containing text-indigo-700 for first_person", () => {
-    expect(formatWeatherBadgeClass("first_person")).toContain("text-indigo-700");
-  });
-
-  it("returns a class string containing text-emerald-700 for insightful", () => {
-    expect(formatWeatherBadgeClass("insightful")).toContain("text-emerald-700");
-  });
-
-  it("returns a class string containing text-slate-700 for an unknown slug", () => {
-    expect(formatWeatherBadgeClass("unknown_slug")).toContain("text-slate-700");
-  });
-
-  it("returns a string containing inline-flex and rounded-md for any slug", () => {
-    const cls = formatWeatherBadgeClass("sourced");
-    expect(cls).toContain("inline-flex");
-    expect(cls).toContain("rounded-md");
-  });
-});
 
 type WeatherLabelEntry = { axis: string; label: string; variant: string; expansion: string };
 
@@ -262,23 +238,6 @@ describe("formatWeatherExpansion — safety axis slugs", () => {
   });
 });
 
-describe("formatWeatherBadgeClass — safety axis slugs use traffic-light colors", () => {
-  it("returns a class string containing text-emerald-800 for safe", () => {
-    expect(formatWeatherBadgeClass("safe")).toContain("text-emerald-800");
-  });
-
-  it("returns a class string containing text-yellow-800 for mild", () => {
-    expect(formatWeatherBadgeClass("mild")).toContain("text-yellow-800");
-  });
-
-  it("returns a class string containing text-amber-800 for caution", () => {
-    expect(formatWeatherBadgeClass("caution")).toContain("text-amber-800");
-  });
-
-  it("returns a class string containing text-rose-50 for unsafe", () => {
-    expect(formatWeatherBadgeClass("unsafe")).toContain("text-rose-50");
-  });
-});
 
 describe("formatWeatherLabel — back-compat: existing axes unaffected by safety additions", () => {
   it("sourced still resolves to 'Sourced'", () => {

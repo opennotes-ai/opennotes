@@ -99,9 +99,19 @@ export default function VideoModerationReport(
                   <Show
                     when={findings().length > 0}
                     fallback={
-                      <p class="mt-2 text-[11px] text-muted-foreground">
-                        No video segments returned.
-                      </p>
+                      match.flagged ? (
+                        <div
+                          data-testid="video-moderation-no-segments-error"
+                          class="mt-2 flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/10 p-2 text-[11px] text-destructive"
+                        >
+                          <span class="font-medium">Analysis error:</span>
+                          <span>No video segments returned. The video was flagged but the analyzer didn't produce segment-level findings.</span>
+                        </div>
+                      ) : (
+                        <p class="mt-2 text-[11px] text-muted-foreground">
+                          No video segments returned.
+                        </p>
+                      )
                     }
                   >
                     <ul class="mt-2 grid grid-cols-1 gap-1.5">

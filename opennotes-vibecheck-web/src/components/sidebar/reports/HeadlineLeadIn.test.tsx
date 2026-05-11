@@ -226,3 +226,91 @@ describe("HeadlineLeadIn weather-column collapse", () => {
     expect(cls).not.toMatch(/\bgrid-cols-3\b/);
   });
 });
+
+describe("HeadlineLeadIn skeleton visibility (TASK-1605)", () => {
+  it("renders both headline and weather skeleton testids when both skeleton flags are set", () => {
+    render(() => (
+      <HeadlineLeadIn
+        headline={null}
+        weatherReport={null}
+        showHeadlineSkeleton
+        showWeatherSkeleton
+      />
+    ));
+    expect(screen.getByTestId("headline-summary-skeleton")).toBeDefined();
+    expect(screen.getByTestId("weather-report-skeleton")).toBeDefined();
+  });
+
+  it("headline skeleton bars use a higher-contrast class than bg-muted alone (bg-muted-foreground/15)", () => {
+    render(() => (
+      <HeadlineLeadIn
+        headline={null}
+        weatherReport={null}
+        showHeadlineSkeleton
+      />
+    ));
+    const skeleton = screen.getByTestId("headline-summary-skeleton");
+    const bars = skeleton.querySelectorAll("[data-opennotes-skeleton]");
+    expect(bars.length).toBeGreaterThanOrEqual(2);
+    bars.forEach((bar) => {
+      const cls = bar.getAttribute("class") ?? "";
+      expect(cls).toMatch(/bg-muted-foreground\/25/);
+    });
+  });
+
+  it("weather skeleton bars use a higher-contrast class than bg-muted alone (bg-muted-foreground/15)", () => {
+    render(() => (
+      <HeadlineLeadIn
+        headline={null}
+        weatherReport={null}
+        showWeatherSkeleton
+        showHeadlineSkeleton
+      />
+    ));
+    const wordsCells = [
+      screen.getByTestId("weather-skeleton-truth-words"),
+      screen.getByTestId("weather-skeleton-relevance-words"),
+      screen.getByTestId("weather-skeleton-sentiment-words"),
+    ];
+    for (const cell of wordsCells) {
+      const skeletons = cell.querySelectorAll("[data-opennotes-skeleton]");
+      expect(skeletons.length).toBeGreaterThanOrEqual(1);
+      skeletons.forEach((bar) => {
+        const cls = bar.getAttribute("class") ?? "";
+        expect(cls).toMatch(/bg-muted-foreground\/25/);
+      });
+    }
+  });
+});
+
+describe("HeadlineLeadIn feedback bell card anchoring", () => {
+  // JSDOM can't compute layout or position context — assert the CSS class contract
+  // that reserves the bottom-right corner for the bell anchor zone.
+  it("headline-summary-chrome card has pb-8 and pr-8 (bell anchor classes); inner headline-summary does not", () => {
+    render(() => (
+      <HeadlineLeadIn headline={makeHeadline()} weatherReport={null} />
+    ));
+    const chrome = screen.getByTestId("headline-summary-chrome");
+    const cls = chrome.getAttribute("class") ?? "";
+    expect(cls).toMatch(/\bpb-8\b/);
+    expect(cls).toMatch(/\bpr-8\b/);
+    const inner = screen.getByTestId("headline-summary");
+    const innerCls = inner.getAttribute("class") ?? "";
+    expect(innerCls).not.toMatch(/\bpb-8\b/);
+    expect(innerCls).not.toMatch(/\bpr-8\b/);
+  });
+
+  it("skeleton chrome card also has pb-8 and pr-8 (bell anchor classes)", () => {
+    render(() => (
+      <HeadlineLeadIn
+        headline={null}
+        weatherReport={null}
+        showHeadlineSkeleton
+      />
+    ));
+    const chrome = screen.getByTestId("headline-summary-chrome");
+    const cls = chrome.getAttribute("class") ?? "";
+    expect(cls).toMatch(/\bpb-8\b/);
+    expect(cls).toMatch(/\bpr-8\b/);
+  });
+});
