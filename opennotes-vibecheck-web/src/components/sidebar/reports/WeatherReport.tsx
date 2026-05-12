@@ -162,11 +162,6 @@ function SafetyAxisRow(props: {
             open={popoverOpen()}
             onOpenChange={(o) => {
               setPopoverOpen(o);
-              if (o) {
-                props.store?.setHighlightedGroup(props.targetGroup);
-              } else if (props.store?.highlightedGroup() === props.targetGroup) {
-                props.store?.setHighlightedGroup(null);
-              }
             }}
           >
             <PopoverTrigger
@@ -453,6 +448,17 @@ export default function WeatherReport(props: WeatherReportProps): JSX.Element {
         const level = () => safetyLevel(props.safetyRecommendation);
 
         const [safetyPopoverOpen, setSafetyPopoverOpen] = createSignal(false);
+        const store = useSidebarStore();
+        const safetyTargetGroup: SectionGroupLabel = "Safety";
+
+        const setSafetyOpen = (open: boolean) => {
+          setSafetyPopoverOpen(open);
+          if (open) {
+            store?.setHighlightedGroup(safetyTargetGroup);
+          } else if (store?.highlightedGroup() === safetyTargetGroup) {
+            store?.setHighlightedGroup(null);
+          }
+        };
 
         const symbolAriaLabel = () => {
           const rec = props.safetyRecommendation;
@@ -476,7 +482,7 @@ export default function WeatherReport(props: WeatherReportProps): JSX.Element {
               data-testid="weather-symbol-cell"
               aria-label={symbolAriaLabel()}
               style="width:clamp(80px,12.8vw,128px)"
-              onClick={() => setSafetyPopoverOpen(true)}
+              onClick={() => setSafetyOpen(true)}
             >
               <WeatherSymbol
                 level={level()}
@@ -493,7 +499,7 @@ export default function WeatherReport(props: WeatherReportProps): JSX.Element {
                     axis={axis}
                     safetyRecommendation={props.safetyRecommendation}
                     safetyPopoverOpen={safetyPopoverOpen}
-                    setSafetyPopoverOpen={setSafetyPopoverOpen}
+                    setSafetyPopoverOpen={setSafetyOpen}
                   />
                 )}
               </For>

@@ -1682,4 +1682,117 @@ describe("WeatherReport", () => {
       }
     });
   });
+
+  describe("Symbol button sets SidebarStore highlight (TASK-1610.12)", () => {
+    it("clicking the symbol button sets highlightedGroup to Safety", async () => {
+      let capturedStore: ReturnType<typeof useSidebarStore> = null;
+      function StoreProbe() {
+        capturedStore = useSidebarStore();
+        return null;
+      }
+      render(() => (
+        <SidebarStoreProvider>
+          <StoreProbe />
+          <WeatherReport
+            report={makeWeatherReport()}
+            safetyRecommendation={makeSafetyRecommendation({ level: "safe" })}
+          />
+        </SidebarStoreProvider>
+      ));
+
+      expect(capturedStore!.highlightedGroup()).toBeNull();
+
+      const symbolCell = screen.getByTestId("weather-symbol-cell");
+      fireEvent.click(symbolCell);
+
+      await waitFor(() => {
+        expect(capturedStore!.highlightedGroup()).toBe("Safety");
+      });
+    });
+
+    it("closing popover after symbol-button open clears highlightedGroup", async () => {
+      let capturedStore: ReturnType<typeof useSidebarStore> = null;
+      function StoreProbe() {
+        capturedStore = useSidebarStore();
+        return null;
+      }
+      render(() => (
+        <SidebarStoreProvider>
+          <StoreProbe />
+          <WeatherReport
+            report={makeWeatherReport()}
+            safetyRecommendation={makeSafetyRecommendation({ level: "safe" })}
+          />
+        </SidebarStoreProvider>
+      ));
+
+      const symbolCell = screen.getByTestId("weather-symbol-cell");
+      fireEvent.click(symbolCell);
+
+      await waitFor(() => {
+        expect(capturedStore!.highlightedGroup()).toBe("Safety");
+      });
+
+      fireEvent.keyDown(document.activeElement ?? document.body, { key: "Escape" });
+
+      await waitFor(() => {
+        expect(capturedStore!.highlightedGroup()).toBeNull();
+      });
+    });
+
+    it("opening via axis-pair trigger still sets highlightedGroup to Safety (no regression)", async () => {
+      let capturedStore: ReturnType<typeof useSidebarStore> = null;
+      function StoreProbe() {
+        capturedStore = useSidebarStore();
+        return null;
+      }
+      render(() => (
+        <SidebarStoreProvider>
+          <StoreProbe />
+          <WeatherReport
+            report={makeWeatherReport()}
+            safetyRecommendation={makeSafetyRecommendation({ level: "safe" })}
+          />
+        </SidebarStoreProvider>
+      ));
+
+      const safetyTrigger = screen.getByTestId("weather-axis-card-safety");
+      fireEvent.click(safetyTrigger);
+
+      await waitFor(() => {
+        expect(capturedStore!.highlightedGroup()).toBe("Safety");
+      });
+    });
+
+    it("opening via symbol then closing via Focus button clears highlightedGroup", async () => {
+      let capturedStore: ReturnType<typeof useSidebarStore> = null;
+      function StoreProbe() {
+        capturedStore = useSidebarStore();
+        return null;
+      }
+      render(() => (
+        <SidebarStoreProvider>
+          <StoreProbe />
+          <WeatherReport
+            report={makeWeatherReport()}
+            safetyRecommendation={makeSafetyRecommendation({ level: "safe" })}
+          />
+        </SidebarStoreProvider>
+      ));
+
+      const symbolCell = screen.getByTestId("weather-symbol-cell");
+      fireEvent.click(symbolCell);
+
+      await waitFor(() => {
+        expect(capturedStore!.highlightedGroup()).toBe("Safety");
+      });
+
+      const focusBtn = screen.getByTestId("weather-safety-focus");
+      fireEvent.click(focusBtn);
+
+      await waitFor(() => {
+        expect(capturedStore!.highlightedGroup()).toBeNull();
+      });
+    });
+  });
 });
