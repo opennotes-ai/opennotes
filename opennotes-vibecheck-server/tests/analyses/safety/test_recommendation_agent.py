@@ -15,6 +15,7 @@ from src.analyses.safety._schemas import (
 from src.analyses.safety.recommendation_agent import (
     RECOMMENDATION_SYSTEM_PROMPT,
     SafetyRecommendationInputs,
+    _sanitize_top_signals,
     run_safety_recommendation,
 )
 from src.config import Settings
@@ -39,12 +40,33 @@ def test_recommendation_prompt_defines_all_four_levels() -> None:
     assert "- unsafe: verified high-risk signals" in RECOMMENDATION_SYSTEM_PROMPT
 
 
+def test_recommendation_prompt_requires_human_readable_top_signals() -> None:
+    assert (
+        "top_signals entries must be short human-readable noun phrases or sentences"
+        in RECOMMENDATION_SYSTEM_PROMPT
+    )
+    assert (
+        "Text moderation flags triggered, but judged to be false positives."
+        in RECOMMENDATION_SYSTEM_PROMPT
+    )
+    assert "Violent topics" in RECOMMENDATION_SYSTEM_PROMPT
+
+
+def test_recommendation_prompt_prioritizes_remaining_concern_after_false_positives() -> None:
+    assert "false-positive-heavy caution cases" in RECOMMENDATION_SYSTEM_PROMPT
+    assert "do not lead top_signals with dismissed raw moderation scores" in (
+        RECOMMENDATION_SYSTEM_PROMPT
+    )
+    assert "Repeated low-severity toxicity" in RECOMMENDATION_SYSTEM_PROMPT
+    assert "Mild violent rhetoric" in RECOMMENDATION_SYSTEM_PROMPT
+
+
 async def test_run_safety_recommendation_serializes_inputs_for_agent(monkeypatch):
     agent = StubAgent(
         SafetyRecommendation(
             level=SafetyLevel.CAUTION,
             rationale="A moderation match was found.",
-            top_signals=["topic-match content score 0.62"],
+            top_signals=["Mild harassment topic match"],
         )
     )
     build_calls = []
@@ -213,7 +235,7 @@ async def test_topic_match_only_output_can_return_mild(monkeypatch):
         SafetyRecommendation(
             level=SafetyLevel.MILD,
             rationale="One topic-match-only moderation hit.",
-            top_signals=["topic-match content score 0.51"],
+            top_signals=["Mild toxicity topic match"],
         )
     )
     monkeypatch.setattr(
@@ -224,7 +246,7 @@ async def test_topic_match_only_output_can_return_mild(monkeypatch):
     result = await run_safety_recommendation(inputs, settings=Settings())
 
     assert result.level == SafetyLevel.MILD
-    assert result.top_signals == ["topic-match content score 0.51"]
+    assert result.top_signals == ["Mild toxicity topic match"]
 
 
 async def test_multiple_low_severity_flags_do_not_return_mild(monkeypatch):
@@ -268,3 +290,113 @@ async def test_multiple_low_severity_flags_do_not_return_mild(monkeypatch):
     result = await run_safety_recommendation(inputs, settings=Settings())
 
     assert result.level == SafetyLevel.CAUTION
+
+
+def _recommendation(
+    top_signals: list[str], level: SafetyLevel = SafetyLevel.CAUTION
+) -> SafetyRecommendation:
+    return SafetyRecommendation(
+        level=level,
+        rationale="stub",
+        top_signals=top_signals,
+    )
+
+
+def test_sanitize_strips_raw_text_moderation_score() -> None:
+    result = _sanitize_top_signals(
+        _recommendation(["text: Legal 1.0", "Real concern"])
+    )
+    assert result.top_signals == ["Real concern"]
+
+
+def test_sanitize_strips_vision_enum_label() -> None:
+    result = _sanitize_top_signals(
+        _recommendation(["adult VERY_LIKELY", "Mild rhetoric"])
+    )
+    assert result.top_signals == ["Mild rhetoric"]
+
+
+def test_sanitize_strips_vision_float_syntax() -> None:
+    result = _sanitize_top_signals(
+        _recommendation(["adult max_likelihood 0.91", "Verified visual concern"])
+    )
+    assert result.top_signals == ["Verified visual concern"]
+
+
+def test_sanitize_keeps_only_valid_entries_in_mixed_list() -> None:
+    result = _sanitize_top_signals(
+        _recommendation(
+            [
+                "text: Legal 1.0",
+                "Repeated low-severity toxicity",
+                "adult max_likelihood 0.85",
+            ]
+        )
+    )
+    assert result.top_signals == ["Repeated low-severity toxicity"]
+
+
+def test_sanitize_falls_back_to_placeholder_when_all_invalid() -> None:
+    result = _sanitize_top_signals(
+        _recommendation(["text: Legal 1.0", "adult VERY_LIKELY"])
+    )
+    assert result.top_signals == ["Verified concern requires review"]
+
+
+def test_sanitize_leaves_empty_list_empty() -> None:
+    result = _sanitize_top_signals(_recommendation([]))
+    assert result.top_signals == []
+
+
+def test_sanitize_preserves_benign_integer_suffix_signal() -> None:
+    result = _sanitize_top_signals(_recommendation(["Phishing link 1"]))
+    assert result.top_signals == ["Phishing link 1"]
+
+
+def test_sanitize_preserves_prose_with_lowercase_likely() -> None:
+    result = _sanitize_top_signals(_recommendation(["Likely scam"]))
+    assert result.top_signals == ["Likely scam"]
+
+
+def test_sanitize_preserves_prose_with_lowercase_possible() -> None:
+    result = _sanitize_top_signals(_recommendation(["Possible phishing link"]))
+    assert result.top_signals == ["Possible phishing link"]
+
+
+def test_sanitize_preserves_prose_with_lowercase_unlikely() -> None:
+    result = _sanitize_top_signals(_recommendation(["Unlikely false positive"]))
+    assert result.top_signals == ["Unlikely false positive"]
+
+
+def test_sanitize_still_strips_uppercase_vision_enum() -> None:
+    result = _sanitize_top_signals(
+        _recommendation(["adult VERY_LIKELY", "Real concern"])
+    )
+    assert result.top_signals == ["Real concern"]
+
+
+def test_sanitize_omits_placeholder_for_safe_when_all_stripped() -> None:
+    result = _sanitize_top_signals(
+        _recommendation(
+            ["text: Legal 1.0", "adult VERY_LIKELY"], level=SafetyLevel.SAFE
+        )
+    )
+    assert result.top_signals == []
+
+
+def test_sanitize_omits_placeholder_for_mild_when_all_stripped() -> None:
+    result = _sanitize_top_signals(
+        _recommendation(
+            ["text: Legal 1.0", "adult VERY_LIKELY"], level=SafetyLevel.MILD
+        )
+    )
+    assert result.top_signals == []
+
+
+def test_sanitize_inserts_placeholder_for_unsafe_when_all_stripped() -> None:
+    result = _sanitize_top_signals(
+        _recommendation(
+            ["text: Legal 1.0", "adult VERY_LIKELY"], level=SafetyLevel.UNSAFE
+        )
+    )
+    assert result.top_signals == ["Verified concern requires review"]

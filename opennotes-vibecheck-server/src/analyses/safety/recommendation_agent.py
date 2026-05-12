@@ -3,12 +3,16 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 from typing import Any, cast
+
+import logfire
 
 from src.analyses.safety._schemas import (
     HarmfulContentMatch,
     ImageModerationMatch,
+    SafetyLevel,
     SafetyRecommendation,
     VideoModerationMatch,
     WebRiskFinding,
@@ -32,12 +36,25 @@ Use these levels:
   or high image/video max_likelihood scores from real frames.
 
 Important caveats:
+- top_signals entries must be short human-readable noun phrases or sentences;
+  never raw category names, float scores, or enum labels. Prefer concise phrases
+  such as "Violent topics", "Adult imagery", or "Phishing link". For
+  false-positive moderation, use
+  "Text moderation flags triggered, but judged to be false positives."
+- In false-positive-heavy caution cases, do not lead top_signals with dismissed raw moderation scores.
+  Examples of dismissed raw scores include "text: Legal 1.0", "text: Firearms 0.98", or
+  "text: Illicit Drugs 0.93". If caution still applies, top_signals[0] must name
+  the remaining verified concern, such as "Repeated low-severity toxicity" or
+  "Mild violent rhetoric".
+- Keep raw category names and float scores in rationale only when they help
+  explain the decision; do not put them in top_signals.
 - Vision SafeSearch enum labels are not available downstream. Describe image/video signals
-  with float scores only, such as "adult max_likelihood 0.91"; never mention enum labels
-  like VERY_LIKELY.
+  in rationale with float scores only, such as "adult max_likelihood 0.91";
+  never mention enum labels like VERY_LIKELY.
 - A video match with max_likelihood=1.0 and no segment_findings means sampling was
   inconclusive, not verified unsafe visual content. Treat it as caution unless other
-  verified signals justify unsafe, and describe it with an "inconclusive:" top signal.
+  verified signals justify unsafe, and describe it with a human-readable top signal
+  such as "Video sampling inconclusive."
 - Echo the unavailable_inputs list exactly in the output."""
 
 
@@ -77,6 +94,49 @@ def _serialize_inputs(inputs: SafetyRecommendationInputs) -> str:
     return json.dumps(payload)
 
 
+_RAW_TEXT_MOD_SCORE_RE = re.compile(
+    r"^(?:text\s*:\s*)?[a-z][a-z /-]*\s+(?:score\s+)?\d+\.\d+$",
+    re.IGNORECASE,
+)
+_VISION_FLOAT_RE = re.compile(
+    r"(adult|violence|racy|medical|spoof)\s+(max_likelihood|score)\s+\d+\.\d+",
+    re.IGNORECASE,
+)
+_VISION_ENUM_RE = re.compile(
+    r"\b(VERY_LIKELY|LIKELY|POSSIBLE|UNLIKELY|VERY_UNLIKELY)\b",
+)
+_SANITIZER_PLACEHOLDER = "Verified concern requires review"
+_PLACEHOLDER_LEVELS = {SafetyLevel.CAUTION, SafetyLevel.UNSAFE}
+
+
+def _is_raw_signal(value: str) -> bool:
+    stripped = value.strip()
+    if _RAW_TEXT_MOD_SCORE_RE.match(stripped):
+        return True
+    if _VISION_FLOAT_RE.search(stripped):
+        return True
+    return bool(_VISION_ENUM_RE.search(stripped))
+
+
+def _sanitize_top_signals(recommendation: SafetyRecommendation) -> SafetyRecommendation:
+    original = list(recommendation.top_signals)
+    kept: list[str] = []
+    for entry in original:
+        if _is_raw_signal(entry):
+            logfire.warning(
+                "safety_recommendation_top_signal_stripped",
+                level=recommendation.level.value,
+                raw_value=entry,
+            )
+            continue
+        kept.append(entry)
+    if not kept and original and recommendation.level in _PLACEHOLDER_LEVELS:
+        kept = [_SANITIZER_PLACEHOLDER]
+    if kept == original:
+        return recommendation
+    return recommendation.model_copy(update={"top_signals": kept})
+
+
 async def run_safety_recommendation(
     inputs: SafetyRecommendationInputs,
     settings: Settings,
@@ -93,4 +153,5 @@ async def run_safety_recommendation(
     )
     async with vertex_slot(settings):
         result = await run_vertex_agent_with_retry(agent, _serialize_inputs(inputs))
-    return cast(SafetyRecommendation, result.output)
+    output = cast(SafetyRecommendation, result.output)
+    return _sanitize_top_signals(output)
