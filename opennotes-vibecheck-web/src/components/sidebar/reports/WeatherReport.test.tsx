@@ -14,6 +14,7 @@ import WeatherReport from "./WeatherReport";
 import { WeatherSymbol } from "./WeatherSymbol";
 import { SidebarStoreProvider, useSidebarStore } from "../SidebarStoreProvider";
 import * as weatherLabels from "~/lib/weather-labels";
+import weatherLabelsJson from "~/lib/weather-labels.json";
 
 const appCss = readFileSync(resolvePath(process.cwd(), "src/app.css"), "utf8");
 
@@ -1145,7 +1146,7 @@ describe("WeatherReport", () => {
       expect(root.querySelector('[data-testid="weather-symbol-unsafe"]')).not.toBeNull();
     });
 
-    it("lobe colors in the symbol reflect exact per-axis variant hex: first_person=#6366f1, on_topic=#84cc16, neutral=#64748b", () => {
+    it("lobe colors in the symbol use the documented valence group hexes for each axis", () => {
       render(() => (
         <WeatherReport
           report={makeWeatherReport({
@@ -1163,9 +1164,9 @@ describe("WeatherReport", () => {
         (p) => p.getAttribute("fill") && p.getAttribute("fill") !== "none" && p.getAttribute("fill") !== "#4ade80",
       );
       const fills = lobePaths.map((p) => p.getAttribute("fill"));
-      expect(fills).toContain("#6366f1");
-      expect(fills).toContain("#84cc16");
-      expect(fills).toContain("#64748b");
+      expect(fills).toContain(weatherLabelsJson.valence_hex_colors.personal);
+      expect(fills).toContain(weatherLabelsJson.valence_hex_colors.positive);
+      expect(fills).toContain(weatherLabelsJson.valence_hex_colors.neutral);
     });
   });
 

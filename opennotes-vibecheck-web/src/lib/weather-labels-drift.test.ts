@@ -51,6 +51,15 @@ const SAFETY_SLUGS = [
   "unsafe",
 ] as const;
 
+const VALENCE_GROUPS = [
+  "positive",
+  "evidence",
+  "personal",
+  "neutral",
+  "edge",
+  "negative",
+] as const;
+
 const ALL_EXPECTED_SLUGS: ReadonlyArray<string> = [
   ...TRUTH_SLUGS,
   ...RELEVANCE_SLUGS,
@@ -58,7 +67,12 @@ const ALL_EXPECTED_SLUGS: ReadonlyArray<string> = [
   ...SAFETY_SLUGS,
 ];
 
-const NON_VARIANT_KEYS = new Set(["variant_hex_colors", "axis_definitions"]);
+const NON_VARIANT_KEYS = new Set([
+  "variant_hex_colors",
+  "valence_hex_colors",
+  "variant_valence_groups",
+  "axis_definitions",
+]);
 const JSON_KEYS = Object.keys(weatherLabelsJson).filter((k) => !NON_VARIANT_KEYS.has(k));
 
 describe("weather-labels JSON drift guard", () => {
@@ -146,6 +160,29 @@ describe("weather-labels JSON drift guard", () => {
       ).toBe(true);
     }
   });
+
+  it("every non-safety JSON entry documents a valence_group", () => {
+    for (const slug of JSON_KEYS) {
+      const entry = (weatherLabelsJson as Record<string, unknown>)[slug] as Record<string, unknown>;
+      if (entry["axis"] === "safety") continue;
+      expect(
+        entry["valence_group"],
+        `JSON entry "${slug}" is missing a valence_group field`,
+      ).toBeDefined();
+    }
+  });
+
+  it("every non-safety valence_group value is in valence_hex_colors", () => {
+    const validGroups = Object.keys(weatherLabelsJson.valence_hex_colors);
+    for (const slug of JSON_KEYS) {
+      const entry = (weatherLabelsJson as Record<string, unknown>)[slug] as Record<string, unknown>;
+      if (entry["axis"] === "safety") continue;
+      expect(
+        validGroups.includes(entry["valence_group"] as string),
+        `JSON entry "${slug}" has invalid valence_group "${entry["valence_group"]}"`,
+      ).toBe(true);
+    }
+  });
 });
 
 describe("weather-labels variant_hex_colors drift guard", () => {
@@ -189,6 +226,67 @@ describe("weather-labels variant_hex_colors drift guard", () => {
         (VARIANT_HEX as Record<string, string>)[variant],
         `VARIANT_HEX["${variant}"] does not match JSON`,
       ).toBe(hex);
+    }
+  });
+
+  it("non-safety variant hex colors match their documented valence group colors", () => {
+    for (const slug of JSON_KEYS) {
+      const entry = (weatherLabelsJson as Record<string, unknown>)[slug] as Record<string, string>;
+      if (entry.axis === "safety") continue;
+      expect(
+        (weatherLabelsJson.variant_hex_colors as Record<string, string>)[entry.variant],
+        `variant_hex_colors["${entry.variant}"] does not match ${slug}'s valence group`,
+      ).toBe((weatherLabelsJson.valence_hex_colors as Record<string, string>)[entry.valence_group]);
+    }
+  });
+});
+
+describe("weather-labels valence_hex_colors drift guard", () => {
+  it("valence_hex_colors section exists in the JSON", () => {
+    expect(weatherLabelsJson.valence_hex_colors).toBeDefined();
+    expect(typeof weatherLabelsJson.valence_hex_colors).toBe("object");
+  });
+
+  it("valence_hex_colors contains exactly the six reusable valence groups", () => {
+    expect(Object.keys(weatherLabelsJson.valence_hex_colors).sort()).toEqual(
+      [...VALENCE_GROUPS].sort(),
+    );
+  });
+
+  it("every valence group color is a valid 3 or 6-digit hex string", () => {
+    for (const [group, hex] of Object.entries(weatherLabelsJson.valence_hex_colors)) {
+      expect(
+        /^#[0-9a-fA-F]{3}([0-9a-fA-F]{3})?$/.test(hex),
+        `valence_hex_colors["${group}"] = "${hex}" is not a valid hex color`,
+      ).toBe(true);
+    }
+  });
+});
+
+describe("weather-labels variant_valence_groups drift guard", () => {
+  it("variant_valence_groups section exists in the JSON", () => {
+    expect(weatherLabelsJson.variant_valence_groups).toBeDefined();
+    expect(typeof weatherLabelsJson.variant_valence_groups).toBe("object");
+  });
+
+  it("every documented variant valence group has a color", () => {
+    const validGroups = Object.keys(weatherLabelsJson.valence_hex_colors);
+    for (const [variant, group] of Object.entries(weatherLabelsJson.variant_valence_groups)) {
+      expect(
+        validGroups.includes(group),
+        `variant_valence_groups["${variant}"] = "${group}" has no valence color`,
+      ).toBe(true);
+    }
+  });
+
+  it("every non-safety variant used by a label has a matching variant_valence_groups entry", () => {
+    for (const slug of JSON_KEYS) {
+      const entry = (weatherLabelsJson as Record<string, unknown>)[slug] as Record<string, string>;
+      if (entry.axis === "safety") continue;
+      expect(
+        (weatherLabelsJson.variant_valence_groups as Record<string, string>)[entry.variant],
+        `variant_valence_groups is missing variant "${entry.variant}" used by "${slug}"`,
+      ).toBe(entry.valence_group);
     }
   });
 });
