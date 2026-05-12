@@ -485,6 +485,9 @@ importers:
       '@solidjs/testing-library':
         specifier: ^0.8.10
         version: 0.8.10(@solidjs/router@0.15.4(solid-js@1.9.12))(solid-js@1.9.12)
+      '@testing-library/jest-dom':
+        specifier: ^6.9.1
+        version: 6.9.1
       '@types/node':
         specifier: ^20.19.39
         version: 20.19.39
@@ -509,6 +512,9 @@ importers:
       typescript:
         specifier: ^5.7.3
         version: 5.9.3
+      vite-plugin-solid:
+        specifier: ^2.11.12
+        version: 2.11.12(@testing-library/jest-dom@6.9.1)(solid-js@1.9.12)(vite@6.4.2(@types/node@20.19.39)(jiti@2.6.1)(lightningcss@1.32.0)(terser@5.46.1)(tsx@4.21.0))
       vitest:
         specifier: ^4.0.18
         version: 4.1.4(@opentelemetry/api@1.9.1)(@types/node@20.19.39)(jsdom@29.0.2)(vite@6.4.2(@types/node@20.19.39)(jiti@2.6.1)(lightningcss@1.32.0)(terser@5.46.1)(tsx@4.21.0))

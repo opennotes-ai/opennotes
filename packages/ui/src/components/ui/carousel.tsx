@@ -9,14 +9,14 @@ import {
   useContext,
 } from "solid-js";
 
-import type { CreateEmblaCarouselType } from "embla-carousel-solid";
+import type { UseEmblaCarouselType } from "embla-carousel-solid";
 import createEmblaCarousel from "embla-carousel-solid";
 
 import { cn } from "../../utils";
 import type { ButtonProps } from "./button";
 import { Button } from "./button";
 
-export type CarouselApi = CreateEmblaCarouselType[1];
+export type CarouselApi = UseEmblaCarouselType[1];
 
 type UseCarouselParameters = Parameters<typeof createEmblaCarousel>;
 type CarouselOptions = NonNullable<UseCarouselParameters[0]>;
@@ -80,16 +80,16 @@ const Carousel: Component<CarouselProps & ComponentProps<"div">> = (
   const [canScrollNext, setCanScrollNext] = createSignal(false);
 
   const onSelect = (api: NonNullable<ReturnType<CarouselApi>>) => {
-    setCanScrollPrev(api.canScrollPrev());
-    setCanScrollNext(api.canScrollNext());
+    setCanScrollPrev(api.canGoToPrev());
+    setCanScrollNext(api.canGoToNext());
   };
 
   const scrollPrev = () => {
-    api()?.scrollPrev();
+    api()?.goToPrev();
   };
 
   const scrollNext = () => {
-    api()?.scrollNext();
+    api()?.goToNext();
   };
 
   const handleKeyDown = (event: KeyboardEvent) => {
@@ -115,7 +115,7 @@ const Carousel: Component<CarouselProps & ComponentProps<"div">> = (
     }
 
     onSelect(api()!);
-    api()!.on("reInit", onSelect);
+    api()!.on("reinit", onSelect);
     api()!.on("select", onSelect);
 
     return () => {

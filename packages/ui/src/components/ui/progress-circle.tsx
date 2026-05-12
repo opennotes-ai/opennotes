@@ -58,7 +58,7 @@ const ProgressCircle: Component<ProgressCircleProps> = (rawProps) => {
           cy={radius()}
           stroke-width={strokeWidth()}
           fill="transparent"
-          stroke=""
+          stroke="currentColor"
           stroke-linecap="round"
           class={cn("stroke-secondary transition-colors ease-linear")}
         />
@@ -71,7 +71,7 @@ const ProgressCircle: Component<ProgressCircleProps> = (rawProps) => {
             stroke-dasharray={circumference() + " " + circumference()}
             stroke-dashoffset={offset()}
             fill="transparent"
-            stroke=""
+            stroke="currentColor"
             stroke-linecap="round"
             class={cn(
               "stroke-primary transition-colors ease-linear",

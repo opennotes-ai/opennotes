@@ -24,24 +24,38 @@ function truncateToWords(text: string, maxWords: number): string {
   return words.slice(0, maxWords).join(" ");
 }
 
-function deriveReason(recommendation: SafetyRecommendation): string {
+function deriveReason(recommendation: SafetyRecommendation): string | null {
   const signals = recommendation.top_signals;
-  if (signals && signals.length > 0 && signals[0]) {
-    return truncateToWords(signals[0], 6);
+  if (signals && signals.length > 0) {
+    const firstSignal = signals[0]?.trim();
+    if (firstSignal) {
+      return truncateToWords(firstSignal, 6);
+    }
   }
-  const rationale = recommendation.rationale;
+  const rationale = recommendation.rationale.trim();
+  if (!rationale) {
+    return null;
+  }
   const firstClause = rationale.split(/[,.]/, 1)[0] ?? rationale;
-  return truncateToWords(firstClause, 6);
+  const trimmedClause = firstClause.trim();
+  if (!trimmedClause) {
+    return null;
+  }
+  return truncateToWords(trimmedClause, 6);
 }
 
 // TODO: replace derivation with top-level overall-recommendation agent response
 // once the server-side overall recommendation agent (upcoming) is integrated.
 function deriveOverall(
   recommendation: SafetyRecommendation,
-): { verdict: OverallVerdict; reason: string } {
+): { verdict: OverallVerdict; reason: string } | null {
+  const reason = deriveReason(recommendation);
+  if (reason === null) {
+    return null;
+  }
   return {
     verdict: verdictFromLevel(recommendation.level),
-    reason: deriveReason(recommendation),
+    reason,
   };
 }
 

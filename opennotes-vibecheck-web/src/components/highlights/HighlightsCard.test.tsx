@@ -14,8 +14,7 @@ vi.mock("embla-carousel-ssr", () => ({
 }));
 
 vi.mock("@opennotes/ui/components/ui/carousel", () => {
-  const solidJs = require("solid-js");
-  const { createContext, useContext } = solidJs;
+  const { createContext, useContext } = require("solid-js") as typeof import("solid-js");
 
   const CarouselCtx = createContext<{
     scrollPrev: () => void;

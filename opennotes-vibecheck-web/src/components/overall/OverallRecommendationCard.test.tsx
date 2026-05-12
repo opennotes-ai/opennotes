@@ -140,4 +140,47 @@ describe("<OverallRecommendationCard />", () => {
     const reason = screen.getByTestId("overall-recommendation-reason");
     expect(reason.textContent).toBe("Content is safe");
   });
+
+  it("whitespace-only top_signals[0] falls back to rationale", () => {
+    render(() => (
+      <OverallRecommendationCard
+        recommendation={makeRecommendation({
+          level: "safe",
+          top_signals: ["   "],
+          rationale: "Safe content verified.",
+        })}
+      />
+    ));
+
+    const reason = screen.getByTestId("overall-recommendation-reason");
+    expect(reason.textContent).toBe("Safe content verified");
+  });
+
+  it("empty rationale and no signals returns null (card not rendered)", () => {
+    render(() => (
+      <OverallRecommendationCard
+        recommendation={makeRecommendation({
+          level: "safe",
+          top_signals: [],
+          rationale: "",
+        })}
+      />
+    ));
+
+    expect(screen.queryByTestId("overall-recommendation-card")).toBeNull();
+  });
+
+  it("whitespace-only rationale and no signals returns null (card not rendered)", () => {
+    render(() => (
+      <OverallRecommendationCard
+        recommendation={makeRecommendation({
+          level: "safe",
+          top_signals: ["   "],
+          rationale: "   ",
+        })}
+      />
+    ));
+
+    expect(screen.queryByTestId("overall-recommendation-card")).toBeNull();
+  });
 });

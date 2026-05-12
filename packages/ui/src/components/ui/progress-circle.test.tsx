@@ -1,71 +1,129 @@
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
+import { render, screen, cleanup } from "@solidjs/testing-library";
+import { ProgressCircle } from "./progress-circle";
 
-const source = readFileSync(
-  resolve("src/components/ui/progress-circle.tsx"),
-  "utf8",
-);
+afterEach(() => {
+  cleanup();
+});
 
-describe("<ProgressCircle /> recipe — structure and exports", () => {
-  it("exports ProgressCircle", () => {
-    expect(source).toMatch(/export\s*\{[^}]*ProgressCircle[^}]*\}/);
+describe("<ProgressCircle />", () => {
+  it("renders an SVG element", () => {
+    const { container } = render(() => <ProgressCircle value={50} />);
+    const svg = container.querySelector("svg");
+    expect(svg).toBeTruthy();
   });
 
-  it("accepts a value prop (0-100)", () => {
-    expect(source).toContain("value");
-    expect(source).toContain("getLimitedValue");
+  it("renders two circles (track + progress arc)", () => {
+    const { container } = render(() => <ProgressCircle value={50} />);
+    const circles = container.querySelectorAll("circle");
+    expect(circles.length).toBeGreaterThanOrEqual(2);
   });
 
-  it("clamps value between 0 and 100", () => {
-    expect(source).toContain("100");
-    expect(source).toContain("undefined");
+  it("progress arc has stroke-dasharray and stroke-dashoffset attributes", () => {
+    const { container } = render(() => <ProgressCircle value={50} />);
+    const circles = container.querySelectorAll("circle");
+    const arcCircle = Array.from(circles).find((c) =>
+      c.hasAttribute("stroke-dasharray"),
+    );
+    expect(arcCircle).toBeTruthy();
+    expect(arcCircle?.hasAttribute("stroke-dashoffset")).toBe(true);
   });
 
-  it("renders an SVG with two circles (track + progress)", () => {
-    expect(source).toMatch(/<circle/);
-    const circleCount = (source.match(/<circle/g) ?? []).length;
-    expect(circleCount).toBeGreaterThanOrEqual(2);
+  it("stroke attribute is set to currentColor on both circles (arc is visible)", () => {
+    const { container } = render(() => <ProgressCircle value={50} />);
+    const circles = container.querySelectorAll("circle");
+    for (const circle of Array.from(circles)) {
+      expect(circle.getAttribute("stroke")).toBe("currentColor");
+    }
   });
 
-  it("uses stroke-dasharray and stroke-dashoffset for progress arc", () => {
-    expect(source).toContain("stroke-dasharray");
-    expect(source).toContain("stroke-dashoffset");
+  it("stroke-dashoffset differs between value=0 and value=100", () => {
+    const { container: c0 } = render(() => <ProgressCircle value={0} />);
+    const { container: c100 } = render(() => <ProgressCircle value={100} />);
+
+    const getOffset = (container: HTMLElement) => {
+      const circles = container.querySelectorAll("circle");
+      const arc = Array.from(circles).find((c) =>
+        c.hasAttribute("stroke-dashoffset"),
+      );
+      return arc?.getAttribute("stroke-dashoffset");
+    };
+
+    const offset0 = getOffset(c0);
+    const offset100 = getOffset(c100);
+    expect(offset0).not.toBe(offset100);
   });
 
-  it("rotates the SVG -90 degrees so arc starts at top", () => {
-    expect(source).toContain("-rotate-90");
+  it("value=0 renders no progress arc (dashoffset equals circumference)", () => {
+    const { container } = render(() => <ProgressCircle value={0} />);
+    const circles = container.querySelectorAll("circle");
+    const arc = Array.from(circles).find((c) =>
+      c.hasAttribute("stroke-dashoffset"),
+    );
+    const dashoffset = parseFloat(arc?.getAttribute("stroke-dashoffset") ?? "0");
+    const dasharray = arc?.getAttribute("stroke-dasharray")?.split(" ")[0];
+    const circumference = parseFloat(dasharray ?? "0");
+    expect(dashoffset).toBeCloseTo(circumference, 1);
   });
 
-  it("supports multiple sizes via size prop (xs, sm, md, lg, xl)", () => {
-    expect(source).toContain('"xs"');
-    expect(source).toContain('"sm"');
-    expect(source).toContain('"md"');
-    expect(source).toContain('"lg"');
-    expect(source).toContain('"xl"');
+  it("value=100 fills the arc completely (dashoffset near 0)", () => {
+    const { container } = render(() => <ProgressCircle value={100} />);
+    const circles = container.querySelectorAll("circle");
+    const arc = Array.from(circles).find((c) =>
+      c.hasAttribute("stroke-dashoffset"),
+    );
+    const dashoffset = parseFloat(arc?.getAttribute("stroke-dashoffset") ?? "1");
+    expect(dashoffset).toBeCloseTo(0, 1);
   });
 
-  it("supports custom radius and strokeWidth overrides", () => {
-    expect(source).toContain("radius");
-    expect(source).toContain("strokeWidth");
+  it("clamps value above 100 to 100", () => {
+    const { container: c100 } = render(() => <ProgressCircle value={100} />);
+    const { container: c200 } = render(() => <ProgressCircle value={200} />);
+
+    const getOffset = (container: HTMLElement) => {
+      const circles = container.querySelectorAll("circle");
+      const arc = Array.from(circles).find((c) =>
+        c.hasAttribute("stroke-dashoffset"),
+      );
+      return arc?.getAttribute("stroke-dashoffset");
+    };
+
+    expect(getOffset(c100)).toBe(getOffset(c200));
   });
 
-  it("supports showAnimation prop with transition classes", () => {
-    expect(source).toContain("showAnimation");
-    expect(source).toContain("transition");
+  it("undefined value renders as 0 (no arc progress)", () => {
+    const { container } = render(() => <ProgressCircle />);
+    const circles = container.querySelectorAll("circle");
+    const arc = Array.from(circles).find((c) =>
+      c.hasAttribute("stroke-dashoffset"),
+    );
+    const dashoffset = parseFloat(arc?.getAttribute("stroke-dashoffset") ?? "0");
+    const dasharray = arc?.getAttribute("stroke-dasharray")?.split(" ")[0];
+    const circumference = parseFloat(dasharray ?? "0");
+    expect(dashoffset).toBeCloseTo(circumference, 1);
   });
 
-  it("uses cn() from ../../utils (local package path)", () => {
-    expect(source).toContain("../../utils");
-    expect(source).toContain("cn(");
+  it("xs size renders smaller SVG than xl size", () => {
+    const { container: cXs } = render(() => <ProgressCircle value={50} size="xs" />);
+    const { container: cXl } = render(() => <ProgressCircle value={50} size="xl" />);
+
+    const svgXs = cXs.querySelector("svg");
+    const svgXl = cXl.querySelector("svg");
+
+    const widthXs = parseFloat(svgXs?.getAttribute("width") ?? "0");
+    const widthXl = parseFloat(svgXl?.getAttribute("width") ?? "0");
+
+    expect(widthXs).toBeLessThan(widthXl);
   });
 
-  it("uses mergeProps and splitProps from solid-js", () => {
-    expect(source).toContain("mergeProps");
-    expect(source).toContain("splitProps");
+  it("renders children inside absolute container", () => {
+    render(() => <ProgressCircle value={50}><span>75%</span></ProgressCircle>);
+    expect(screen.getByText("75%")).toBeTruthy();
   });
 
-  it("children are rendered inside an absolute flex container (label support)", () => {
-    expect(source).toContain("absolute");
+  it("SVG has -rotate-90 class so arc starts at top", () => {
+    const { container } = render(() => <ProgressCircle value={50} />);
+    const svg = container.querySelector("svg");
+    expect(svg?.getAttribute("class")).toContain("-rotate-90");
   });
 });

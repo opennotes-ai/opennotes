@@ -23,6 +23,16 @@ import {
 } from "@solidjs/router";
 import { createSignal, ErrorBoundary } from "solid-js";
 import type { JobState, SidebarPayload } from "~/lib/api-client.server";
+import type { components } from "~/lib/generated-types";
+
+type SafetyRecommendation = components["schemas"]["SafetyRecommendation"];
+type RecommendationWithDivergences = SafetyRecommendation & {
+  divergences?: Array<{
+    reason: string;
+    signal_source: string;
+    signal_detail: string;
+  }> | null;
+};
 
 type PollingHandle = {
   state: () => JobState | null;
@@ -182,8 +192,7 @@ vi.mock("embla-carousel-ssr", () => ({
 }));
 
 vi.mock("@opennotes/ui/components/ui/carousel", () => {
-  const solidJs = require("solid-js");
-  const { createContext, useContext } = solidJs;
+  const { createContext, useContext } = require("solid-js") as typeof import("solid-js");
 
   const CarouselCtx = createContext<{
     scrollPrev: () => void;
@@ -3036,7 +3045,7 @@ describe("HighlightsCard + OverallRecommendationCard DOM order (TASK-1612.06 + 1
                     signal_detail: "Claim contradicts source",
                   },
                 ],
-              },
+              } as RecommendationWithDivergences,
             },
           }),
         }),
@@ -3090,7 +3099,7 @@ describe("HighlightsCard + OverallRecommendationCard DOM order (TASK-1612.06 + 1
                     signal_detail: "Contradicts known facts",
                   },
                 ],
-              },
+              } as RecommendationWithDivergences,
             },
           }),
         }),
