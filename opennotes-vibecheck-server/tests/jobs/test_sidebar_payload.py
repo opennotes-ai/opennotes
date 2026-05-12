@@ -355,6 +355,56 @@ class TestAssembleSidebarPayload:
         assert sidebar.safety.recommendation is not None
         assert sidebar.safety.recommendation.level == SafetyLevel.SAFE
 
+    def test_safety_recommendation_json_string_with_divergences_parses(self):
+        sections = _minimal_done_sections()
+        sidebar = assemble_sidebar_payload(
+            "https://example.com",
+            sections,
+            safety_recommendation=json.dumps(
+                {
+                    "level": "unsafe",
+                    "rationale": "Cross-signal mismatch.",
+                    "top_signals": ["Web Risk and image moderation disagree."],
+                    "unavailable_inputs": [],
+                    "divergences": [
+                        {
+                            "direction": "discounted",
+                            "signal_source": "openai",
+                            "signal_detail": "OpenAI moderation score low",
+                            "reason": "Web risk also flagged malicious URL.",
+                        }
+                    ],
+                }
+            ),
+        )
+
+        assert sidebar.safety.recommendation is not None
+        assert sidebar.safety.recommendation.level == SafetyLevel.UNSAFE
+        assert len(sidebar.safety.recommendation.divergences) == 1
+        divergence = sidebar.safety.recommendation.divergences[0]
+        assert divergence.direction == "discounted"
+        assert divergence.signal_source == "openai"
+        assert divergence.signal_detail == "OpenAI moderation score low"
+        assert divergence.reason == "Web risk also flagged malicious URL."
+
+    def test_safety_recommendation_json_string_without_divergences_defaults(self):
+        sections = _minimal_done_sections()
+        sidebar = assemble_sidebar_payload(
+            "https://example.com",
+            sections,
+            safety_recommendation=json.dumps(
+                {
+                    "level": "caution",
+                    "rationale": "No signal overlap info.",
+                    "top_signals": [],
+                    "unavailable_inputs": [],
+                }
+            ),
+        )
+
+        assert sidebar.safety.recommendation is not None
+        assert sidebar.safety.recommendation.divergences == []
+
     def test_null_safety_recommendation_stays_none(self):
         sidebar = assemble_sidebar_payload("https://example.com", _minimal_done_sections(), None)
         assert sidebar.safety.recommendation is None

@@ -880,6 +880,14 @@ async def test_safety_recommendation_step_writes_serialized_recommendation(monke
             level=SafetyLevel.UNSAFE,
             rationale="Verified malware URL and high moderation score.",
             top_signals=["Web Risk MALWARE on https://bad.example"],
+            divergences=[
+                {
+                    "direction": "escalated",
+                    "signal_source": "web_risk",
+                    "signal_detail": "MALWARE risk detected",
+                    "reason": "Safety recommendation elevated due to confirmed malware URL.",
+                }
+            ],
         )
 
     monkeypatch.setattr(orchestrator, "run_safety_recommendation", fake_run)
@@ -894,7 +902,16 @@ async def test_safety_recommendation_step_writes_serialized_recommendation(monke
 
     assert calls[0].web_risk_findings[0].threat_types == ["MALWARE"]
     assert conn.written is not None
-    assert '"level": "unsafe"' in conn.written["recommendation_json"]
+    recommendation_json = json.loads(conn.written["recommendation_json"])
+    assert recommendation_json["level"] == "unsafe"
+    assert recommendation_json["divergences"] == [
+        {
+            "direction": "escalated",
+            "signal_source": "web_risk",
+            "signal_detail": "MALWARE risk detected",
+            "reason": "Safety recommendation elevated due to confirmed malware URL.",
+        }
+    ]
     assert conn.written["task_attempt"] == task_attempt
 
 
