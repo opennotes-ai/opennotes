@@ -69,7 +69,7 @@ Synthesis signals layered on today:
 - Source fields: `weather_report.truth.label`, `weather_report.relevance.label`
 - Trigger: `truth.label == "misleading"` AND `relevance.label in {"insightful", "on_topic"}`
 - Applies only when the running decision is `pass`; never downgrades `flag`.
-- **Known sharp edge** (tracked in TASK-1618.14): the rule treats the winning `truth.label` as authoritative and ignores `logprob` / `alternatives`. A low-confidence `"misleading"` barely ahead of `"factual_claims"` or `"sourced"` will still flag. Tuning may add a confidence floor or weight alternatives.
+- **Known sharp edge** (tracked in TASK-1618.14): the rule treats the winning `truth.label` as authoritative. A low-confidence `"misleading"` will still flag. **Gemini `logprob` values are intermittently broken and cannot be relied on**, so any mitigation must work without them — gate via the structural `alternatives` field (e.g., refuse to escalate when `alternatives[0].label` is `"factual_claims"` / `"sourced"`), multi-rule consensus, or eval-driven label-set tuning. If `logprob` happens to be present and trustworthy, it can serve as an optional tiebreaker, never a required input.
 
 Engagement, novelty, and lower-level analyzer findings are not yet layered in web-side. They are deferred to the server-side overall agent below.
 
