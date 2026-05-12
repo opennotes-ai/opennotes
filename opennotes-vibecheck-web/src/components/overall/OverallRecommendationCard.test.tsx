@@ -5,6 +5,20 @@ import { OverallRecommendationCard } from "./OverallRecommendationCard";
 
 type SafetyRecommendation = components["schemas"]["SafetyRecommendation"];
 type FlashpointMatch = components["schemas"]["FlashpointMatch"];
+type WeatherReport = components["schemas"]["WeatherReport"];
+type RelevanceLabel = WeatherReport["relevance"]["label"];
+type TruthLabel = WeatherReport["truth"]["label"];
+
+function makeWeatherReport(
+  truth: TruthLabel,
+  relevance: RelevanceLabel,
+): WeatherReport {
+  return {
+    truth: { label: truth },
+    relevance: { label: relevance },
+    sentiment: { label: "neutral" },
+  };
+}
 
 afterEach(() => {
   cleanup();
@@ -452,6 +466,104 @@ describe("<OverallRecommendationCard />", () => {
     const reason = screen.getByTestId("overall-recommendation-reason");
     expect(verdict.textContent).toBe("Overall: OK.");
     expect(reason.textContent).toBe("manually reviewed");
+  });
+
+  it("escalates Pass to Flag when weather report is misleading + on_topic", () => {
+    render(() => (
+      <OverallRecommendationCard
+        recommendation={makeRecommendation({
+          level: "safe",
+          top_signals: ["educational context"],
+        })}
+        weatherReport={makeWeatherReport("misleading", "on_topic")}
+      />
+    ));
+
+    const verdict = screen.getByTestId("overall-recommendation-verdict");
+    const reason = screen.getByTestId("overall-recommendation-reason");
+    expect(verdict.textContent).toBe("Overall: Flag!");
+    expect(reason.textContent).toBe("Misleading framing in on-topic discussion");
+  });
+
+  it("escalates Pass to Flag when weather report is misleading + insightful", () => {
+    render(() => (
+      <OverallRecommendationCard
+        recommendation={makeRecommendation({
+          level: "mild",
+          top_signals: ["minor concern"],
+        })}
+        weatherReport={makeWeatherReport("misleading", "insightful")}
+      />
+    ));
+
+    expect(screen.getByTestId("overall-recommendation-verdict").textContent).toBe(
+      "Overall: Flag!",
+    );
+  });
+
+  it("does not escalate when truth is misleading but relevance is off_topic", () => {
+    render(() => (
+      <OverallRecommendationCard
+        recommendation={makeRecommendation({
+          level: "safe",
+          top_signals: ["educational context"],
+        })}
+        weatherReport={makeWeatherReport("misleading", "off_topic")}
+      />
+    ));
+
+    expect(screen.getByTestId("overall-recommendation-verdict").textContent).toBe(
+      "Overall: OK.",
+    );
+  });
+
+  it("does not escalate when truth is hearsay (only 'misleading' triggers)", () => {
+    render(() => (
+      <OverallRecommendationCard
+        recommendation={makeRecommendation({
+          level: "safe",
+          top_signals: ["educational context"],
+        })}
+        weatherReport={makeWeatherReport("hearsay", "on_topic")}
+      />
+    ));
+
+    expect(screen.getByTestId("overall-recommendation-verdict").textContent).toBe(
+      "Overall: OK.",
+    );
+  });
+
+  it("does not downgrade an existing Flag verdict even with misleading + on_topic", () => {
+    render(() => (
+      <OverallRecommendationCard
+        recommendation={makeRecommendation({
+          level: "unsafe",
+          top_signals: ["explicit threat"],
+        })}
+        weatherReport={makeWeatherReport("misleading", "on_topic")}
+      />
+    ));
+
+    expect(screen.getByTestId("overall-recommendation-verdict").textContent).toBe(
+      "Overall: Flag!",
+    );
+  });
+
+  it("explicit overall prop wins over weather report escalation", () => {
+    render(() => (
+      <OverallRecommendationCard
+        recommendation={makeRecommendation({
+          level: "safe",
+          top_signals: ["educational context"],
+        })}
+        weatherReport={makeWeatherReport("misleading", "on_topic")}
+        overall={{ verdict: "pass", reason: "manually reviewed" }}
+      />
+    ));
+
+    expect(screen.getByTestId("overall-recommendation-verdict").textContent).toBe(
+      "Overall: OK.",
+    );
   });
 
   it("whitespace-only rationale and no signals returns null (card not rendered)", () => {

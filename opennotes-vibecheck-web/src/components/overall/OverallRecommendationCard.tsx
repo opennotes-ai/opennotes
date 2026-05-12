@@ -6,6 +6,8 @@ type SafetyRecommendation = components["schemas"]["SafetyRecommendation"];
 type SafetyLevel = components["schemas"]["SafetyLevel"];
 type FlashpointMatch = components["schemas"]["FlashpointMatch"];
 type RiskLevel = components["schemas"]["RiskLevel"];
+type WeatherReport = components["schemas"]["WeatherReport"];
+type RelevanceLabel = WeatherReport["relevance"]["label"];
 
 export type OverallVerdict = "pass" | "flag";
 
@@ -14,16 +16,24 @@ export interface OverallDecision {
   reason: string;
 }
 
-// The set of signals the overall verdict is decided over. Slots are grouped
-// by level — higher-level slots carry already-synthesized agent outputs;
-// lower-level slots carry raw analyzer findings. Today only the higher-level
-// safety recommendation and flashpoint matches participate; lower-level
+// The set of signals the overall verdict is decided over. The verdict is a
+// cost-benefit decision — "should a moderator intervene?" — weighing
+// risk signals (what's the cost of NOT intervening?) against utility signals
+// (what's the benefit of intervening — is the content worth the effort?).
+//
+// Slots are grouped by level: higher-level slots carry already-synthesized
+// agent outputs; lower-level slots carry raw analyzer findings. Lower-level
 // signals are reserved for upcoming rules and the server-side
 // overall-recommendation agent that will eventually own this synthesis.
 export interface OverallSignals {
-  // Higher-level: synthesized agent outputs.
+  // Risk side — higher-level synthesized agent outputs.
   safetyRecommendation: SafetyRecommendation | null;
   flashpointMatches?: FlashpointMatch[] | null;
+  // Utility side — "weather report" axes about whether the content is
+  // worth a moderator's attention.
+  utility?: {
+    weatherReport?: WeatherReport | null;
+  };
   // Lower-level: raw per-analyzer findings. Reserved slot, intentionally
   // empty for now.
   lowLevel?: Record<string, never>;
@@ -33,6 +43,7 @@ export interface OverallRecommendationCardProps {
   recommendation: SafetyRecommendation | null;
   overall?: OverallDecision | null;
   flashpointMatches?: FlashpointMatch[] | null;
+  weatherReport?: WeatherReport | null;
 }
 
 const HIGH_FLASHPOINT_LEVELS: RiskLevel[] = ["Heated", "Hostile", "Dangerous"];
@@ -74,6 +85,26 @@ export function escalateForFlashpoint(
   return {
     verdict: "flag",
     reason: `Conversation flashpoint risk: ${highest}`,
+  };
+}
+
+const ON_TOPIC_RELEVANCE: RelevanceLabel[] = ["insightful", "on_topic"];
+
+// Cost-benefit rule: a Pass decision should escalate when the page is
+// on-topic enough to be worth a moderator's attention AND the truth axis
+// flags misleading framing. Only escalates Pass — never downgrades Flag.
+export function escalateForMisleadingOnTopic(
+  base: OverallDecision | null,
+  weatherReport: WeatherReport | null | undefined,
+): OverallDecision | null {
+  if (base === null) return null;
+  if (base.verdict !== "pass") return base;
+  if (!weatherReport) return base;
+  if (weatherReport.truth.label !== "misleading") return base;
+  if (!ON_TOPIC_RELEVANCE.includes(weatherReport.relevance.label)) return base;
+  return {
+    verdict: "flag",
+    reason: "Misleading framing in on-topic discussion",
   };
 }
 
@@ -155,12 +186,20 @@ function decideFromSafety(
 }
 
 // Decide the overall verdict over the cross-signal bag. The function is a
-// composition of per-signal rules:
-//   1. Start from the higher-level safety recommendation (agent synthesis of
-//      lower-level moderation / web-risk / image / video findings).
-//   2. Apply tone-dynamics escalation when the safety verdict is mild but
-//      the conversation flashpoint detector says otherwise.
-//   3. (Future rules over lower-level signals layer in here.)
+// cost-benefit composition: should a moderator intervene, given the risk
+// signals (cost of NOT intervening) and the utility signals (benefit of
+// intervening — is the content worth it)?
+//
+// Rules layer in priority order:
+//   1. Risk-side base: the higher-level safety recommendation (agent
+//      synthesis of lower-level moderation / web-risk / image / video
+//      findings).
+//   2. Risk-side escalation: tone dynamics promotes mild safety to flag
+//      when the conversation flashpoint detector disagrees.
+//   3. Utility-side escalation: misleading framing in on-topic discussion
+//      promotes pass to flag, because the content is worth a moderator's
+//      attention.
+//   4. (Future rules over lower-level signals layer in here.)
 //
 // This stays web-side until the server-side overall-recommendation agent
 // ships and owns the full synthesis; see
@@ -172,10 +211,14 @@ export function decideOverall(
     return null;
   }
   const base = decideFromSafety(signals.safetyRecommendation);
-  return escalateForFlashpoint(
+  const afterFlashpoint = escalateForFlashpoint(
     base,
     signals.safetyRecommendation,
     signals.flashpointMatches,
+  );
+  return escalateForMisleadingOnTopic(
+    afterFlashpoint,
+    signals.utility?.weatherReport,
   );
 }
 
@@ -192,6 +235,7 @@ export function OverallRecommendationCard(
     return decideOverall({
       safetyRecommendation: props.recommendation,
       flashpointMatches: props.flashpointMatches,
+      utility: { weatherReport: props.weatherReport },
     });
   };
 

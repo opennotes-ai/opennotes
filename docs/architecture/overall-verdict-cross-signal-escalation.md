@@ -2,19 +2,31 @@
 
 ## Intent
 
-The "Overall: OK." / "Overall: Flag!" line in `OverallRecommendationCard` (vibecheck-web) should be a synthesis of every primary analysis dimension on the page — not a restatement of the safety agent alone.
+The "Overall: OK." / "Overall: Flag!" line in `OverallRecommendationCard` (vibecheck-web) answers a single product question: **should a moderator (or someone in that role) intervene in this content?** It's a cost-benefit decision, not a tight summary of the safety agent:
 
-The dimensions that should contribute, in priority order:
+- **Cost** of not intervening — the risk signals: safety agent verdict, conversation flashpoint matches, raw moderation findings, etc.
+- **Benefit** of intervening — the utility signals: is the content worth the effort? Relevance, on-topic-ness, sourcing quality, engagement.
 
-1. **Safety recommendation** — moderation, web risk, image/video SafeSearch (the strongest single signal).
-2. **Tone dynamics** ("weather report") — conversation flashpoint matches, derailment, hostility patterns that don't necessarily trip per-message moderation.
-3. **Page content overall** — what the conversation/article is actually about; topical signals from claims/opinions/etc. that frame whether per-utterance findings are reasonable in context.
+Pass means "the cost-benefit doesn't justify intervention". Flag means "it does".
 
-Today the card still derives its verdict mostly from the safety recommendation (`PASS_LEVELS = ["safe", "mild"]`), so any `mild` page renders "Overall: OK." even when the tone dynamics or page-level context disagree. That under-states what each agent already saw individually.
+The dimensions that contribute, grouped by side:
 
-This doc covers the **first cross-signal rule** layered onto that derivation: a `mild` safety verdict should not stay `pass` when tone dynamics show a hostile conversation. More cross-signal rules belong here; eventually all of it moves server-side (see Migration).
+**Risk side**
+1. **Safety recommendation** (high-level) — agent synthesis of moderation, web risk, image/video SafeSearch.
+2. **Conversation flashpoint matches** (high-level) — tone dynamics from the "weather report".
+3. **Raw analyzer findings** (low-level) — reserved slot for upcoming rules.
 
-## First rule: mild safety + high flashpoint → Flag
+**Utility side**
+1. **Weather report axes** (high-level) — `relevance`, `truth`, `sentiment`. Today only `truth × relevance` is consumed.
+2. **Engagement / novelty** — not yet exposed in the payload; future signals.
+
+This doc covers the cross-signal rules layered onto web-side derivation today. Eventually all of it moves server-side (see Migration).
+
+## Rules in order
+
+The rules below all run after the safety-recommendation base verdict (`decideFromSafety`). Each rule can promote `pass → flag`; none currently downgrade `flag → pass`.
+
+### Rule 1 — Risk: mild safety + high flashpoint → Flag
 
 When `OverallRecommendationCard` would derive `verdict: "pass"` and the safety level is exactly `mild`, promote to `verdict: "flag"` if any `tone_dynamics.flashpoint_matches` entry has `risk_level` in `{Heated, Hostile, Dangerous}`.
 
@@ -24,13 +36,22 @@ When `OverallRecommendationCard` would derive `verdict: "pass"` and the safety l
 
 Concretely: the safety agent rated a civil personal-attack thread `mild` (no slurs/threats), while the conversation-flashpoint detector returned `Heated`. The overall card should not claim everything's fine.
 
+### Rule 2 — Utility: misleading framing in on-topic discussion → Flag
+
+When the running decision is `pass` and the weather report's truth axis is `misleading` AND the relevance axis is in `{insightful, on_topic}`, promote to `flag` with reason `"Misleading framing in on-topic discussion"`.
+
+Rationale: a moderator should look at engaged, on-topic conversations whose framing is misleading, even when per-utterance safety stays mild. This is the simplest defensible cost-benefit rule we can build from current `weather_report` fields. Truth label `hearsay` is NOT included — too noisy without eval data.
+
+Excluded relevance labels (`chatty`, `drifting`, `off_topic`) imply low intervention benefit — not worth a moderator's time even if misleading.
+
 ## Where computed
 
 Web-side, in `OverallRecommendationCard.tsx`, via:
 
-- `decideOverall(signals: OverallSignals): OverallDecision | null` — the composition function. Takes a typed bag of signals (higher-level: `safetyRecommendation`, `flashpointMatches`; lower-level slot reserved) and runs each cross-signal rule in turn.
-- `decideFromSafety(recommendation)` — rule 1, the safety-recommendation base verdict.
-- `escalateForFlashpoint(base, recommendation, matches)` — rule 2, the tone-dynamics escalation described above.
+- `decideOverall(signals: OverallSignals): OverallDecision | null` — the composition function. Takes a typed bag of signals split into risk-side (`safetyRecommendation`, `flashpointMatches`), utility-side (`utility.weatherReport`), and a reserved lower-level slot, and runs each cross-signal rule in turn.
+- `decideFromSafety(recommendation)` — the safety-recommendation base verdict.
+- `escalateForFlashpoint(base, recommendation, matches)` — Rule 1, risk-side tone-dynamics escalation.
+- `escalateForMisleadingOnTopic(base, weatherReport)` — Rule 2, utility-side misleading-on-topic escalation.
 
 Rationale: the synthesis lives web-side only until the server-side overall-recommendation agent ships and owns the full cross-signal decision (safety + tone dynamics + page content + anything else that lands). Adding server schema fields for each rule before that agent ships would create churn for logic the agent will own anyway. Web-side keeps each rule small and easy to remove.
 
