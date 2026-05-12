@@ -66,11 +66,6 @@ const AXES: AxisDefinition[] = [
   { axisType: "sentiment", heading: AXIS_DEFINITIONS.sentiment.heading },
 ];
 
-const WEATHER_SYMBOL_SHAPE_EFFECT_CLASS = [
-  "[filter:drop-shadow(0_6px_10px_oklch(0.25_0.015_160/0.16))_drop-shadow(0_3px_6px_oklch(0.25_0.015_160/0.12))]",
-  "dark:[filter:drop-shadow(0_18px_40px_oklch(from_var(--primary)_l_c_h/0.45))_drop-shadow(0_8px_16px_oklch(from_var(--primary)_l_c_h/0.25))]",
-].join(" ");
-
 function variantHex(label: string): string {
   const variant = formatWeatherVariant(label);
   return getVariantHex(variant);
@@ -640,7 +635,7 @@ export default function WeatherReport(props: WeatherReportProps): JSX.Element {
                 level={level()}
                 lobeColors={lobeColors()}
                 size="100%"
-                class={`block w-full h-auto ${WEATHER_SYMBOL_SHAPE_EFFECT_CLASS}`}
+                class="block w-full h-auto weather-symbol-shape-effect"
                 hoveredAxis={effectiveHovered()}
                 onLobeEnter={(axis) => setHoveredAxis(axis)}
                 onLobeLeave={(axis) => {

@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { resolve as resolvePath } from "node:path";
 import { createEffect, createSignal } from "solid-js";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
@@ -12,6 +14,8 @@ import WeatherReport from "./WeatherReport";
 import { WeatherSymbol } from "./WeatherSymbol";
 import { SidebarStoreProvider, useSidebarStore } from "../SidebarStoreProvider";
 import * as weatherLabels from "~/lib/weather-labels";
+
+const appCss = readFileSync(resolvePath(process.cwd(), "src/app.css"), "utf8");
 
 type WeatherReportData = components["schemas"]["WeatherReport"];
 type SafetyRecommendation = components["schemas"]["SafetyRecommendation"];
@@ -1735,9 +1739,14 @@ describe("WeatherReport", () => {
       ));
       const symbol = screen.getByTestId("weather-symbol-safe");
       const symbolClass = symbol.getAttribute("class") ?? "";
-      expect(symbolClass).toContain("[filter:drop-shadow(");
-      expect(symbolClass).toContain("dark:[filter:drop-shadow(");
-      expect(symbolClass).toContain("oklch(from_var(--primary)_l_c_h/0.45)");
+      expect(symbolClass).toMatch(/(?:^|\s)weather-symbol-shape-effect(?:\s|$)/);
+    });
+
+    it("symbol shape effect CSS has fallback filters and token-derived relative-color overrides", () => {
+      expect(appCss).toMatch(/\.weather-symbol-shape-effect\s*\{[^}]*filter:\s*drop-shadow\(/s);
+      expect(appCss).toMatch(/@supports\s*\(color:\s*oklch\(from red l c h \/ 1\)\)/);
+      expect(appCss).toMatch(/\.weather-symbol-shape-effect\s*\{[^}]*oklch\(from var\(--foreground\) l c h \/ 0\.16\)/s);
+      expect(appCss).toMatch(/\.dark \.weather-symbol-shape-effect\s*\{[^}]*oklch\(from var\(--primary\) l c h \/ 0\.45\)/s);
     });
 
     it("symbol cell keeps only motion-safe translate lift classes", () => {
