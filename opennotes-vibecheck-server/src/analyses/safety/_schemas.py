@@ -20,11 +20,19 @@ class SafetyLevel(StrEnum):
     UNSAFE = "unsafe"
 
 
+class Divergence(BaseModel):
+    direction: Literal["discounted", "escalated"]
+    signal_source: str
+    signal_detail: str
+    reason: str
+
+
 class SafetyRecommendation(BaseModel):
     level: SafetyLevel
     rationale: str
     top_signals: list[str] = Field(default_factory=list)
     unavailable_inputs: list[str] = Field(default_factory=list)
+    divergences: list[Divergence] = Field(default_factory=list)
 
 
 class HarmfulContentMatch(BaseModel):
