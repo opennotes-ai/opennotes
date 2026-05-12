@@ -4,6 +4,7 @@ import type { components } from "~/lib/generated-types";
 import { OverallRecommendationCard } from "./OverallRecommendationCard";
 
 type SafetyRecommendation = components["schemas"]["SafetyRecommendation"];
+type FlashpointMatch = components["schemas"]["FlashpointMatch"];
 
 afterEach(() => {
   cleanup();
@@ -17,6 +18,20 @@ function makeRecommendation(
     rationale: "No harmful content detected.",
     top_signals: [],
     unavailable_inputs: [],
+    ...overrides,
+  };
+}
+
+function makeFlashpoint(
+  overrides: Partial<FlashpointMatch> = {},
+): FlashpointMatch {
+  return {
+    scan_type: "conversation_flashpoint",
+    utterance_id: "u1",
+    derailment_score: 60,
+    risk_level: "Heated",
+    reasoning: "test fixture",
+    context_messages: 4,
     ...overrides,
   };
 }
@@ -321,6 +336,122 @@ describe("<OverallRecommendationCard />", () => {
     expect(reason.className).toContain("truncate");
     expect(reason.className).toContain("min-w-0");
     expect(reason.getAttribute("title")).toBe(longSignal);
+  });
+
+  it("mild + no flashpoint matches preserves Overall: OK.", () => {
+    render(() => (
+      <OverallRecommendationCard
+        recommendation={makeRecommendation({
+          level: "mild",
+          top_signals: ["minor concern"],
+        })}
+      />
+    ));
+
+    const verdict = screen.getByTestId("overall-recommendation-verdict");
+    expect(verdict.textContent).toBe("Overall: OK.");
+  });
+
+  it("mild + Low Risk flashpoint preserves Overall: OK.", () => {
+    render(() => (
+      <OverallRecommendationCard
+        recommendation={makeRecommendation({
+          level: "mild",
+          top_signals: ["minor concern"],
+        })}
+        flashpointMatches={[makeFlashpoint({ risk_level: "Low Risk" })]}
+      />
+    ));
+
+    const verdict = screen.getByTestId("overall-recommendation-verdict");
+    expect(verdict.textContent).toBe("Overall: OK.");
+  });
+
+  it("mild + Heated flashpoint escalates to Overall: Flag!", () => {
+    render(() => (
+      <OverallRecommendationCard
+        recommendation={makeRecommendation({
+          level: "mild",
+          top_signals: ["minor concern"],
+        })}
+        flashpointMatches={[makeFlashpoint({ risk_level: "Heated" })]}
+      />
+    ));
+
+    const verdict = screen.getByTestId("overall-recommendation-verdict");
+    const reason = screen.getByTestId("overall-recommendation-reason");
+    expect(verdict.textContent).toBe("Overall: Flag!");
+    expect(reason.textContent).toBe("Conversation flashpoint risk: Heated");
+  });
+
+  it("mild + Hostile flashpoint escalates to Overall: Flag!", () => {
+    render(() => (
+      <OverallRecommendationCard
+        recommendation={makeRecommendation({
+          level: "mild",
+          top_signals: ["minor concern"],
+        })}
+        flashpointMatches={[makeFlashpoint({ risk_level: "Hostile" })]}
+      />
+    ));
+
+    const verdict = screen.getByTestId("overall-recommendation-verdict");
+    const reason = screen.getByTestId("overall-recommendation-reason");
+    expect(verdict.textContent).toBe("Overall: Flag!");
+    expect(reason.textContent).toBe("Conversation flashpoint risk: Hostile");
+  });
+
+  it("mild + multiple flashpoints picks highest risk", () => {
+    render(() => (
+      <OverallRecommendationCard
+        recommendation={makeRecommendation({
+          level: "mild",
+          top_signals: ["minor concern"],
+        })}
+        flashpointMatches={[
+          makeFlashpoint({ risk_level: "Heated", utterance_id: "u1" }),
+          makeFlashpoint({ risk_level: "Dangerous", utterance_id: "u2" }),
+        ]}
+      />
+    ));
+
+    const verdict = screen.getByTestId("overall-recommendation-verdict");
+    const reason = screen.getByTestId("overall-recommendation-reason");
+    expect(verdict.textContent).toBe("Overall: Flag!");
+    expect(reason.textContent).toBe("Conversation flashpoint risk: Dangerous");
+  });
+
+  it("safe + Dangerous flashpoint is NOT escalated (only mild is)", () => {
+    render(() => (
+      <OverallRecommendationCard
+        recommendation={makeRecommendation({
+          level: "safe",
+          top_signals: ["all clear"],
+        })}
+        flashpointMatches={[makeFlashpoint({ risk_level: "Dangerous" })]}
+      />
+    ));
+
+    const verdict = screen.getByTestId("overall-recommendation-verdict");
+    expect(verdict.textContent).toBe("Overall: OK.");
+  });
+
+  it("explicit overall prop overrides flashpoint escalation", () => {
+    render(() => (
+      <OverallRecommendationCard
+        recommendation={makeRecommendation({
+          level: "mild",
+          top_signals: ["minor concern"],
+        })}
+        flashpointMatches={[makeFlashpoint({ risk_level: "Dangerous" })]}
+        overall={{ verdict: "pass", reason: "manually reviewed" }}
+      />
+    ));
+
+    const verdict = screen.getByTestId("overall-recommendation-verdict");
+    const reason = screen.getByTestId("overall-recommendation-reason");
+    expect(verdict.textContent).toBe("Overall: OK.");
+    expect(reason.textContent).toBe("manually reviewed");
   });
 
   it("whitespace-only rationale and no signals returns null (card not rendered)", () => {

@@ -4,12 +4,57 @@ import type { components } from "~/lib/generated-types";
 
 type SafetyRecommendation = components["schemas"]["SafetyRecommendation"];
 type SafetyLevel = components["schemas"]["SafetyLevel"];
+type FlashpointMatch = components["schemas"]["FlashpointMatch"];
+type RiskLevel = components["schemas"]["RiskLevel"];
 
 export type OverallVerdict = "pass" | "flag";
 
 export interface OverallRecommendationCardProps {
   recommendation: SafetyRecommendation | null;
   overall?: { verdict: OverallVerdict; reason: string } | null;
+  flashpointMatches?: FlashpointMatch[] | null;
+}
+
+const HIGH_FLASHPOINT_LEVELS: RiskLevel[] = ["Heated", "Hostile", "Dangerous"];
+const FLASHPOINT_PRIORITY: Record<RiskLevel, number> = {
+  "Low Risk": 0,
+  Guarded: 1,
+  Heated: 2,
+  Hostile: 3,
+  Dangerous: 4,
+};
+
+function highestFlashpointRisk(
+  matches: FlashpointMatch[] | null | undefined,
+): RiskLevel | null {
+  if (!matches || matches.length === 0) return null;
+  let highest: RiskLevel | null = null;
+  for (const match of matches) {
+    if (!HIGH_FLASHPOINT_LEVELS.includes(match.risk_level)) continue;
+    if (
+      highest === null ||
+      FLASHPOINT_PRIORITY[match.risk_level] > FLASHPOINT_PRIORITY[highest]
+    ) {
+      highest = match.risk_level;
+    }
+  }
+  return highest;
+}
+
+export function escalateForFlashpoint(
+  base: { verdict: OverallVerdict; reason: string } | null,
+  recommendation: SafetyRecommendation | null,
+  flashpointMatches: FlashpointMatch[] | null | undefined,
+): { verdict: OverallVerdict; reason: string } | null {
+  if (base === null) return null;
+  if (base.verdict !== "pass") return base;
+  if (recommendation?.level !== "mild") return base;
+  const highest = highestFlashpointRisk(flashpointMatches);
+  if (highest === null) return base;
+  return {
+    verdict: "flag",
+    reason: `Conversation flashpoint risk: ${highest}`,
+  };
 }
 
 const PASS_LEVELS: SafetyLevel[] = ["safe", "mild"];
@@ -101,8 +146,13 @@ export function OverallRecommendationCard(
 ): JSX.Element | null {
   const resolved = (): { verdict: OverallVerdict; reason: string } | null => {
     if (props.overall != null) return props.overall;
-    if (props.recommendation != null) return deriveOverall(props.recommendation);
-    return null;
+    if (props.recommendation == null) return null;
+    const base = deriveOverall(props.recommendation);
+    return escalateForFlashpoint(
+      base,
+      props.recommendation,
+      props.flashpointMatches,
+    );
   };
 
   return (

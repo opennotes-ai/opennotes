@@ -770,6 +770,7 @@ function AnalyzePageContent(props: { initialJobState: JobState | null }) {
                       <Show when={sidebarPayloadComplete()}>
                         <OverallRecommendationCard
                           recommendation={sidebarPayload()?.safety?.recommendation ?? null}
+                          flashpointMatches={sidebarPayload()?.tone_dynamics?.flashpoint_matches ?? null}
                         />
                       </Show>
                       <Show when={showHeadlineLeadIn()}>
