@@ -355,8 +355,7 @@ WHERE job_id = $1
 _LOAD_SAFETY_SECTIONS_SQL = """
 SELECT
     sections,
-    url,
-    final_url
+    url
 FROM vibecheck_jobs
 WHERE job_id = $1
   AND attempt_id = $2
@@ -2357,7 +2356,7 @@ async def _run_safety_recommendation_step(
         return
 
     try:
-        source_url = row["final_url"] or row["url"]
+        source_url = row["url"]
         inputs = _build_safety_recommendation_inputs(
             _parse_sections(row["sections"]),
             source_url=source_url,

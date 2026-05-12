@@ -815,18 +815,19 @@ class SafetyRecommendationConn:
         *,
         attempt_matches: bool = True,
         url: str | None = None,
-        final_url: str | None = None,
     ) -> None:
         self.sections = sections
         self.attempt_matches = attempt_matches
         self.url = url
-        self.final_url = final_url
         self.written = None
 
     async def fetchrow(self, query, job_id, task_attempt):
+        assert (
+            "final_url" not in query
+        ), "safety recommendation SQL should not read final_url"
         if not self.attempt_matches:
             return None
-        return {"sections": self.sections, "url": self.url, "final_url": self.final_url}
+        return {"sections": self.sections, "url": self.url}
 
     async def execute(self, query, job_id, recommendation_json, task_attempt):
         self.written = {
@@ -906,7 +907,6 @@ async def test_safety_recommendation_step_writes_serialized_recommendation(monke
     conn = SafetyRecommendationConn(
         _sections_for_safety_step(),
         url="https://input.example/article",
-        final_url="https://canonical.input.example/article",
     )
 
     await orchestrator._run_safety_recommendation_step(
@@ -914,7 +914,7 @@ async def test_safety_recommendation_step_writes_serialized_recommendation(monke
     )
 
     assert calls[0].web_risk_findings[0].threat_types == ["MALWARE"]
-    assert calls[0].source_url == "https://canonical.input.example/article"
+    assert calls[0].source_url == "https://input.example/article"
     assert conn.written is not None
     assert (
         "safety_recommendation = $2::jsonb" in conn.written["query"]
@@ -932,26 +932,8 @@ async def test_safety_recommendation_step_writes_serialized_recommendation(monke
     assert conn.written["task_attempt"] == task_attempt
 
 
-@pytest.mark.parametrize(
-    ("url", "final_url", "expected_source_url"),
-    [
-        (
-            "https://input.example/article",
-            "https://canonical.input.example/article",
-            "https://canonical.input.example/article",
-        ),
-        (
-            "https://input.example/article",
-            None,
-            "https://input.example/article",
-        ),
-    ],
-)
-async def test_safety_recommendation_step_prefers_final_url_for_source_url(
+async def test_safety_recommendation_step_uses_job_url_for_source_url(
     monkeypatch,
-    url: str | None,
-    final_url: str | None,
-    expected_source_url: str | None,
 ) -> None:
     from src.jobs import orchestrator
 
@@ -969,15 +951,14 @@ async def test_safety_recommendation_step_prefers_final_url_for_source_url(
 
     conn = SafetyRecommendationConn(
         _sections_for_safety_step(),
-        url=url,
-        final_url=final_url,
+        url="https://input.example/article",
     )
 
     await orchestrator._run_safety_recommendation_step(
         FakePool(conn), uuid4(), uuid4(), MagicMock()
     )
 
-    assert calls[0].source_url == expected_source_url
+    assert calls[0].source_url == "https://input.example/article"
 
 
 async def test_safety_recommendation_step_marks_failed_slots_unavailable(monkeypatch):
