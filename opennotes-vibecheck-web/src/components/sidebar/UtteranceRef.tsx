@@ -1,4 +1,6 @@
 import type { JSX } from "solid-js";
+import { useUtterances } from "./UtterancesContext";
+import { utteranceLabel } from "./utteranceLabel";
 
 export interface UtteranceRefProps {
   utteranceId: string;
@@ -17,7 +19,9 @@ const ENABLED_CLASS =
 const DISABLED_CLASS = "select-none opacity-60";
 
 export default function UtteranceRef(props: UtteranceRefProps): JSX.Element {
-  const label = () => props.label ?? `turn ${props.utteranceId}`;
+  const utterances = useUtterances();
+  const label = () =>
+    props.label ?? utteranceLabel(props.utteranceId, utterances());
   const classes = () =>
     [BASE_CLASS, props.disabled ? DISABLED_CLASS : ENABLED_CLASS, props.class]
       .filter(Boolean)
