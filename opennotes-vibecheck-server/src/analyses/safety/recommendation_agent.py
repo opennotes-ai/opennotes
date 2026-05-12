@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 from typing import Any, cast
+
+import logfire
 
 from src.analyses.safety._schemas import (
     HarmfulContentMatch,
@@ -90,6 +93,49 @@ def _serialize_inputs(inputs: SafetyRecommendationInputs) -> str:
     return json.dumps(payload)
 
 
+_RAW_TEXT_MOD_SCORE_RE = re.compile(
+    r"^(?:text\s*:\s*)?[a-z][a-z /-]*\s+(?:score\s+)?\d+\.\d+$",
+    re.IGNORECASE,
+)
+_VISION_FLOAT_RE = re.compile(
+    r"(adult|violence|racy|medical|spoof)\s+(max_likelihood|score)\s+\d+\.\d+",
+    re.IGNORECASE,
+)
+_VISION_ENUM_RE = re.compile(
+    r"\b(VERY_LIKELY|LIKELY|POSSIBLE|UNLIKELY|VERY_UNLIKELY)\b",
+    re.IGNORECASE,
+)
+_SANITIZER_PLACEHOLDER = "Verified concern requires review"
+
+
+def _is_raw_signal(value: str) -> bool:
+    stripped = value.strip()
+    if _RAW_TEXT_MOD_SCORE_RE.match(stripped):
+        return True
+    if _VISION_FLOAT_RE.search(stripped):
+        return True
+    return bool(_VISION_ENUM_RE.search(stripped))
+
+
+def _sanitize_top_signals(recommendation: SafetyRecommendation) -> SafetyRecommendation:
+    original = list(recommendation.top_signals)
+    kept: list[str] = []
+    for entry in original:
+        if _is_raw_signal(entry):
+            logfire.warning(
+                "safety_recommendation_top_signal_stripped",
+                level=recommendation.level.value,
+                raw_value=entry,
+            )
+            continue
+        kept.append(entry)
+    if not kept and original:
+        kept = [_SANITIZER_PLACEHOLDER]
+    if kept == original:
+        return recommendation
+    return recommendation.model_copy(update={"top_signals": kept})
+
+
 async def run_safety_recommendation(
     inputs: SafetyRecommendationInputs,
     settings: Settings,
@@ -106,4 +152,5 @@ async def run_safety_recommendation(
     )
     async with vertex_slot(settings):
         result = await run_vertex_agent_with_retry(agent, _serialize_inputs(inputs))
-    return cast(SafetyRecommendation, result.output)
+    output = cast(SafetyRecommendation, result.output)
+    return _sanitize_top_signals(output)
