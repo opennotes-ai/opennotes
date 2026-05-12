@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { createSignal, For, type JSX } from "solid-js";
+import { createEffect, createSignal, For, type JSX } from "solid-js";
 import { render, screen, cleanup } from "@solidjs/testing-library";
 import { HighlightsStoreProvider, useHighlights } from "./HighlightsStoreProvider";
 import { SafetyHighlightsBridge } from "./SafetyHighlightsBridge";
@@ -281,12 +281,14 @@ describe("SafetyHighlightsBridge", () => {
       makeRec([makeDiv(0)]),
     );
 
-    let renderCount = 0;
+    let reactiveReads = 0;
 
     function RenderCounter() {
       const store = useHighlights();
-      store.items();
-      renderCount++;
+      createEffect(() => {
+        store.items();
+        reactiveReads++;
+      });
       return null;
     }
 
@@ -297,11 +299,11 @@ describe("SafetyHighlightsBridge", () => {
       </HighlightsStoreProvider>
     ));
 
-    const countAfterInit = renderCount;
+    const countAfterInit = reactiveReads;
 
     setRec({ ...makeRec([makeDiv(0)]) });
 
-    expect(renderCount).toBe(countAfterInit);
+    expect(reactiveReads).toBe(countAfterInit);
   });
 
   it("maps id, title, detail, and severity correctly", () => {
@@ -358,25 +360,16 @@ describe("SafetyHighlightsBridge", () => {
             }),
           ])}
         />
-        <ProbeItems />
         <HighlightsCard />
       </HighlightsStoreProvider>
     ));
 
     const slides = screen.getAllByTestId("highlight-slide");
     expect(slides).toHaveLength(2);
-    expect(screen.getByTestId("item-safety-divergence:0").textContent).toBe(
-      "Discounted: Fact signal",
-    );
-    expect(screen.getByTestId("item-safety-divergence:1").textContent).toBe(
-      "Escalated: Manual review",
-    );
-    expect(screen.getByTestId("item-safety-divergence:0").getAttribute("data-severity")).toBe(
-      "info",
-    );
-    expect(screen.getByTestId("item-safety-divergence:1").getAttribute("data-severity")).toBe(
-      "warn",
-    );
+    expect(slides[0]).toHaveTextContent("Discounted: Fact signal");
+    expect(slides[0]).toHaveTextContent("model-a: Weak signal");
+    expect(slides[1]).toHaveTextContent("Escalated: Manual review");
+    expect(slides[1]).toHaveTextContent("model-b: High confidence");
   });
 
   it("does not render highlight slides when recommendation divergences are missing", () => {

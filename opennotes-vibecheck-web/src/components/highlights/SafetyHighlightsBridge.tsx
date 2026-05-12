@@ -20,16 +20,15 @@ export function SafetyHighlightsBridge(props: {
 }): null {
   const highlights = useHighlights();
 
-  const divergencesKey = createMemo(
-    () => JSON.stringify(props.recommendation?.divergences ?? null),
+  const divergences = createMemo(
+    () => props.recommendation?.divergences ?? null,
     undefined,
-    { equals: (a, b) => a === b },
+    { equals: (a, b) => JSON.stringify(a) === JSON.stringify(b) },
   );
 
   createEffect(() => {
-    divergencesKey();
-    const divergences = props.recommendation?.divergences ?? [];
-    const mapped = divergences.map((divergence, idx) => ({
+    const currentDivergences = divergences() ?? [];
+    const mapped = currentDivergences.map((divergence, idx) => ({
       id: `safety-divergence:${idx}`,
       source: "safety-divergence" as const,
       title: divergenceTitle(divergence),
