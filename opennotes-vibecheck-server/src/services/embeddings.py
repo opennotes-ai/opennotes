@@ -16,6 +16,9 @@ from src.services.vertex_limiter import vertex_slot
 _embedder: Embedder | None = None
 _lock = threading.RLock()
 
+# gemini-embedding-001 hard cap: API rejects batchSize >= 251 with INVALID_ARGUMENT.
+VERTEX_EMBEDDING_MAX_BATCH = 250
+
 
 def get_embedder(settings: Settings) -> Embedder:
     """Double-checked-locking singleton — matches opennotes-server chunk_embedding._get_embedder."""
@@ -30,11 +33,17 @@ def get_embedder(settings: Settings) -> Embedder:
 async def embed_texts(texts: list[str], settings: Settings) -> list[list[float]]:
     """Convenience: embed a batch of texts, return vectors in input order.
 
-    Empty input -> empty list; does not call the API.
+    Empty input -> empty list; does not call the API. Inputs larger than
+    VERTEX_EMBEDDING_MAX_BATCH are split into successive sub-batches inside a
+    single vertex_slot acquisition; results are concatenated in input order.
     """
     if not texts:
         return []
     embedder = get_embedder(settings)
+    out: list[list[float]] = []
     async with vertex_slot(settings):
-        result = await embedder.embed_documents(texts)
-    return [list(v) for v in result.embeddings]
+        for start in range(0, len(texts), VERTEX_EMBEDDING_MAX_BATCH):
+            chunk = texts[start : start + VERTEX_EMBEDDING_MAX_BATCH]
+            result = await embedder.embed_documents(chunk)
+            out.extend(list(v) for v in result.embeddings)
+    return out
