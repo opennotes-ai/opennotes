@@ -169,6 +169,70 @@
         }
       }
     },
+    "/api/internal/analyses/recent-unfiltered": {
+      "get": {
+        "tags": [
+          "analyze"
+        ],
+        "summary": "Internal unfiltered recent analyses gallery",
+        "description": "Private read path for the prefix-guarded internal gallery.",
+        "operationId": "list_recent_analyses_unfiltered_api_internal_analyses_recent_unfiltered_get",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 25,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "X-Internal-Prefix",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Internal-Prefix"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/RecentAnalysis"
+                  },
+                  "title": "Response List Recent Analyses Unfiltered Api Internal Analyses Recent Unfiltered Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/upload-pdf": {
       "post": {
         "tags": [
