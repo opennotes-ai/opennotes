@@ -416,6 +416,9 @@ describe("<OverallRecommendationCard />", () => {
     // Must not be any of the raw-score top_signals.
     expect(reason.textContent).not.toMatch(/\d+\.\d+/);
     expect(reason.textContent).not.toMatch(/^(?:text|image|video):/i);
+    // Must surface the real concern from the rationale (toxicity / venting),
+    // not a broken decimal-split fragment like "Legal 1".
+    expect(reason.textContent).toMatch(/toxicity|venting|violence/i);
   });
 
   it("still suppresses decimal-scored signals when rationale is FP", () => {
