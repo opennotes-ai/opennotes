@@ -77,6 +77,32 @@
   box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-ring) 35%, transparent);
 }
 
+.weather-symbol-shape-effect {
+  filter:
+    drop-shadow(0 6px 10px oklch(0.25 0.015 160 / 0.16))
+    drop-shadow(0 3px 6px oklch(0.25 0.015 160 / 0.12));
+}
+
+.dark .weather-symbol-shape-effect {
+  filter:
+    drop-shadow(0 18px 40px oklch(0.70 0.15 165 / 0.45))
+    drop-shadow(0 8px 16px oklch(0.70 0.15 165 / 0.25));
+}
+
+@supports (color: oklch(from red l c h / 1)) {
+  .weather-symbol-shape-effect {
+    filter:
+      drop-shadow(0 6px 10px oklch(from var(--foreground) l c h / 0.16))
+      drop-shadow(0 3px 6px oklch(from var(--foreground) l c h / 0.12));
+  }
+
+  .dark .weather-symbol-shape-effect {
+    filter:
+      drop-shadow(0 18px 40px oklch(from var(--primary) l c h / 0.45))
+      drop-shadow(0 8px 16px oklch(from var(--primary) l c h / 0.25));
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .skeleton-pulse {
     animation: none;

@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { resolve as resolvePath } from "node:path";
 import { createEffect, createSignal } from "solid-js";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
@@ -12,6 +14,8 @@ import WeatherReport from "./WeatherReport";
 import { WeatherSymbol } from "./WeatherSymbol";
 import { SidebarStoreProvider, useSidebarStore } from "../SidebarStoreProvider";
 import * as weatherLabels from "~/lib/weather-labels";
+
+const appCss = readFileSync(resolvePath(process.cwd(), "src/app.css"), "utf8");
 
 type WeatherReportData = components["schemas"]["WeatherReport"];
 type SafetyRecommendation = components["schemas"]["SafetyRecommendation"];
@@ -1726,37 +1730,26 @@ describe("WeatherReport", () => {
       await screen.findByText(/moderation, web risk, image, and video checks/i);
     });
 
-    it("symbol cell has all expected motion-safe classes for hover-lift (exhaustive enumeration)", () => {
+    it("symbol SVG has always-on shape-aware light and dark filters at rest", () => {
       render(() => (
         <WeatherReport
           report={makeWeatherReport()}
           safetyRecommendation={makeSafetyRecommendation({ level: "safe" })}
         />
       ));
-      const symbolCell = screen.getByTestId("weather-symbol-cell");
-      const expected = [
-        "motion-safe:transition-[transform,box-shadow]",
-        "motion-safe:duration-[220ms]",
-        "motion-safe:ease-[cubic-bezier(0.22,1,0.36,1)]",
-        "motion-safe:[@media(hover:hover)]:hover:[box-shadow:var(--card-hover-light)]",
-        "motion-safe:[@media(hover:hover)]:hover:-translate-y-px",
-        "motion-safe:focus-visible:[box-shadow:var(--card-hover-light)]",
-        "motion-safe:focus-visible:-translate-y-px",
-        "motion-safe:[@media(hover:hover)]:hover:dark:[box-shadow:var(--card-hover-dark-underlit)]",
-        "motion-safe:focus-visible:dark:[box-shadow:var(--card-hover-dark-underlit)]",
-      ];
-      for (const cls of expected) {
-        expect(symbolCell.className).toContain(cls);
-      }
-
-      const classes = symbolCell.className.split(/\s+/);
-      const hoverShadowOrTranslate = classes.filter(
-        (c) => (c.includes("hover:shadow") || c.includes("hover:translate")) && !c.startsWith("motion-safe:"),
-      );
-      expect(hoverShadowOrTranslate).toHaveLength(0);
+      const symbol = screen.getByTestId("weather-symbol-safe");
+      const symbolClass = symbol.getAttribute("class") ?? "";
+      expect(symbolClass).toMatch(/(?:^|\s)weather-symbol-shape-effect(?:\s|$)/);
     });
 
-    it("symbol cell references card-hover CSS variable for the lift shadow", () => {
+    it("symbol shape effect CSS has fallback filters and token-derived relative-color overrides", () => {
+      expect(appCss).toMatch(/\.weather-symbol-shape-effect\s*\{[^}]*filter:\s*drop-shadow\(/s);
+      expect(appCss).toMatch(/@supports\s*\(color:\s*oklch\(from red l c h \/ 1\)\)/);
+      expect(appCss).toMatch(/\.weather-symbol-shape-effect\s*\{[^}]*oklch\(from var\(--foreground\) l c h \/ 0\.16\)/s);
+      expect(appCss).toMatch(/\.dark \.weather-symbol-shape-effect\s*\{[^}]*oklch\(from var\(--primary\) l c h \/ 0\.45\)/s);
+    });
+
+    it("symbol cell keeps only motion-safe translate lift classes", () => {
       render(() => (
         <WeatherReport
           report={makeWeatherReport()}
@@ -1764,7 +1757,28 @@ describe("WeatherReport", () => {
         />
       ));
       const symbolCell = screen.getByTestId("weather-symbol-cell");
-      expect(symbolCell.className).toContain("--card-hover-light");
+      expect(symbolCell.className).toContain("motion-safe:transition-transform");
+      expect(symbolCell.className).toContain("motion-safe:duration-[220ms]");
+      expect(symbolCell.className).toContain("motion-safe:ease-[cubic-bezier(0.22,1,0.36,1)]");
+      expect(symbolCell.className).toContain("motion-safe:[@media(hover:hover)]:hover:-translate-y-px");
+      expect(symbolCell.className).toContain("motion-safe:focus-visible:-translate-y-px");
+      const classes = symbolCell.className.split(/\s+/);
+      const hoverOrFocusShadow = classes.filter(
+        (c) => c.includes("[box-shadow:") || c.includes("--card-hover-light") || c.includes("--card-hover-dark-underlit"),
+      );
+      expect(hoverOrFocusShadow).toHaveLength(0);
+    });
+
+    it("symbol cell no longer references card-hover CSS variables for hover/focus shadow", () => {
+      render(() => (
+        <WeatherReport
+          report={makeWeatherReport()}
+          safetyRecommendation={makeSafetyRecommendation({ level: "safe" })}
+        />
+      ));
+      const symbolCell = screen.getByTestId("weather-symbol-cell");
+      expect(symbolCell.className).not.toContain("--card-hover-light");
+      expect(symbolCell.className).not.toContain("--card-hover-dark-underlit");
     });
 
     it("symbol cell still preserves clamp sizing after hover-lift classes are added", () => {
@@ -1778,7 +1792,7 @@ describe("WeatherReport", () => {
       expect(symbolCell.getAttribute("style")).toContain("clamp(80px,12.8vw,128px)");
     });
 
-    it("symbol cell does not have an always-on shadow class at rest", () => {
+    it("symbol cell does not have an always-on rectangular shadow class at rest", () => {
       render(() => (
         <WeatherReport
           report={makeWeatherReport()}
@@ -1832,7 +1846,7 @@ describe("WeatherReport", () => {
   });
 
   describe("Motion-safe gate on hover-lift shadows (TASK-1610.10)", () => {
-    it("all box-shadow hover/focus classes on the symbol button are prefixed with motion-safe:", () => {
+    it("there are no box-shadow hover/focus classes on the symbol button", () => {
       render(() => (
         <WeatherReport
           report={makeWeatherReport()}
@@ -1842,12 +1856,9 @@ describe("WeatherReport", () => {
       const symbolCell = screen.getByTestId("weather-symbol-cell");
       const classes = symbolCell.className.split(/\s+/);
       const shadowClasses = classes.filter(
-        (c) => c.includes("--card-hover-light") || c.includes("--card-hover-dark-underlit"),
+        (c) => c.includes("[box-shadow:") || c.includes("--card-hover-light") || c.includes("--card-hover-dark-underlit"),
       );
-      expect(shadowClasses.length).toBeGreaterThan(0);
-      for (const cls of shadowClasses) {
-        expect(cls).toMatch(/^motion-safe:/);
-      }
+      expect(shadowClasses).toHaveLength(0);
     });
 
     it("all translate classes on the symbol button are prefixed with motion-safe:", () => {

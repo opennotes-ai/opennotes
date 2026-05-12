@@ -621,7 +621,7 @@ export default function WeatherReport(props: WeatherReportProps): JSX.Element {
             <button
               type="button"
               ref={(el: HTMLButtonElement) => { symbolButtonRef = el; }}
-              class="flex-none flex items-center justify-center rounded-md bg-transparent border-0 p-0 cursor-pointer motion-safe:transition-[transform,box-shadow] motion-safe:duration-[220ms] motion-safe:ease-[cubic-bezier(0.22,1,0.36,1)] motion-safe:[@media(hover:hover)]:hover:[box-shadow:var(--card-hover-light)] motion-safe:[@media(hover:hover)]:hover:-translate-y-px motion-safe:focus-visible:[box-shadow:var(--card-hover-light)] motion-safe:focus-visible:-translate-y-px motion-safe:[@media(hover:hover)]:hover:dark:[box-shadow:var(--card-hover-dark-underlit)] motion-safe:focus-visible:dark:[box-shadow:var(--card-hover-dark-underlit)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+              class="flex-none flex items-center justify-center rounded-md bg-transparent border-0 p-0 cursor-pointer motion-safe:transition-transform motion-safe:duration-[220ms] motion-safe:ease-[cubic-bezier(0.22,1,0.36,1)] motion-safe:[@media(hover:hover)]:hover:-translate-y-px motion-safe:focus-visible:-translate-y-px focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
               data-testid="weather-symbol-cell"
               aria-label={symbolAriaLabel()}
               aria-haspopup="dialog"
@@ -635,7 +635,7 @@ export default function WeatherReport(props: WeatherReportProps): JSX.Element {
                 level={level()}
                 lobeColors={lobeColors()}
                 size="100%"
-                class="block w-full h-auto"
+                class="block w-full h-auto weather-symbol-shape-effect"
                 hoveredAxis={effectiveHovered()}
                 onLobeEnter={(axis) => setHoveredAxis(axis)}
                 onLobeLeave={(axis) => {
