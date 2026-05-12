@@ -29,21 +29,21 @@ describe("WeatherHelpButton", () => {
     await screen.findByText(/Sentiment/);
   });
 
-  it("popover content includes the Truth axis explanation text", async () => {
+  it("popover content includes the Truth axis explanation text from AXIS_DEFINITIONS", async () => {
     render(() => <WeatherHelpButton />);
     const button = screen.getByRole("button");
     fireEvent.click(button);
-    await screen.findByText(/Epistemic stance/i);
+    await screen.findByText(/speaking from evidence/i);
   });
 
-  it("popover content includes the Relevance axis explanation text", async () => {
+  it("popover content includes the Relevance axis explanation text from AXIS_DEFINITIONS", async () => {
     render(() => <WeatherHelpButton />);
     const button = screen.getByRole("button");
     fireEvent.click(button);
-    await screen.findByText(/tethered to the source/i);
+    await screen.findByText(/stays on the subject/i);
   });
 
-  it("popover content includes the Sentiment axis explanation text", async () => {
+  it("popover content includes the Sentiment axis explanation text from AXIS_DEFINITIONS", async () => {
     render(() => <WeatherHelpButton />);
     const button = screen.getByRole("button");
     fireEvent.click(button);
@@ -54,7 +54,7 @@ describe("WeatherHelpButton", () => {
     render(() => <WeatherHelpButton />);
     const button = screen.getByRole("button");
     fireEvent.click(button);
-    await screen.findByText(/Epistemic stance/i);
+    await screen.findByText(/speaking from evidence/i);
 
     fireEvent.keyDown(document.activeElement ?? document.body, {
       key: "Escape",

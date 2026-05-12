@@ -6,15 +6,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@opennotes/ui/components/ui/popover";
-
-export const TOOLTIP_COPY = {
-  truth:
-    "Epistemic stance, not verdict. Whether claims are sourced, first-person, second-hand, or actively misleading — how the knowledge is held, regardless of whether it's ultimately right.",
-  relevance:
-    "How tightly the discussion is tethered to the source. Insightful engagement, on-topic chatter, drift, or full topic abandonment.",
-  sentiment:
-    "The emotional register of the conversation. Read alongside the other axes; tone alone doesn't tell you much.",
-} as const;
+import { AXIS_DEFINITIONS } from "~/lib/weather-labels";
 
 export function WeatherHelpButton(props: { class?: string }): JSX.Element {
   return (
@@ -32,13 +24,13 @@ export function WeatherHelpButton(props: { class?: string }): JSX.Element {
       </PopoverTrigger>
       <PopoverContent class="max-w-xs space-y-3 text-sm leading-snug">
         <p>
-          <span class="font-semibold">Truth</span> — {TOOLTIP_COPY.truth}
+          <span class="font-semibold">Truth</span> — {AXIS_DEFINITIONS.truth.description}
         </p>
         <p>
-          <span class="font-semibold">Relevance</span> — {TOOLTIP_COPY.relevance}
+          <span class="font-semibold">Relevance</span> — {AXIS_DEFINITIONS.relevance.description}
         </p>
         <p>
-          <span class="font-semibold">Sentiment</span> — {TOOLTIP_COPY.sentiment}
+          <span class="font-semibold">Sentiment</span> — {AXIS_DEFINITIONS.sentiment.description}
         </p>
       </PopoverContent>
     </Popover>

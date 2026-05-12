@@ -479,16 +479,15 @@ export default function WeatherReport(props: WeatherReportProps): JSX.Element {
           }
         };
 
-        const symbolAriaLabel = () => {
-          const rec = props.safetyRecommendation;
-          if (!rec || !("level" in rec)) return "Safety: not available";
-          const lvl = rec.level;
-          if (lvl === "safe") return "Safety: Safe";
-          if (lvl === "mild") return "Safety: Mild";
-          if (lvl === "caution") return "Safety: Caution";
-          if (lvl === "unsafe") return "Safety: Unsafe";
-          return "Safety: not available";
+        const SAFETY_ARIA_LABEL: Record<SafetyLevel, string> = {
+          safe: "Safety: Safe",
+          mild: "Safety: Mild",
+          caution: "Safety: Caution",
+          unsafe: "Safety: Unsafe",
+          unknown: "Safety: not available",
         };
+
+        const symbolAriaLabel = () => SAFETY_ARIA_LABEL[level()];
 
         return (
           <div
@@ -506,6 +505,7 @@ export default function WeatherReport(props: WeatherReportProps): JSX.Element {
               aria-controls={safetyPopoverContentId}
               style="width:clamp(80px,12.8vw,128px)"
               onClick={() => setSafetyOpen(true, "symbol")}
+              onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") setSafetyOpen(true, "symbol"); }}
             >
               <WeatherSymbol
                 level={level()}

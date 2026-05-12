@@ -573,7 +573,7 @@ describe("WeatherReport", () => {
     expect(sentimentValue.closest("button")).not.toBeNull();
   });
 
-  it("clicking a row with a free-form label (not in weather-labels.json) falls back to axis-level TOOLTIP_COPY content", async () => {
+  it("clicking a row with a free-form label (not in weather-labels.json) falls back to axis_definitions.description content", async () => {
     render(() => (
       <WeatherReport
         report={makeWeatherReport({
@@ -1479,7 +1479,6 @@ describe("WeatherReport", () => {
       const symbolCell = screen.getByTestId("weather-symbol-cell");
       symbolCell.focus();
       fireEvent.keyDown(symbolCell, { key: "Enter" });
-      fireEvent.click(symbolCell);
       await screen.findByText(/moderation, web risk, image, and video checks/i);
     });
 
@@ -1498,19 +1497,29 @@ describe("WeatherReport", () => {
       expect(bareOutlineNone).toBe(false);
     });
 
-    it("symbol cell click doesn't break axis-pair Safety popover (no regression)", async () => {
+    it("symbol button and axis-pair trigger both open the same Safety popover content (no regression)", async () => {
       render(() => (
         <WeatherReport
           report={makeWeatherReport()}
           safetyRecommendation={makeSafetyRecommendation({ level: "safe" })}
         />
       ));
+
+      const symbolCell = screen.getByTestId("weather-symbol-cell");
+      fireEvent.click(symbolCell);
+      await screen.findByText(/moderation, web risk, image, and video checks/i);
+
+      fireEvent.keyDown(document.activeElement ?? document.body, { key: "Escape" });
+      await waitFor(() => {
+        expect(screen.queryByText(/moderation, web risk, image, and video checks/i)).toBeNull();
+      });
+
       const safetyTrigger = screen.getByTestId("weather-axis-card-safety");
       fireEvent.click(safetyTrigger);
       await screen.findByText(/moderation, web risk, image, and video checks/i);
     });
 
-    it("symbol cell has the motion-safe transition class for hover-lift", () => {
+    it("symbol cell has all expected motion-safe classes for hover-lift (exhaustive enumeration)", () => {
       render(() => (
         <WeatherReport
           report={makeWeatherReport()}
@@ -1518,7 +1527,26 @@ describe("WeatherReport", () => {
         />
       ));
       const symbolCell = screen.getByTestId("weather-symbol-cell");
-      expect(symbolCell.className).toContain("motion-safe:");
+      const expected = [
+        "motion-safe:transition-[transform,box-shadow]",
+        "motion-safe:duration-[220ms]",
+        "motion-safe:ease-[cubic-bezier(0.22,1,0.36,1)]",
+        "motion-safe:[@media(hover:hover)]:hover:[box-shadow:var(--card-hover-light)]",
+        "motion-safe:[@media(hover:hover)]:hover:-translate-y-px",
+        "motion-safe:focus-visible:[box-shadow:var(--card-hover-light)]",
+        "motion-safe:focus-visible:-translate-y-px",
+        "motion-safe:[@media(hover:hover)]:hover:dark:[box-shadow:var(--card-hover-dark-underlit)]",
+        "motion-safe:focus-visible:dark:[box-shadow:var(--card-hover-dark-underlit)]",
+      ];
+      for (const cls of expected) {
+        expect(symbolCell.className).toContain(cls);
+      }
+
+      const classes = symbolCell.className.split(/\s+/);
+      const hoverShadowOrTranslate = classes.filter(
+        (c) => (c.includes("hover:shadow") || c.includes("hover:translate")) && !c.startsWith("motion-safe:"),
+      );
+      expect(hoverShadowOrTranslate).toHaveLength(0);
     });
 
     it("symbol cell references card-hover CSS variable for the lift shadow", () => {
