@@ -421,6 +421,65 @@ describe("<OverallRecommendationCard />", () => {
     expect(reason.textContent).toMatch(/toxicity|venting|violence/i);
   });
 
+  it("does not surface single-letter abbreviation fragments like 'g' from 'e.g.'", () => {
+    render(() => (
+      <OverallRecommendationCard
+        recommendation={makeRecommendation({
+          level: "caution",
+          top_signals: ["text: Legal 1.0", "text: Firearms 0.769"],
+          rationale:
+            "The text analysis returned multiple high-scoring matches (e.g. Legal 1.0, Firearms 0.769) which are clearly false positives.",
+        })}
+      />
+    ));
+
+    const reason = screen.getByTestId("overall-recommendation-reason");
+    expect(reason.textContent?.trim().length ?? 0).toBeGreaterThan(2);
+    expect(reason.textContent).not.toBe("g");
+    expect(reason.textContent).not.toBe("e");
+  });
+
+  it("reproduces exact prod 9c9dafb1 rationale — no 'g' fragment, surfaces real concern", () => {
+    render(() => (
+      <OverallRecommendationCard
+        recommendation={makeRecommendation({
+          level: "caution",
+          top_signals: [
+            "text: Legal 1.0",
+            "text: Firearms & Weapons 0.769",
+            "text: Illicit Drugs 0.7",
+            "text: Toxic 0.674",
+            "image: max_likelihood 0.25",
+          ],
+          rationale:
+            'The text analysis returned multiple high-scoring matches (Legal 1.0, Firearms & Weapons 0.769, Illicit Drugs 0.7), but these are clearly false positives triggered by programming languages and tech terminology (e.g., Rust, Julia, CUDA, LLMs). However, the text also contains multiple verified low-severity signals of toxicity and mild violence (e.g., "brisk kick in the rear", "dies an agonising, painful death") from users venting, which together warrant a caution rating. Image moderation scores are low.',
+        })}
+      />
+    ));
+
+    const reason = screen.getByTestId("overall-recommendation-reason");
+    expect(reason.textContent).not.toBe("g");
+    expect(reason.textContent).not.toBe("e");
+    expect(reason.textContent?.trim().length ?? 0).toBeGreaterThan(5);
+    expect(reason.textContent).toMatch(/toxicity|venting|violence|caution/i);
+  });
+
+  it("falls back to humanized default when every rationale clause is suppressed", () => {
+    render(() => (
+      <OverallRecommendationCard
+        recommendation={makeRecommendation({
+          level: "caution",
+          top_signals: ["text: Legal 1.0"],
+          rationale:
+            "Legal 1.0 is judged to be a false positive. Firearms 0.769 also false positive.",
+        })}
+      />
+    ));
+
+    const reason = screen.getByTestId("overall-recommendation-reason");
+    expect(reason.textContent).toBe("Multiple low-severity concerns");
+  });
+
   it("still suppresses decimal-scored signals when rationale is FP", () => {
     render(() => (
       <OverallRecommendationCard

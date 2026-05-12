@@ -143,8 +143,28 @@ function clauseContainsRawScore(clause: string): boolean {
   return /\d+\.\d+/.test(clause);
 }
 
-function rationaleConcernClauses(rationale: string): string[] {
+function isMeaningfulClause(clause: string): boolean {
+  // Reject single-letter / single-token fragments left over from splitting
+  // abbreviations ("e.g.", "i.e.", "U.S.") that slipped through the
+  // protect-abbreviations pass. A useful reason needs at least two
+  // alphabetic words.
+  const words = clause.match(/[A-Za-z]{2,}/g) ?? [];
+  return words.length >= 2;
+}
+
+function protectAbbreviations(rationale: string): string {
+  // Drop parenthetical example asides like "(e.g., Rust, Julia)" — they
+  // are decoration and a frequent source of split-fragment garbage (the
+  // "e.g." abbreviation getting torn into single-letter clauses). Keep
+  // other parentheticals so qualifiers like "(Legal 1.0)" still scope
+  // adjacent false-positive language to the right clause.
   return rationale
+    .replace(/\s*\((?:e\.g\.|i\.e\.|etc\.|cf\.)[^()]*\)/gi, "")
+    .replace(/\b(?:e\.g\.|i\.e\.|etc\.|cf\.|vs\.|Mr\.|Mrs\.|Ms\.|Dr\.|U\.S\.)/gi, "");
+}
+
+function rationaleConcernClauses(rationale: string): string[] {
+  return protectAbbreviations(rationale)
     // Split on sentence-ending '.' and ';' but NOT on decimals like "1.0".
     // Also split on " but " / ", but " to break compound concession clauses.
     .split(/(?<!\d)\.(?!\d)|;|\s*,\s*but\s+|\s+but\s+/i)
@@ -152,7 +172,21 @@ function rationaleConcernClauses(rationale: string): string[] {
     .filter((clause) => clause.length > 0)
     .filter((clause) => !isFalsePositiveRationale(clause))
     .filter((clause) => !isRawModerationScoreSignal(clause))
-    .filter((clause) => !clauseContainsRawScore(clause));
+    .filter((clause) => !clauseContainsRawScore(clause))
+    .filter((clause) => isMeaningfulClause(clause));
+}
+
+function levelFallbackReason(level: SafetyLevel): string {
+  switch (level) {
+    case "safe":
+      return "No notable safety concerns";
+    case "mild":
+      return "Minor concerns noted";
+    case "caution":
+      return "Multiple low-severity concerns";
+    case "unsafe":
+      return "Significant safety concerns";
+  }
 }
 
 function deriveReason(recommendation: SafetyRecommendation): string | null {
@@ -183,6 +217,7 @@ function deriveReason(recommendation: SafetyRecommendation): string | null {
     if (concernClause) {
       return concernClause;
     }
+    return levelFallbackReason(recommendation.level);
   }
   const firstClause = rationale.split(/[,.]/, 1)[0] ?? rationale;
   const trimmedClause = firstClause.trim();
