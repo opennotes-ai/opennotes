@@ -19,10 +19,12 @@ RUN apt-get update \
 
 # App deps (production)
 FROM builder AS app-deps
-COPY pyproject.toml README.md ./
+COPY pyproject.toml uv.lock README.md ./
 COPY src/ ./src/
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv pip install --system -e .
+    uv export --format requirements-txt --locked --no-hashes -o /tmp/requirements.txt \
+ && uv pip install --system -r /tmp/requirements.txt \
+ && uv pip install --system --no-deps -e .
 
 # Runtime: clean slim python with uv binary and installed site-packages
 FROM python:3.11-slim AS runtime
@@ -36,9 +38,6 @@ RUN apt-get update \
 COPY --from=app-deps /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
 COPY --from=app-deps /usr/local/bin /usr/local/bin
 COPY --from=app-deps /app/src /app/src
-
-RUN --mount=type=cache,target=/root/.cache/uv \
-    uv pip install --system "yt-dlp==2026.3.17"
 
 ARG VCS_REF=""
 ARG BUILD_DATE=""
