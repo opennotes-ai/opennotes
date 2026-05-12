@@ -1683,6 +1683,103 @@ describe("WeatherReport", () => {
     });
   });
 
+  describe("Symbol button aria-haspopup/expanded + focus return (TASK-1610.13)", () => {
+    it("symbol button has aria-haspopup='dialog'", () => {
+      render(() => (
+        <WeatherReport
+          report={makeWeatherReport()}
+          safetyRecommendation={makeSafetyRecommendation({ level: "safe" })}
+        />
+      ));
+      const symbolCell = screen.getByTestId("weather-symbol-cell");
+      expect(symbolCell.getAttribute("aria-haspopup")).toBe("dialog");
+    });
+
+    it("symbol button aria-expanded is false when popover is closed", () => {
+      render(() => (
+        <WeatherReport
+          report={makeWeatherReport()}
+          safetyRecommendation={makeSafetyRecommendation({ level: "safe" })}
+        />
+      ));
+      const symbolCell = screen.getByTestId("weather-symbol-cell");
+      expect(symbolCell.getAttribute("aria-expanded")).toBe("false");
+    });
+
+    it("symbol button aria-expanded is true after clicking to open popover", async () => {
+      render(() => (
+        <WeatherReport
+          report={makeWeatherReport()}
+          safetyRecommendation={makeSafetyRecommendation({ level: "safe" })}
+        />
+      ));
+      const symbolCell = screen.getByTestId("weather-symbol-cell");
+      fireEvent.click(symbolCell);
+      await screen.findByText(/moderation, web risk/i);
+      expect(symbolCell.getAttribute("aria-expanded")).toBe("true");
+    });
+
+    it("opening via symbol then pressing Escape returns focus to symbol button", async () => {
+      render(() => (
+        <SidebarStoreProvider>
+          <WeatherReport
+            report={makeWeatherReport()}
+            safetyRecommendation={makeSafetyRecommendation({ level: "safe" })}
+          />
+        </SidebarStoreProvider>
+      ));
+      const symbolCell = screen.getByTestId("weather-symbol-cell");
+      symbolCell.focus();
+      fireEvent.click(symbolCell);
+      await screen.findByText(/moderation, web risk/i);
+
+      fireEvent.keyDown(document.activeElement ?? document.body, { key: "Escape" });
+
+      await waitFor(() => {
+        expect(document.activeElement).toBe(symbolCell);
+      });
+    });
+
+    it("opening via axis-pair trigger then closing via Focus button returns focus to axis-pair trigger", async () => {
+      render(() => (
+        <SidebarStoreProvider>
+          <WeatherReport
+            report={makeWeatherReport()}
+            safetyRecommendation={makeSafetyRecommendation({ level: "safe" })}
+          />
+        </SidebarStoreProvider>
+      ));
+      const safetyTrigger = screen.getByTestId("weather-axis-card-safety");
+      fireEvent.click(safetyTrigger);
+      await screen.findByText(/moderation, web risk/i);
+
+      const focusBtn = screen.getByTestId("weather-safety-focus");
+      focusBtn.focus();
+      fireEvent.click(focusBtn);
+
+      await waitFor(() => {
+        expect(document.activeElement).toBe(safetyTrigger);
+      });
+    });
+
+    it("symbol button has aria-controls pointing to a real popover content element", async () => {
+      render(() => (
+        <WeatherReport
+          report={makeWeatherReport()}
+          safetyRecommendation={makeSafetyRecommendation({ level: "safe" })}
+        />
+      ));
+      const symbolCell = screen.getByTestId("weather-symbol-cell");
+      fireEvent.click(symbolCell);
+      await screen.findByText(/moderation, web risk/i);
+
+      const controlsId = symbolCell.getAttribute("aria-controls");
+      expect(controlsId).toBeTruthy();
+      const controlled = document.getElementById(controlsId!);
+      expect(controlled).not.toBeNull();
+    });
+  });
+
   describe("Symbol button sets SidebarStore highlight (TASK-1610.12)", () => {
     it("clicking the symbol button sets highlightedGroup to Safety", async () => {
       let capturedStore: ReturnType<typeof useSidebarStore> = null;

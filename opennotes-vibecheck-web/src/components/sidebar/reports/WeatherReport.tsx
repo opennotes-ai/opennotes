@@ -101,6 +101,8 @@ interface AxisRowProps {
   safetyRecommendation?: SafetyRecommendation | null;
   safetyPopoverOpen?: () => boolean;
   setSafetyPopoverOpen?: (v: boolean) => void;
+  safetyPopoverContentId?: string;
+  safetyLastTrigger?: () => "symbol" | "axis-pair";
 }
 
 function SafetyAxisRow(props: {
@@ -110,6 +112,8 @@ function SafetyAxisRow(props: {
   targetGroup: SectionGroupLabel;
   popoverOpen: () => boolean;
   setPopoverOpen: (v: boolean) => void;
+  popoverContentId?: string;
+  lastTrigger?: () => "symbol" | "axis-pair";
 }): JSX.Element {
   const recommendation = () => props.safetyRecommendation ?? null;
   const popoverOpen = props.popoverOpen;
@@ -132,7 +136,9 @@ function SafetyAxisRow(props: {
     setPopoverOpen(false);
     props.store?.setHighlightedGroup(null);
     props.store?.isolateGroup(props.targetGroup);
-    queueMicrotask(() => triggerRef?.focus());
+    if (props.lastTrigger?.() !== "symbol") {
+      queueMicrotask(() => triggerRef?.focus());
+    }
   };
 
   return (
@@ -185,7 +191,7 @@ function SafetyAxisRow(props: {
                 {formatWeatherLabel(rec().level)}
               </span>
             </PopoverTrigger>
-            <PopoverContent class="max-w-xs text-sm leading-snug pr-2 pb-2">
+            <PopoverContent id={props.popoverContentId} class="max-w-xs text-sm leading-snug pr-2 pb-2">
               <div class="flex items-end gap-2">
                 <p class="flex-1">{expansion() ?? props.heading}</p>
                 <Show when={props.store !== null}>
@@ -225,6 +231,8 @@ function AxisRow(props: AxisRowProps): JSX.Element {
         targetGroup={targetGroup}
         popoverOpen={popoverOpen}
         setPopoverOpen={setPopoverOpen}
+        popoverContentId={props.safetyPopoverContentId}
+        lastTrigger={props.safetyLastTrigger}
       />
     );
   }
@@ -450,13 +458,24 @@ export default function WeatherReport(props: WeatherReportProps): JSX.Element {
         const [safetyPopoverOpen, setSafetyPopoverOpen] = createSignal(false);
         const store = useSidebarStore();
         const safetyTargetGroup: SectionGroupLabel = "Safety";
+        const safetyPopoverContentId = "weather-safety-popover-content";
+        const [lastSafetyTrigger, setLastSafetyTrigger] = createSignal<"symbol" | "axis-pair">("axis-pair");
+        let symbolButtonRef: HTMLButtonElement | undefined;
 
-        const setSafetyOpen = (open: boolean) => {
+        const setSafetyOpen = (open: boolean, trigger: "symbol" | "axis-pair" = "axis-pair") => {
           setSafetyPopoverOpen(open);
           if (open) {
+            setLastSafetyTrigger(trigger);
             store?.setHighlightedGroup(safetyTargetGroup);
-          } else if (store?.highlightedGroup() === safetyTargetGroup) {
-            store?.setHighlightedGroup(null);
+          } else {
+            if (store?.highlightedGroup() === safetyTargetGroup) {
+              store?.setHighlightedGroup(null);
+            }
+            queueMicrotask(() => {
+              if (lastSafetyTrigger() === "symbol") {
+                symbolButtonRef?.focus();
+              }
+            });
           }
         };
 
@@ -478,11 +497,15 @@ export default function WeatherReport(props: WeatherReportProps): JSX.Element {
           >
             <button
               type="button"
+              ref={(el: HTMLButtonElement) => { symbolButtonRef = el; }}
               class="flex-none flex items-center justify-center rounded-md bg-transparent border-0 p-0 cursor-pointer motion-safe:transition-[transform,box-shadow] motion-safe:duration-[220ms] motion-safe:ease-[cubic-bezier(0.22,1,0.36,1)] motion-safe:[@media(hover:hover)]:hover:[box-shadow:var(--card-hover-light)] motion-safe:[@media(hover:hover)]:hover:-translate-y-px motion-safe:focus-visible:[box-shadow:var(--card-hover-light)] motion-safe:focus-visible:-translate-y-px motion-safe:[@media(hover:hover)]:hover:dark:[box-shadow:var(--card-hover-dark-underlit)] motion-safe:focus-visible:dark:[box-shadow:var(--card-hover-dark-underlit)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
               data-testid="weather-symbol-cell"
               aria-label={symbolAriaLabel()}
+              aria-haspopup="dialog"
+              aria-expanded={safetyPopoverOpen()}
+              aria-controls={safetyPopoverContentId}
               style="width:clamp(80px,12.8vw,128px)"
-              onClick={() => setSafetyOpen(true)}
+              onClick={() => setSafetyOpen(true, "symbol")}
             >
               <WeatherSymbol
                 level={level()}
@@ -500,6 +523,8 @@ export default function WeatherReport(props: WeatherReportProps): JSX.Element {
                     safetyRecommendation={props.safetyRecommendation}
                     safetyPopoverOpen={safetyPopoverOpen}
                     setSafetyPopoverOpen={setSafetyOpen}
+                    safetyPopoverContentId={safetyPopoverContentId}
+                    safetyLastTrigger={lastSafetyTrigger}
                   />
                 )}
               </For>
