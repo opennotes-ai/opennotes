@@ -296,7 +296,7 @@ test.afterAll(async () => {
 
 test("renders section suffixes for chunked report refs and omits them for legacy refs", async ({
   page,
-}) => {
+}, testInfo) => {
   await page.goto(`${webBaseUrl}/analyze?job=${JOB_ID}`);
   await expect(page.getByTestId("analysis-sidebar")).toBeVisible();
 
@@ -314,4 +314,9 @@ test("renders section suffixes for chunked report refs and omits them for legacy
   await expect(page.getByTestId("subjective-claim-utterance-ref")).toHaveText("post #2 §2");
   await expect(page.getByTestId("deduped-claim-utterance-ref").first()).toHaveText("post #2 §3");
   await expect(page.getByTestId("deduped-claim-utterance-ref").nth(1)).toHaveText("post #1");
+
+  await testInfo.attach("chunk-section-suffix", {
+    body: await page.screenshot({ fullPage: true }),
+    contentType: "image/png",
+  });
 });
