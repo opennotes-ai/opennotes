@@ -448,8 +448,10 @@ export default function WeatherReport(props: WeatherReportProps): JSX.Element {
             class={`relative inline-flex items-center gap-[10px] rounded-[14px] border border-border/50 bg-card px-[22px] py-4 pb-8 ${props.class ?? ""}`.trim()}
           >
             <div
-              class="flex-none flex items-center justify-center"
+              class="flex-none flex items-center justify-center rounded-md outline-none motion-safe:transition-[transform,box-shadow] motion-safe:duration-[220ms] motion-safe:ease-[cubic-bezier(0.22,1,0.36,1)] [@media(hover:hover)]:hover:[box-shadow:var(--card-hover-light)] [@media(hover:hover)]:hover:motion-safe:-translate-y-px focus-visible:[box-shadow:var(--card-hover-light)] focus-visible:motion-safe:-translate-y-px dark:[@media(hover:hover)]:hover:[box-shadow:var(--card-hover-dark-underlit)] dark:focus-visible:[box-shadow:var(--card-hover-dark-underlit)]"
               data-testid="weather-symbol-cell"
+              tabindex="0"
+              aria-label={`Safety level: ${level()}`}
               style="width:clamp(80px,12.8vw,128px)"
             >
               <WeatherSymbol

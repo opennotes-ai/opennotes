@@ -1374,4 +1374,73 @@ describe("WeatherReport", () => {
       expect(axisStack?.className).toContain("min-w-[120px]");
     });
   });
+
+  describe("WeatherSymbol hover-lift (TASK-1610.07 — DESIGN.md card-interactive)", () => {
+    it("symbol cell has tabIndex 0 (keyboard-focusable)", () => {
+      render(() => (
+        <WeatherReport
+          report={makeWeatherReport()}
+          safetyRecommendation={makeSafetyRecommendation({ level: "safe" })}
+        />
+      ));
+      const symbolCell = screen.getByTestId("weather-symbol-cell");
+      expect(symbolCell.getAttribute("tabindex")).toBe("0");
+    });
+
+    it("symbol cell has an aria-label describing the safety level", () => {
+      render(() => (
+        <WeatherReport
+          report={makeWeatherReport()}
+          safetyRecommendation={makeSafetyRecommendation({ level: "safe" })}
+        />
+      ));
+      const symbolCell = screen.getByTestId("weather-symbol-cell");
+      const label = symbolCell.getAttribute("aria-label") ?? "";
+      expect(label.toLowerCase()).toContain("safe");
+    });
+
+    it("symbol cell has the motion-safe transition class for hover-lift", () => {
+      render(() => (
+        <WeatherReport
+          report={makeWeatherReport()}
+          safetyRecommendation={makeSafetyRecommendation({ level: "safe" })}
+        />
+      ));
+      const symbolCell = screen.getByTestId("weather-symbol-cell");
+      expect(symbolCell.className).toContain("motion-safe:");
+    });
+
+    it("symbol cell references card-hover CSS variable for the lift shadow", () => {
+      render(() => (
+        <WeatherReport
+          report={makeWeatherReport()}
+          safetyRecommendation={makeSafetyRecommendation({ level: "safe" })}
+        />
+      ));
+      const symbolCell = screen.getByTestId("weather-symbol-cell");
+      expect(symbolCell.className).toContain("--card-hover-light");
+    });
+
+    it("symbol cell still preserves clamp sizing after hover-lift classes are added", () => {
+      render(() => (
+        <WeatherReport
+          report={makeWeatherReport()}
+          safetyRecommendation={makeSafetyRecommendation({ level: "safe" })}
+        />
+      ));
+      const symbolCell = screen.getByTestId("weather-symbol-cell");
+      expect(symbolCell.getAttribute("style")).toContain("clamp(80px,12.8vw,128px)");
+    });
+
+    it("symbol cell does not have an always-on shadow class at rest", () => {
+      render(() => (
+        <WeatherReport
+          report={makeWeatherReport()}
+          safetyRecommendation={makeSafetyRecommendation({ level: "safe" })}
+        />
+      ));
+      const symbolCell = screen.getByTestId("weather-symbol-cell");
+      expect(symbolCell.className).not.toMatch(/(?:^|\s)shadow-(?:sm|md|lg|xl|2xl)(?:\s|$)/);
+    });
+  });
 });
