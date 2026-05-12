@@ -7,6 +7,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@opennotes/ui/components/ui/popover";
+import { Card } from "@opennotes/ui/components/ui/card";
 import { Skeleton } from "@opennotes/ui/components/ui/skeleton";
 import type { components } from "~/lib/generated-types";
 import {
@@ -430,9 +431,9 @@ const SKELETON_WORD_SHAPES: Record<AxisType, number[]> = {
 
 function WeatherReportSkeleton(props: { class?: string }): JSX.Element {
   return (
-    <div
+    <Card
       data-testid="weather-report-skeleton"
-      class={`relative inline-flex items-center gap-[10px] rounded-[14px] border border-border/50 bg-card px-[22px] py-4 ${props.class ?? ""}`.trim()}
+      class={`relative inline-flex items-center gap-[10px] border border-border/50 px-[22px] py-4 ${props.class ?? ""}`.trim()}
     >
       <div
         data-testid="weather-skeleton-symbol-cell"
@@ -475,7 +476,7 @@ function WeatherReportSkeleton(props: { class?: string }): JSX.Element {
         </For>
       </div>
       <WeatherHelpButton />
-    </div>
+    </Card>
   );
 }
 
@@ -619,9 +620,9 @@ export default function WeatherReport(props: WeatherReportProps): JSX.Element {
         const symbolAriaLabel = () => SAFETY_ARIA_LABEL[level()];
 
         return (
-          <div
+          <Card
             data-testid="weather-report"
-            class={`relative inline-flex items-center gap-[10px] rounded-[14px] border border-border/50 bg-card px-[22px] py-4 pb-8 ${props.class ?? ""}`.trim()}
+            class={`relative inline-flex items-center gap-[10px] border border-border/50 px-[22px] py-4 pb-8 ${props.class ?? ""}`.trim()}
           >
             <button
               type="button"
@@ -675,7 +676,7 @@ export default function WeatherReport(props: WeatherReportProps): JSX.Element {
               </For>
             </div>
             <WeatherHelpButton />
-          </div>
+          </Card>
         );
       }}
     </Show>

@@ -325,11 +325,40 @@ describe("WeatherReport", () => {
     expect(root.className).not.toContain("min-h-[110px]");
   });
 
-  it("populated container has bg-card class", () => {
+  it("populated container uses the shared Card chrome", () => {
     render(() => <WeatherReport report={makeWeatherReport()} />);
     const root = screen.getByTestId("weather-report");
-    const cls = root.className;
+    const cls = classAttr(root);
+    expect(cls).toContain("rounded-md");
     expect(cls).toContain("bg-card");
+    expect(cls).toContain("text-card-foreground");
+    expect(cls).not.toContain("rounded-[14px]");
+  });
+
+  it("skeleton container uses the same shared Card chrome", () => {
+    render(() => <WeatherReport report={null} />);
+    const root = screen.getByTestId("weather-report-skeleton");
+    const cls = classAttr(root);
+    expect(cls).toContain("rounded-md");
+    expect(cls).toContain("bg-card");
+    expect(cls).toContain("text-card-foreground");
+    expect(cls).not.toContain("rounded-[14px]");
+  });
+
+  it("preserves the selected Card-only spacing contract in both states", () => {
+    render(() => <WeatherReport report={makeWeatherReport()} />);
+    const loaded = classAttr(screen.getByTestId("weather-report"));
+
+    cleanup();
+    render(() => <WeatherReport report={null} />);
+    const skeleton = classAttr(screen.getByTestId("weather-report-skeleton"));
+
+    expect(loaded).toContain("gap-[10px]");
+    expect(loaded).toContain("px-[22px]");
+    expect(loaded).toContain("py-4");
+    expect(skeleton).toContain("gap-[10px]");
+    expect(skeleton).toContain("px-[22px]");
+    expect(skeleton).toContain("py-4");
   });
 
   it("populated container uses inline-flex layout (hugs its content)", () => {
