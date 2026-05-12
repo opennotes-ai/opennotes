@@ -14,6 +14,8 @@
   },
   "dependencies": {
     "@kobalte/core": "^0.13.11",
+    "embla-carousel-autoplay": "9.0.0-rc02",
+    "embla-carousel-ssr": "9.0.0-rc02",
     "@opennotes/tokens": "workspace:*",
     "@opennotes/ui": "workspace:*",
     "@resvg/resvg-js": "^2.6.2",
