@@ -1,5 +1,6 @@
 import { describe, it, expect, afterEach, vi } from "vitest";
 import { render, screen, cleanup, fireEvent } from "@solidjs/testing-library";
+import type { JSX } from "solid-js";
 import SafetyModerationReport from "../../../../src/components/sidebar/reports/SafetyModerationReport";
 import WebRiskReport from "../../../../src/components/sidebar/reports/WebRiskReport";
 import ImageModerationReport from "../../../../src/components/sidebar/reports/ImageModerationReport";
@@ -10,6 +11,7 @@ import ClaimsDedupReport from "../../../../src/components/sidebar/reports/Claims
 import KnownMisinfoReport from "../../../../src/components/sidebar/reports/KnownMisinfoReport";
 import SentimentReport from "../../../../src/components/sidebar/reports/SentimentReport";
 import SubjectiveReport from "../../../../src/components/sidebar/reports/SubjectiveReport";
+import { UtterancesProvider } from "../../../../src/components/sidebar/UtterancesContext";
 import type { components } from "../../../../src/lib/generated-types";
 
 vi.mock("@opennotes/ui/components/ui/echart", () => ({
@@ -60,6 +62,26 @@ function makeUtteranceAnchor(
         ? offsetMinutes ?? null
         : new Date(BASE_MS + offsetMinutes * 60_000).toISOString(),
   };
+}
+
+function makePositionAnchor(
+  utteranceId: string,
+  position: number,
+): UtteranceAnchor {
+  return {
+    position,
+    utterance_id: utteranceId,
+    timestamp: null,
+  };
+}
+
+function renderWithUtterances(
+  anchors: readonly UtteranceAnchor[],
+  children: () => JSX.Element,
+) {
+  return render(() => (
+    <UtterancesProvider value={anchors}>{children()}</UtterancesProvider>
+  ));
 }
 
 describe("<SafetyModerationReport />", () => {
@@ -506,11 +528,13 @@ describe("<FlashpointReport />", () => {
       },
     ];
 
-    render(() => <FlashpointReport matches={matches} />);
+    renderWithUtterances([makePositionAnchor("14", 14)], () => (
+      <FlashpointReport matches={matches} />
+    ));
 
     const headline = screen.getByTestId("flashpoint-headline");
     expect(headline.textContent).toMatch(/sharp clash/i);
-    expect(headline.textContent).toMatch(/turn 14/);
+    expect(headline.textContent).toMatch(/item #14/);
     expect(headline.textContent).toMatch(/high risk/i);
   });
 
@@ -526,11 +550,13 @@ describe("<FlashpointReport />", () => {
       },
     ];
 
-    render(() => <FlashpointReport matches={matches} />);
+    renderWithUtterances([makePositionAnchor("7", 7)], () => (
+      <FlashpointReport matches={matches} />
+    ));
 
     const headline = screen.getByTestId("flashpoint-headline");
     expect(headline.textContent).toMatch(/heated exchange/i);
-    expect(headline.textContent).toMatch(/turn 7/);
+    expect(headline.textContent).toMatch(/item #7/);
     expect(headline.textContent).toMatch(/moderate risk/i);
   });
 
@@ -546,11 +572,13 @@ describe("<FlashpointReport />", () => {
       },
     ];
 
-    render(() => <FlashpointReport matches={matches} />);
+    renderWithUtterances([makePositionAnchor("3", 3)], () => (
+      <FlashpointReport matches={matches} />
+    ));
 
     const headline = screen.getByTestId("flashpoint-headline");
     expect(headline.textContent).toMatch(/brief tense moment/i);
-    expect(headline.textContent).toMatch(/turn 3/);
+    expect(headline.textContent).toMatch(/item #3/);
     expect(headline.textContent).toMatch(/low risk/i);
   });
 
@@ -566,11 +594,13 @@ describe("<FlashpointReport />", () => {
       },
     ];
 
-    render(() => <FlashpointReport matches={matches} />);
+    renderWithUtterances([makePositionAnchor("5", 5)], () => (
+      <FlashpointReport matches={matches} />
+    ));
 
     const headline = screen.getByTestId("flashpoint-headline");
     expect(headline.textContent).toMatch(/brief tense moment/i);
-    expect(headline.textContent).toMatch(/turn 5/);
+    expect(headline.textContent).toMatch(/item #5/);
     expect(headline.textContent).toMatch(/low risk/i);
   });
 
@@ -586,11 +616,13 @@ describe("<FlashpointReport />", () => {
       },
     ];
 
-    render(() => <FlashpointReport matches={matches} />);
+    renderWithUtterances([makePositionAnchor("21", 21)], () => (
+      <FlashpointReport matches={matches} />
+    ));
 
     const headline = screen.getByTestId("flashpoint-headline");
     expect(headline.textContent).toMatch(/dangerous flashpoint/i);
-    expect(headline.textContent).toMatch(/turn 21/);
+    expect(headline.textContent).toMatch(/item #21/);
     expect(headline.textContent).toMatch(/severe risk/i);
   });
 
@@ -682,15 +714,22 @@ describe("<FlashpointReport />", () => {
       },
     ];
 
-    render(() => <FlashpointReport matches={matches} />);
+    renderWithUtterances(
+      [
+        makePositionAnchor("4", 4),
+        makePositionAnchor("11", 11),
+        makePositionAnchor("18", 18),
+      ],
+      () => <FlashpointReport matches={matches} />,
+    );
 
     const headlines = screen
       .getAllByTestId("flashpoint-headline")
       .map((el) => el.textContent ?? "");
     expect(headlines).toHaveLength(3);
-    expect(headlines[0]).toMatch(/turn 4/);
-    expect(headlines[1]).toMatch(/turn 11/);
-    expect(headlines[2]).toMatch(/turn 18/);
+    expect(headlines[0]).toMatch(/item #4/);
+    expect(headlines[1]).toMatch(/item #11/);
+    expect(headlines[2]).toMatch(/item #18/);
   });
 
   it("renders clickable utterance refs when jump is available", () => {
