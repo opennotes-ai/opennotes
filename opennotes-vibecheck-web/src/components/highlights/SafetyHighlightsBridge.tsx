@@ -1,4 +1,5 @@
-import { createEffect } from "solid-js";
+// TODO(task-1609): replace local SafetyRecommendationWithDivergences with generated SafetyRecommendation once divergences field appears in src/lib/generated-types.ts
+import { createEffect, createMemo } from "solid-js";
 import { useHighlights } from "./HighlightsStoreProvider";
 
 export interface SafetyDivergence {
@@ -18,7 +19,14 @@ export function SafetyHighlightsBridge(props: {
 }): null {
   const highlights = useHighlights();
 
+  const divergencesKey = createMemo(
+    () => JSON.stringify(props.recommendation?.divergences ?? null),
+    undefined,
+    { equals: (a, b) => a === b },
+  );
+
   createEffect(() => {
+    divergencesKey();
     const divergences = props.recommendation?.divergences ?? [];
     const mapped = divergences.map((d, idx) => ({
       id: `safety-divergence:${idx}`,

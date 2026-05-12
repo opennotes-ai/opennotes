@@ -767,9 +767,11 @@ function AnalyzePageContent(props: { initialJobState: JobState | null }) {
                 fallback={
                   <SidebarStoreProvider opts={{ collapseAllByDefault: shouldCollapseSidebarGroups(), jobId: jobId() || undefined }}>
                     <HighlightsStoreProvider>
-                      <OverallRecommendationCard
-                        recommendation={sidebarPayload()?.safety?.recommendation ?? null}
-                      />
+                      <Show when={sidebarPayloadComplete()}>
+                        <OverallRecommendationCard
+                          recommendation={sidebarPayload()?.safety?.recommendation ?? null}
+                        />
+                      </Show>
                       <Show when={showHeadlineLeadIn()}>
                         <HeadlineLeadIn
                           headline={headline()}

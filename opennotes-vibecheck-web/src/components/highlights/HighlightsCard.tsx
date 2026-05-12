@@ -16,6 +16,8 @@ import {
   CarouselPrevious,
   type CarouselApi,
 } from "@opennotes/ui/components/ui/carousel";
+
+type EmblaInstance = ReturnType<NonNullable<CarouselApi>>;
 import { ProgressCircle } from "@opennotes/ui/components/ui/progress-circle";
 import { useHighlights } from "./HighlightsStoreProvider";
 
@@ -25,20 +27,22 @@ export function HighlightsCard(): JSX.Element | null {
   const store = useHighlights();
   const items = () => store.items();
 
-  const [api, setApi] = createSignal<CarouselApi | undefined>(undefined);
+  const [api, setApi] = createSignal<EmblaInstance | undefined>(undefined);
   const [progress, setProgress] = createSignal(0);
 
   const autoplay = Autoplay({ delay: HIGHLIGHTS_AUTOPLAY_MS });
   const ssrPlugin = EmblaSSR();
 
   createEffect(() => {
-    const emblaApi = api()?.();
+    const emblaApi = api();
     if (!emblaApi) return;
+
+    emblaApi.plugins()?.autoplay?.play();
 
     let rafId: number;
 
     function tick() {
-      const embla = api()?.();
+      const embla = api();
       if (!embla) return;
 
       const autoplayPlugin = embla.plugins()?.autoplay;

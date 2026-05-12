@@ -5,8 +5,19 @@ import { HighlightsCard, HIGHLIGHTS_AUTOPLAY_MS } from "./HighlightsCard";
 import type { HighlightItem } from "./highlights-store";
 import type { JSX } from "solid-js";
 
+const { mockAutoplayPlay, mockAutoplayPlugin } = vi.hoisted(() => {
+  const mockAutoplayPlay = vi.fn();
+  const mockAutoplayPlugin = {
+    name: "autoplay",
+    isPlaying: () => false,
+    play: mockAutoplayPlay,
+    timeUntilNext: () => null,
+  };
+  return { mockAutoplayPlay, mockAutoplayPlugin };
+});
+
 vi.mock("embla-carousel-autoplay", () => ({
-  default: vi.fn(() => ({ name: "autoplay" })),
+  default: vi.fn(() => mockAutoplayPlugin),
 }));
 
 vi.mock("embla-carousel-ssr", () => ({
@@ -31,13 +42,18 @@ vi.mock("@opennotes/ui/components/ui/carousel", () => {
   const mockScrollNext = vi.fn();
   const mockScrollPrev = vi.fn();
 
+  const mockEmblaInstance = {
+    plugins: () => ({ autoplay: mockAutoplayPlugin }),
+  };
+  const mockApiAccessor = () => mockEmblaInstance;
+
   function Carousel(props: {
     children?: JSX.Element;
     opts?: unknown;
     plugins?: unknown;
     setApi?: (api: unknown) => void;
   }) {
-    props.setApi?.(undefined);
+    props.setApi?.(mockApiAccessor);
     return (
       <div role="region" aria-roledescription="carousel">
         <CarouselCtx.Provider
@@ -208,6 +224,14 @@ describe("HighlightsCard", () => {
       renderWithItems([makeItem("1", "A"), makeItem("2", "B")]);
       const ring = screen.getByTestId("highlights-progress");
       expect(ring.getAttribute("data-value")).toBe("0");
+    });
+  });
+
+  describe("autoplay start", () => {
+    it("calls play() on the autoplay plugin when the carousel api becomes available", () => {
+      mockAutoplayPlay.mockClear();
+      renderWithItems([makeItem("1", "A"), makeItem("2", "B")]);
+      expect(mockAutoplayPlay).toHaveBeenCalledOnce();
     });
   });
 });

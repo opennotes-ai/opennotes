@@ -5,6 +5,7 @@ import {
   createMemo,
   createSignal,
   mergeProps,
+  onCleanup,
   splitProps,
   useContext,
 } from "solid-js";
@@ -118,9 +119,10 @@ const Carousel: Component<CarouselProps & ComponentProps<"div">> = (
     api()!.on("reinit", onSelect);
     api()!.on("select", onSelect);
 
-    return () => {
+    onCleanup(() => {
+      api()?.off("reinit", onSelect);
       api()?.off("select", onSelect);
-    };
+    });
   });
 
   const value = createMemo(

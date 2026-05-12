@@ -1,4 +1,5 @@
-import { describe, it, expect } from "vitest";
+// TODO(task-1609): SafetyRecommendationWithDivergences is a local stub; replace with generated SafetyRecommendation once divergences field appears in src/lib/generated-types.ts
+import { describe, it, expect, vi } from "vitest";
 import { createSignal, For } from "solid-js";
 import { render } from "@solidjs/testing-library";
 import { HighlightsStoreProvider, useHighlights } from "./HighlightsStoreProvider";
@@ -128,6 +129,34 @@ describe("SafetyHighlightsBridge", () => {
     expect(queryByTestId("item-other-1")).not.toBeNull();
     expect(queryByTestId("item-safety-divergence:0")).not.toBeNull();
     expect(queryByTestId("item-safety-divergence:1")).not.toBeNull();
+  });
+
+  it("does not call replaceForSource again when recommendation ref changes but divergences content is identical", () => {
+    const [rec, setRec] = createSignal<SafetyRecommendationWithDivergences | null>(
+      makeRec([makeDiv(0)]),
+    );
+
+    let renderCount = 0;
+
+    function RenderCounter() {
+      const store = useHighlights();
+      store.items();
+      renderCount++;
+      return null;
+    }
+
+    render(() => (
+      <HighlightsStoreProvider>
+        <SafetyHighlightsBridge recommendation={rec()} />
+        <RenderCounter />
+      </HighlightsStoreProvider>
+    ));
+
+    const countAfterInit = renderCount;
+
+    setRec({ ...makeRec([makeDiv(0)]) });
+
+    expect(renderCount).toBe(countAfterInit);
   });
 
   it("maps id, title, detail, and severity correctly", () => {
