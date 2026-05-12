@@ -1,7 +1,7 @@
-import { For, Show, createSignal, type JSX } from "solid-js";
+import { For, Show, createSignal, onCleanup, type JSX } from "solid-js";
 import { ChevronRight } from "lucide-solid";
 import { WeatherHelpButton } from "./WeatherHelpButton";
-import { WeatherSymbol, type SafetyLevel } from "./WeatherSymbol";
+import { WeatherSymbol, type SafetyLevel, type WeatherLobeAxis } from "./WeatherSymbol";
 import {
   Popover,
   PopoverContent,
@@ -39,6 +39,7 @@ type WeatherAxisAlternative =
   | WeatherAxisAlternativeSentiment;
 
 type AxisType = "safety" | "truth" | "relevance" | "sentiment";
+type HighlightAxis = WeatherLobeAxis;
 
 const AXIS_TO_GROUP: Record<AxisType, SectionGroupLabel> = {
   safety: "Safety",
@@ -98,11 +99,28 @@ function safeAlternatives(axis: WeatherAxis | null): WeatherAxisAlternative[] {
 interface AxisRowProps {
   report: WeatherReportData;
   axis: AxisDefinition;
+  hoveredAxis?: () => HighlightAxis | null;
+  setHoveredAxis?: (axis: HighlightAxis | null) => void;
+  popoverOpen?: () => boolean;
+  setPopoverOpen?: (v: boolean) => void;
   safetyRecommendation?: SafetyRecommendation | null;
   safetyPopoverOpen?: () => boolean;
   setSafetyPopoverOpen?: (v: boolean) => void;
   safetyPopoverContentId?: string;
   safetyLastTrigger?: () => "symbol" | "axis-pair";
+}
+
+const TAP_WINDOW_MS = 1500;
+
+function isHighlightAxis(axis: AxisType): axis is HighlightAxis {
+  return axis === "truth" || axis === "relevance" || axis === "sentiment";
+}
+
+function axisDimClass(activeAxis: HighlightAxis | null, axis: HighlightAxis): string {
+  if (activeAxis == null || activeAxis === axis) {
+    return "opacity-100";
+  }
+  return "motion-safe:transition-opacity motion-safe:duration-150 opacity-70";
 }
 
 function SafetyAxisRow(props: {
@@ -142,7 +160,7 @@ function SafetyAxisRow(props: {
   };
 
   return (
-    <div class="pair">
+    <div class="pair" data-testid="weather-axis-pair-safety">
       <Show
         when={recommendation()}
         fallback={
@@ -237,8 +255,21 @@ function AxisRow(props: AxisRowProps): JSX.Element {
     );
   }
 
-  const [popoverOpen, setPopoverOpen] = createSignal(false);
+  const [localPopoverOpen, setLocalPopoverOpen] = createSignal(false);
+  const popoverOpen = props.popoverOpen ?? localPopoverOpen;
+  const setPopoverOpen = props.setPopoverOpen ?? setLocalPopoverOpen;
   let triggerRef: HTMLButtonElement | undefined;
+  const highlightAxis = (): HighlightAxis => props.axis.axisType as HighlightAxis;
+
+  const setAxisHover = () => {
+    props.setHoveredAxis?.(highlightAxis());
+  };
+
+  const clearAxisHover = () => {
+    if (props.hoveredAxis?.() === highlightAxis()) {
+      props.setHoveredAxis?.(null);
+    }
+  };
 
   const axisData = (): WeatherAxis | null => {
     switch (props.axis.axisType) {
@@ -282,7 +313,14 @@ function AxisRow(props: AxisRowProps): JSX.Element {
   };
 
   return (
-    <div class="pair">
+    <div
+      class={`pair ${axisDimClass(props.hoveredAxis?.() ?? null, highlightAxis())}`}
+      data-testid={`weather-axis-pair-${props.axis.axisType}`}
+      onPointerEnter={setAxisHover}
+      onPointerLeave={clearAxisHover}
+      onFocusIn={setAxisHover}
+      onFocusOut={clearAxisHover}
+    >
       <Show
         when={axisData()}
         fallback={
@@ -456,11 +494,97 @@ export default function WeatherReport(props: WeatherReportProps): JSX.Element {
         const level = () => safetyLevel(props.safetyRecommendation);
 
         const [safetyPopoverOpen, setSafetyPopoverOpen] = createSignal(false);
+        const [truthPopoverOpen, setTruthPopoverOpen] = createSignal(false);
+        const [relevancePopoverOpen, setRelevancePopoverOpen] = createSignal(false);
+        const [sentimentPopoverOpen, setSentimentPopoverOpen] = createSignal(false);
+        const [hoveredAxis, setHoveredAxis] = createSignal<HighlightAxis | null>(null);
+        const [lastLobeTap, setLastLobeTap] = createSignal<{ axis: HighlightAxis; ts: number } | null>(null);
         const store = useSidebarStore();
         const safetyTargetGroup: SectionGroupLabel = "Safety";
         const safetyPopoverContentId = "weather-safety-popover-content";
         const [lastSafetyTrigger, setLastSafetyTrigger] = createSignal<"symbol" | "axis-pair">("axis-pair");
         let symbolButtonRef: HTMLButtonElement | undefined;
+        let lastLobeTapTimeout: ReturnType<typeof setTimeout> | undefined;
+
+        const axisPopoverOpen = (axis: AxisType): (() => boolean) | undefined => {
+          switch (axis) {
+            case "truth":
+              return truthPopoverOpen;
+            case "relevance":
+              return relevancePopoverOpen;
+            case "sentiment":
+              return sentimentPopoverOpen;
+            default:
+              return undefined;
+          }
+        };
+
+        const setAxisPopoverOpen = (axis: HighlightAxis, open: boolean) => {
+          switch (axis) {
+            case "truth":
+              setTruthPopoverOpen(open);
+              break;
+            case "relevance":
+              setRelevancePopoverOpen(open);
+              break;
+            case "sentiment":
+              setSentimentPopoverOpen(open);
+              break;
+          }
+          const targetGroup = AXIS_TO_GROUP[axis];
+          if (open) {
+            store?.setHighlightedGroup(targetGroup);
+          } else if (store?.highlightedGroup() === targetGroup) {
+            store?.setHighlightedGroup(null);
+          }
+        };
+
+        const axisPopoverSetter = (axis: AxisType): ((open: boolean) => void) | undefined => {
+          if (!isHighlightAxis(axis)) {
+            return undefined;
+          }
+          return (open) => setAxisPopoverOpen(axis, open);
+        };
+
+        const anyPopoverOpen = () =>
+          safetyPopoverOpen() ||
+          truthPopoverOpen() ||
+          relevancePopoverOpen() ||
+          sentimentPopoverOpen();
+
+        const effectiveHovered = () => anyPopoverOpen() ? null : hoveredAxis();
+
+        const clearLobeTapLater = () => {
+          if (lastLobeTapTimeout !== undefined) {
+            clearTimeout(lastLobeTapTimeout);
+          }
+          lastLobeTapTimeout = setTimeout(() => {
+            setLastLobeTap(null);
+            lastLobeTapTimeout = undefined;
+          }, TAP_WINDOW_MS);
+        };
+
+        const handleLobeTap = (axis: HighlightAxis, now = Date.now()): "highlight" | "open-popover" => {
+          const last = lastLobeTap();
+          if (last?.axis === axis && now - last.ts < TAP_WINDOW_MS) {
+            setLastLobeTap(null);
+            if (lastLobeTapTimeout !== undefined) {
+              clearTimeout(lastLobeTapTimeout);
+              lastLobeTapTimeout = undefined;
+            }
+            return "open-popover";
+          }
+          setHoveredAxis(axis);
+          setLastLobeTap({ axis, ts: now });
+          clearLobeTapLater();
+          return "highlight";
+        };
+
+        onCleanup(() => {
+          if (lastLobeTapTimeout !== undefined) {
+            clearTimeout(lastLobeTapTimeout);
+          }
+        });
 
         const setSafetyOpen = (open: boolean, trigger: "symbol" | "axis-pair" = "axis-pair") => {
           setSafetyPopoverOpen(open);
@@ -512,6 +636,18 @@ export default function WeatherReport(props: WeatherReportProps): JSX.Element {
                 lobeColors={lobeColors()}
                 size="100%"
                 class="block w-full h-auto"
+                hoveredAxis={effectiveHovered()}
+                onLobeEnter={(axis) => setHoveredAxis(axis)}
+                onLobeLeave={(axis) => {
+                  if (hoveredAxis() === axis) {
+                    setHoveredAxis(null);
+                  }
+                }}
+                onLobeTap={(axis) => {
+                  if (handleLobeTap(axis) === "open-popover") {
+                    setAxisPopoverOpen(axis, true);
+                  }
+                }}
               />
             </button>
             <div data-testid="weather-axis-stack" class="flex flex-col gap-[14px] text-center min-w-[120px]">
@@ -520,6 +656,10 @@ export default function WeatherReport(props: WeatherReportProps): JSX.Element {
                   <AxisRow
                     report={report()}
                     axis={axis}
+                    hoveredAxis={isHighlightAxis(axis.axisType) ? effectiveHovered : undefined}
+                    setHoveredAxis={isHighlightAxis(axis.axisType) ? setHoveredAxis : undefined}
+                    popoverOpen={axisPopoverOpen(axis.axisType)}
+                    setPopoverOpen={axisPopoverSetter(axis.axisType)}
                     safetyRecommendation={props.safetyRecommendation}
                     safetyPopoverOpen={safetyPopoverOpen}
                     setSafetyPopoverOpen={setSafetyOpen}
