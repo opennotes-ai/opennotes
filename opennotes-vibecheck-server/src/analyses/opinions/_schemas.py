@@ -26,6 +26,8 @@ class SubjectiveClaim(BaseModel):
     claim_text: str
     utterance_id: str
     stance: SubjectiveStance
+    chunk_idx: int | None = None
+    chunk_count: int | None = None
 
 
 class OpinionsReport(BaseModel):

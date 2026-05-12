@@ -15,6 +15,7 @@ from src.analyses.opinions._schemas import (
 from src.config import Settings, get_settings
 from src.services.gemini_agent import build_agent, run_vertex_agent_with_retry
 from src.services.vertex_limiter import vertex_slot
+from src.utterances.chunking_service import Chunk, get_chunking_service
 from src.utterances.schema import Utterance
 
 _SYSTEM_PROMPT = (
@@ -73,12 +74,15 @@ async def extract_subjective_claims_bulk(
         return []
 
     out: list[list[SubjectiveClaim]] = [[] for _ in utterances]
+    chunking_service = await get_chunking_service(settings or get_settings())
+    chunk_refs: list[tuple[int, Chunk]] = []
     prompt_lines: list[str] = []
     for i, u in enumerate(utterances):
-        text = (u.text or "").strip()
-        if not text:
-            continue
-        prompt_lines.append(f"[{i}] {text}")
+        for chunk in chunking_service.chunk_text(u.text or ""):
+            if not chunk.text.strip():
+                continue
+            chunk_refs.append((i, chunk))
+            prompt_lines.append(f"[{len(chunk_refs) - 1}] {chunk.text}")
 
     if not prompt_lines:
         return out
@@ -95,13 +99,20 @@ async def extract_subjective_claims_bulk(
     parsed: _BulkSubjectiveClaimsLLM = result.output
 
     for entry in parsed.results:
-        idx = entry.utterance_index
-        if 0 <= idx < len(utterances):
+        flat_idx = entry.utterance_index
+        if 0 <= flat_idx < len(chunk_refs):
+            idx, chunk = chunk_refs[flat_idx]
             uid = _utterance_id(utterances[idx], start_index + idx)
-            out[idx] = [
-                SubjectiveClaim(claim_text=c.claim_text, utterance_id=uid, stance=c.stance)
+            out[idx].extend(
+                SubjectiveClaim(
+                    claim_text=c.claim_text,
+                    utterance_id=uid,
+                    stance=c.stance,
+                    chunk_idx=chunk.chunk_idx if chunk.chunk_count > 1 else None,
+                    chunk_count=chunk.chunk_count,
+                )
                 for c in entry.claims
-            ]
+            )
     return out
 
 

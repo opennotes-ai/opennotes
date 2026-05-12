@@ -23,12 +23,35 @@ function itemFallback(
   return `item #${Number.isFinite(position) && position > 0 ? position : index + 1}`;
 }
 
+function chunkSuffix(
+  chunkIdx?: number | null,
+  chunkCount?: number | null,
+): string {
+  if (
+    chunkIdx === undefined ||
+    chunkIdx === null ||
+    chunkCount === undefined ||
+    chunkCount === null ||
+    chunkCount <= 1
+  ) {
+    return "";
+  }
+  return ` §${chunkIdx + 1}`;
+}
+
 export function utteranceLabel(
   utteranceId: string,
   anchors: readonly UtteranceAnchor[],
+  chunkIdx?: number | null,
+  chunkCount?: number | null,
 ): string {
   const kind = kindFromId(utteranceId);
-  if (!kind) return itemFallback(utteranceId, anchors);
+  if (!kind) {
+    return `${itemFallback(utteranceId, anchors)}${chunkSuffix(
+      chunkIdx,
+      chunkCount,
+    )}`;
+  }
 
   const sameKindAnchors = anchors.filter(
     (anchor) => kindFromId(anchor.utterance_id) === kind,
@@ -37,8 +60,15 @@ export function utteranceLabel(
     (anchor) => anchor.utterance_id === utteranceId,
   );
 
-  if (sameKindIndex === -1) return itemFallback(utteranceId, anchors);
-  if (kind === "post" && sameKindAnchors.length === 1) return "main post";
+  if (sameKindIndex === -1) {
+    return `${itemFallback(utteranceId, anchors)}${chunkSuffix(
+      chunkIdx,
+      chunkCount,
+    )}`;
+  }
+  if (kind === "post" && sameKindAnchors.length === 1) {
+    return `main post${chunkSuffix(chunkIdx, chunkCount)}`;
+  }
 
-  return `${kind} #${sameKindIndex + 1}`;
+  return `${kind} #${sameKindIndex + 1}${chunkSuffix(chunkIdx, chunkCount)}`;
 }

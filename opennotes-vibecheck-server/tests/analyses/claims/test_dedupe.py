@@ -40,7 +40,13 @@ async def test_three_paraphrases_cluster_to_one(
 
     claims = [
         Claim(claim_text=texts[0], utterance_id="post-0", confidence=0.70),
-        Claim(claim_text=texts[1], utterance_id="comment-1", confidence=0.90),
+        Claim(
+            claim_text=texts[1],
+            utterance_id="comment-1",
+            confidence=0.90,
+            chunk_idx=1,
+            chunk_count=3,
+        ),
         Claim(claim_text=texts[2], utterance_id="comment-2", confidence=0.80),
     ]
     utterances = [
@@ -60,6 +66,10 @@ async def test_three_paraphrases_cluster_to_one(
     assert cluster.occurrence_count == 3
     assert cluster.canonical_text == texts[1]
     assert set(cluster.utterance_ids) == {"post-0", "comment-1", "comment-2"}
+    assert any(
+        ref.utterance_id == "comment-1" and ref.chunk_idx == 1 and ref.chunk_count == 3
+        for ref in cluster.chunk_refs
+    )
     assert cluster.author_count == 2
     assert set(cluster.representative_authors) == {"alice", "bob"}
 

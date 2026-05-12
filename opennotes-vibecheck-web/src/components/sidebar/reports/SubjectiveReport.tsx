@@ -54,6 +54,8 @@ export default function SubjectiveReport(props: SubjectiveReportProps) {
                   {(utteranceId) => (
                     <UtteranceRef
                       utteranceId={String(utteranceId())}
+                      chunkIdx={claim.chunk_idx}
+                      chunkCount={claim.chunk_count}
                       onClick={props.onUtteranceClick ?? (() => undefined)}
                       disabled={
                         !props.canJumpToUtterance || !props.onUtteranceClick

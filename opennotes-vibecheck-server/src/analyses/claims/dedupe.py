@@ -6,12 +6,14 @@ cosine similarity (single-link, union-find), and return a `ClaimsReport` with
 one `DedupedClaim` per cluster. Designed as a pure function so it can be
 lifted back into opennotes-server later.
 """
+
 from __future__ import annotations
 
 import math
 from collections.abc import Mapping
 
 from src.analyses.claims._claims_schemas import (
+    ChunkRef,
     Claim,
     ClaimCategory,
     ClaimsReport,
@@ -92,9 +94,7 @@ async def dedupe_claims(  # noqa: PLR0912 - clustering flow is intentionally exp
     texts = [c.claim_text for c in claims]
     vectors = await embed_texts(texts, settings)
     if len(vectors) != len(claims):
-        raise RuntimeError(
-            f"embed_texts returned {len(vectors)} vectors for {len(claims)} claims"
-        )
+        raise RuntimeError(f"embed_texts returned {len(vectors)} vectors for {len(claims)} claims")
 
     if category_thresholds is None and threshold != DEFAULT_SIMILARITY_THRESHOLD:
         thresholds = dict.fromkeys(ClaimCategory, threshold)
@@ -122,8 +122,16 @@ async def dedupe_claims(  # noqa: PLR0912 - clustering flow is intentionally exp
         authors_seen: list[str] = []
         author_set: set[str] = set()
         utterance_ids: list[str] = []
+        chunk_refs: list[ChunkRef] = []
         for claim in members:
             utterance_ids.append(claim.utterance_id)
+            chunk_refs.append(
+                ChunkRef(
+                    utterance_id=claim.utterance_id,
+                    chunk_idx=claim.chunk_idx,
+                    chunk_count=claim.chunk_count,
+                )
+            )
             author = author_by_utterance.get(claim.utterance_id)
             if author and author not in author_set:
                 author_set.add(author)
@@ -136,6 +144,7 @@ async def dedupe_claims(  # noqa: PLR0912 - clustering flow is intentionally exp
                 occurrence_count=len(members),
                 author_count=len(author_set),
                 utterance_ids=utterance_ids,
+                chunk_refs=chunk_refs,
                 representative_authors=authors_seen[:5],
             )
         )

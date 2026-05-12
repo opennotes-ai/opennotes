@@ -38,9 +38,9 @@ def settings() -> Settings:
     return Settings()
 
 
-@pytest.mark.xfail(reason="tests deprecated single-utterance wrapper path; bulk coverage TBD", strict=False)
-
-
+@pytest.mark.xfail(
+    reason="tests deprecated single-utterance wrapper path; bulk coverage TBD", strict=False
+)
 async def test_extract_claims_returns_claims_with_utterance_id(
     settings: Settings, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -79,9 +79,9 @@ async def test_extract_claims_returns_claims_with_utterance_id(
     assert fake_agent.calls == [utterance.text]
 
 
-@pytest.mark.xfail(reason="tests deprecated single-utterance wrapper path; bulk coverage TBD", strict=False)
-
-
+@pytest.mark.xfail(
+    reason="tests deprecated single-utterance wrapper path; bulk coverage TBD", strict=False
+)
 async def test_extract_claims_empty_llm_response_returns_empty(
     settings: Settings, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -177,6 +177,60 @@ async def test_extract_claims_bulk_preserves_model_category(
                 utterance_id="u1",
                 category=ClaimCategory.PREDICTIONS,
                 confidence=0.92,
+                chunk_count=1,
             )
         ]
     ]
+
+
+async def test_extract_claims_bulk_preserves_chunk_refs(
+    settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    long_text = "This policy would devastate the economy. " * 500
+
+    async def fake_run_vertex_agent_with_retry(_agent, user_prompt: str):
+        assert "[0]" in user_prompt
+        assert long_text not in user_prompt
+        return _FakeRunResult(
+            output=BulkClaimExtractionResponse.model_validate(
+                {
+                    "results": [
+                        {
+                            "utterance_index": 0,
+                            "claims": [
+                                {
+                                    "claim_text": "The policy would devastate the economy.",
+                                    "category": ClaimCategory.PREDICTIONS,
+                                    "confidence": 0.92,
+                                }
+                            ],
+                        }
+                    ]
+                }
+            )
+        )
+
+    monkeypatch.setattr(extract_mod, "build_agent", lambda *_args, **_kwargs: object())
+    monkeypatch.setattr(
+        extract_mod,
+        "run_vertex_agent_with_retry",
+        fake_run_vertex_agent_with_retry,
+    )
+
+    claims_by_utterance = await extract_claims_bulk(
+        [
+            Utterance(
+                utterance_id="comment-1",
+                kind="comment",
+                text=long_text,
+                author="alice",
+            )
+        ],
+        settings,
+    )
+
+    claim = claims_by_utterance[0][0]
+    assert claim.utterance_id == "comment-1"
+    assert claim.chunk_idx == 0
+    assert claim.chunk_count is not None
+    assert claim.chunk_count > 1
