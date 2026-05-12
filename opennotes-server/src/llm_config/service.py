@@ -43,6 +43,10 @@ def _is_retryable(exc: BaseException) -> bool:
 
 _RETRY_PREDICATE = retry_if_exception(_is_retryable)
 
+# gemini-embedding-001 hard cap: API rejects batchSize >= 251 with INVALID_ARGUMENT.
+# Mirror of opennotes-vibecheck-server/src/services/embeddings.py:VERTEX_EMBEDDING_MAX_BATCH.
+VERTEX_EMBEDDING_MAX_BATCH = 250
+
 logger = get_logger(__name__)
 
 
@@ -230,12 +234,17 @@ class LLMService:
         embedder = self._require_embedder()
         sanitized_texts = [self._sanitize_embedding_text(t) for t in texts]
 
-        if input_type == "query":
-            result = await embedder.embed_query(sanitized_texts)
-        else:
-            result = await embedder.embed_documents(sanitized_texts)
-
-        return [(list(emb), result.provider_name, result.model_name) for emb in result.embeddings]
+        out: list[tuple[list[float], str, str]] = []
+        for start in range(0, len(sanitized_texts), VERTEX_EMBEDDING_MAX_BATCH):
+            chunk = sanitized_texts[start : start + VERTEX_EMBEDDING_MAX_BATCH]
+            if input_type == "query":
+                result = await embedder.embed_query(chunk)
+            else:
+                result = await embedder.embed_documents(chunk)
+            out.extend(
+                (list(emb), result.provider_name, result.model_name) for emb in result.embeddings
+            )
+        return out
 
     @retry(
         retry=_RETRY_PREDICATE,
