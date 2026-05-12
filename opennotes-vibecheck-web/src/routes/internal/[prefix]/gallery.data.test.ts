@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const { clientGetMock } = vi.hoisted(() => ({
   clientGetMock: vi.fn(),
@@ -82,5 +82,45 @@ describe("getInternalRecentAnalyses", () => {
     expect(result).toEqual([]);
     expect(consoleError).not.toHaveBeenCalled();
     consoleError.mockRestore();
+  });
+});
+
+describe("assertValidInternalPrefix", () => {
+  const originalPrefix = process.env.VIBECHECK_PRIVATE_PATH_PREFIX;
+
+  afterEach(() => {
+    if (originalPrefix === undefined) {
+      delete process.env.VIBECHECK_PRIVATE_PATH_PREFIX;
+    } else {
+      process.env.VIBECHECK_PRIVATE_PATH_PREFIX = originalPrefix;
+    }
+  });
+
+  it("allows a matching server-only prefix", async () => {
+    process.env.VIBECHECK_PRIVATE_PATH_PREFIX = "private-prefix";
+
+    const { assertValidInternalPrefix } = await import("./gallery.data");
+
+    await expect(assertValidInternalPrefix("private-prefix")).resolves.toBeUndefined();
+  });
+
+  it("throws 404 when the prefix is wrong", async () => {
+    process.env.VIBECHECK_PRIVATE_PATH_PREFIX = "private-prefix";
+
+    const { assertValidInternalPrefix } = await import("./gallery.data");
+
+    await expect(assertValidInternalPrefix("wrong-prefix")).rejects.toMatchObject({
+      status: 404,
+    });
+  });
+
+  it("throws 404 when the env var is empty", async () => {
+    delete process.env.VIBECHECK_PRIVATE_PATH_PREFIX;
+
+    const { assertValidInternalPrefix } = await import("./gallery.data");
+
+    await expect(assertValidInternalPrefix("anything")).rejects.toMatchObject({
+      status: 404,
+    });
   });
 });

@@ -17,6 +17,17 @@ function throwNotFound(): never {
   throw new Response(null, { status: 404 });
 }
 
+export async function assertValidInternalPrefix(supplied: string): Promise<void> {
+  "use server";
+  const expected = process.env.VIBECHECK_PRIVATE_PATH_PREFIX ?? "";
+  if (!expected || !supplied) throwNotFound();
+  const suppliedBytes = Buffer.from(supplied);
+  const expectedBytes = Buffer.from(expected);
+  if (suppliedBytes.byteLength !== expectedBytes.byteLength) throwNotFound();
+  const { timingSafeEqual } = await import("node:crypto");
+  if (!timingSafeEqual(suppliedBytes, expectedBytes)) throwNotFound();
+}
+
 export const getInternalRecentAnalyses = query(
   async (prefix: string, limit: number): Promise<RecentAnalysis[]> => {
     "use server";
