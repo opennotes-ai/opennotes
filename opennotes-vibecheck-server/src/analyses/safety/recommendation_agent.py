@@ -55,7 +55,24 @@ Important caveats:
   inconclusive, not verified unsafe visual content. Treat it as caution unless other
   verified signals justify unsafe, and describe it with a human-readable top signal
   such as "Video sampling inconclusive."
-- Echo the unavailable_inputs list exactly in the output."""
+- Echo the unavailable_inputs list exactly in the output.
+- Use the `divergences` field to record how your final verdict differs from the raw
+  signals in inputs:
+- If you discount a raw signal due to context, add direction="discounted" and include:
+  - discounted sensitive-topic signal when the text is a sensitive topic that is the
+    page subject or intended educational framing (ex: public-health article),
+  - discounted Web Risk URL finding when the flagged URL is the same article/page URL
+    under analysis,
+  - discounted image/video signal when visual findings are likely instructional,
+    educational, documentary, or in-domain context.
+- If you escalate beyond the weakest raw signals, add direction="escalated" when
+  combined low-signal cues or context justify caution/unsafe.
+  - Ex: multiple mild signals together (topic+POTENTIALLY_HARMFUL_APPLICATION+low
+    visual concern) producing caution,
+  - Ex: weak visual score plus weak textual cues and in-context risk alignment.
+- If your final level and rationale align with the raw signals, set `divergences: []`.
+- Only emit divergences that are directly supported by inputs. Do not fabricate
+  divergences."""
 
 
 @dataclass
@@ -134,7 +151,12 @@ def _sanitize_top_signals(recommendation: SafetyRecommendation) -> SafetyRecomme
         kept = [_SANITIZER_PLACEHOLDER]
     if kept == original:
         return recommendation
-    return recommendation.model_copy(update={"top_signals": kept})
+    return recommendation.model_copy(
+        update={
+            "top_signals": kept,
+            "divergences": recommendation.divergences,
+        }
+    )
 
 
 async def run_safety_recommendation(

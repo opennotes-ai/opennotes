@@ -6,6 +6,7 @@ from types import SimpleNamespace
 import pytest
 
 from src.analyses.safety._schemas import (
+    Divergence,
     HarmfulContentMatch,
     SafetyLevel,
     SafetyRecommendation,
@@ -59,6 +60,30 @@ def test_recommendation_prompt_prioritizes_remaining_concern_after_false_positiv
     )
     assert "Repeated low-severity toxicity" in RECOMMENDATION_SYSTEM_PROMPT
     assert "Mild violent rhetoric" in RECOMMENDATION_SYSTEM_PROMPT
+
+
+def test_recommendation_prompt_includes_divergence_guidance() -> None:
+    assert "Use the `divergences` field to record how your final verdict differs" in (
+        RECOMMENDATION_SYSTEM_PROMPT
+    )
+    assert (
+        "discounted sensitive-topic signal when the text is a sensitive topic"
+        in RECOMMENDATION_SYSTEM_PROMPT
+    )
+    assert (
+        "discounted Web Risk URL finding when the flagged URL is the same article/page URL"
+        in RECOMMENDATION_SYSTEM_PROMPT
+    )
+    assert (
+        "discounted image/video signal when visual findings are likely instructional"
+        in RECOMMENDATION_SYSTEM_PROMPT
+    )
+    assert (
+        "If you escalate beyond the weakest raw signals"
+        in RECOMMENDATION_SYSTEM_PROMPT
+    )
+    assert "set `divergences: []`" in RECOMMENDATION_SYSTEM_PROMPT
+    assert "Do not fabricate" in RECOMMENDATION_SYSTEM_PROMPT
 
 
 async def test_run_safety_recommendation_serializes_inputs_for_agent(monkeypatch):
@@ -247,6 +272,176 @@ async def test_topic_match_only_output_can_return_mild(monkeypatch):
 
     assert result.level == SafetyLevel.MILD
     assert result.top_signals == ["Mild toxicity topic match"]
+
+
+async def test_run_safety_recommendation_passes_discounted_sensitive_topic_divergence(
+    monkeypatch,
+) -> None:
+    inputs = SafetyRecommendationInputs(
+        harmful_content_matches=[
+            HarmfulContentMatch(
+                utterance_id="u1",
+                utterance_text="topic hit",
+                max_score=0.9,
+                categories={"sex": True},
+                scores={"sex": 0.9},
+                flagged_categories=["sex"],
+                source="gcp",
+            )
+        ],
+        web_risk_findings=[],
+        image_moderation_matches=[],
+        video_moderation_matches=[],
+        unavailable_inputs=[],
+    )
+    expected = [
+        Divergence(
+            direction="discounted",
+            signal_source="text",
+            signal_detail="OpenAI moderation flagged sexual-health keyword match",
+            reason="The page is an educational health resource about sexuality.",
+        )
+    ]
+    agent = StubAgent(
+        SafetyRecommendation(
+            level=SafetyLevel.CAUTION,
+            rationale="Context reduced concern despite a sensitive-topic hit.",
+            top_signals=["Educational sexual-health context"],
+            divergences=expected,
+        )
+    )
+    monkeypatch.setattr(
+        "src.analyses.safety.recommendation_agent.build_agent",
+        lambda *args, **kwargs: agent,
+    )
+
+    result = await run_safety_recommendation(inputs, settings=Settings())
+
+    assert result.divergences == expected
+
+
+async def test_run_safety_recommendation_passes_discounted_web_risk_divergence(
+    monkeypatch,
+) -> None:
+    inputs = SafetyRecommendationInputs(
+        harmful_content_matches=[],
+        web_risk_findings=[
+            WebRiskFinding(
+                url="https://vibecheck.opennotes.ai/report",
+                threat_types=["POTENTIALLY_HARMFUL_APPLICATION"],
+            )
+        ],
+        image_moderation_matches=[],
+        video_moderation_matches=[],
+        unavailable_inputs=[],
+    )
+    expected = [
+        Divergence(
+            direction="discounted",
+            signal_source="web_risk",
+            signal_detail="web risk flagged current article URL",
+            reason=(
+                "The URL under review is the same page that generated "
+                "this analysis, so no external threat was observed."
+            ),
+        )
+    ]
+    agent = StubAgent(
+        SafetyRecommendation(
+            level=SafetyLevel.SAFE,
+            rationale="No external attack surface detected.",
+            top_signals=["No additional risk indicators"],
+            divergences=expected,
+        )
+    )
+    monkeypatch.setattr(
+        "src.analyses.safety.recommendation_agent.build_agent",
+        lambda *args, **kwargs: agent,
+    )
+
+    result = await run_safety_recommendation(inputs, settings=Settings())
+
+    assert result.divergences == expected
+
+
+async def test_run_safety_recommendation_passes_escalated_weak_signal_divergence(
+    monkeypatch,
+) -> None:
+    inputs = SafetyRecommendationInputs(
+        harmful_content_matches=[
+            HarmfulContentMatch(
+                utterance_id="u1",
+                utterance_text="topic hit",
+                max_score=0.51,
+                categories={"toxicity": True},
+                scores={"toxicity": 0.51},
+                flagged_categories=["toxicity"],
+                source="gcp",
+            )
+        ],
+        web_risk_findings=[
+            WebRiskFinding(
+                url="https://download.example/tool",
+                threat_types=["POTENTIALLY_HARMFUL_APPLICATION"],
+            )
+        ],
+        image_moderation_matches=[],
+        video_moderation_matches=[],
+        unavailable_inputs=[],
+    )
+    expected = [
+        Divergence(
+            direction="escalated",
+            signal_source="combined",
+            signal_detail="Low toxicity + low web-risk + mild visual silence",
+            reason=(
+                "Together these low-severity cues indicate potential abuse pattern "
+                "despite each signal being weak alone."
+            ),
+        )
+    ]
+    agent = StubAgent(
+        SafetyRecommendation(
+            level=SafetyLevel.CAUTION,
+            rationale="Combined weak signals justify a caution level.",
+            top_signals=["Combined weak safety cues"],
+            divergences=expected,
+        )
+    )
+    monkeypatch.setattr(
+        "src.analyses.safety.recommendation_agent.build_agent",
+        lambda *args, **kwargs: agent,
+    )
+
+    result = await run_safety_recommendation(inputs, settings=Settings())
+
+    assert result.divergences == expected
+
+
+async def test_run_safety_recommendation_preserves_empty_divergences(monkeypatch) -> None:
+    inputs = SafetyRecommendationInputs(
+        harmful_content_matches=[],
+        web_risk_findings=[],
+        image_moderation_matches=[],
+        video_moderation_matches=[],
+        unavailable_inputs=[],
+    )
+    agent = StubAgent(
+        SafetyRecommendation(
+            level=SafetyLevel.SAFE,
+            rationale="No safety concerns found.",
+            top_signals=[],
+            divergences=[],
+        )
+    )
+    monkeypatch.setattr(
+        "src.analyses.safety.recommendation_agent.build_agent",
+        lambda *args, **kwargs: agent,
+    )
+
+    result = await run_safety_recommendation(inputs, settings=Settings())
+
+    assert result.divergences == []
 
 
 async def test_multiple_low_severity_flags_do_not_return_mild(monkeypatch):
