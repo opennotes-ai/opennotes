@@ -6,13 +6,18 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
+    ENVIRONMENT: str = "development"
     VERTEXAI_PROJECT: str = "open-notes-core"
     VERTEXAI_LOCATION: str = "global"
     VERTEXAI_FAST_MODEL: str = "google-vertex:gemini-3-flash-preview"
     VERTEXAI_MODEL: str = "google-vertex:gemini-3.1-pro-preview"
     VERTEXAI_EMBEDDING_MODEL: str = "google-vertex:gemini-embedding-001"
-    # Conservative per-process cap while production Cloud Run max_instances=1.
+    # Conservative global cap for Vertex/Gemini calls.
     VERTEX_MAX_CONCURRENCY: int = 4
+    VERTEX_LEASE_TTL_MS: int = 300_000
+    VERTEX_LEASE_ACQUIRE_TIMEOUT_MS: int = 30_000
+    VERTEX_LEASE_RETRY_MIN_MS: int = 25
+    VERTEX_LEASE_RETRY_MAX_MS: int = 250
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
@@ -110,6 +115,9 @@ class Settings(BaseSettings):
     RATE_LIMIT_POLL_SUSTAINED: int = 300
     VIBECHECK_SCRAPE_API_TOKEN: str = ""
     VIBECHECK_WEB_URL: str = ""
+    VIBECHECK_LIMITER_REDIS_URL: str = ""
+    VIBECHECK_LIMITER_REDIS_CA_CERT_PATH: str = ""
+    VIBECHECK_LIMITER_REDIS_MAX_CONNECTIONS: int = 10
 
     # TASK-1473.35: when set + the public POST carries
     # `X-Vibecheck-Test-Fail-Slug: <slug>`, the orchestrator forces a
@@ -167,11 +175,18 @@ class Settings(BaseSettings):
             )
         return value
 
-    @field_validator("VERTEX_MAX_CONCURRENCY")
+    @field_validator(
+        "VERTEX_MAX_CONCURRENCY",
+        "VERTEX_LEASE_TTL_MS",
+        "VERTEX_LEASE_ACQUIRE_TIMEOUT_MS",
+        "VERTEX_LEASE_RETRY_MIN_MS",
+        "VERTEX_LEASE_RETRY_MAX_MS",
+        "VIBECHECK_LIMITER_REDIS_MAX_CONNECTIONS",
+    )
     @classmethod
-    def _vertex_max_concurrency_positive(cls, value: int) -> int:
+    def _positive_vertex_limiter_numbers(cls, value: int) -> int:
         if value <= 0:
-            raise ValueError("VERTEX_MAX_CONCURRENCY must be > 0")
+            raise ValueError("Vertex limiter numeric settings must be > 0")
         return value
 
     @field_validator(
@@ -201,6 +216,19 @@ class Settings(BaseSettings):
                 "GCS_VIDEO_STAGING_BUCKET is required when "
                 "VIDEO_MODERATION_PROVIDER=video_intelligence"
             )
+        return self
+
+    @model_validator(mode="after")
+    def _production_limiter_redis_requires_tls(self) -> "Settings":
+        if self.ENVIRONMENT.lower() not in {"prod", "production"}:
+            return self
+
+        if not self.VIBECHECK_LIMITER_REDIS_URL:
+            raise ValueError("VIBECHECK_LIMITER_REDIS_URL is required in production")
+        if not self.VIBECHECK_LIMITER_REDIS_URL.startswith("rediss://"):
+            raise ValueError("VIBECHECK_LIMITER_REDIS_URL must use rediss:// in production")
+        if not self.VIBECHECK_LIMITER_REDIS_CA_CERT_PATH:
+            raise ValueError("VIBECHECK_LIMITER_REDIS_CA_CERT_PATH is required in production")
         return self
 
 

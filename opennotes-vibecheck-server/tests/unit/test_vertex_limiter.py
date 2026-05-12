@@ -12,6 +12,55 @@ from src.services import vertex_limiter
 from src.services.vertex_limiter import vertex_slot
 
 
+class _SharedFakeRedis:
+    def __init__(self) -> None:
+        self.tokens: set[str] = set()
+        self.loaded_scripts: list[str] = []
+
+    async def script_load(self, script: str) -> str:
+        self.loaded_scripts.append(script)
+        return "release" if "not_owner_or_expired" in script else "acquire"
+
+    async def evalsha(self, sha: str, numkeys: int, *args: Any) -> list[Any]:
+        assert numkeys == 2
+        if sha == "acquire":
+            token = str(args[2])
+            limit = int(args[3])
+            lease_ttl_ms = int(args[4])
+            if len(self.tokens) >= limit:
+                return [0, len(self.tokens), limit, lease_ttl_ms, 1, "saturated"]
+            self.tokens.add(token)
+            return [1, len(self.tokens), limit, lease_ttl_ms, 0, "acquired"]
+
+        token = str(args[2])
+        released = token in self.tokens
+        self.tokens.discard(token)
+        return [1 if released else 0, token, len(self.tokens), "released"]
+
+    async def aclose(self) -> None:
+        return None
+
+
+class _FailingRedis:
+    async def script_load(self, script: str) -> str:
+        assert script
+        return "acquire"
+
+    async def evalsha(self, sha: str, numkeys: int, *keys_and_args: Any) -> list[Any]:
+        assert sha
+        assert numkeys == 2
+        assert keys_and_args
+        raise TimeoutError("redis unavailable")
+
+    async def aclose(self) -> None:
+        return None
+
+
+@pytest.fixture(autouse=True)
+def reset_vertex_limiter_state() -> None:
+    vertex_limiter._reset_for_tests()
+
+
 async def test_vertex_slot_waits_for_single_global_slot(monkeypatch: pytest.MonkeyPatch) -> None:
     settings = Settings(VERTEX_MAX_CONCURRENCY=1)
     entered_first = asyncio.Event()
@@ -66,6 +115,74 @@ async def test_vertex_slot_records_wait_ms(monkeypatch: pytest.MonkeyPatch) -> N
 
     assert isinstance(recorded["vertex_limiter.wait_ms"], float)
     assert recorded["vertex_limiter.wait_ms"] >= 0.0
+    assert recorded["vertex_limiter.backend"] == "local"
+
+
+async def test_vertex_slot_uses_redis_backend_when_limiter_url_is_configured(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    redis = _SharedFakeRedis()
+    monkeypatch.setattr(vertex_limiter, "_new_redis_client", lambda _settings: redis)
+    settings = Settings(
+        VIBECHECK_LIMITER_REDIS_URL="rediss://:secret@10.0.0.1:6379",
+        VIBECHECK_LIMITER_REDIS_CA_CERT_PATH="/etc/ssl/vibecheck-limiter-redis/ca.crt",
+        VERTEX_LEASE_ACQUIRE_TIMEOUT_MS=10,
+        VERTEX_LEASE_RETRY_MIN_MS=1,
+        VERTEX_LEASE_RETRY_MAX_MS=1,
+    )
+
+    async with vertex_slot(settings):
+        assert len(redis.tokens) == 1
+
+    assert redis.tokens == set()
+
+
+async def test_redis_backend_enforces_shared_capacity_across_instances() -> None:
+    redis = _SharedFakeRedis()
+    first_backend = vertex_limiter._RedisLeaseBackend(redis)
+    second_backend = vertex_limiter._RedisLeaseBackend(redis)
+
+    first_lease = await first_backend.acquire(
+        limit=1,
+        lease_ttl_ms=60_000,
+        acquire_timeout_ms=10,
+        retry_min_ms=1,
+        retry_max_ms=1,
+    )
+
+    with pytest.raises(vertex_limiter.VertexLimiterSaturationError):
+        await second_backend.acquire(
+            limit=1,
+            lease_ttl_ms=60_000,
+            acquire_timeout_ms=1,
+            retry_min_ms=1,
+            retry_max_ms=1,
+        )
+
+    await first_backend.release(first_lease)
+    second_lease = await second_backend.acquire(
+        limit=1,
+        lease_ttl_ms=60_000,
+        acquire_timeout_ms=10,
+        retry_min_ms=1,
+        retry_max_ms=1,
+    )
+    await second_backend.release(second_lease)
+
+    assert redis.tokens == set()
+
+
+async def test_redis_backend_fails_closed_when_backend_is_unavailable() -> None:
+    backend = vertex_limiter._RedisLeaseBackend(_FailingRedis())
+
+    with pytest.raises(vertex_limiter.VertexLimiterBackendUnavailableError):
+        await backend.acquire(
+            limit=1,
+            lease_ttl_ms=60_000,
+            acquire_timeout_ms=10,
+            retry_min_ms=1,
+            retry_max_ms=1,
+        )
 
 
 async def test_vertex_slot_rejects_cap_change_while_slot_is_active() -> None:

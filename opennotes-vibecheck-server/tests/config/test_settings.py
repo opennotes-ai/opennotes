@@ -1,3 +1,5 @@
+import pytest
+
 from src.config import Settings, get_settings
 
 
@@ -6,6 +8,10 @@ def test_defaults():
     assert s.VERTEXAI_FAST_MODEL == "google-vertex:gemini-3-flash-preview"
     assert s.VERTEXAI_MODEL == "google-vertex:gemini-3.1-pro-preview"
     assert s.VERTEX_MAX_CONCURRENCY == 4
+    assert s.VIBECHECK_LIMITER_REDIS_URL == ""
+    assert s.VIBECHECK_LIMITER_REDIS_CA_CERT_PATH == ""
+    assert s.VERTEX_LEASE_ACQUIRE_TIMEOUT_MS == 30_000
+    assert s.VERTEX_LEASE_TTL_MS == 300_000
     assert s.MAX_IMAGES_MODERATED == 30
     assert s.MAX_VIDEOS_MODERATED == 5
     assert s.WEB_RISK_CACHE_TTL_HOURS == 6
@@ -38,3 +44,23 @@ def test_web_risk_cache_ttl_env_override(monkeypatch):
         assert get_settings().WEB_RISK_CACHE_TTL_HOURS == 12
     finally:
         get_settings.cache_clear()
+
+
+def test_production_requires_dedicated_limiter_redis_url():
+    with pytest.raises(ValueError, match="VIBECHECK_LIMITER_REDIS_URL"):
+        Settings(ENVIRONMENT="production")
+
+
+def test_production_limiter_redis_requires_tls_and_ca_path():
+    with pytest.raises(ValueError, match="rediss://"):
+        Settings(
+            ENVIRONMENT="production",
+            VIBECHECK_LIMITER_REDIS_URL="redis://:secret@10.0.0.1:6379",
+            VIBECHECK_LIMITER_REDIS_CA_CERT_PATH="/etc/ssl/vibecheck-limiter-redis/ca.crt",
+        )
+
+    with pytest.raises(ValueError, match="VIBECHECK_LIMITER_REDIS_CA_CERT_PATH"):
+        Settings(
+            ENVIRONMENT="production",
+            VIBECHECK_LIMITER_REDIS_URL="rediss://:secret@10.0.0.1:6379",
+        )
