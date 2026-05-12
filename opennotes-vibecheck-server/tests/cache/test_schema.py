@@ -438,6 +438,11 @@ class TestIdempotency:
             "ALTER TABLE public.vibecheck_jobs\n    ADD COLUMN IF NOT EXISTS weather_report JSONB"
         ) in schema_sql
 
+    def test_overall_decision_column_is_added_idempotently(self, schema_sql: str) -> None:
+        assert (
+            "ALTER TABLE public.vibecheck_jobs\n    ADD COLUMN IF NOT EXISTS overall_decision JSONB"
+        ) in schema_sql
+
     def test_retired_truth_labels_are_rewritten_in_weather_jsonb(self, schema_sql: str) -> None:
         assert "TASK-1578.02: rewrite retired TruthLabel values" in schema_sql
         assert "weather_report->'truth'->>'label' = 'mostly_factual'" in schema_sql

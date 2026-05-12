@@ -3020,6 +3020,43 @@ describe("AnalyzePage Original tab — soft-disabled when canIframe=false (TASK-
 });
 
 describe("HighlightsCard + OverallRecommendationCard DOM order (TASK-1612.06 + 1612.07)", () => {
+    it("passes server overall decision through to the overall card", async () => {
+      renderAt("/analyze?job=server-overall-job&url=https://news.example.com/a");
+      await waitFor(() => {
+        expect(pollingHandles.length).toBeGreaterThan(0);
+      });
+
+      setPolledJobState(
+        makeJobState({
+          status: "done",
+          sidebar_payload_complete: true,
+          sidebar_payload: makeSidebarPayload({
+            overall: {
+              verdict: "pass",
+              reason: "Server synthesis",
+              status: "final",
+            },
+            safety: {
+              harmful_content_matches: [],
+              recommendation: {
+                level: "unsafe",
+                rationale: "Would recompute as flag without server overall",
+                top_signals: ["unsafe fallback"],
+                unavailable_inputs: [],
+              },
+            },
+          }),
+        }),
+      );
+
+      expect(await screen.findByTestId("overall-recommendation-verdict")).toHaveTextContent(
+        "Overall: OK.",
+      );
+      expect(screen.getByTestId("overall-recommendation-reason")).toHaveTextContent(
+        "Server synthesis",
+      );
+    });
+
     it("overall-recommendation-card appears in DOM before headline-lead-in, which appears before analyze-layout", async () => {
       renderAt("/analyze?job=dom-order-job&url=https://news.example.com/a");
       await waitFor(() => {

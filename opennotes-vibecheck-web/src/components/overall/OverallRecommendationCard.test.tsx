@@ -129,7 +129,7 @@ describe("<OverallRecommendationCard />", () => {
     render(() => (
       <OverallRecommendationCard
         recommendation={makeRecommendation({ level: "unsafe", top_signals: ["bad content"] })}
-        overall={{ verdict: "pass", reason: "manually reviewed" }}
+        overall={{ verdict: "pass", reason: "manually reviewed", status: "final" }}
       />
     ));
 
@@ -635,7 +635,7 @@ describe("<OverallRecommendationCard />", () => {
           top_signals: ["minor concern"],
         })}
         flashpointMatches={[makeFlashpoint({ risk_level: "Dangerous" })]}
-        overall={{ verdict: "pass", reason: "manually reviewed" }}
+        overall={{ verdict: "pass", reason: "manually reviewed", status: "final" }}
       />
     ));
 
@@ -734,7 +734,7 @@ describe("<OverallRecommendationCard />", () => {
           top_signals: ["educational context"],
         })}
         weatherReport={makeWeatherReport("misleading", "on_topic")}
-        overall={{ verdict: "pass", reason: "manually reviewed" }}
+        overall={{ verdict: "pass", reason: "manually reviewed", status: "final" }}
       />
     ));
 

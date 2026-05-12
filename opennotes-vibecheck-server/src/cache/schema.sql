@@ -291,6 +291,12 @@ ALTER TABLE public.vibecheck_jobs
 ALTER TABLE public.vibecheck_jobs
     ADD COLUMN IF NOT EXISTS weather_report JSONB;
 
+-- TASK-1623.01: server-side overall recommendation synthesis output.
+-- Nullable for old rows and optional-agent failure; web keeps deterministic
+-- fallback rules when this column is null.
+ALTER TABLE public.vibecheck_jobs
+    ADD COLUMN IF NOT EXISTS overall_decision JSONB;
+
 -- TASK-1578.02: rewrite retired TruthLabel values in persisted weather
 -- report JSON before the stricter Pydantic enum reads it back. This preserves
 -- the distinction between sourced factual claims and unsourced factual claims.

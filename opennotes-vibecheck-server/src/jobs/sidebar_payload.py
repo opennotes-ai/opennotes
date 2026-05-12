@@ -41,6 +41,7 @@ from src.analyses.schemas import (
     VideoModerationSection,
     WebRiskSection,
 )
+from src.analyses.synthesis._overall_schemas import OverallDecision
 from src.analyses.synthesis._weather_schemas import WeatherReport
 from src.analyses.tone._flashpoint_schemas import FlashpointMatch
 from src.analyses.tone._scd_schemas import SCDReport
@@ -53,6 +54,7 @@ def assemble_sidebar_payload(
     safety_recommendation: Any | None = None,
     headline_summary: Any | None = None,
     weather_report: Any | None = None,
+    overall_decision: Any | None = None,
     utterances: list[UtteranceAnchor] | None = None,
     page_title: str | None = None,
     page_kind: PageKind = PageKind.OTHER,
@@ -241,6 +243,13 @@ def assemble_sidebar_payload(
         if weather_report is not None
         else None
     )
+    overall = (
+        OverallDecision.model_validate(json.loads(overall_decision))
+        if isinstance(overall_decision, str)
+        else OverallDecision.model_validate(overall_decision)
+        if overall_decision is not None
+        else None
+    )
 
     return SidebarPayload(
         source_url=url,
@@ -257,6 +266,7 @@ def assemble_sidebar_payload(
         facts_claims=facts,
         opinions_sentiments=opinions,
         headline=headline,
+        overall=overall,
         weather_report=weather,
         utterances=utterances or [],
     )
