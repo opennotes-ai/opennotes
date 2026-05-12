@@ -18,6 +18,7 @@ import SectionGroup, {
   type SlotCountBadge,
 } from "./SectionGroup";
 import ExtractingIndicator from "./ExtractingIndicator";
+import { UtterancesProvider } from "./UtterancesContext";
 import { sectionDisplayName } from "./display";
 import {
   SafetyModerationReport,
@@ -700,95 +701,99 @@ export default function Sidebar(props: SidebarProps) {
           {partialFailedSlugs().map(sectionDisplayName).join(", ")}
         </div>
       </Show>
-      <SectionGroup
-        label="Safety"
-        slugs={SAFETY_SLUGS}
-        sections={effectiveSections()}
-        defaultOpen={props.collapseTopLevelByDefault !== true}
-        render={safetyRender()}
-        summary={safetySummary()}
-        emptinessChecks={SAFETY_EMPTINESS}
-        counts={SAFETY_COUNTS}
-        jobId={props.jobId}
-        onRetry={props.onRetry}
-        cachedHint={props.cachedHint}
-        renderRevision={canJump()}
-        {...(store
-          ? {
-              open: store.isOpen("Safety"),
-              onOpenChange: (o: boolean) => store.setOpen("Safety", o),
-              highlighted: store.highlightedGroup() === "Safety",
-            }
-          : {})}
-      />
-      <SectionGroup
-        label="Tone/dynamics"
-        slugs={TONE_SLUGS}
-        sections={effectiveSections()}
-        defaultOpen={props.collapseTopLevelByDefault !== true}
-        render={toneRender()}
-        emptinessChecks={TONE_EMPTINESS}
-        counts={TONE_COUNTS}
-        jobId={props.jobId}
-        onRetry={props.onRetry}
-        cachedHint={props.cachedHint}
-        renderRevision={canJump()}
-        {...(store
-          ? {
-              open: store.isOpen("Tone/dynamics"),
-              onOpenChange: (o: boolean) => store.setOpen("Tone/dynamics", o),
-              highlighted: store.highlightedGroup() === "Tone/dynamics",
-            }
-          : {})}
-      />
-      <SectionGroup
-        label="Facts/claims"
-        slugs={FACTS_SLUGS}
-        sections={effectiveSections()}
-        defaultOpen={props.collapseTopLevelByDefault !== true}
-        render={factsRender()}
-        emptinessChecks={FACTS_EMPTINESS}
-        counts={FACTS_COUNTS}
-        jobId={props.jobId}
-        onRetry={props.onRetry}
-        cachedHint={props.cachedHint}
-        renderRevision={`${canJump()}:${
-          effectiveSections().facts_claims__evidence?.attempt_id ?? ""
-        }:${
-          effectiveSections().facts_claims__evidence?.state ?? ""
-        }:${
-          effectiveSections().facts_claims__premises?.attempt_id ?? ""
-        }:${
-          effectiveSections().facts_claims__premises?.state ?? ""
-        }`}
-        {...(store
-          ? {
-              open: store.isOpen("Facts/claims"),
-              onOpenChange: (o: boolean) => store.setOpen("Facts/claims", o),
-              highlighted: store.highlightedGroup() === "Facts/claims",
-            }
-          : {})}
-      />
-      <SectionGroup
-        label="Opinions/sentiments"
-        slugs={OPINIONS_SLUGS}
-        sections={effectiveSections()}
-        defaultOpen={props.collapseTopLevelByDefault !== true}
-        render={opinionsRender()}
-        emptinessChecks={OPINIONS_EMPTINESS}
-        counts={OPINIONS_COUNTS}
-        jobId={props.jobId}
-        onRetry={props.onRetry}
-        cachedHint={props.cachedHint}
-        renderRevision={opinionsRenderRevision()}
-        {...(store
-          ? {
-              open: store.isOpen("Opinions/sentiments"),
-              onOpenChange: (o: boolean) => store.setOpen("Opinions/sentiments", o),
-              highlighted: store.highlightedGroup() === "Opinions/sentiments",
-            }
-          : {})}
-      />
+      <UtterancesProvider value={utterances()}>
+        <SectionGroup
+          label="Safety"
+          slugs={SAFETY_SLUGS}
+          sections={effectiveSections()}
+          defaultOpen={props.collapseTopLevelByDefault !== true}
+          render={safetyRender()}
+          summary={safetySummary()}
+          emptinessChecks={SAFETY_EMPTINESS}
+          counts={SAFETY_COUNTS}
+          jobId={props.jobId}
+          onRetry={props.onRetry}
+          cachedHint={props.cachedHint}
+          renderRevision={canJump()}
+          {...(store
+            ? {
+                open: store.isOpen("Safety"),
+                onOpenChange: (o: boolean) => store.setOpen("Safety", o),
+                highlighted: store.highlightedGroup() === "Safety",
+              }
+            : {})}
+        />
+        <SectionGroup
+          label="Tone/dynamics"
+          slugs={TONE_SLUGS}
+          sections={effectiveSections()}
+          defaultOpen={props.collapseTopLevelByDefault !== true}
+          render={toneRender()}
+          emptinessChecks={TONE_EMPTINESS}
+          counts={TONE_COUNTS}
+          jobId={props.jobId}
+          onRetry={props.onRetry}
+          cachedHint={props.cachedHint}
+          renderRevision={canJump()}
+          {...(store
+            ? {
+                open: store.isOpen("Tone/dynamics"),
+                onOpenChange: (o: boolean) => store.setOpen("Tone/dynamics", o),
+                highlighted: store.highlightedGroup() === "Tone/dynamics",
+              }
+            : {})}
+        />
+        <SectionGroup
+          label="Facts/claims"
+          slugs={FACTS_SLUGS}
+          sections={effectiveSections()}
+          defaultOpen={props.collapseTopLevelByDefault !== true}
+          render={factsRender()}
+          emptinessChecks={FACTS_EMPTINESS}
+          counts={FACTS_COUNTS}
+          jobId={props.jobId}
+          onRetry={props.onRetry}
+          cachedHint={props.cachedHint}
+          renderRevision={`${canJump()}:${
+            effectiveSections().facts_claims__evidence?.attempt_id ?? ""
+          }:${
+            effectiveSections().facts_claims__evidence?.state ?? ""
+          }:${
+            effectiveSections().facts_claims__premises?.attempt_id ?? ""
+          }:${
+            effectiveSections().facts_claims__premises?.state ?? ""
+          }`}
+          {...(store
+            ? {
+                open: store.isOpen("Facts/claims"),
+                onOpenChange: (o: boolean) => store.setOpen("Facts/claims", o),
+                highlighted: store.highlightedGroup() === "Facts/claims",
+              }
+            : {})}
+        />
+        <SectionGroup
+          label="Opinions/sentiments"
+          slugs={OPINIONS_SLUGS}
+          sections={effectiveSections()}
+          defaultOpen={props.collapseTopLevelByDefault !== true}
+          render={opinionsRender()}
+          emptinessChecks={OPINIONS_EMPTINESS}
+          counts={OPINIONS_COUNTS}
+          jobId={props.jobId}
+          onRetry={props.onRetry}
+          cachedHint={props.cachedHint}
+          renderRevision={opinionsRenderRevision()}
+          {...(store
+            ? {
+                open: store.isOpen("Opinions/sentiments"),
+                onOpenChange: (o: boolean) =>
+                  store.setOpen("Opinions/sentiments", o),
+                highlighted:
+                  store.highlightedGroup() === "Opinions/sentiments",
+              }
+            : {})}
+        />
+      </UtterancesProvider>
     </aside>
   );
 }
