@@ -309,7 +309,7 @@ describe("SafetyHighlightsBridge", () => {
   it("maps id, title, detail, and severity correctly", () => {
     const div = makeDiv(0, {
       reason: "Suspicious pattern",
-      signal_source: "model-x",
+      signal_source: "combined",
       signal_detail: "high confidence match",
       direction: "escalated",
     });
@@ -325,7 +325,108 @@ describe("SafetyHighlightsBridge", () => {
     expect(el.textContent).toBe("Escalated: Suspicious pattern");
     expect(el.getAttribute("data-source")).toBe("safety-divergence");
     expect(el.getAttribute("data-severity")).toBe("warn");
-    expect(el.getAttribute("data-detail")).toBe("model-x: high confidence match");
+    expect(el.getAttribute("data-detail")).toBe("Combined signals: high confidence match");
+  });
+
+  it.each([
+    ["openai", "Text moderation"],
+    ["gcp", "Text moderation"],
+    ["web_risk", "Web Risk"],
+    ["combined", "Combined signals"],
+  ])("maps raw source slug %s to display label", (signalSource, label) => {
+    const div = makeDiv(0, {
+      signal_source: signalSource,
+      signal_detail: "Contextual evidence",
+    });
+
+    const { getByTestId } = render(() => (
+      <HighlightsStoreProvider>
+        <SafetyHighlightsBridge recommendation={makeRec([div])} />
+        <ProbeItems />
+      </HighlightsStoreProvider>
+    ));
+
+    expect(getByTestId("item-safety-divergence:0").getAttribute("data-detail")).toBe(
+      `${label}: Contextual evidence`,
+    );
+  });
+
+  it.each([
+    ["POTENTIALLY_HARMFUL_APPLICATION score 0.72"],
+    ["self_harm/intent"],
+    ["self-harm/intent"],
+    ["harassment_threatening"],
+    ["harassment"],
+    ["harassment was escalated"],
+    ["self-harm was discounted"],
+    ["openai moderation flagged context"],
+  ])("does not expose raw signal detail %s in highlight details", (signalDetail) => {
+    const div = makeDiv(0, {
+      reason: "False positive",
+      signal_source: "web_risk",
+      signal_detail: signalDetail,
+    });
+
+    const { getByTestId } = render(() => (
+      <HighlightsStoreProvider>
+        <SafetyHighlightsBridge recommendation={makeRec([div])} />
+        <ProbeItems />
+      </HighlightsStoreProvider>
+    ));
+
+    expect(getByTestId("item-safety-divergence:0").getAttribute("data-detail")).toBe(
+      "Web Risk: Signal context adjusted",
+    );
+  });
+
+  it.each([
+    ["self_harm/intent was discounted", "Discounted: Signal context discounted"],
+    ["self-harm/intent was discounted", "Discounted: Signal context discounted"],
+    [
+      "harassment_threatening was escalated",
+      "Escalated: Signal context escalated",
+    ],
+    ["harassment", "Escalated: Signal context escalated"],
+    ["harassment was escalated", "Escalated: Signal context escalated"],
+    ["self-harm was discounted", "Discounted: Signal context discounted"],
+    ["gcp signal discounted", "Discounted: Signal context discounted"],
+  ])("does not expose raw signal identifiers in title reason %s", (reason, title) => {
+    const div = makeDiv(0, {
+      direction: title.startsWith("Escalated") ? "escalated" : "discounted",
+      reason,
+      signal_source: "combined",
+      signal_detail: "Contextual evidence",
+    });
+
+    const { getByTestId } = render(() => (
+      <HighlightsStoreProvider>
+        <SafetyHighlightsBridge recommendation={makeRec([div])} />
+        <ProbeItems />
+      </HighlightsStoreProvider>
+    ));
+
+    expect(getByTestId("item-safety-divergence:0").textContent).toBe(title);
+  });
+
+  it("keeps prose that only contains category text as part of a larger human word", () => {
+    const div = makeDiv(0, {
+      reason: "Educational sexual-health context",
+      signal_source: "text",
+      signal_detail: "Educational sexual-health context",
+    });
+
+    const { getByTestId } = render(() => (
+      <HighlightsStoreProvider>
+        <SafetyHighlightsBridge recommendation={makeRec([div])} />
+        <ProbeItems />
+      </HighlightsStoreProvider>
+    ));
+
+    const item = getByTestId("item-safety-divergence:0");
+    expect(item.textContent).toBe("Discounted: Educational sexual-health context");
+    expect(item.getAttribute("data-detail")).toBe(
+      "Text moderation: Educational sexual-health context",
+    );
   });
 
   it("hides highlights when no divergences are present", () => {
@@ -349,13 +450,13 @@ describe("SafetyHighlightsBridge", () => {
             makeDiv(0, {
               direction: "discounted",
               reason: "Fact signal",
-              signal_source: "model-a",
+              signal_source: "text_moderation",
               signal_detail: "Weak signal",
             }),
             makeDiv(1, {
               direction: "escalated",
               reason: "Manual review",
-              signal_source: "model-b",
+              signal_source: "image_moderation",
               signal_detail: "High confidence",
             }),
           ])}
@@ -367,9 +468,9 @@ describe("SafetyHighlightsBridge", () => {
     const slides = screen.getAllByTestId("highlight-slide");
     expect(slides).toHaveLength(2);
     expect(slides[0]).toHaveTextContent("Discounted: Fact signal");
-    expect(slides[0]).toHaveTextContent("model-a: Weak signal");
+    expect(slides[0]).toHaveTextContent("Text moderation: Weak signal");
     expect(slides[1]).toHaveTextContent("Escalated: Manual review");
-    expect(slides[1]).toHaveTextContent("model-b: High confidence");
+    expect(slides[1]).toHaveTextContent("Image moderation: High confidence");
   });
 
   it("does not render highlight slides when recommendation divergences are missing", () => {

@@ -22,9 +22,24 @@ class SafetyLevel(StrEnum):
 
 class Divergence(BaseModel):
     direction: Literal["discounted", "escalated"]
-    signal_source: str
-    signal_detail: str
-    reason: str
+    signal_source: str = Field(
+        description=(
+            "Short display-ready source label, such as Text moderation, Web Risk, "
+            "Image moderation, Video moderation, or Combined signals. Do not use "
+            "raw enum values, snake_case identifiers, or scores."
+        )
+    )
+    signal_detail: str = Field(
+        description=(
+            "Short display-ready description of the adjusted signal. Do not use raw "
+            "category names, enum labels, or float scores."
+        )
+    )
+    reason: str = Field(
+        description=(
+            "User-readable reason the raw signal was discounted or escalated."
+        )
+    )
 
 
 class SafetyRecommendation(BaseModel):

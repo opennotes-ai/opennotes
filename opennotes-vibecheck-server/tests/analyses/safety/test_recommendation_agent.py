@@ -84,6 +84,8 @@ def test_recommendation_prompt_includes_divergence_guidance() -> None:
     )
     assert "set `divergences: []`" in RECOMMENDATION_SYSTEM_PROMPT
     assert "Do not fabricate" in RECOMMENDATION_SYSTEM_PROMPT
+    assert "display-ready human-readable text" in RECOMMENDATION_SYSTEM_PROMPT
+    assert "Do not put raw category names" in RECOMMENDATION_SYSTEM_PROMPT
 
 
 async def test_run_safety_recommendation_serializes_inputs_for_agent(monkeypatch):
@@ -326,7 +328,7 @@ async def test_run_safety_recommendation_passes_discounted_sensitive_topic_diver
         Divergence(
             direction="discounted",
             signal_source="text",
-            signal_detail="OpenAI moderation flagged sexual-health keyword match",
+            signal_detail="Text moderation flagged sexual-health keyword match",
             reason="The page is an educational health resource about sexuality.",
         )
     ]

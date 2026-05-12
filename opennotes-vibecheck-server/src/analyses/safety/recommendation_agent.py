@@ -48,6 +48,11 @@ Important caveats:
   "Mild violent rhetoric".
 - Keep raw category names and float scores in rationale only when they help
   explain the decision; do not put them in top_signals.
+- Divergence signal_source, signal_detail, and reason must also be short,
+  display-ready human-readable text. Do not put raw category names, snake_case
+  identifiers, float scores, or enum labels in divergence fields. Use labels
+  such as "Text moderation", "Web Risk", "Image moderation", "Video moderation",
+  or "Combined signals".
 - Vision SafeSearch enum labels are not available downstream. Describe image/video signals
   in rationale with float scores only, such as "adult max_likelihood 0.91";
   never mention enum labels like VERY_LIKELY.

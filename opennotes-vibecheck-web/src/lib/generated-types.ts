@@ -644,11 +644,20 @@ export interface components {
              * @enum {string}
              */
             direction: "discounted" | "escalated";
-            /** Signal Source */
+            /**
+             * Signal Source
+             * @description Short display-ready source label, such as Text moderation, Web Risk, Image moderation, Video moderation, or Combined signals. Do not use raw enum values, snake_case identifiers, or scores.
+             */
             signal_source: string;
-            /** Signal Detail */
+            /**
+             * Signal Detail
+             * @description Short display-ready description of the adjusted signal. Do not use raw category names, enum labels, or float scores.
+             */
             signal_detail: string;
-            /** Reason */
+            /**
+             * Reason
+             * @description User-readable reason the raw signal was discounted or escalated.
+             */
             reason: string;
         };
         /**
