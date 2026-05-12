@@ -57,15 +57,21 @@ Rationale: the synthesis lives web-side only until the server-side overall-recom
 
 ## Signal scope
 
-The only synthesis signal layered on today:
+Synthesis signals layered on today:
 
+**Risk-side (Rule 1):**
 - Source field: `tone_dynamics.flashpoint_matches: FlashpointMatch[]`
 - Trigger: any entry where `risk_level in {Heated, Hostile, Dangerous}`
-- Applies only when safety level is `mild`. `safe` is intentionally NOT escalated — a `safe` safety verdict is a strong signal and we don't want a flashpoint hit alone to override it. We can revisit if more cross-signal cases land.
+- Applies only when safety level is `mild`. `safe` is intentionally NOT escalated — a `safe` safety verdict is a strong signal and we don't want a flashpoint hit alone to override it.
+- `Low Risk` and `Guarded` flashpoint matches never trigger escalation.
 
-`Low Risk` and `Guarded` flashpoint matches never trigger escalation.
+**Utility-side (Rule 2):**
+- Source fields: `weather_report.truth.label`, `weather_report.relevance.label`
+- Trigger: `truth.label == "misleading"` AND `relevance.label in {"insightful", "on_topic"}`
+- Applies only when the running decision is `pass`; never downgrades `flag`.
+- **Known sharp edge** (tracked in TASK-1618.14): the rule treats the winning `truth.label` as authoritative and ignores `logprob` / `alternatives`. A low-confidence `"misleading"` barely ahead of `"factual_claims"` or `"sourced"` will still flag. Tuning may add a confidence floor or weight alternatives.
 
-Page-content / topical signals are not yet layered in web-side. They are deferred to the server-side overall agent below.
+Engagement, novelty, and lower-level analyzer findings are not yet layered in web-side. They are deferred to the server-side overall agent below.
 
 ## Migration plan
 
