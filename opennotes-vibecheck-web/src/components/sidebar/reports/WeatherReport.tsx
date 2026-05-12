@@ -1,6 +1,6 @@
 import { For, Show, createSignal, type JSX } from "solid-js";
 import { ChevronRight } from "lucide-solid";
-import { WeatherHelpButton, TOOLTIP_COPY } from "./WeatherHelpButton";
+import { WeatherHelpButton } from "./WeatherHelpButton";
 import { WeatherSymbol, type SafetyLevel } from "./WeatherSymbol";
 import {
   Popover,
@@ -99,6 +99,8 @@ interface AxisRowProps {
   report: WeatherReportData;
   axis: AxisDefinition;
   safetyRecommendation?: SafetyRecommendation | null;
+  safetyPopoverOpen?: () => boolean;
+  setSafetyPopoverOpen?: (v: boolean) => void;
 }
 
 function SafetyAxisRow(props: {
@@ -106,9 +108,12 @@ function SafetyAxisRow(props: {
   heading: string;
   store: SidebarStore | null;
   targetGroup: SectionGroupLabel;
+  popoverOpen: () => boolean;
+  setPopoverOpen: (v: boolean) => void;
 }): JSX.Element {
   const recommendation = () => props.safetyRecommendation ?? null;
-  const [popoverOpen, setPopoverOpen] = createSignal(false);
+  const popoverOpen = props.popoverOpen;
+  const setPopoverOpen = props.setPopoverOpen;
   let triggerRef: HTMLButtonElement | undefined;
 
   const expansion = (): string | null => {
@@ -214,12 +219,17 @@ function AxisRow(props: AxisRowProps): JSX.Element {
   const targetGroup = AXIS_TO_GROUP[props.axis.axisType];
 
   if (props.axis.axisType === "safety") {
+    const [localOpen, setLocalOpen] = createSignal(false);
+    const popoverOpen = props.safetyPopoverOpen ?? localOpen;
+    const setPopoverOpen = props.setSafetyPopoverOpen ?? setLocalOpen;
     return (
       <SafetyAxisRow
         safetyRecommendation={props.safetyRecommendation}
         heading={props.axis.heading}
         store={store}
         targetGroup={targetGroup}
+        popoverOpen={popoverOpen}
+        setPopoverOpen={setPopoverOpen}
       />
     );
   }
@@ -349,7 +359,7 @@ function AxisRow(props: AxisRowProps): JSX.Element {
             </Show>
             <PopoverContent class="max-w-xs text-sm leading-snug pr-2 pb-2">
               <div class="flex items-end gap-2">
-                <p class="flex-1">{expansion() ?? TOOLTIP_COPY[props.axis.axisType as keyof typeof TOOLTIP_COPY]}</p>
+                <p class="flex-1">{expansion() ?? AXIS_DEFINITIONS[props.axis.axisType as keyof typeof AXIS_DEFINITIONS]?.description}</p>
                 <Show when={store !== null}>
                   <button
                     type="button"
@@ -442,17 +452,31 @@ export default function WeatherReport(props: WeatherReportProps): JSX.Element {
 
         const level = () => safetyLevel(props.safetyRecommendation);
 
+        const [safetyPopoverOpen, setSafetyPopoverOpen] = createSignal(false);
+
+        const symbolAriaLabel = () => {
+          const rec = props.safetyRecommendation;
+          if (!rec || !("level" in rec)) return "Safety: not available";
+          const lvl = rec.level;
+          if (lvl === "safe") return "Safety: Safe";
+          if (lvl === "mild") return "Safety: Mild";
+          if (lvl === "caution") return "Safety: Caution";
+          if (lvl === "unsafe") return "Safety: Unsafe";
+          return "Safety: not available";
+        };
+
         return (
           <div
             data-testid="weather-report"
             class={`relative inline-flex items-center gap-[10px] rounded-[14px] border border-border/50 bg-card px-[22px] py-4 pb-8 ${props.class ?? ""}`.trim()}
           >
-            <div
-              class="flex-none flex items-center justify-center rounded-md outline-none motion-safe:transition-[transform,box-shadow] motion-safe:duration-[220ms] motion-safe:ease-[cubic-bezier(0.22,1,0.36,1)] [@media(hover:hover)]:hover:[box-shadow:var(--card-hover-light)] [@media(hover:hover)]:hover:motion-safe:-translate-y-px focus-visible:[box-shadow:var(--card-hover-light)] focus-visible:motion-safe:-translate-y-px dark:[@media(hover:hover)]:hover:[box-shadow:var(--card-hover-dark-underlit)] dark:focus-visible:[box-shadow:var(--card-hover-dark-underlit)]"
+            <button
+              type="button"
+              class="flex-none flex items-center justify-center rounded-md bg-transparent border-0 p-0 cursor-pointer motion-safe:transition-[transform,box-shadow] motion-safe:duration-[220ms] motion-safe:ease-[cubic-bezier(0.22,1,0.36,1)] motion-safe:[@media(hover:hover)]:hover:[box-shadow:var(--card-hover-light)] motion-safe:[@media(hover:hover)]:hover:-translate-y-px motion-safe:focus-visible:[box-shadow:var(--card-hover-light)] motion-safe:focus-visible:-translate-y-px motion-safe:[@media(hover:hover)]:hover:dark:[box-shadow:var(--card-hover-dark-underlit)] motion-safe:focus-visible:dark:[box-shadow:var(--card-hover-dark-underlit)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
               data-testid="weather-symbol-cell"
-              tabindex="0"
-              aria-label={`Safety level: ${level()}`}
+              aria-label={symbolAriaLabel()}
               style="width:clamp(80px,12.8vw,128px)"
+              onClick={() => setSafetyPopoverOpen(true)}
             >
               <WeatherSymbol
                 level={level()}
@@ -460,7 +484,7 @@ export default function WeatherReport(props: WeatherReportProps): JSX.Element {
                 size="100%"
                 class="block w-full h-auto"
               />
-            </div>
+            </button>
             <div data-testid="weather-axis-stack" class="flex flex-col gap-[14px] text-center min-w-[120px]">
               <For each={AXES}>
                 {(axis) => (
@@ -468,6 +492,8 @@ export default function WeatherReport(props: WeatherReportProps): JSX.Element {
                     report={report()}
                     axis={axis}
                     safetyRecommendation={props.safetyRecommendation}
+                    safetyPopoverOpen={safetyPopoverOpen}
+                    setSafetyPopoverOpen={setSafetyPopoverOpen}
                   />
                 )}
               </For>
