@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from src.llm_config.service import LLMService
+from src.llm_config.service import VERTEX_EMBEDDING_MAX_BATCH, LLMService
 
 
 @dataclass
@@ -83,3 +83,32 @@ class TestGenerateEmbeddingsBatch:
         assert results[0][0] == [0.1] * 1536
         assert results[1][0] == [0.2] * 1536
         assert results[2][0] == [0.3] * 1536
+
+    @pytest.mark.asyncio
+    async def test_batch_chunks_inputs_over_vertex_cap(self):
+        """Inputs >250 must be split into <=250 sub-batches; outputs preserve input order."""
+        call_sizes: list[int] = []
+
+        async def fake_embed_documents(texts: list[str]) -> _FakeEmbeddingResult:
+            call_sizes.append(len(texts))
+            return _FakeEmbeddingResult(
+                embeddings=[[float(int(t))] for t in texts],
+                inputs=list(texts),
+                input_type="document",
+                model_name="gemini-embedding-001",
+                provider_name="google",
+            )
+
+        mock_embedder = MagicMock()
+        mock_embedder.embed_documents = AsyncMock(side_effect=fake_embed_documents)
+        mock_embedder.embed_query = AsyncMock()
+        service = LLMService(client_manager=MagicMock(), embedder=mock_embedder)
+        texts = [str(i) for i in range(261)]
+
+        results = await service.generate_embeddings_batch(texts=texts)
+
+        assert call_sizes == [VERTEX_EMBEDDING_MAX_BATCH, 11]
+        assert len(results) == 261
+        assert [r[0] for r in results] == [[float(i)] for i in range(261)]
+        assert all(r[1] == "google" for r in results)
+        assert all(r[2] == "gemini-embedding-001" for r in results)
