@@ -9,6 +9,7 @@ import {
 } from "@solidjs/testing-library";
 import type { components } from "~/lib/generated-types";
 import WeatherReport from "./WeatherReport";
+import { WeatherSymbol } from "./WeatherSymbol";
 import { SidebarStoreProvider, useSidebarStore } from "../SidebarStoreProvider";
 import * as weatherLabels from "~/lib/weather-labels";
 
@@ -84,7 +85,7 @@ describe("WeatherReport", () => {
     ).toBe(true);
   });
 
-  it("uses Table primitive with four TableRows in TableBody and no TableHeader", () => {
+  it("renders four axis pairs (safety, truth, relevance, sentiment) inside the report", () => {
     render(() => (
       <WeatherReport
         report={makeWeatherReport()}
@@ -93,14 +94,14 @@ describe("WeatherReport", () => {
     ));
 
     const root = screen.getByTestId("weather-report");
-    const tbody = root.querySelector('[data-slot="table-body"]');
-    expect(tbody).not.toBeNull();
-    const rows = tbody!.querySelectorAll('[data-slot="table-row"]');
-    expect(rows.length).toBe(4);
+    expect(root.querySelector('[data-testid="weather-axis-card-safety"]')).not.toBeNull();
+    expect(root.querySelector('[data-testid="weather-axis-card-truth"]')).not.toBeNull();
+    expect(root.querySelector('[data-testid="weather-axis-card-relevance"]')).not.toBeNull();
+    expect(root.querySelector('[data-testid="weather-axis-card-sentiment"]')).not.toBeNull();
     expect(root.querySelector('[data-slot="table-header"]')).toBeNull();
   });
 
-  it("heading text appears as a right-side hint span that is aria-hidden, not as an h1-h6 element", () => {
+  it("heading text appears as an aria-hidden label span, not as an h1-h6 element", () => {
     render(() => <WeatherReport report={makeWeatherReport()} />);
     const root = screen.getByTestId("weather-report");
 
@@ -193,7 +194,7 @@ describe("WeatherReport", () => {
     expect(screen.queryByText(/direct, lived experience/i)).toBeNull();
   });
 
-  it("axis row trigger is a button with aria-label combining axis context, visible value, and confidence when present", () => {
+  it("axis row trigger is a button with aria-label combining axis context and visible value", () => {
     render(() => (
       <WeatherReport
         report={makeWeatherReport({
@@ -207,16 +208,14 @@ describe("WeatherReport", () => {
     const truthLabel = truthTrigger.getAttribute("aria-label") ?? "";
     expect(truthLabel).toMatch(/Truth/i);
     expect(truthLabel).toMatch(/First-Person/i);
-    expect(truthLabel).toMatch(/\d+(\.\d+)?%/);
 
     const relevanceTrigger = screen.getByTestId("weather-axis-card-relevance");
     const relevanceLabel = relevanceTrigger.getAttribute("aria-label") ?? "";
     expect(relevanceLabel).toMatch(/Relevance/i);
     expect(relevanceLabel).toMatch(/On Topic/i);
-    expect(relevanceLabel).not.toMatch(/%/);
   });
 
-  it("does not put role=button or aria-haspopup on the underlying TableRow", () => {
+  it("does not put role=button or aria-haspopup on the axis pair wrapper", () => {
     render(() => (
       <WeatherReport
         report={makeWeatherReport()}
@@ -224,12 +223,12 @@ describe("WeatherReport", () => {
       />
     ));
     const root = screen.getByTestId("weather-report");
-    const rows = root.querySelectorAll('[data-slot="table-row"]');
-    expect(rows.length).toBe(4);
-    for (const row of Array.from(rows)) {
-      expect(row.getAttribute("role")).not.toBe("button");
-      expect(row.getAttribute("aria-haspopup")).toBeNull();
-      expect(row.getAttribute("tabindex")).toBeNull();
+    const pairs = root.querySelectorAll('.pair');
+    expect(pairs.length).toBe(4);
+    for (const pair of Array.from(pairs)) {
+      expect(pair.getAttribute("role")).not.toBe("button");
+      expect(pair.getAttribute("aria-haspopup")).toBeNull();
+      expect(pair.getAttribute("tabindex")).toBeNull();
     }
   });
 
@@ -247,13 +246,13 @@ describe("WeatherReport", () => {
     ).toBeTruthy();
   });
 
-  it("skeleton uses the unified Card+Table shape", () => {
+  it("skeleton has four axis pairs (safety, truth, relevance, sentiment)", () => {
     render(() => <WeatherReport report={null} />);
     const root = screen.getByTestId("weather-report-skeleton");
-    const tbody = root.querySelector('[data-slot="table-body"]');
-    expect(tbody).not.toBeNull();
-    const rows = tbody!.querySelectorAll('[data-slot="table-row"]');
-    expect(rows.length).toBe(4);
+    expect(root.querySelector('[data-testid="weather-skeleton-safety"]')).not.toBeNull();
+    expect(root.querySelector('[data-testid="weather-skeleton-truth"]')).not.toBeNull();
+    expect(root.querySelector('[data-testid="weather-skeleton-relevance"]')).not.toBeNull();
+    expect(root.querySelector('[data-testid="weather-skeleton-sentiment"]')).not.toBeNull();
   });
 
   it("renders the literal axis labels (TRUTH, RELEVANCE, SENTIMENT) statically in the loading state", () => {
@@ -306,12 +305,17 @@ describe("WeatherReport", () => {
     expect(root.className).not.toContain("min-h-[110px]");
   });
 
-  it("populated container keeps Card-style chrome (bg-card)", () => {
+  it("populated container has bg-card class", () => {
     render(() => <WeatherReport report={makeWeatherReport()} />);
     const root = screen.getByTestId("weather-report");
     const cls = root.className;
     expect(cls).toContain("bg-card");
-    expect(cls).toContain("rounded-md");
+  });
+
+  it("populated container uses inline-flex layout (hugs its content)", () => {
+    render(() => <WeatherReport report={makeWeatherReport()} />);
+    const root = screen.getByTestId("weather-report");
+    expect(root.className).toContain("inline-flex");
   });
 
   it("forwards consumer-provided class to the outer container", () => {
@@ -425,7 +429,7 @@ describe("WeatherReport", () => {
     );
   });
 
-  it("renders logprob metadata as linear probability percentages", () => {
+  it("renders logprob alternatives as linear probability percentages", () => {
     render(() => (
       <WeatherReport
         report={makeWeatherReport({
@@ -438,15 +442,12 @@ describe("WeatherReport", () => {
       />
     ));
 
-    expect(screen.getByTestId("weather-truth-confidence").textContent).toBe(
-      "88.69%",
-    );
     expect(screen.getByTestId("weather-truth-alternatives").textContent).toContain(
       "Factual Claims (28.65%)",
     );
   });
 
-  it("axis heading appears on the RIGHT as an aria-hidden hint span INSIDE the trigger button in each interactive row", () => {
+  it("axis category label appears as an aria-hidden span INSIDE the trigger button, above the eval value", () => {
     render(() => <WeatherReport report={makeWeatherReport()} />);
 
     const root = screen.getByTestId("weather-report");
@@ -459,9 +460,8 @@ describe("WeatherReport", () => {
 
     for (const { axis, heading } of expectedHeadings) {
       const trigger = screen.getByTestId(`weather-axis-card-${axis}`);
-      const td = trigger.closest("td")!;
       const allHintSpans = Array.from(
-        td.querySelectorAll<HTMLSpanElement>("span[aria-hidden='true']"),
+        trigger.querySelectorAll<HTMLSpanElement>("span[aria-hidden='true']"),
       );
       const hintSpan = allHintSpans.find(
         (s) => s.textContent?.trim().toUpperCase() === heading,
@@ -469,21 +469,14 @@ describe("WeatherReport", () => {
       expect(hintSpan).toBeDefined();
       expect(hintSpan!.getAttribute("aria-hidden")).toBe("true");
       expect(hintSpan!.className).toContain("uppercase");
-      expect(hintSpan!.className).toContain("tracking-[0.06em]");
-      expect(hintSpan!.className).toContain("text-muted-foreground");
-      expect(hintSpan!.className).toContain("text-xs");
 
       expect(trigger.contains(hintSpan!)).toBe(true);
     }
 
-    const cells = root.querySelectorAll("td");
-    expect(cells.length).toBeGreaterThan(0);
-    for (const cell of Array.from(cells)) {
-      expect(cell.getAttribute("aria-hidden")).toBeNull();
-    }
+    expect(root.querySelector('[data-slot="table-header"]')).toBeNull();
   });
 
-  it("clicking anywhere on the heading-text region opens the popover (whole-row trigger)", async () => {
+  it("clicking the category label span opens the popover (whole-trigger click)", async () => {
     render(() => (
       <WeatherReport
         report={makeWeatherReport()}
@@ -496,9 +489,8 @@ describe("WeatherReport", () => {
       { axis: "safety", heading: "SAFETY", expectedText: /moderation, web risk/i },
     ] as Array<{ axis: string; heading: string; expectedText: RegExp }>) {
       const trigger = screen.getByTestId(`weather-axis-card-${axis}`);
-      const td = trigger.closest("td")!;
       const hintSpan = Array.from(
-        td.querySelectorAll<HTMLSpanElement>("span[aria-hidden='true']"),
+        trigger.querySelectorAll<HTMLSpanElement>("span[aria-hidden='true']"),
       ).find((s) => s.textContent?.trim().toUpperCase() === heading);
       expect(hintSpan).toBeDefined();
 
@@ -508,9 +500,7 @@ describe("WeatherReport", () => {
     }
   });
 
-  it("axis heading hint spans have cursor-default and select-none classes", () => {
-    // JSDOM can't trigger pointer/cursor behaviour — assert via class-token contract
-    // that heading spans suppress pointer cursor and text selection.
+  it("axis category label spans have cursor-default and select-none classes", () => {
     render(() => (
       <WeatherReport
         report={makeWeatherReport()}
@@ -539,87 +529,30 @@ describe("WeatherReport", () => {
     }
   });
 
-  it("eval label uses font-condensed; axis hint span does not", () => {
+  it("category label spans use font-condensed class", () => {
+    render(() => <WeatherReport report={makeWeatherReport()} />);
+
+    const trigger = screen.getByTestId("weather-axis-card-truth");
+    const hintSpan = Array.from(
+      trigger.querySelectorAll<HTMLSpanElement>("span[aria-hidden='true']"),
+    ).find((s) => s.textContent?.trim().toUpperCase() === "TRUTH");
+    expect(hintSpan).toBeDefined();
+    expect(hintSpan!.className).toContain("font-condensed");
+  });
+
+  it("eval value uses font-serif class (neutral display, no per-axis color tinting)", () => {
     render(() => <WeatherReport report={makeWeatherReport()} />);
 
     const evalSpan = screen.getByTestId("weather-truth-value");
-    expect(evalSpan.className).toContain("font-condensed");
-
-    const trigger = screen.getByTestId("weather-axis-card-truth");
-    const td = trigger.closest("td")!;
-    const hintSpans = Array.from(
-      td.querySelectorAll<HTMLSpanElement>("span[aria-hidden='true']"),
-    );
-    for (const hint of hintSpans) {
-      expect(hint.className).not.toContain("font-condensed");
-    }
+    expect(evalSpan.className).toContain("font-serif");
+    expect(evalSpan.className).not.toMatch(/text-indigo|text-lime|text-sky|text-amber|text-slate/);
   });
 
-  it("eval label has no background badge class (badge background dropped)", () => {
+  it("eval values carry no background badge class", () => {
     render(() => <WeatherReport report={makeWeatherReport()} />);
 
     const className = screen.getByTestId("weather-truth-value").className;
     expect(className).not.toMatch(/(?:^|\s)bg-/);
-  });
-
-  it("primary axis values apply per-label color classes (first_person, on_topic, neutral)", () => {
-    render(() => (
-      <WeatherReport
-        report={makeWeatherReport({
-          truth: { label: "first_person", logprob: null, alternatives: [] },
-          relevance: { label: "on_topic", logprob: null, alternatives: [] },
-          sentiment: { label: "neutral", logprob: null, alternatives: [] },
-        })}
-      />
-    ));
-
-    expect(screen.getByTestId("weather-truth-value").className).toContain(
-      "text-indigo-700",
-    );
-    expect(screen.getByTestId("weather-relevance-value").className).toContain(
-      "text-lime-700",
-    );
-    expect(screen.getByTestId("weather-sentiment-value").className).toContain(
-      "text-slate-700",
-    );
-  });
-
-  it("renders confidence at text-xs (no arbitrary text-[11px])", () => {
-    render(() => (
-      <WeatherReport
-        report={makeWeatherReport({
-          truth: {
-            label: "sourced",
-            logprob: -0.12,
-            alternatives: [],
-          },
-        })}
-      />
-    ));
-
-    const confidence = screen.getByTestId("weather-truth-confidence");
-    expect(confidence.className).toContain("text-xs");
-    expect(confidence.className).not.toContain("text-[11px]");
-  });
-
-  it("renders alternative chips at text-xs (no arbitrary text-[10px])", () => {
-    render(() => (
-      <WeatherReport
-        report={makeWeatherReport({
-          truth: {
-            label: "sourced",
-            logprob: null,
-            alternatives: [{ label: "factual_claims", logprob: null }],
-          },
-        })}
-      />
-    ));
-
-    const list = screen.getByTestId("weather-truth-alternatives");
-    const item = list.querySelector("li");
-    expect(item).not.toBeNull();
-    expect(item!.className).toContain("text-xs");
-    expect(item!.className).not.toContain("text-[10px]");
   });
 
   it("all rows with axis data render a button trigger, even free-form labels not in weather-labels.json", () => {
@@ -640,7 +573,7 @@ describe("WeatherReport", () => {
     expect(sentimentValue.closest("button")).not.toBeNull();
   });
 
-  it("clicking a row with a free-form label (not in weather-labels.json) falls back to axis-level TOOLTIP_COPY content", async () => {
+  it("clicking a row with a free-form label (not in weather-labels.json) falls back to axis_definitions.description content", async () => {
     render(() => (
       <WeatherReport
         report={makeWeatherReport({
@@ -672,7 +605,7 @@ describe("WeatherReport", () => {
     expect(trigger.contains(altsList)).toBe(false);
   });
 
-  it("trigger button has hover:bg-muted/40 class for whole-row hover band", () => {
+  it("trigger button has hover:bg-muted/40 class for axis hover band", () => {
     render(() => <WeatherReport report={makeWeatherReport()} />);
 
     const trigger = screen.getByTestId("weather-axis-card-truth");
@@ -702,14 +635,14 @@ describe("WeatherReport", () => {
     expect(helpButton).toBeDefined();
   });
 
-  it("skeleton CardContent wrapping placeholder rows has aria-hidden='true'", () => {
+  it("skeleton axis pairs region has aria-hidden='true'", () => {
     render(() => <WeatherReport report={null} />);
 
     const skeletonCard = screen.getByTestId("weather-report-skeleton");
-    const tbody = skeletonCard.querySelector('[data-slot="table-body"]');
-    expect(tbody).not.toBeNull();
+    const skeletonTruth = skeletonCard.querySelector('[data-testid="weather-skeleton-truth"]');
+    expect(skeletonTruth).not.toBeNull();
 
-    let node: Element | null = tbody!;
+    let node: Element | null = skeletonTruth!;
     let foundAriaHidden = false;
     while (node && node !== skeletonCard) {
       if (node.getAttribute("aria-hidden") === "true") {
@@ -769,20 +702,7 @@ describe("WeatherReport", () => {
     expect(screen.getByTestId("weather-skeleton-sentiment-label").textContent).toBe("SENTIMENT");
   });
 
-  it("skeleton eval cell (words) is LEFT of label cell in DOM order", () => {
-    render(() => <WeatherReport report={null} />);
-
-    const truthRow = screen.getByTestId("weather-skeleton-truth");
-    const cells = truthRow.querySelectorAll('[data-slot="table-cell"]');
-    expect(cells.length).toBe(2);
-    const firstCellWordsWrapper = cells[0].querySelector("[data-testid='weather-skeleton-truth-words']");
-    expect(firstCellWordsWrapper).not.toBeNull();
-    const secondCellLabel = cells[1].getAttribute("data-testid");
-    expect(secondCellLabel).toBe("weather-skeleton-truth-label");
-  });
-
   it("outer card has pb-8 but NOT pr-8 (help button has bottom padding only)", () => {
-    // JSDOM can't compute layout — assert the class contract for the help-button anchor zone.
     render(() => <WeatherReport report={makeWeatherReport()} />);
     const root = screen.getByTestId("weather-report");
     expect(root.className).toContain("pb-8");
@@ -790,14 +710,227 @@ describe("WeatherReport", () => {
   });
 
   it("skeleton outer card does NOT have pr-8", () => {
-    // JSDOM can't compute layout — assert the class contract for the help-button anchor zone.
     render(() => <WeatherReport report={null} />);
     const root = screen.getByTestId("weather-report-skeleton");
     expect(root.className).not.toContain("pr-8");
   });
 
+  describe("WeatherSymbol shape selection per safety level", () => {
+    it("safe level renders a circle symbol (data-testid=weather-symbol-safe)", () => {
+      render(() => (
+        <WeatherSymbol level="safe" lobeColors={["#0ea5e9", "#10b981", "#f59e0b"]} />
+      ));
+      expect(screen.getByTestId("weather-symbol-safe")).toBeDefined();
+      const svg = screen.getByTestId("weather-symbol-safe");
+      expect(svg.querySelector("circle")).not.toBeNull();
+    });
+
+    it("mild level renders a rounded square symbol (data-testid=weather-symbol-mild)", () => {
+      render(() => (
+        <WeatherSymbol level="mild" lobeColors={["#06b6d4", "#84cc16", "#64748b"]} />
+      ));
+      expect(screen.getByTestId("weather-symbol-mild")).toBeDefined();
+      const svg = screen.getByTestId("weather-symbol-mild");
+      expect(svg.querySelector("circle")).toBeNull();
+      expect(svg.querySelectorAll("path").length).toBeGreaterThan(0);
+    });
+
+    it("caution level renders a triangle symbol (data-testid=weather-symbol-caution)", () => {
+      render(() => (
+        <WeatherSymbol level="caution" lobeColors={["#78716c", "#06b6d4", "#f97316"]} />
+      ));
+      expect(screen.getByTestId("weather-symbol-caution")).toBeDefined();
+    });
+
+    it("unsafe level renders an octagon symbol (data-testid=weather-symbol-unsafe)", () => {
+      render(() => (
+        <WeatherSymbol level="unsafe" lobeColors={["#d946ef", "#d946ef", "#8b5cf6"]} />
+      ));
+      expect(screen.getByTestId("weather-symbol-unsafe")).toBeDefined();
+    });
+
+    it("unknown level renders a rhombus symbol (data-testid=weather-symbol-unknown)", () => {
+      render(() => (
+        <WeatherSymbol level="unknown" lobeColors={["#64748b", "#64748b", "#64748b"]} />
+      ));
+      expect(screen.getByTestId("weather-symbol-unknown")).toBeDefined();
+      const svg = screen.getByTestId("weather-symbol-unknown");
+      expect(svg.querySelector("polygon")).not.toBeNull();
+      expect(svg.querySelector("circle")).toBeNull();
+    });
+  });
+
+  describe("WeatherSymbol palette and trefoil colors", () => {
+    it("safe symbol uses #4ade80 fill and #bbf7d0 outline", () => {
+      render(() => (
+        <WeatherSymbol level="safe" lobeColors={["#0ea5e9", "#10b981", "#f59e0b"]} />
+      ));
+      const svg = screen.getByTestId("weather-symbol-safe");
+      const circle = svg.querySelector("circle");
+      expect(circle?.getAttribute("fill")).toBe("#4ade80");
+    });
+
+    it("mild symbol uses #fef9c3 fill", () => {
+      render(() => (
+        <WeatherSymbol level="mild" lobeColors={["#06b6d4", "#84cc16", "#64748b"]} />
+      ));
+      const svg = screen.getByTestId("weather-symbol-mild");
+      const shapePath = svg.querySelector("path");
+      expect(shapePath?.getAttribute("fill")).toBe("#fef9c3");
+    });
+
+    it("caution symbol uses #facc15 fill", () => {
+      render(() => (
+        <WeatherSymbol level="caution" lobeColors={["#78716c", "#06b6d4", "#f97316"]} />
+      ));
+      const svg = screen.getByTestId("weather-symbol-caution");
+      const shapePath = svg.querySelector("path");
+      expect(shapePath?.getAttribute("fill")).toBe("#facc15");
+    });
+
+    it("unsafe symbol uses #c0392b fill", () => {
+      render(() => (
+        <WeatherSymbol level="unsafe" lobeColors={["#d946ef", "#d946ef", "#8b5cf6"]} />
+      ));
+      const svg = screen.getByTestId("weather-symbol-unsafe");
+      const shapePath = svg.querySelector("path");
+      expect(shapePath?.getAttribute("fill")).toBe("#c0392b");
+    });
+
+    it("unknown symbol uses gray-200 fill (#e5e7eb) and gray-500 outline (#6b7280) on a single polygon", () => {
+      render(() => (
+        <WeatherSymbol level="unknown" lobeColors={["#64748b", "#64748b", "#64748b"]} />
+      ));
+      const svg = screen.getByTestId("weather-symbol-unknown");
+      const poly = svg.querySelector("polygon");
+      expect(poly?.getAttribute("fill")).toBe("#e5e7eb");
+      expect(poly?.getAttribute("stroke")).toBe("#6b7280");
+    });
+
+    it("mild trefoil stroke uses mismatched #f5a672 (not same as outline #fed7aa)", () => {
+      render(() => (
+        <WeatherSymbol level="mild" lobeColors={["#06b6d4", "#84cc16", "#64748b"]} />
+      ));
+      const svg = screen.getByTestId("weather-symbol-mild");
+      const strokPaths = Array.from(svg.querySelectorAll("path")).filter(
+        (p) => p.getAttribute("stroke") !== null && p.getAttribute("fill") === "none",
+      );
+      const trefoilPaths = strokPaths.filter(
+        (p) => p.getAttribute("stroke-width") === "1.75",
+      );
+      expect(trefoilPaths.length).toBeGreaterThan(0);
+      for (const p of trefoilPaths) {
+        expect(p.getAttribute("stroke")).toBe("#f5a672");
+        expect(p.getAttribute("stroke")).not.toBe("#fed7aa");
+      }
+    });
+
+    it("lobe colors come from the provided lobeColors prop", () => {
+      const lobe0 = "#0ea5e9";
+      const lobe1 = "#10b981";
+      const lobe2 = "#f59e0b";
+      render(() => (
+        <WeatherSymbol level="safe" lobeColors={[lobe0, lobe1, lobe2]} />
+      ));
+      const svg = screen.getByTestId("weather-symbol-safe");
+      const filledPaths = Array.from(svg.querySelectorAll("path, circle")).filter(
+        (el) => {
+          const fill = el.getAttribute("fill");
+          return fill && fill !== "none" && fill !== "#4ade80";
+        },
+      );
+      const fills = filledPaths.map((p) => p.getAttribute("fill"));
+      expect(fills).toContain(lobe0);
+      expect(fills).toContain(lobe1);
+      expect(fills).toContain(lobe2);
+    });
+  });
+
+  describe("WeatherReport symbol integration", () => {
+    it("renders a WeatherSymbol inside the report", () => {
+      render(() => (
+        <WeatherReport
+          report={makeWeatherReport()}
+          safetyRecommendation={makeSafetyRecommendation({ level: "safe" })}
+        />
+      ));
+      const root = screen.getByTestId("weather-report");
+      expect(root.querySelector('[data-testid="weather-symbol-safe"]')).not.toBeNull();
+    });
+
+    it("symbol is to the LEFT of the axis stack in DOM order", () => {
+      render(() => (
+        <WeatherReport
+          report={makeWeatherReport()}
+          safetyRecommendation={makeSafetyRecommendation({ level: "safe" })}
+        />
+      ));
+      const symbolCell = screen.getByTestId("weather-symbol-cell");
+      const axisStack = screen.getByTestId("weather-axis-stack");
+      expect(symbolCell).not.toBeNull();
+      expect(axisStack).not.toBeNull();
+      const position = symbolCell.compareDocumentPosition(axisStack);
+      expect(position & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    });
+
+    it("renders unknown (rhombus) symbol when safetyRecommendation is null", () => {
+      render(() => (
+        <WeatherReport
+          report={makeWeatherReport()}
+          safetyRecommendation={null}
+        />
+      ));
+      const root = screen.getByTestId("weather-report");
+      expect(root.querySelector('[data-testid="weather-symbol-unknown"]')).not.toBeNull();
+      expect(root.querySelector('[data-testid="weather-symbol-safe"]')).toBeNull();
+    });
+
+    it("renders unknown (rhombus) symbol when safetyRecommendation is not provided", () => {
+      render(() => (
+        <WeatherReport report={makeWeatherReport()} />
+      ));
+      const root = screen.getByTestId("weather-report");
+      expect(root.querySelector('[data-testid="weather-symbol-unknown"]')).not.toBeNull();
+      expect(root.querySelector('[data-testid="weather-symbol-safe"]')).toBeNull();
+    });
+
+    it("renders unsafe symbol when safety level is unsafe", () => {
+      render(() => (
+        <WeatherReport
+          report={makeWeatherReport()}
+          safetyRecommendation={makeSafetyRecommendation({ level: "unsafe" })}
+        />
+      ));
+      const root = screen.getByTestId("weather-report");
+      expect(root.querySelector('[data-testid="weather-symbol-unsafe"]')).not.toBeNull();
+    });
+
+    it("lobe colors in the symbol reflect exact per-axis variant hex: first_person=#6366f1, on_topic=#84cc16, neutral=#64748b", () => {
+      render(() => (
+        <WeatherReport
+          report={makeWeatherReport({
+            truth: { label: "first_person", logprob: null, alternatives: [] },
+            relevance: { label: "on_topic", logprob: null, alternatives: [] },
+            sentiment: { label: "neutral", logprob: null, alternatives: [] },
+          })}
+          safetyRecommendation={makeSafetyRecommendation({ level: "safe" })}
+        />
+      ));
+      const root = screen.getByTestId("weather-report");
+      const svg = root.querySelector('[data-testid="weather-symbol-safe"]');
+      expect(svg).not.toBeNull();
+      const lobePaths = Array.from(svg!.querySelectorAll("path")).filter(
+        (p) => p.getAttribute("fill") && p.getAttribute("fill") !== "none" && p.getAttribute("fill") !== "#4ade80",
+      );
+      const fills = lobePaths.map((p) => p.getAttribute("fill"));
+      expect(fills).toContain("#6366f1");
+      expect(fills).toContain("#84cc16");
+      expect(fills).toContain("#64748b");
+    });
+  });
+
   describe("Safety row", () => {
-    it("renders 4 rows with Safety first when safetyRecommendation is provided", () => {
+    it("renders 4 axis pairs with Safety first when safetyRecommendation is provided", () => {
       render(() => (
         <WeatherReport
           report={makeWeatherReport()}
@@ -806,16 +939,14 @@ describe("WeatherReport", () => {
       ));
 
       const root = screen.getByTestId("weather-report");
-      const tbody = root.querySelector('[data-slot="table-body"]');
-      expect(tbody).not.toBeNull();
-      const rows = Array.from(tbody!.querySelectorAll('[data-slot="table-row"]'));
-      expect(rows.length).toBe(4);
+      const pairs = Array.from(root.querySelectorAll('.pair'));
+      expect(pairs.length).toBe(4);
 
-      const firstRow = rows[0];
-      expect(firstRow.querySelector('[data-testid="weather-axis-card-safety"]')).not.toBeNull();
+      const firstPair = pairs[0];
+      expect(firstPair.querySelector('[data-testid="weather-axis-card-safety"]')).not.toBeNull();
     });
 
-    it("Safety pill uses emerald-soft variant (text-emerald-700) when level=safe", () => {
+    it("Safety value uses text-foreground (neutral, same as other axes) for level=safe", () => {
       render(() => (
         <WeatherReport
           report={makeWeatherReport()}
@@ -824,11 +955,12 @@ describe("WeatherReport", () => {
       ));
 
       const safetyValue = screen.getByTestId("weather-safety-value");
-      expect(safetyValue.className).toContain("text-emerald-700");
+      expect(safetyValue.className).toContain("text-foreground");
+      expect(safetyValue.className).not.toMatch(/text-emerald/);
       expect(safetyValue.className).not.toMatch(/(?:^|\s)bg-/);
     });
 
-    it("Safety pill uses rose-strong variant (text-rose-700) when level=unsafe", () => {
+    it("Safety value uses text-foreground (neutral, same as other axes) for level=unsafe", () => {
       render(() => (
         <WeatherReport
           report={makeWeatherReport()}
@@ -837,11 +969,12 @@ describe("WeatherReport", () => {
       ));
 
       const safetyValue = screen.getByTestId("weather-safety-value");
-      expect(safetyValue.className).toContain("text-rose-700");
+      expect(safetyValue.className).toContain("text-foreground");
+      expect(safetyValue.className).not.toMatch(/text-rose/);
       expect(safetyValue.className).not.toMatch(/(?:^|\s)bg-/);
     });
 
-    it("Safety pill uses yellow variant (text-yellow-700 text-only) when level=mild", () => {
+    it("Safety value uses text-foreground (neutral, same as other axes) for level=mild", () => {
       render(() => (
         <WeatherReport
           report={makeWeatherReport()}
@@ -850,8 +983,8 @@ describe("WeatherReport", () => {
       ));
 
       const safetyValue = screen.getByTestId("weather-safety-value");
-      expect(weatherLabels.formatWeatherVariant("mild")).toBe("yellow");
-      expect(safetyValue.className).toMatch(/text-yellow/);
+      expect(safetyValue.className).toContain("text-foreground");
+      expect(safetyValue.className).not.toMatch(/text-yellow/);
       expect(safetyValue.className).not.toMatch(/(?:^|\s)bg-/);
     });
 
@@ -868,7 +1001,7 @@ describe("WeatherReport", () => {
       await screen.findByText(/minor concerns surfaced/i);
     });
 
-    it("Safety pill uses amber-strong variant (text-amber-700 text-only) when level=caution", () => {
+    it("Safety value uses text-foreground (neutral, same as other axes) for level=caution", () => {
       render(() => (
         <WeatherReport
           report={makeWeatherReport()}
@@ -877,8 +1010,8 @@ describe("WeatherReport", () => {
       ));
 
       const safetyValue = screen.getByTestId("weather-safety-value");
-      expect(weatherLabels.formatWeatherVariant("caution")).toBe("amber-strong");
-      expect(safetyValue.className).toMatch(/text-amber-700/);
+      expect(safetyValue.className).toContain("text-foreground");
+      expect(safetyValue.className).not.toMatch(/text-amber/);
       expect(safetyValue.className).not.toMatch(/(?:^|\s)bg-/);
     });
 
@@ -1194,6 +1327,597 @@ describe("WeatherReport", () => {
       }
       render(() => <Probe />);
       expect(capturedStore).toBeNull();
+    });
+  });
+
+  describe("Responsive sizing contract (AC11 — 320px fit)", () => {
+    it("populated symbol cell uses clamp(80px,12.8vw,128px) inline style", () => {
+      render(() => (
+        <WeatherReport
+          report={makeWeatherReport()}
+          safetyRecommendation={makeSafetyRecommendation()}
+        />
+      ));
+      const symbolCell = screen.getByTestId("weather-symbol-cell");
+      expect(symbolCell.getAttribute("style")).toContain("clamp(80px,12.8vw,128px)");
+    });
+
+    it("skeleton symbol cell uses clamp(80px,12.8vw,128px) inline style (same as populated)", () => {
+      render(() => <WeatherReport report={null} />);
+      const skeletonRoot = screen.getByTestId("weather-report-skeleton");
+      const symbolCell = skeletonRoot.querySelector('[data-testid="weather-skeleton-symbol-cell"]');
+      expect(symbolCell).not.toBeNull();
+      expect(symbolCell?.getAttribute("style")).toContain("clamp(80px,12.8vw,128px)");
+    });
+
+    it("populated axis stack uses min-w-[120px]", () => {
+      render(() => (
+        <WeatherReport
+          report={makeWeatherReport()}
+          safetyRecommendation={makeSafetyRecommendation()}
+        />
+      ));
+      const root = screen.getByTestId("weather-report");
+      const axisStack = root.querySelector('[data-testid="weather-axis-stack"]');
+      expect(axisStack).not.toBeNull();
+      expect(axisStack?.className).toContain("min-w-[120px]");
+    });
+
+    it("skeleton axis stack uses min-w-[120px] (same as populated, no width jump)", () => {
+      render(() => <WeatherReport report={null} />);
+      const root = screen.getByTestId("weather-report-skeleton");
+      const axisStack = root.querySelector('[data-testid="weather-skeleton-axis-stack"]');
+      expect(axisStack).not.toBeNull();
+      expect(axisStack?.className).toContain("min-w-[120px]");
+    });
+  });
+
+  describe("WeatherSymbol hover-lift (TASK-1610.07 — DESIGN.md card-interactive)", () => {
+    it("symbol cell is a button element (native interactivity, not div+tabindex)", () => {
+      render(() => (
+        <WeatherReport
+          report={makeWeatherReport()}
+          safetyRecommendation={makeSafetyRecommendation({ level: "safe" })}
+        />
+      ));
+      const symbolCell = screen.getByTestId("weather-symbol-cell");
+      expect(symbolCell.tagName.toLowerCase()).toBe("button");
+    });
+
+    it("symbol cell does NOT have a hand-rolled tabindex attribute (button is natively focusable)", () => {
+      render(() => (
+        <WeatherReport
+          report={makeWeatherReport()}
+          safetyRecommendation={makeSafetyRecommendation({ level: "safe" })}
+        />
+      ));
+      const symbolCell = screen.getByTestId("weather-symbol-cell");
+      expect(symbolCell.getAttribute("tabindex")).toBeNull();
+    });
+
+    it("symbol cell has an aria-label with human-readable level, not a raw slug", () => {
+      render(() => (
+        <WeatherReport
+          report={makeWeatherReport()}
+          safetyRecommendation={makeSafetyRecommendation({ level: "safe" })}
+        />
+      ));
+      const symbolCell = screen.getByTestId("weather-symbol-cell");
+      const label = symbolCell.getAttribute("aria-label") ?? "";
+      expect(label).toBe("Safety: Safe");
+    });
+
+    it("symbol cell aria-label reads 'Safety: Mild' for mild level", () => {
+      render(() => (
+        <WeatherReport
+          report={makeWeatherReport()}
+          safetyRecommendation={makeSafetyRecommendation({ level: "mild" })}
+        />
+      ));
+      const symbolCell = screen.getByTestId("weather-symbol-cell");
+      expect(symbolCell.getAttribute("aria-label")).toBe("Safety: Mild");
+    });
+
+    it("symbol cell aria-label reads 'Safety: Caution' for caution level", () => {
+      render(() => (
+        <WeatherReport
+          report={makeWeatherReport()}
+          safetyRecommendation={makeSafetyRecommendation({ level: "caution" })}
+        />
+      ));
+      const symbolCell = screen.getByTestId("weather-symbol-cell");
+      expect(symbolCell.getAttribute("aria-label")).toBe("Safety: Caution");
+    });
+
+    it("symbol cell aria-label reads 'Safety: Unsafe' for unsafe level", () => {
+      render(() => (
+        <WeatherReport
+          report={makeWeatherReport()}
+          safetyRecommendation={makeSafetyRecommendation({ level: "unsafe" })}
+        />
+      ));
+      const symbolCell = screen.getByTestId("weather-symbol-cell");
+      expect(symbolCell.getAttribute("aria-label")).toBe("Safety: Unsafe");
+    });
+
+    it("symbol cell aria-label reads 'Safety: not available' when safetyRecommendation is null", () => {
+      render(() => (
+        <WeatherReport
+          report={makeWeatherReport()}
+          safetyRecommendation={null}
+        />
+      ));
+      const symbolCell = screen.getByTestId("weather-symbol-cell");
+      expect(symbolCell.getAttribute("aria-label")).toBe("Safety: not available");
+    });
+
+    it("symbol cell aria-label reads 'Safety: not available' when safetyRecommendation is not provided", () => {
+      render(() => <WeatherReport report={makeWeatherReport()} />);
+      const symbolCell = screen.getByTestId("weather-symbol-cell");
+      expect(symbolCell.getAttribute("aria-label")).toBe("Safety: not available");
+    });
+
+    it("clicking the symbol cell opens the Safety popover", async () => {
+      render(() => (
+        <WeatherReport
+          report={makeWeatherReport()}
+          safetyRecommendation={makeSafetyRecommendation({ level: "safe" })}
+        />
+      ));
+      const symbolCell = screen.getByTestId("weather-symbol-cell");
+      fireEvent.click(symbolCell);
+      await screen.findByText(/moderation, web risk, image, and video checks/i);
+    });
+
+    it("keyboard Enter on symbol cell opens the Safety popover", async () => {
+      render(() => (
+        <WeatherReport
+          report={makeWeatherReport()}
+          safetyRecommendation={makeSafetyRecommendation({ level: "safe" })}
+        />
+      ));
+      const symbolCell = screen.getByTestId("weather-symbol-cell");
+      symbolCell.focus();
+      fireEvent.keyDown(symbolCell, { key: "Enter" });
+      await screen.findByText(/moderation, web risk, image, and video checks/i);
+    });
+
+    it("symbol cell has focus-visible ring class and no bare outline-none stripping", () => {
+      render(() => (
+        <WeatherReport
+          report={makeWeatherReport()}
+          safetyRecommendation={makeSafetyRecommendation({ level: "safe" })}
+        />
+      ));
+      const symbolCell = screen.getByTestId("weather-symbol-cell");
+      expect(symbolCell.className).toContain("focus-visible:ring");
+      const bareOutlineNone = symbolCell.className.split(/\s+/).some(
+        (c) => c === "outline-none",
+      );
+      expect(bareOutlineNone).toBe(false);
+    });
+
+    it("symbol button and axis-pair trigger both open the same Safety popover content (no regression)", async () => {
+      render(() => (
+        <WeatherReport
+          report={makeWeatherReport()}
+          safetyRecommendation={makeSafetyRecommendation({ level: "safe" })}
+        />
+      ));
+
+      const symbolCell = screen.getByTestId("weather-symbol-cell");
+      fireEvent.click(symbolCell);
+      await screen.findByText(/moderation, web risk, image, and video checks/i);
+
+      fireEvent.keyDown(document.activeElement ?? document.body, { key: "Escape" });
+      await waitFor(() => {
+        expect(screen.queryByText(/moderation, web risk, image, and video checks/i)).toBeNull();
+      });
+
+      const safetyTrigger = screen.getByTestId("weather-axis-card-safety");
+      fireEvent.click(safetyTrigger);
+      await screen.findByText(/moderation, web risk, image, and video checks/i);
+    });
+
+    it("symbol cell has all expected motion-safe classes for hover-lift (exhaustive enumeration)", () => {
+      render(() => (
+        <WeatherReport
+          report={makeWeatherReport()}
+          safetyRecommendation={makeSafetyRecommendation({ level: "safe" })}
+        />
+      ));
+      const symbolCell = screen.getByTestId("weather-symbol-cell");
+      const expected = [
+        "motion-safe:transition-[transform,box-shadow]",
+        "motion-safe:duration-[220ms]",
+        "motion-safe:ease-[cubic-bezier(0.22,1,0.36,1)]",
+        "motion-safe:[@media(hover:hover)]:hover:[box-shadow:var(--card-hover-light)]",
+        "motion-safe:[@media(hover:hover)]:hover:-translate-y-px",
+        "motion-safe:focus-visible:[box-shadow:var(--card-hover-light)]",
+        "motion-safe:focus-visible:-translate-y-px",
+        "motion-safe:[@media(hover:hover)]:hover:dark:[box-shadow:var(--card-hover-dark-underlit)]",
+        "motion-safe:focus-visible:dark:[box-shadow:var(--card-hover-dark-underlit)]",
+      ];
+      for (const cls of expected) {
+        expect(symbolCell.className).toContain(cls);
+      }
+
+      const classes = symbolCell.className.split(/\s+/);
+      const hoverShadowOrTranslate = classes.filter(
+        (c) => (c.includes("hover:shadow") || c.includes("hover:translate")) && !c.startsWith("motion-safe:"),
+      );
+      expect(hoverShadowOrTranslate).toHaveLength(0);
+    });
+
+    it("symbol cell references card-hover CSS variable for the lift shadow", () => {
+      render(() => (
+        <WeatherReport
+          report={makeWeatherReport()}
+          safetyRecommendation={makeSafetyRecommendation({ level: "safe" })}
+        />
+      ));
+      const symbolCell = screen.getByTestId("weather-symbol-cell");
+      expect(symbolCell.className).toContain("--card-hover-light");
+    });
+
+    it("symbol cell still preserves clamp sizing after hover-lift classes are added", () => {
+      render(() => (
+        <WeatherReport
+          report={makeWeatherReport()}
+          safetyRecommendation={makeSafetyRecommendation({ level: "safe" })}
+        />
+      ));
+      const symbolCell = screen.getByTestId("weather-symbol-cell");
+      expect(symbolCell.getAttribute("style")).toContain("clamp(80px,12.8vw,128px)");
+    });
+
+    it("symbol cell does not have an always-on shadow class at rest", () => {
+      render(() => (
+        <WeatherReport
+          report={makeWeatherReport()}
+          safetyRecommendation={makeSafetyRecommendation({ level: "safe" })}
+        />
+      ));
+      const symbolCell = screen.getByTestId("weather-symbol-cell");
+      expect(symbolCell.className).not.toMatch(/(?:^|\s)shadow-(?:sm|md|lg|xl|2xl)(?:\s|$)/);
+    });
+  });
+
+  describe("WeatherSymbol unknown rhombus outline (TASK-1610.09)", () => {
+    it("unknown state renders exactly one polygon element", () => {
+      render(() => (
+        <WeatherSymbol level="unknown" lobeColors={["#64748b", "#64748b", "#64748b"]} />
+      ));
+      const svg = screen.getByTestId("weather-symbol-unknown");
+      const polygons = svg.querySelectorAll("polygon");
+      expect(polygons.length).toBe(1);
+    });
+
+    it("unknown polygon has fill=#e5e7eb and stroke=#6b7280", () => {
+      render(() => (
+        <WeatherSymbol level="unknown" lobeColors={["#64748b", "#64748b", "#64748b"]} />
+      ));
+      const svg = screen.getByTestId("weather-symbol-unknown");
+      const poly = svg.querySelector("polygon");
+      expect(poly?.getAttribute("fill")).toBe("#e5e7eb");
+      expect(poly?.getAttribute("stroke")).toBe("#6b7280");
+    });
+
+    it("unknown polygon has stroke-width=5", () => {
+      render(() => (
+        <WeatherSymbol level="unknown" lobeColors={["#64748b", "#64748b", "#64748b"]} />
+      ));
+      const svg = screen.getByTestId("weather-symbol-unknown");
+      const poly = svg.querySelector("polygon");
+      expect(poly?.getAttribute("stroke-width")).toBe("5");
+    });
+
+    it("unknown polygon points form a 4-point shape (rhombus)", () => {
+      render(() => (
+        <WeatherSymbol level="unknown" lobeColors={["#64748b", "#64748b", "#64748b"]} />
+      ));
+      const svg = screen.getByTestId("weather-symbol-unknown");
+      const poly = svg.querySelector("polygon");
+      const pts = poly?.getAttribute("points") ?? "";
+      const pairs = pts.trim().split(/\s+/);
+      expect(pairs.length).toBe(4);
+    });
+  });
+
+  describe("Motion-safe gate on hover-lift shadows (TASK-1610.10)", () => {
+    it("all box-shadow hover/focus classes on the symbol button are prefixed with motion-safe:", () => {
+      render(() => (
+        <WeatherReport
+          report={makeWeatherReport()}
+          safetyRecommendation={makeSafetyRecommendation({ level: "safe" })}
+        />
+      ));
+      const symbolCell = screen.getByTestId("weather-symbol-cell");
+      const classes = symbolCell.className.split(/\s+/);
+      const shadowClasses = classes.filter(
+        (c) => c.includes("--card-hover-light") || c.includes("--card-hover-dark-underlit"),
+      );
+      expect(shadowClasses.length).toBeGreaterThan(0);
+      for (const cls of shadowClasses) {
+        expect(cls).toMatch(/^motion-safe:/);
+      }
+    });
+
+    it("all translate classes on the symbol button are prefixed with motion-safe:", () => {
+      render(() => (
+        <WeatherReport
+          report={makeWeatherReport()}
+          safetyRecommendation={makeSafetyRecommendation({ level: "safe" })}
+        />
+      ));
+      const symbolCell = screen.getByTestId("weather-symbol-cell");
+      const classes = symbolCell.className.split(/\s+/);
+      const translateClasses = classes.filter((c) => c.includes("translate-y"));
+      expect(translateClasses.length).toBeGreaterThan(0);
+      for (const cls of translateClasses) {
+        expect(cls).toMatch(/^motion-safe:/);
+      }
+    });
+  });
+
+  describe("axis_definitions.description from JSON (TASK-1610.11)", () => {
+    it("opening a truth popover with free-form label shows axis_definitions.description for truth", async () => {
+      render(() => (
+        <WeatherReport
+          report={makeWeatherReport({
+            sentiment: { label: "warmly skeptical", logprob: null, alternatives: [] },
+          })}
+        />
+      ));
+      const sentimentRow = screen.getByTestId("weather-axis-card-sentiment");
+      fireEvent.click(sentimentRow);
+      await screen.findByText(/emotional register/i);
+    });
+
+    it("popover description for sentiment free-form label matches axis_definitions.description JSON value", async () => {
+      render(() => (
+        <WeatherReport
+          report={makeWeatherReport({
+            sentiment: { label: "warmly skeptical", logprob: null, alternatives: [] },
+          })}
+        />
+      ));
+      const sentimentRow = screen.getByTestId("weather-axis-card-sentiment");
+      fireEvent.click(sentimentRow);
+      const { AXIS_DEFINITIONS: defs } = await import("~/lib/weather-labels");
+      await screen.findByText(defs.sentiment.description);
+    });
+
+    it("popover description for truth free-form label matches axis_definitions.description JSON value", async () => {
+      render(() => (
+        <WeatherReport
+          report={makeWeatherReport({
+            truth: { label: "warmly expansive" as unknown as "sourced", logprob: null, alternatives: [] },
+          })}
+        />
+      ));
+      const truthRow = screen.getByTestId("weather-axis-card-truth");
+      fireEvent.click(truthRow);
+      await screen.findByText(/Whether participants are speaking from evidence/i);
+    });
+
+    it("axis_definitions covers every axis rendered (drift check)", async () => {
+      const { AXIS_DEFINITIONS: defs } = await import("~/lib/weather-labels");
+      const renderedAxes = ["truth", "relevance", "sentiment", "safety"] as const;
+      for (const axis of renderedAxes) {
+        expect(defs[axis]).toBeDefined();
+        expect(defs[axis].description.length).toBeGreaterThan(0);
+      }
+    });
+  });
+
+  describe("Symbol button aria-haspopup/expanded + focus return (TASK-1610.13)", () => {
+    it("symbol button has aria-haspopup='dialog'", () => {
+      render(() => (
+        <WeatherReport
+          report={makeWeatherReport()}
+          safetyRecommendation={makeSafetyRecommendation({ level: "safe" })}
+        />
+      ));
+      const symbolCell = screen.getByTestId("weather-symbol-cell");
+      expect(symbolCell.getAttribute("aria-haspopup")).toBe("dialog");
+    });
+
+    it("symbol button aria-expanded is false when popover is closed", () => {
+      render(() => (
+        <WeatherReport
+          report={makeWeatherReport()}
+          safetyRecommendation={makeSafetyRecommendation({ level: "safe" })}
+        />
+      ));
+      const symbolCell = screen.getByTestId("weather-symbol-cell");
+      expect(symbolCell.getAttribute("aria-expanded")).toBe("false");
+    });
+
+    it("symbol button aria-expanded is true after clicking to open popover", async () => {
+      render(() => (
+        <WeatherReport
+          report={makeWeatherReport()}
+          safetyRecommendation={makeSafetyRecommendation({ level: "safe" })}
+        />
+      ));
+      const symbolCell = screen.getByTestId("weather-symbol-cell");
+      fireEvent.click(symbolCell);
+      await screen.findByText(/moderation, web risk/i);
+      expect(symbolCell.getAttribute("aria-expanded")).toBe("true");
+    });
+
+    it("opening via symbol then pressing Escape returns focus to symbol button", async () => {
+      render(() => (
+        <SidebarStoreProvider>
+          <WeatherReport
+            report={makeWeatherReport()}
+            safetyRecommendation={makeSafetyRecommendation({ level: "safe" })}
+          />
+        </SidebarStoreProvider>
+      ));
+      const symbolCell = screen.getByTestId("weather-symbol-cell");
+      symbolCell.focus();
+      fireEvent.click(symbolCell);
+      await screen.findByText(/moderation, web risk/i);
+
+      fireEvent.keyDown(document.activeElement ?? document.body, { key: "Escape" });
+
+      await waitFor(() => {
+        expect(document.activeElement).toBe(symbolCell);
+      });
+    });
+
+    it("opening via axis-pair trigger then closing via Focus button returns focus to axis-pair trigger", async () => {
+      render(() => (
+        <SidebarStoreProvider>
+          <WeatherReport
+            report={makeWeatherReport()}
+            safetyRecommendation={makeSafetyRecommendation({ level: "safe" })}
+          />
+        </SidebarStoreProvider>
+      ));
+      const safetyTrigger = screen.getByTestId("weather-axis-card-safety");
+      fireEvent.click(safetyTrigger);
+      await screen.findByText(/moderation, web risk/i);
+
+      const focusBtn = screen.getByTestId("weather-safety-focus");
+      focusBtn.focus();
+      fireEvent.click(focusBtn);
+
+      await waitFor(() => {
+        expect(document.activeElement).toBe(safetyTrigger);
+      });
+    });
+
+    it("symbol button has aria-controls pointing to a real popover content element", async () => {
+      render(() => (
+        <WeatherReport
+          report={makeWeatherReport()}
+          safetyRecommendation={makeSafetyRecommendation({ level: "safe" })}
+        />
+      ));
+      const symbolCell = screen.getByTestId("weather-symbol-cell");
+      fireEvent.click(symbolCell);
+      await screen.findByText(/moderation, web risk/i);
+
+      const controlsId = symbolCell.getAttribute("aria-controls");
+      expect(controlsId).toBeTruthy();
+      const controlled = document.getElementById(controlsId!);
+      expect(controlled).not.toBeNull();
+    });
+  });
+
+  describe("Symbol button sets SidebarStore highlight (TASK-1610.12)", () => {
+    it("clicking the symbol button sets highlightedGroup to Safety", async () => {
+      let capturedStore: ReturnType<typeof useSidebarStore> = null;
+      function StoreProbe() {
+        capturedStore = useSidebarStore();
+        return null;
+      }
+      render(() => (
+        <SidebarStoreProvider>
+          <StoreProbe />
+          <WeatherReport
+            report={makeWeatherReport()}
+            safetyRecommendation={makeSafetyRecommendation({ level: "safe" })}
+          />
+        </SidebarStoreProvider>
+      ));
+
+      expect(capturedStore!.highlightedGroup()).toBeNull();
+
+      const symbolCell = screen.getByTestId("weather-symbol-cell");
+      fireEvent.click(symbolCell);
+
+      await waitFor(() => {
+        expect(capturedStore!.highlightedGroup()).toBe("Safety");
+      });
+    });
+
+    it("closing popover after symbol-button open clears highlightedGroup", async () => {
+      let capturedStore: ReturnType<typeof useSidebarStore> = null;
+      function StoreProbe() {
+        capturedStore = useSidebarStore();
+        return null;
+      }
+      render(() => (
+        <SidebarStoreProvider>
+          <StoreProbe />
+          <WeatherReport
+            report={makeWeatherReport()}
+            safetyRecommendation={makeSafetyRecommendation({ level: "safe" })}
+          />
+        </SidebarStoreProvider>
+      ));
+
+      const symbolCell = screen.getByTestId("weather-symbol-cell");
+      fireEvent.click(symbolCell);
+
+      await waitFor(() => {
+        expect(capturedStore!.highlightedGroup()).toBe("Safety");
+      });
+
+      fireEvent.keyDown(document.activeElement ?? document.body, { key: "Escape" });
+
+      await waitFor(() => {
+        expect(capturedStore!.highlightedGroup()).toBeNull();
+      });
+    });
+
+    it("opening via axis-pair trigger still sets highlightedGroup to Safety (no regression)", async () => {
+      let capturedStore: ReturnType<typeof useSidebarStore> = null;
+      function StoreProbe() {
+        capturedStore = useSidebarStore();
+        return null;
+      }
+      render(() => (
+        <SidebarStoreProvider>
+          <StoreProbe />
+          <WeatherReport
+            report={makeWeatherReport()}
+            safetyRecommendation={makeSafetyRecommendation({ level: "safe" })}
+          />
+        </SidebarStoreProvider>
+      ));
+
+      const safetyTrigger = screen.getByTestId("weather-axis-card-safety");
+      fireEvent.click(safetyTrigger);
+
+      await waitFor(() => {
+        expect(capturedStore!.highlightedGroup()).toBe("Safety");
+      });
+    });
+
+    it("opening via symbol then closing via Focus button clears highlightedGroup", async () => {
+      let capturedStore: ReturnType<typeof useSidebarStore> = null;
+      function StoreProbe() {
+        capturedStore = useSidebarStore();
+        return null;
+      }
+      render(() => (
+        <SidebarStoreProvider>
+          <StoreProbe />
+          <WeatherReport
+            report={makeWeatherReport()}
+            safetyRecommendation={makeSafetyRecommendation({ level: "safe" })}
+          />
+        </SidebarStoreProvider>
+      ));
+
+      const symbolCell = screen.getByTestId("weather-symbol-cell");
+      fireEvent.click(symbolCell);
+
+      await waitFor(() => {
+        expect(capturedStore!.highlightedGroup()).toBe("Safety");
+      });
+
+      const focusBtn = screen.getByTestId("weather-safety-focus");
+      fireEvent.click(focusBtn);
+
+      await waitFor(() => {
+        expect(capturedStore!.highlightedGroup()).toBeNull();
+      });
     });
   });
 });

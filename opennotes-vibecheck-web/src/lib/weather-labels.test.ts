@@ -100,10 +100,14 @@ describe("formatWeatherVariant", () => {
 
 type WeatherLabelEntry = { axis: string; label: string; variant: string; expansion: string };
 
+const NON_VARIANT_KEYS_TEST = new Set(["variant_hex_colors", "axis_definitions"]);
+const VARIANT_ENTRIES = Object.entries(weatherLabelsJson).filter(
+  ([k]) => !NON_VARIANT_KEYS_TEST.has(k),
+) as [string, WeatherLabelEntry][];
+
 describe("weather-labels.json — expansion field contract", () => {
   it("every entry has a non-empty expansion string", () => {
-    const entries = Object.entries(weatherLabelsJson) as [string, WeatherLabelEntry][];
-    for (const [key, entry] of entries) {
+    for (const [key, entry] of VARIANT_ENTRIES) {
       expect(entry.expansion, `entry "${key}" is missing expansion`).toBeDefined();
       expect(entry.expansion.length, `entry "${key}" has empty expansion`).toBeGreaterThan(0);
     }
@@ -111,7 +115,7 @@ describe("weather-labels.json — expansion field contract", () => {
 });
 
 describe("formatWeatherExpansion — round-trip against JSON data", () => {
-  it.each(Object.entries(weatherLabelsJson) as [string, WeatherLabelEntry][])(
+  it.each(VARIANT_ENTRIES)(
     "exposes JSON expansion verbatim for %s",
     (key, entry) => {
       expect(
@@ -166,8 +170,7 @@ describe("palette — no classic primary colors in VARIANT_CLASSES", () => {
 
 describe("palette — every JSON entry's variant is present in VARIANT_CLASSES", () => {
   it("each weather label variant key resolves to a class in VARIANT_CLASSES", () => {
-    const entries = Object.entries(weatherLabelsJson) as [string, WeatherLabelEntry][];
-    for (const [key, entry] of entries) {
+    for (const [key, entry] of VARIANT_ENTRIES) {
       expect(
         Object.keys(VARIANT_CLASSES),
         `entry "${key}" has variant "${entry.variant}" which is not in VARIANT_CLASSES`,

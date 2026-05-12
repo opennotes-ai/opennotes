@@ -35,9 +35,40 @@ export const VARIANT_CLASSES = {
   "rose-strong":  "inline-flex rounded-md px-2 py-1 text-lg font-semibold text-rose-50 bg-rose-700 dark:bg-rose-600",
 } as const satisfies Record<string, string>;
 
+export type AxisType = "truth" | "relevance" | "sentiment" | "safety";
+
+export type AxisDefinition = {
+  heading: string;
+  description: string;
+};
+
+type VariantHexMap = Record<WeatherVariant, string>;
+
+type _VariantHexExhaustive =
+  keyof typeof weatherLabelsJson.variant_hex_colors extends WeatherVariant
+    ? WeatherVariant extends keyof typeof weatherLabelsJson.variant_hex_colors
+      ? true
+      : never
+    : never;
+const _variantHexExhaustive: _VariantHexExhaustive = true;
+
+export const VARIANT_HEX: VariantHexMap =
+  weatherLabelsJson.variant_hex_colors as VariantHexMap;
+
+type _AxisDefinitionsExhaustive =
+  keyof typeof weatherLabelsJson.axis_definitions extends AxisType
+    ? AxisType extends keyof typeof weatherLabelsJson.axis_definitions
+      ? true
+      : never
+    : never;
+const _axisDefinitionsExhaustive: _AxisDefinitionsExhaustive = true;
+
+export const AXIS_DEFINITIONS: Record<AxisType, AxisDefinition> =
+  weatherLabelsJson.axis_definitions as Record<AxisType, AxisDefinition>;
+
 const DEFAULT_VARIANT: WeatherVariant = "slate";
 
-const WEATHER_LABELS = weatherLabelsJson as Record<string, WeatherLabelEntry>;
+const WEATHER_LABELS = weatherLabelsJson as unknown as Record<string, WeatherLabelEntry>;
 
 function defaultTitleCase(value: string): string {
   return value
@@ -63,6 +94,14 @@ export function formatWeatherExpansion(value: WeatherAxisLabel | string): string
   const entry = WEATHER_LABELS[value as string];
   if (entry) return entry.expansion;
   return null;
+}
+
+export function getVariantHex(variant: WeatherVariant): string {
+  return VARIANT_HEX[variant] ?? "#64748b";
+}
+
+export function getAxisDefinition(axis: AxisType): AxisDefinition {
+  return AXIS_DEFINITIONS[axis];
 }
 
 export const VARIANT_TEXT_CLASSES = {
