@@ -1,28 +1,38 @@
-# Overall verdict: cross-signal escalation (mild safety + high flashpoint)
+# Overall verdict: cross-signal synthesis
 
-## Context
+## Intent
 
-`OverallRecommendationCard` (vibecheck-web) derives a single-line "Overall: OK." / "Overall: Flag!" summary from the safety section of the analysis payload. The current rule treats `mild` as part of `PASS_LEVELS = ["safe", "mild"]`, so any conversation with a `mild` safety verdict shows "Overall: OK."
+The "Overall: OK." / "Overall: Flag!" line in `OverallRecommendationCard` (vibecheck-web) should be a synthesis of every primary analysis dimension on the page — not a restatement of the safety agent alone.
 
-This produces a false negative on conversations whose language stays civil at the message level (no harassment / hate / threats triggering a stronger safety verdict) but whose flow is hostile or escalating, e.g. a civil personal-attack exchange. The safety agent rates it `mild`, while the conversation-flashpoint detector returns matches at `Heated` / `Hostile` / `Dangerous`. The overall card shouldn't claim everything's fine in that case.
+The dimensions that should contribute, in priority order:
 
-## Decision
+1. **Safety recommendation** — moderation, web risk, image/video SafeSearch (the strongest single signal).
+2. **Tone dynamics** ("weather report") — conversation flashpoint matches, derailment, hostility patterns that don't necessarily trip per-message moderation.
+3. **Page content overall** — what the conversation/article is actually about; topical signals from claims/opinions/etc. that frame whether per-utterance findings are reasonable in context.
 
-When `OverallRecommendationCard` would derive `verdict: "pass"` and the safety level is exactly `mild`, escalate to `verdict: "flag"` if any `tone_dynamics.flashpoint_matches` entry has `risk_level` in `{Heated, Hostile, Dangerous}`.
+Today the card still derives its verdict mostly from the safety recommendation (`PASS_LEVELS = ["safe", "mild"]`), so any `mild` page renders "Overall: OK." even when the tone dynamics or page-level context disagree. That under-states what each agent already saw individually.
+
+This doc covers the **first cross-signal rule** layered onto that derivation: a `mild` safety verdict should not stay `pass` when tone dynamics show a hostile conversation. More cross-signal rules belong here; eventually all of it moves server-side (see Migration).
+
+## First rule: mild safety + high flashpoint → Flag
+
+When `OverallRecommendationCard` would derive `verdict: "pass"` and the safety level is exactly `mild`, promote to `verdict: "flag"` if any `tone_dynamics.flashpoint_matches` entry has `risk_level` in `{Heated, Hostile, Dangerous}`.
 
 - Verdict label: reuse the existing `"Overall: Flag!"` copy. No third variant ("Overall: Caution!" etc) is introduced here.
 - Reason text: `"Conversation flashpoint risk: <level>"` where `<level>` is the highest match risk level, priority `Dangerous > Hostile > Heated`.
 - Explicit `overall` prop (manual override path) still wins over all derivation.
 
+Concretely: the safety agent rated a civil personal-attack thread `mild` (no slurs/threats), while the conversation-flashpoint detector returned `Heated`. The overall card should not claim everything's fine.
+
 ## Where computed
 
 Web-side, in `OverallRecommendationCard` via an exported helper `escalateForFlashpoint(base, recommendation, flashpointMatches)`.
 
-Rationale: the long-standing TODO at the top of `OverallRecommendationCard.tsx` plans to replace web derivation with a server-side overall-recommendation agent. Adding a server schema field for the cross-signal verdict before that agent lands would create churn (schema change, regen, redeploy) for logic the agent will own anyway. Doing it web-side keeps the change small and easy to remove.
+Rationale: the long-standing TODO at the top of `OverallRecommendationCard.tsx` plans to replace web derivation with a server-side overall-recommendation agent that does the full synthesis (safety + tone dynamics + page content + anything else that lands). Adding server schema fields for each cross-signal rule before that agent ships would create churn for logic the agent will own anyway. Web-side keeps each rule small and easy to remove.
 
-## Override signals
+## Signal scope
 
-The only escalation signal added in this change:
+The only synthesis signal layered on today:
 
 - Source field: `tone_dynamics.flashpoint_matches: FlashpointMatch[]`
 - Trigger: any entry where `risk_level in {Heated, Hostile, Dangerous}`
@@ -30,9 +40,11 @@ The only escalation signal added in this change:
 
 `Low Risk` and `Guarded` flashpoint matches never trigger escalation.
 
+Page-content / topical signals are not yet layered in web-side. They are deferred to the server-side overall agent below.
+
 ## Migration plan
 
-When the server-side overall-recommendation agent ships:
+When the server-side overall-recommendation agent ships, it owns the full synthesis — safety + tone dynamics + page content + anything else relevant — and emits a final verdict + reason. At that point:
 
 1. Server emits the final overall verdict + reason on the payload.
 2. `analyze.tsx` passes that through as `props.overall` (the existing manual-override path).
