@@ -1,4 +1,6 @@
 export * from "./ui/badge";
+export * from "./ui/carousel";
+export * from "./ui/progress-circle";
 export * from "./ui/button";
 export * from "./ui/card";
 export * from "./ui/checkbox";
