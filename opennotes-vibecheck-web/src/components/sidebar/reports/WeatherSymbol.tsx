@@ -176,13 +176,8 @@ export function WeatherSymbol(props: WeatherSymbolProps): JSX.Element {
           <polygon
             points="50,5 88,50 50,95 12,50"
             fill={palette().fill}
-          />
-          <polygon
-            points="50,5 88,50 50,95 12,50"
-            fill="none"
             stroke={palette().outline}
             stroke-width="5"
-            transform="translate(9 9) scale(0.82)"
           />
         </svg>
       </Match>
