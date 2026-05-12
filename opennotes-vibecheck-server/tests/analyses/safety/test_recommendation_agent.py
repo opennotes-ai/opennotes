@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import json
 from types import SimpleNamespace
+from typing import Any
 
 import pytest
 
+from src.analyses.safety import recommendation_agent
 from src.analyses.safety._schemas import (
     Divergence,
     HarmfulContentMatch,
@@ -16,6 +18,7 @@ from src.analyses.safety._schemas import (
 from src.analyses.safety.recommendation_agent import (
     RECOMMENDATION_SYSTEM_PROMPT,
     SafetyRecommendationInputs,
+    _sanitize_divergences,
     _sanitize_top_signals,
     run_safety_recommendation,
 )
@@ -33,59 +36,107 @@ class StubAgent:
 
 
 def test_recommendation_prompt_defines_all_four_levels() -> None:
-    assert "- safe: all available inputs are clear." in RECOMMENDATION_SYSTEM_PROMPT
-    assert (
-        "- mild: one verified low-severity signal" in RECOMMENDATION_SYSTEM_PROMPT
-    )
-    assert "- caution: partial data" in RECOMMENDATION_SYSTEM_PROMPT
-    assert "- unsafe: verified high-risk signals" in RECOMMENDATION_SYSTEM_PROMPT
+    assert "safe:" in RECOMMENDATION_SYSTEM_PROMPT
+    assert "mild:" in RECOMMENDATION_SYSTEM_PROMPT
+    assert "caution:" in RECOMMENDATION_SYSTEM_PROMPT
+    assert "unsafe:" in RECOMMENDATION_SYSTEM_PROMPT
+    assert "Web Risk findings for the same URL" in RECOMMENDATION_SYSTEM_PROMPT
 
 
-def test_recommendation_prompt_requires_human_readable_top_signals() -> None:
-    assert (
-        "top_signals entries must be short human-readable noun phrases or sentences"
-        in RECOMMENDATION_SYSTEM_PROMPT
-    )
-    assert (
-        "Text moderation flags triggered, but judged to be false positives."
-        in RECOMMENDATION_SYSTEM_PROMPT
-    )
-    assert "Violent topics" in RECOMMENDATION_SYSTEM_PROMPT
+def test_recommendation_prompt_enforces_divergence_display_readability() -> None:
+    assert "divergences" in RECOMMENDATION_SYSTEM_PROMPT
+    assert "signal_source" in RECOMMENDATION_SYSTEM_PROMPT
+    assert "signal_detail" in RECOMMENDATION_SYSTEM_PROMPT
+    assert "human-readable" in RECOMMENDATION_SYSTEM_PROMPT
+    assert "never raw category names" in RECOMMENDATION_SYSTEM_PROMPT
+    assert "top_signals from raw model output must be sanitized" in RECOMMENDATION_SYSTEM_PROMPT
 
 
-def test_recommendation_prompt_prioritizes_remaining_concern_after_false_positives() -> None:
-    assert "false-positive-heavy caution cases" in RECOMMENDATION_SYSTEM_PROMPT
-    assert "do not lead top_signals with dismissed raw moderation scores" in (
-        RECOMMENDATION_SYSTEM_PROMPT
-    )
-    assert "Repeated low-severity toxicity" in RECOMMENDATION_SYSTEM_PROMPT
-    assert "Mild violent rhetoric" in RECOMMENDATION_SYSTEM_PROMPT
+def test_recommendation_prompt_has_divergence_hierarchy_and_sanitization_rules() -> None:
+    assert "divergences" in RECOMMENDATION_SYSTEM_PROMPT
+    assert "If you discount a raw signal" in RECOMMENDATION_SYSTEM_PROMPT
+    assert "If you escalate beyond the weakest raw signals" in RECOMMENDATION_SYSTEM_PROMPT
+    assert "directly supported by inputs" in RECOMMENDATION_SYSTEM_PROMPT
 
 
-def test_recommendation_prompt_includes_divergence_guidance() -> None:
-    assert "Use the `divergences` field to record how your final verdict differs" in (
-        RECOMMENDATION_SYSTEM_PROMPT
+async def test_run_safety_recommendation_logfire_attrs_are_set_for_inputs_and_sanitization(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    span: dict[str, Any] = {}
+
+    class _RecordingSpan:
+        def __enter__(self) -> _RecordingSpan:
+            return self
+
+        def __exit__(self, *_args: object) -> None:
+            return None
+
+        def set_attribute(self, key: str, value: Any) -> None:
+            span[key] = value
+
+        def set_attributes(self, attributes: dict[str, Any]) -> None:
+            span.update(attributes)
+
+    def _fake_span(name: str, **attrs: Any) -> _RecordingSpan:
+        span.update(attrs)
+        return _RecordingSpan()
+
+    agent = StubAgent(
+            SafetyRecommendation(
+                level=SafetyLevel.CAUTION,
+                rationale="A moderation match was found.",
+                top_signals=["Mild harassment topic match"],
+                divergences=[
+                    Divergence(
+                        direction="discounted",
+                        signal_source="text_moderation",
+                        signal_detail="Possible sexual/minors",
+                        reason="discounted: POTENTIALLY_HARMFUL_APPLICATION 0.92",
+                    )
+                ],
+                unavailable_inputs=[],
+            )
+        )
+
+    monkeypatch.setattr(recommendation_agent.logfire, "span", _fake_span)
+    monkeypatch.setattr(
+        "src.analyses.safety.recommendation_agent.build_agent",
+        lambda settings, *, output_type, system_prompt, name=None, tier="fast": agent,
     )
-    assert (
-        "discounted sensitive-topic signal when the text is a sensitive topic"
-        in RECOMMENDATION_SYSTEM_PROMPT
+
+    await run_safety_recommendation(
+        SafetyRecommendationInputs(
+            harmful_content_matches=[
+                HarmfulContentMatch(
+                    utterance_id="u1",
+                    utterance_text="heated comment",
+                    max_score=0.62,
+                    categories={"harassment": True},
+                    scores={"harassment": 0.62},
+                    flagged_categories=["harassment"],
+                    source="gcp",
+                )
+            ],
+            web_risk_findings=[],
+            image_moderation_matches=[],
+            video_moderation_matches=[],
+            unavailable_inputs=["web_risk", "image_moderation"],
+            source_url="https://example.com/page",
+        ),
+        settings=Settings(),
     )
-    assert (
-        "discounted Web Risk URL finding when the flagged URL is the same article/page URL"
-        in RECOMMENDATION_SYSTEM_PROMPT
-    )
-    assert (
-        "discounted image/video signal when visual findings are likely instructional"
-        in RECOMMENDATION_SYSTEM_PROMPT
-    )
-    assert (
-        "If you escalate beyond the weakest raw signals"
-        in RECOMMENDATION_SYSTEM_PROMPT
-    )
-    assert "set `divergences: []`" in RECOMMENDATION_SYSTEM_PROMPT
-    assert "Do not fabricate" in RECOMMENDATION_SYSTEM_PROMPT
-    assert "display-ready human-readable text" in RECOMMENDATION_SYSTEM_PROMPT
-    assert "Do not put raw category names" in RECOMMENDATION_SYSTEM_PROMPT
+
+    assert span["harmful_input_count"] == 1
+    assert span["unavailable_input_count"] == 2
+    assert span["source_url_present"]
+    assert span["divergence_count"] == 1
+    assert span["divergence_direction_distribution"] == {
+        "discounted": 1,
+        "escalated": 0,
+    }
+    assert span["divergence_source_distribution"]["known"] == {"Text moderation": 1}
+    assert span["divergence_source_distribution"]["unknown_count"] == 0
+    assert span["divergence_sanitizer_replacement_count"] == 2
 
 
 async def test_run_safety_recommendation_serializes_inputs_for_agent(monkeypatch):
@@ -181,7 +232,7 @@ async def test_video_sampling_sentinel_is_marked_inconclusive(monkeypatch):
     )
 
     payload = json.loads(agent.prompts[0])
-    assert payload["video_moderation_matches"][0]["sampling_inconclusive"] is True
+    assert payload["video_moderation_matches"][0]["sampling_inconclusive"]
     assert result.level != SafetyLevel.UNSAFE
     assert result.top_signals == ["inconclusive: https://cdn.example/video.mp4"]
 
@@ -327,7 +378,7 @@ async def test_run_safety_recommendation_passes_discounted_sensitive_topic_diver
     expected = [
         Divergence(
             direction="discounted",
-            signal_source="text",
+            signal_source="Text moderation",
             signal_detail="Text moderation flagged sexual-health keyword match",
             reason="The page is an educational health resource about sexuality.",
         )
@@ -369,7 +420,7 @@ async def test_run_safety_recommendation_passes_discounted_web_risk_divergence(
     expected = [
         Divergence(
             direction="discounted",
-            signal_source="web_risk",
+            signal_source="Web Risk",
             signal_detail="web risk flagged current article URL",
             reason=(
                 "The URL under review is the same page that generated "
@@ -424,7 +475,7 @@ async def test_run_safety_recommendation_passes_escalated_weak_signal_divergence
     expected = [
         Divergence(
             direction="escalated",
-            signal_source="combined",
+            signal_source="Combined signals",
             signal_detail="Low toxicity + low web-risk + mild visual silence",
             reason=(
                 "Together these low-severity cues indicate potential abuse pattern "
@@ -517,6 +568,179 @@ async def test_multiple_low_severity_flags_do_not_return_mild(monkeypatch):
     result = await run_safety_recommendation(inputs, settings=Settings())
 
     assert result.level == SafetyLevel.CAUTION
+
+
+def test_sanitize_divergences_maps_known_raw_sources_and_replaces_sensitive_tokens() -> None:
+    recommendation = SafetyRecommendation(
+        level=SafetyLevel.CAUTION,
+        rationale="Context reduced concern.",
+        divergences=[
+            Divergence(
+                direction="discounted",
+                signal_source="text_moderation/openai",
+                signal_detail="adult/sexual risk",
+                reason="discounted: sexual/minors with score 0.95",
+            ),
+            Divergence(
+                direction="escalated",
+                signal_source="openai",
+                signal_detail="Likely scam",
+                reason="escalated: possible coordinated behavior",
+            ),
+        ],
+    )
+
+    sanitized, replacements, directions, source_distribution = _sanitize_divergences(
+        recommendation
+    )
+
+    assert sanitized.divergences == [
+        Divergence(
+            direction="discounted",
+            signal_source="Text moderation",
+            signal_detail="Signal detail adjusted",
+            reason="Signal context discounted",
+        ),
+        Divergence(
+            direction="escalated",
+            signal_source="Text moderation",
+            signal_detail="Likely scam",
+            reason="possible coordinated behavior",
+        ),
+    ]
+    assert replacements == 2
+    assert directions == {"discounted": 1, "escalated": 1}
+    assert source_distribution == {
+        "known": {"Text moderation": 2},
+        "unknown_count": 0,
+    }
+
+
+def test_sanitize_divergences_preserves_display_ready_divergence_values() -> None:
+    recommendation = SafetyRecommendation(
+        level=SafetyLevel.CAUTION,
+        rationale="No sanitization needed.",
+        divergences=[
+            Divergence(
+                direction="discounted",
+                signal_source="Web Risk",
+                signal_detail="Page appears consistent with health education.",
+                reason="Context was reviewed and appears benign.",
+            ),
+            Divergence(
+                direction="escalated",
+                signal_source="Combined signals",
+                signal_detail="Low but consistent topic signals across sources.",
+                reason="Consistent corroborating indicators were observed.",
+            ),
+        ],
+    )
+
+    sanitized, replacements, directions, source_distribution = _sanitize_divergences(
+        recommendation
+    )
+
+    assert sanitized == recommendation
+    assert replacements == 0
+    assert directions == {"discounted": 1, "escalated": 1}
+    assert source_distribution == {
+        "known": {"Web Risk": 1, "Combined signals": 1},
+        "unknown_count": 0,
+    }
+
+
+def test_sanitize_divergences_preserves_display_ready_slash_phrases() -> None:
+    recommendation = SafetyRecommendation(
+        level=SafetyLevel.CAUTION,
+        rationale="Slash phrase is normal prose.",
+        divergences=[
+            Divergence(
+                direction="discounted",
+                signal_source="Image moderation",
+                signal_detail="Before/after comparison is educational.",
+                reason="Before/after context changes the interpretation.",
+            )
+        ],
+    )
+
+    sanitized, replacements, directions, source_distribution = _sanitize_divergences(
+        recommendation
+    )
+
+    assert sanitized == recommendation
+    assert replacements == 0
+    assert directions == {"discounted": 1, "escalated": 0}
+    assert source_distribution == {
+        "known": {"Image moderation": 1},
+        "unknown_count": 0,
+    }
+
+
+def test_sanitize_divergences_buckets_unmapped_source_labels_as_unknown() -> None:
+    recommendation = SafetyRecommendation(
+        level=SafetyLevel.CAUTION,
+        rationale="Unknown source label needs fallback.",
+        divergences=[
+            Divergence(
+                direction="discounted",
+                signal_source="moderation/video_gcp/v1",
+                signal_detail="likely harmless",
+                reason="Signal context discounted.",
+            )
+        ],
+    )
+
+    sanitized, replacements, directions, source_distribution = _sanitize_divergences(
+        recommendation
+    )
+
+    assert sanitized.divergences == [
+        Divergence(
+            direction="discounted",
+            signal_source="Safety signal",
+            signal_detail="likely harmless",
+            reason="Signal context discounted.",
+        ),
+    ]
+    assert replacements == 1
+    assert directions == {"discounted": 1, "escalated": 0}
+    assert source_distribution == {
+        "known": {},
+        "unknown_count": 1,
+    }
+
+
+def test_sanitize_divergences_logs_when_fallback_fields_are_used(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    warnings: list[tuple[str, dict[str, Any]]] = []
+
+    def _warn(message: str, **kwargs: Any) -> None:
+        warnings.append((message, kwargs))
+
+    monkeypatch.setattr(recommendation_agent.logfire, "warning", _warn)
+
+    recommendation = SafetyRecommendation(
+        level=SafetyLevel.CAUTION,
+        rationale="Context reduced concern.",
+        divergences=[
+            Divergence(
+                direction="discounted",
+                signal_source="openai",
+                signal_detail="adult max_likelihood 0.98",
+                reason="discounted: POTENTIALLY_HARMFUL_APPLICATION",
+            )
+        ],
+    )
+
+    _sanitize_divergences(recommendation)
+
+    assert warnings == [
+        (
+            "safety_recommendation_divergence_sanitized",
+            {"replacement_count": 2, "divergence_count": 1},
+        )
+    ]
 
 
 def _recommendation(

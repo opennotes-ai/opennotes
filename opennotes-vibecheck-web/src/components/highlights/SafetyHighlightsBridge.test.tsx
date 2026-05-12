@@ -1,5 +1,12 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { createEffect, createSignal, For, type JSX } from "solid-js";
+import {
+  createContext,
+  createEffect,
+  createSignal,
+  For,
+  useContext,
+  type JSX,
+} from "solid-js";
 import { render, screen, cleanup } from "@solidjs/testing-library";
 import { HighlightsStoreProvider, useHighlights } from "./HighlightsStoreProvider";
 import { SafetyHighlightsBridge } from "./SafetyHighlightsBridge";
@@ -7,11 +14,10 @@ import { HighlightsCard } from "./HighlightsCard";
 import type { components } from "~/lib/generated-types";
 
 const { mockAutoplayPlugin } = vi.hoisted(() => {
-  const mockAutoplayPlay = vi.fn();
   const mockAutoplayPlugin = {
     name: "autoplay",
     isPlaying: () => false,
-    play: mockAutoplayPlay,
+    play: vi.fn(),
     timeUntilNext: () => null,
   };
   return { mockAutoplayPlugin };
@@ -26,8 +32,6 @@ vi.mock("embla-carousel-ssr", () => ({
 }));
 
 vi.mock("@opennotes/ui/components/ui/carousel", () => {
-  const { createContext, useContext } = require("solid-js") as typeof import("solid-js");
-
   const CarouselCtx = createContext<{
     scrollPrev: () => void;
     scrollNext: () => void;
@@ -331,9 +335,19 @@ describe("SafetyHighlightsBridge", () => {
   it.each([
     ["openai", "Text moderation"],
     ["gcp", "Text moderation"],
+    ["text", "Text moderation"],
+    ["text moderation", "Text moderation"],
+    ["text_moderation/gcp", "Text moderation"],
+    ["text_moderation/openai", "Text moderation"],
+    ["image", "Image moderation"],
+    ["image moderation", "Image moderation"],
+    ["video", "Video moderation"],
+    ["video moderation", "Video moderation"],
     ["web_risk", "Web Risk"],
+    ["web risk", "Web Risk"],
     ["combined", "Combined signals"],
-  ])("maps raw source slug %s to display label", (signalSource, label) => {
+    ["combined signals", "Combined signals"],
+  ])("maps raw/display source label %s to display label", (signalSource, label) => {
     const div = makeDiv(0, {
       signal_source: signalSource,
       signal_detail: "Contextual evidence",
@@ -349,6 +363,32 @@ describe("SafetyHighlightsBridge", () => {
     expect(getByTestId("item-safety-divergence:0").getAttribute("data-detail")).toBe(
       `${label}: Contextual evidence`,
     );
+  });
+
+  it.each([
+    ["Discounted: Suspicious legacy pattern", "Discounted: Suspicious legacy pattern"],
+    ["EsCaLaTeD suspicious legacy pattern", "Discounted: suspicious legacy pattern"],
+    [
+      "Escalated: urgent review requested",
+      "Escalated: urgent review requested",
+    ],
+    ["eScAlAtEd suspicious escalated phrase", "Escalated: suspicious escalated phrase"],
+  ])("strips duplicated direction prefixes in title %s", (reason, title) => {
+    const div = makeDiv(0, {
+      direction: title.startsWith("Escalated") ? "escalated" : "discounted",
+      reason,
+      signal_source: "combined",
+      signal_detail: "Contextual evidence",
+    });
+
+    const { getByTestId } = render(() => (
+      <HighlightsStoreProvider>
+        <SafetyHighlightsBridge recommendation={makeRec([div])} />
+        <ProbeItems />
+      </HighlightsStoreProvider>
+    ));
+
+    expect(getByTestId("item-safety-divergence:0").textContent).toBe(title);
   });
 
   it.each([
@@ -426,6 +466,29 @@ describe("SafetyHighlightsBridge", () => {
     expect(item.textContent).toBe("Discounted: Educational sexual-health context");
     expect(item.getAttribute("data-detail")).toBe(
       "Text moderation: Educational sexual-health context",
+    );
+  });
+
+  it("keeps display-ready slash phrases in divergence text", () => {
+    const div = makeDiv(0, {
+      reason: "Before/after context changes the interpretation.",
+      signal_source: "image moderation",
+      signal_detail: "Before/after comparison is educational.",
+    });
+
+    const { getByTestId } = render(() => (
+      <HighlightsStoreProvider>
+        <SafetyHighlightsBridge recommendation={makeRec([div])} />
+        <ProbeItems />
+      </HighlightsStoreProvider>
+    ));
+
+    const item = getByTestId("item-safety-divergence:0");
+    expect(item.textContent).toBe(
+      "Discounted: Before/after context changes the interpretation.",
+    );
+    expect(item.getAttribute("data-detail")).toBe(
+      "Image moderation: Before/after comparison is educational.",
     );
   });
 
