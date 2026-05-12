@@ -82,6 +82,7 @@ class SafetyRecommendationInputs:
     image_moderation_matches: list[ImageModerationMatch]
     video_moderation_matches: list[VideoModerationMatch]
     unavailable_inputs: list[str]
+    source_url: str | None = None
 
 
 def _model_dump(value: Any) -> Any:
@@ -107,6 +108,7 @@ def _serialize_inputs(inputs: SafetyRecommendationInputs) -> str:
         ],
         "video_moderation_matches": video_matches,
         "unavailable_inputs": list(inputs.unavailable_inputs),
+        "source_url": inputs.source_url,
     }
     return json.dumps(payload)
 

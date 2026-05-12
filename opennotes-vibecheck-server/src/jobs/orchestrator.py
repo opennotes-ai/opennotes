@@ -353,7 +353,10 @@ WHERE job_id = $1
 """
 
 _LOAD_SAFETY_SECTIONS_SQL = """
-SELECT sections
+SELECT
+    sections,
+    url,
+    final_url
 FROM vibecheck_jobs
 WHERE job_id = $1
   AND attempt_id = $2
@@ -2293,6 +2296,7 @@ def _done_slot_data(
 
 def _build_safety_recommendation_inputs(
     sections: dict[str, Any],
+    source_url: str | None = None,
 ) -> SafetyRecommendationInputs:
     unavailable_inputs: list[str] = []
     moderation_data = _done_slot_data(
@@ -2337,6 +2341,7 @@ def _build_safety_recommendation_inputs(
             for match in video_data.get("matches", [])
         ],
         unavailable_inputs=unavailable_inputs,
+        source_url=source_url,
     )
 
 
@@ -2352,7 +2357,11 @@ async def _run_safety_recommendation_step(
         return
 
     try:
-        inputs = _build_safety_recommendation_inputs(_parse_sections(row["sections"]))
+        source_url = row["final_url"] or row["url"]
+        inputs = _build_safety_recommendation_inputs(
+            _parse_sections(row["sections"]),
+            source_url=source_url,
+        )
         recommendation = await run_safety_recommendation(inputs, settings)
     except Exception:
         logger.exception(

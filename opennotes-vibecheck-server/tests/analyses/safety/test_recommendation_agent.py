@@ -123,6 +123,7 @@ async def test_run_safety_recommendation_serializes_inputs_for_agent(monkeypatch
             image_moderation_matches=[],
             video_moderation_matches=[],
             unavailable_inputs=["web_risk"],
+            source_url="https://example.com/page",
         ),
         settings=settings,
     )
@@ -140,6 +141,8 @@ async def test_run_safety_recommendation_serializes_inputs_for_agent(monkeypatch
     payload = json.loads(agent.prompts[0])
     assert payload["harmful_content_matches"][0]["source"] == "gcp"
     assert payload["unavailable_inputs"] == ["web_risk"]
+    assert payload["source_url"] == "https://example.com/page"
+    assert payload["source_url"] is not None
 
 
 async def test_video_sampling_sentinel_is_marked_inconclusive(monkeypatch):
@@ -179,6 +182,31 @@ async def test_video_sampling_sentinel_is_marked_inconclusive(monkeypatch):
     assert payload["video_moderation_matches"][0]["sampling_inconclusive"] is True
     assert result.level != SafetyLevel.UNSAFE
     assert result.top_signals == ["inconclusive: https://cdn.example/video.mp4"]
+
+
+async def test_run_safety_recommendation_defaults_source_url_to_none(monkeypatch):
+    agent = StubAgent(
+        _recommendation(["No explicit URL context provided"], level=SafetyLevel.CAUTION)
+    )
+    monkeypatch.setattr(
+        "src.analyses.safety.recommendation_agent.build_agent",
+        lambda *args, **kwargs: agent,
+    )
+
+    result = await run_safety_recommendation(
+        SafetyRecommendationInputs(
+            harmful_content_matches=[],
+            web_risk_findings=[],
+            image_moderation_matches=[],
+            video_moderation_matches=[],
+            unavailable_inputs=[],
+        ),
+        settings=Settings(),
+    )
+
+    payload = json.loads(agent.prompts[0])
+    assert payload["source_url"] is None
+    assert result.level == SafetyLevel.CAUTION
 
 
 @pytest.mark.parametrize(
@@ -331,6 +359,7 @@ async def test_run_safety_recommendation_passes_discounted_web_risk_divergence(
                 threat_types=["POTENTIALLY_HARMFUL_APPLICATION"],
             )
         ],
+        source_url="https://vibecheck.opennotes.ai/report",
         image_moderation_matches=[],
         video_moderation_matches=[],
         unavailable_inputs=[],
@@ -362,6 +391,7 @@ async def test_run_safety_recommendation_passes_discounted_web_risk_divergence(
     result = await run_safety_recommendation(inputs, settings=Settings())
 
     assert result.divergences == expected
+    assert json.loads(agent.prompts[0])["source_url"] == inputs.source_url
 
 
 async def test_run_safety_recommendation_passes_escalated_weak_signal_divergence(
