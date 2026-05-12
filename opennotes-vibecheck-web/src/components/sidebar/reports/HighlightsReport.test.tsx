@@ -1,11 +1,13 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@solidjs/testing-library";
 import type { components } from "~/lib/generated-types";
+import { UtterancesProvider } from "../UtterancesContext";
 import HighlightsReport from "./HighlightsReport";
 
 type OpinionsHighlightsReport = components["schemas"]["OpinionsHighlightsReport"];
 type OpinionsHighlight = components["schemas"]["OpinionsHighlight"];
 type SubjectiveClaim = components["schemas"]["SubjectiveClaim"];
+type UtteranceAnchor = components["schemas"]["UtteranceAnchor"];
 
 const makeHighlight = (
   overrides: Partial<OpinionsHighlight> = {},
@@ -15,13 +17,20 @@ const makeHighlight = (
     category: "subjective",
     occurrence_count: 4,
     author_count: 3,
-    utterance_ids: ["u-1", "u-2"],
+    utterance_ids: ["comment-0-aaa", "comment-1-bbb"],
     representative_authors: ["author-a"],
     facts_to_verify: 0,
   },
   crossed_scaled_threshold: true,
   ...overrides,
 });
+
+function anchor(utteranceId: string, position: number): UtteranceAnchor {
+  return {
+    utterance_id: utteranceId,
+    position,
+  };
+}
 
 const makeReport = (
   overrides: Partial<OpinionsHighlightsReport> = {},
@@ -114,13 +123,20 @@ describe("HighlightsReport", () => {
   it("wires utterance click using the first utterance id", async () => {
     const onUtteranceClick = vi.fn();
     render(() => (
-      <HighlightsReport
-        report={makeReport({ highlights: [makeHighlight()] })}
-        onUtteranceClick={onUtteranceClick}
-        canJumpToUtterance={true}
-      />
+      <UtterancesProvider
+        value={[anchor("comment-0-aaa", 1), anchor("comment-1-bbb", 2)]}
+      >
+        <HighlightsReport
+          report={makeReport({ highlights: [makeHighlight()] })}
+          onUtteranceClick={onUtteranceClick}
+          canJumpToUtterance={true}
+        />
+      </UtterancesProvider>
     ));
+    expect(screen.getByTestId("highlight-utterance-ref").textContent).toBe(
+      "comment #1",
+    );
     await fireEvent.click(screen.getByTestId("highlight-utterance-ref"));
-    expect(onUtteranceClick).toHaveBeenCalledWith("u-1");
+    expect(onUtteranceClick).toHaveBeenCalledWith("comment-0-aaa");
   });
 });

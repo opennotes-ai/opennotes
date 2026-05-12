@@ -71,7 +71,6 @@ export default function FlashpointReport(
                   {phraseFor(match.risk_level)} around{" "}
                   <UtteranceRef
                     utteranceId={String(match.utterance_id)}
-                    label={`turn ${match.utterance_id}`}
                     onClick={props.onUtteranceClick ?? (() => undefined)}
                     disabled={!props.canJumpToUtterance || !props.onUtteranceClick}
                     testId="flashpoint-utterance-ref"

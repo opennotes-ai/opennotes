@@ -42,7 +42,7 @@ export interface ClaimsDedupReportProps {
 }
 
 function sourceLabel(fact: SupportingFact): string {
-  return fact.source_kind === "external" ? "external" : `turn ${fact.source_ref}`;
+  return fact.source_kind === "external" ? "external" : "source";
 }
 
 function safeExternalUrl(value: string): string | null {
@@ -175,7 +175,6 @@ export default function ClaimsDedupReport(props: ClaimsDedupReportProps) {
                               >
                                 <UtteranceRef
                                   utteranceId={String(id())}
-                                  label={`turn ${id()}`}
                                   onClick={props.onUtteranceClick ?? (() => undefined)}
                                   disabled={disabled()}
                                   testId="deduped-claim-utterance-ref"
@@ -210,7 +209,6 @@ export default function ClaimsDedupReport(props: ClaimsDedupReportProps) {
                                         {(remainingId) => (
                                           <UtteranceRef
                                             utteranceId={String(remainingId)}
-                                            label={`turn ${remainingId}`}
                                             onClick={props.onUtteranceClick ?? (() => undefined)}
                                             disabled={disabled()}
                                             testId="deduped-claim-popover-utterance-ref"
@@ -265,7 +263,6 @@ export default function ClaimsDedupReport(props: ClaimsDedupReportProps) {
                                         >
                                           <UtteranceRef
                                             utteranceId={fact.source_ref}
-                                            label={sourceLabel(fact)}
                                             onClick={props.onUtteranceClick ?? (() => undefined)}
                                             disabled={disabled()}
                                             testId="deduped-claim-supporting-fact-ref"

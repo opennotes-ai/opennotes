@@ -54,7 +54,6 @@ export default function SubjectiveReport(props: SubjectiveReportProps) {
                   {(utteranceId) => (
                     <UtteranceRef
                       utteranceId={String(utteranceId())}
-                      label={`turn ${utteranceId()}`}
                       onClick={props.onUtteranceClick ?? (() => undefined)}
                       disabled={
                         !props.canJumpToUtterance || !props.onUtteranceClick
