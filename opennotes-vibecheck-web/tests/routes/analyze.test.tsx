@@ -173,6 +173,119 @@ vi.mock("~/lib/utterance-scroll", () => ({
   scrollToUtterance: scrollToUtteranceMock,
 }));
 
+vi.mock("embla-carousel-autoplay", () => ({
+  default: vi.fn(() => ({ name: "autoplay" })),
+}));
+
+vi.mock("embla-carousel-ssr", () => ({
+  default: vi.fn(() => ({ name: "ssr" })),
+}));
+
+vi.mock("@opennotes/ui/components/ui/carousel", () => {
+  const solidJs = require("solid-js");
+  const { createContext, useContext } = solidJs;
+
+  const CarouselCtx = createContext<{
+    scrollPrev: () => void;
+    scrollNext: () => void;
+    canScrollPrev: () => boolean;
+    canScrollNext: () => boolean;
+  }>({
+    scrollPrev: () => {},
+    scrollNext: () => {},
+    canScrollPrev: () => true,
+    canScrollNext: () => true,
+  });
+
+  function Carousel(props: {
+    children?: import("solid-js").JSX.Element;
+    opts?: unknown;
+    plugins?: unknown;
+    setApi?: (api: unknown) => void;
+  }) {
+    props.setApi?.(undefined);
+    return (
+      <div role="region" aria-roledescription="carousel">
+        <CarouselCtx.Provider
+          value={{
+            scrollPrev: () => {},
+            scrollNext: () => {},
+            canScrollPrev: () => true,
+            canScrollNext: () => true,
+          }}
+        >
+          {props.children}
+        </CarouselCtx.Provider>
+      </div>
+    );
+  }
+
+  function CarouselContent(props: { children?: import("solid-js").JSX.Element }) {
+    return <div class="overflow-hidden">{props.children}</div>;
+  }
+
+  function CarouselItem(props: { children?: import("solid-js").JSX.Element }) {
+    return (
+      <div role="group" aria-roledescription="slide">
+        {props.children}
+      </div>
+    );
+  }
+
+  function CarouselPrevious(props: {
+    "data-testid"?: string;
+    class?: string;
+    disabled?: boolean;
+  }) {
+    const ctx = useContext(CarouselCtx);
+    return (
+      <button
+        data-testid={props["data-testid"]}
+        disabled={!ctx.canScrollPrev()}
+        onClick={() => ctx.scrollPrev()}
+        aria-label="Previous slide"
+      >
+        Prev
+      </button>
+    );
+  }
+
+  function CarouselNext(props: {
+    "data-testid"?: string;
+    class?: string;
+    disabled?: boolean;
+  }) {
+    const ctx = useContext(CarouselCtx);
+    return (
+      <button
+        data-testid={props["data-testid"]}
+        disabled={!ctx.canScrollNext()}
+        onClick={() => ctx.scrollNext()}
+        aria-label="Next slide"
+      >
+        Next
+      </button>
+    );
+  }
+
+  return { Carousel, CarouselContent, CarouselItem, CarouselPrevious, CarouselNext };
+});
+
+vi.mock("@opennotes/ui/components/ui/progress-circle", () => ({
+  ProgressCircle: (props: {
+    value?: number;
+    "data-testid"?: string;
+    size?: string;
+    showAnimation?: boolean;
+  }) => (
+    <div
+      data-testid={props["data-testid"]}
+      data-value={String(props.value ?? 0)}
+      aria-label="progress"
+    />
+  ),
+}));
+
 const localStorageValues = new Map<string, string>();
 const originalLocalStorageDescriptor = Object.getOwnPropertyDescriptor(
   window,
@@ -2891,4 +3004,114 @@ describe("AnalyzePage Original tab — soft-disabled when canIframe=false (TASK-
       );
     });
   });
+});
+
+describe("HighlightsCard + OverallRecommendationCard DOM order (TASK-1612.06 + 1612.07)", () => {
+    it("overall-recommendation-card appears in DOM before headline-lead-in, which appears before analyze-layout", async () => {
+      renderAt("/analyze?job=dom-order-job&url=https://news.example.com/a");
+      await waitFor(() => {
+        expect(pollingHandles.length).toBeGreaterThan(0);
+      });
+
+      setPolledJobState(
+        makeJobState({
+          status: "done",
+          sidebar_payload_complete: true,
+          sidebar_payload: makeSidebarPayload({
+            headline: {
+              text: "Article headline summary",
+              kind: "synthesized",
+              unavailable_inputs: [],
+            },
+            safety: {
+              harmful_content_matches: [],
+              recommendation: {
+                level: "caution",
+                rationale: "Contains some disputed claims",
+                top_signals: ["disputed claims noted"],
+                divergences: [
+                  {
+                    reason: "Fact check mismatch",
+                    signal_source: "factcheck",
+                    signal_detail: "Claim contradicts source",
+                  },
+                ],
+              },
+            },
+          }),
+        }),
+      );
+
+      const layout = await screen.findByTestId("analyze-layout");
+      const overall = await screen.findByTestId("overall-recommendation-card");
+      const leadIn = await screen.findByTestId("headline-lead-in");
+
+      const allTestIds = Array.from(
+        document.querySelectorAll("[data-testid]"),
+      ).map((el) => el.getAttribute("data-testid"));
+
+      const overallIdx = allTestIds.indexOf("overall-recommendation-card");
+      const leadInIdx = allTestIds.indexOf("headline-lead-in");
+      const layoutIdx = allTestIds.indexOf("analyze-layout");
+
+      expect(overall).not.toBeNull();
+      expect(leadIn).not.toBeNull();
+      expect(layout).not.toBeNull();
+      expect(overallIdx).toBeLessThan(leadInIdx);
+      expect(leadInIdx).toBeLessThan(layoutIdx);
+    });
+
+    it("highlights-card appears in DOM between headline-lead-in and analyze-layout when divergences are present", async () => {
+      renderAt("/analyze?job=highlights-order-job&url=https://news.example.com/a");
+      await waitFor(() => {
+        expect(pollingHandles.length).toBeGreaterThan(0);
+      });
+
+      setPolledJobState(
+        makeJobState({
+          status: "done",
+          sidebar_payload_complete: true,
+          sidebar_payload: makeSidebarPayload({
+            headline: {
+              text: "Article headline summary",
+              kind: "synthesized",
+              unavailable_inputs: [],
+            },
+            safety: {
+              harmful_content_matches: [],
+              recommendation: {
+                level: "caution",
+                rationale: "Contains disputed claims",
+                top_signals: ["disputed claims"],
+                divergences: [
+                  {
+                    reason: "Signal mismatch",
+                    signal_source: "factcheck",
+                    signal_detail: "Contradicts known facts",
+                  },
+                ],
+              },
+            },
+          }),
+        }),
+      );
+
+      const highlightsCard = await screen.findByTestId("highlights-card");
+      const leadIn = await screen.findByTestId("headline-lead-in");
+      const layout = await screen.findByTestId("analyze-layout");
+
+      const allTestIds = Array.from(
+        document.querySelectorAll("[data-testid]"),
+      ).map((el) => el.getAttribute("data-testid"));
+
+      const highlightsIdx = allTestIds.indexOf("highlights-card");
+      const leadInIdx = allTestIds.indexOf("headline-lead-in");
+      const layoutIdx = allTestIds.indexOf("analyze-layout");
+
+      expect(highlightsCard).not.toBeNull();
+      expect(leadIn).not.toBeNull();
+      expect(layout).not.toBeNull();
+      expect(leadInIdx).toBeLessThan(highlightsIdx);
+      expect(highlightsIdx).toBeLessThan(layoutIdx);
+    });
 });

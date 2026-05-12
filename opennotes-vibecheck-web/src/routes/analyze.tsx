@@ -31,6 +31,10 @@ import type {
 import Sidebar from "~/components/sidebar/Sidebar";
 import { HeadlineLeadIn } from "~/components/sidebar/reports";
 import { SidebarStoreProvider } from "~/components/sidebar/SidebarStoreProvider";
+import { HighlightsStoreProvider } from "~/components/highlights/HighlightsStoreProvider";
+import { HighlightsCard } from "~/components/highlights/HighlightsCard";
+import { SafetyHighlightsBridge } from "~/components/highlights/SafetyHighlightsBridge";
+import { OverallRecommendationCard } from "~/components/overall/OverallRecommendationCard";
 import type {
   JobState,
   PublicErrorCode,
@@ -762,23 +766,31 @@ function AnalyzePageContent(props: { initialJobState: JobState | null }) {
                 when={showFailure()}
                 fallback={
                   <SidebarStoreProvider opts={{ collapseAllByDefault: shouldCollapseSidebarGroups(), jobId: jobId() || undefined }}>
-                    <Show when={showHeadlineLeadIn()}>
-                      <HeadlineLeadIn
-                        headline={headline()}
-                        weatherReport={weatherReport()}
-                        safetyRecommendation={sidebarPayload()?.safety?.recommendation ?? null}
-                        showHeadlineSkeleton={showHeadlineSkeleton()}
-                        showWeatherSkeleton={showWeatherSkeleton()}
-                        class="mb-0"
+                    <HighlightsStoreProvider>
+                      <OverallRecommendationCard
+                        recommendation={sidebarPayload()?.safety?.recommendation ?? null}
                       />
-                    </Show>
-                    <div
-                      data-testid="analyze-layout"
-                      data-preview-size={previewSize()}
-                      class={layoutClass()}
-                    >
+                      <Show when={showHeadlineLeadIn()}>
+                        <HeadlineLeadIn
+                          headline={headline()}
+                          weatherReport={weatherReport()}
+                          safetyRecommendation={sidebarPayload()?.safety?.recommendation ?? null}
+                          showHeadlineSkeleton={showHeadlineSkeleton()}
+                          showWeatherSkeleton={showWeatherSkeleton()}
+                          class="mb-0"
+                        />
+                      </Show>
+                      <HighlightsCard />
+                      <SafetyHighlightsBridge
+                        recommendation={sidebarPayload()?.safety?.recommendation ?? null}
+                      />
                       <div
-                        data-testid="analyze-left-column"
+                        data-testid="analyze-layout"
+                        data-preview-size={previewSize()}
+                        class={layoutClass()}
+                      >
+                        <div
+                          data-testid="analyze-left-column"
                         class="order-2 flex min-w-0 flex-col gap-4 lg:order-1"
                       >
                         <div class="flex flex-wrap items-center justify-between gap-2">
@@ -983,7 +995,8 @@ function AnalyzePageContent(props: { initialJobState: JobState | null }) {
                         activityAt={jobState()?.activity_at}
                         class="order-1 lg:order-2"
                       />
-                    </div>
+                      </div>
+                    </HighlightsStoreProvider>
                   </SidebarStoreProvider>
                 }
               >
