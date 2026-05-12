@@ -1,21 +1,22 @@
-// TODO(task-1609): replace local SafetyRecommendationWithDivergences with generated SafetyRecommendation once divergences field appears in src/lib/generated-types.ts
+import type { components } from "~/lib/generated-types";
 import { createEffect, createMemo } from "solid-js";
 import { useHighlights } from "./HighlightsStoreProvider";
 
-export interface SafetyDivergence {
-  reason: string;
-  signal_source: string;
-  signal_detail: string;
+type SafetyRecommendation = components["schemas"]["SafetyRecommendation"];
+type Divergence = components["schemas"]["Divergence"];
+
+function divergenceTitle(divergence: Divergence): string {
+  const direction =
+    divergence.direction === "escalated" ? "Escalated" : "Discounted";
+  return `${direction}: ${divergence.reason}`;
 }
 
-export interface SafetyRecommendationWithDivergences {
-  level: string;
-  rationale: string;
-  divergences?: SafetyDivergence[] | null;
+function divergenceSeverity(divergence: Divergence): "info" | "warn" {
+  return divergence.direction === "escalated" ? "warn" : "info";
 }
 
 export function SafetyHighlightsBridge(props: {
-  recommendation: SafetyRecommendationWithDivergences | null;
+  recommendation: SafetyRecommendation | null;
 }): null {
   const highlights = useHighlights();
 
@@ -28,12 +29,12 @@ export function SafetyHighlightsBridge(props: {
   createEffect(() => {
     divergencesKey();
     const divergences = props.recommendation?.divergences ?? [];
-    const mapped = divergences.map((d, idx) => ({
+    const mapped = divergences.map((divergence, idx) => ({
       id: `safety-divergence:${idx}`,
       source: "safety-divergence" as const,
-      title: d.reason,
-      detail: `${d.signal_source}: ${d.signal_detail}`,
-      severity: "info" as const,
+      title: divergenceTitle(divergence),
+      detail: `${divergence.signal_source}: ${divergence.signal_detail}`,
+      severity: divergenceSeverity(divergence),
     }));
     highlights.replaceForSource("safety-divergence", mapped);
   });

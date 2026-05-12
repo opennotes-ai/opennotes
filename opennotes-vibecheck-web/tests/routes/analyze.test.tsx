@@ -26,13 +26,7 @@ import type { JobState, SidebarPayload } from "~/lib/api-client.server";
 import type { components } from "~/lib/generated-types";
 
 type SafetyRecommendation = components["schemas"]["SafetyRecommendation"];
-type RecommendationWithDivergences = SafetyRecommendation & {
-  divergences?: Array<{
-    reason: string;
-    signal_source: string;
-    signal_detail: string;
-  }> | null;
-};
+type Divergence = components["schemas"]["Divergence"];
 
 type PollingHandle = {
   state: () => JobState | null;
@@ -3080,12 +3074,13 @@ describe("HighlightsCard + OverallRecommendationCard DOM order (TASK-1612.06 + 1
                 top_signals: ["disputed claims noted"],
                 divergences: [
                   {
+                    direction: "discounted" as Divergence["direction"],
                     reason: "Fact check mismatch",
                     signal_source: "factcheck",
                     signal_detail: "Claim contradicts source",
                   },
                 ],
-              } as RecommendationWithDivergences,
+              } as SafetyRecommendation,
             },
           }),
         }),
@@ -3134,12 +3129,13 @@ describe("HighlightsCard + OverallRecommendationCard DOM order (TASK-1612.06 + 1
                 top_signals: ["disputed claims"],
                 divergences: [
                   {
+                    direction: "discounted" as Divergence["direction"],
                     reason: "Signal mismatch",
                     signal_source: "factcheck",
                     signal_detail: "Contradicts known facts",
                   },
                 ],
-              } as RecommendationWithDivergences,
+              } as SafetyRecommendation,
             },
           }),
         }),

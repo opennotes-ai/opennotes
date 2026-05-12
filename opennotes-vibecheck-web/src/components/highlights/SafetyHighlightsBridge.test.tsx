@@ -1,16 +1,148 @@
-// TODO(task-1609): SafetyRecommendationWithDivergences is a local stub; replace with generated SafetyRecommendation once divergences field appears in src/lib/generated-types.ts
-import { describe, it, expect, vi } from "vitest";
-import { createSignal, For } from "solid-js";
-import { render } from "@solidjs/testing-library";
+import { describe, it, expect, vi, afterEach } from "vitest";
+import { createSignal, For, type JSX } from "solid-js";
+import { render, screen, cleanup } from "@solidjs/testing-library";
 import { HighlightsStoreProvider, useHighlights } from "./HighlightsStoreProvider";
 import { SafetyHighlightsBridge } from "./SafetyHighlightsBridge";
-import type { SafetyDivergence, SafetyRecommendationWithDivergences } from "./SafetyHighlightsBridge";
+import { HighlightsCard } from "./HighlightsCard";
+import type { components } from "~/lib/generated-types";
 
-function makeDiv(
-  idx: number,
-  overrides: Partial<SafetyDivergence> = {},
-): SafetyDivergence {
+const { mockAutoplayPlugin } = vi.hoisted(() => {
+  const mockAutoplayPlay = vi.fn();
+  const mockAutoplayPlugin = {
+    name: "autoplay",
+    isPlaying: () => false,
+    play: mockAutoplayPlay,
+    timeUntilNext: () => null,
+  };
+  return { mockAutoplayPlugin };
+});
+
+vi.mock("embla-carousel-autoplay", () => ({
+  default: vi.fn(() => mockAutoplayPlugin),
+}));
+
+vi.mock("embla-carousel-ssr", () => ({
+  default: vi.fn(() => ({ name: "ssr" })),
+}));
+
+vi.mock("@opennotes/ui/components/ui/carousel", () => {
+  const { createContext, useContext } = require("solid-js") as typeof import("solid-js");
+
+  const CarouselCtx = createContext<{
+    scrollPrev: () => void;
+    scrollNext: () => void;
+    canScrollPrev: () => boolean;
+    canScrollNext: () => boolean;
+  }>({
+    scrollPrev: () => {},
+    scrollNext: () => {},
+    canScrollPrev: () => true,
+    canScrollNext: () => true,
+  });
+
+  const mockScrollNext = vi.fn();
+  const mockScrollPrev = vi.fn();
+
+  const mockEmblaInstance = {
+    plugins: () => ({ autoplay: mockAutoplayPlugin }),
+  };
+  const mockApiAccessor = () => mockEmblaInstance;
+
+  function Carousel(props: {
+    children?: JSX.Element;
+    opts?: unknown;
+    plugins?: unknown;
+    setApi?: (api: unknown) => void;
+  }) {
+    props.setApi?.(mockApiAccessor);
+    return (
+      <div role="region" aria-roledescription="carousel">
+        <CarouselCtx.Provider
+          value={{
+            scrollPrev: mockScrollPrev,
+            scrollNext: mockScrollNext,
+            canScrollPrev: () => true,
+            canScrollNext: () => true,
+          }}
+        >
+          {props.children}
+        </CarouselCtx.Provider>
+      </div>
+    );
+  }
+
+  function CarouselContent(props: { children?: JSX.Element }) {
+    return <div class="overflow-hidden">{props.children}</div>;
+  }
+
+  function CarouselItem(props: { children?: JSX.Element }) {
+    return (
+      <div role="group" aria-roledescription="slide">
+        {props.children}
+      </div>
+    );
+  }
+
+  function CarouselPrevious(props: {
+    "data-testid"?: string;
+    class?: string;
+    disabled?: boolean;
+  }) {
+    const ctx = useContext(CarouselCtx);
+    return (
+      <button
+        data-testid={props["data-testid"]}
+        disabled={!ctx.canScrollPrev()}
+        onClick={() => ctx.scrollPrev()}
+        aria-label="Previous slide"
+      >
+        Prev
+      </button>
+    );
+  }
+
+  function CarouselNext(props: {
+    "data-testid"?: string;
+    class?: string;
+    disabled?: boolean;
+  }) {
+    const ctx = useContext(CarouselCtx);
+    return (
+      <button
+        data-testid={props["data-testid"]}
+        disabled={!ctx.canScrollNext()}
+        onClick={() => ctx.scrollNext()}
+        aria-label="Next slide"
+      >
+        Next
+      </button>
+    );
+  }
+
+  return { Carousel, CarouselContent, CarouselItem, CarouselPrevious, CarouselNext };
+});
+
+vi.mock("@opennotes/ui/components/ui/progress-circle", () => ({
+  ProgressCircle: (props: {
+    value?: number;
+    "data-testid"?: string;
+    size?: string;
+    showAnimation?: boolean;
+  }) => (
+    <div
+      data-testid={props["data-testid"]}
+      data-value={String(props.value ?? 0)}
+      aria-label="progress"
+    />
+  ),
+}));
+
+type SafetyRecommendation = components["schemas"]["SafetyRecommendation"];
+type Divergence = components["schemas"]["Divergence"];
+
+function makeDiv(idx: number, overrides: Partial<Divergence> = {}): Divergence {
   return {
+    direction: "discounted",
     reason: `Reason ${idx}`,
     signal_source: `source-${idx}`,
     signal_detail: `detail-${idx}`,
@@ -19,9 +151,11 @@ function makeDiv(
 }
 
 function makeRec(
-  divergences: SafetyDivergence[],
-): SafetyRecommendationWithDivergences {
+  divergences: Divergence[],
+  overrides: Partial<SafetyRecommendation> = {},
+): SafetyRecommendation {
   return {
+    ...overrides,
     level: "safe",
     rationale: "rationale",
     divergences,
@@ -34,7 +168,12 @@ function ProbeItems() {
     <div data-testid="probe">
       <For each={highlights.items()}>
         {(it) => (
-          <span data-testid={`item-${it.id}`} data-source={it.source}>
+          <span
+            data-testid={`item-${it.id}`}
+            data-source={it.source}
+            data-severity={it.severity}
+            data-detail={it.detail}
+          >
             {it.title}
           </span>
         )}
@@ -44,8 +183,13 @@ function ProbeItems() {
 }
 
 describe("SafetyHighlightsBridge", () => {
+  afterEach(cleanup);
+
   it("populates two divergences in the store", () => {
-    const rec = makeRec([makeDiv(0), makeDiv(1)]);
+    const rec = makeRec([
+      makeDiv(0),
+      makeDiv(1, { direction: "escalated" }),
+    ]);
     const { getByTestId } = render(() => (
       <HighlightsStoreProvider>
         <SafetyHighlightsBridge recommendation={rec} />
@@ -53,12 +197,16 @@ describe("SafetyHighlightsBridge", () => {
       </HighlightsStoreProvider>
     ));
 
-    expect(getByTestId("item-safety-divergence:0").textContent).toBe("Reason 0");
-    expect(getByTestId("item-safety-divergence:1").textContent).toBe("Reason 1");
+    expect(getByTestId("item-safety-divergence:0").textContent).toBe(
+      "Discounted: Reason 0",
+    );
+    expect(getByTestId("item-safety-divergence:1").textContent).toBe(
+      "Escalated: Reason 1",
+    );
   });
 
   it("replaces items when recommendation updates to fewer divergences", () => {
-    const [rec, setRec] = createSignal<SafetyRecommendationWithDivergences | null>(
+    const [rec, setRec] = createSignal<SafetyRecommendation | null>(
       makeRec([makeDiv(0), makeDiv(1)]),
     );
 
@@ -79,7 +227,7 @@ describe("SafetyHighlightsBridge", () => {
   });
 
   it("clears safety-divergence items when recommendation becomes null", () => {
-    const [rec, setRec] = createSignal<SafetyRecommendationWithDivergences | null>(
+    const [rec, setRec] = createSignal<SafetyRecommendation | null>(
       makeRec([makeDiv(0)]),
     );
 
@@ -98,15 +246,12 @@ describe("SafetyHighlightsBridge", () => {
   });
 
   it("preserves items from other sources across safety-divergence refreshes", () => {
-    const [rec, setRec] = createSignal<SafetyRecommendationWithDivergences | null>(
+    const [rec, setRec] = createSignal<SafetyRecommendation | null>(
       makeRec([makeDiv(0)]),
     );
 
-    let seedStore: ReturnType<typeof useHighlights> | undefined;
-
     function SeedOtherSource() {
       const highlights = useHighlights();
-      seedStore = highlights;
       highlights.push("other-source", [
         { id: "other-1", source: "other-source", title: "Other title" },
       ]);
@@ -132,7 +277,7 @@ describe("SafetyHighlightsBridge", () => {
   });
 
   it("does not call replaceForSource again when recommendation ref changes but divergences content is identical", () => {
-    const [rec, setRec] = createSignal<SafetyRecommendationWithDivergences | null>(
+    const [rec, setRec] = createSignal<SafetyRecommendation | null>(
       makeRec([makeDiv(0)]),
     );
 
@@ -164,6 +309,7 @@ describe("SafetyHighlightsBridge", () => {
       reason: "Suspicious pattern",
       signal_source: "model-x",
       signal_detail: "high confidence match",
+      direction: "escalated",
     });
 
     const { getByTestId } = render(() => (
@@ -174,7 +320,73 @@ describe("SafetyHighlightsBridge", () => {
     ));
 
     const el = getByTestId("item-safety-divergence:0");
-    expect(el.textContent).toBe("Suspicious pattern");
+    expect(el.textContent).toBe("Escalated: Suspicious pattern");
     expect(el.getAttribute("data-source")).toBe("safety-divergence");
+    expect(el.getAttribute("data-severity")).toBe("warn");
+    expect(el.getAttribute("data-detail")).toBe("model-x: high confidence match");
+  });
+
+  it("hides highlights when no divergences are present", () => {
+    const { queryByTestId } = render(() => (
+      <HighlightsStoreProvider>
+        <SafetyHighlightsBridge recommendation={{ level: "safe", rationale: "No divergences" }} />
+        <ProbeItems />
+        <HighlightsCard />
+      </HighlightsStoreProvider>
+    ));
+
+    expect(screen.queryByTestId("highlights-card")).toBeNull();
+    expect(queryByTestId("item-safety-divergence:0")).toBeNull();
+  });
+
+  it("renders mixed-direction divergences into ordered highlight slides", () => {
+    render(() => (
+      <HighlightsStoreProvider>
+        <SafetyHighlightsBridge
+          recommendation={makeRec([
+            makeDiv(0, {
+              direction: "discounted",
+              reason: "Fact signal",
+              signal_source: "model-a",
+              signal_detail: "Weak signal",
+            }),
+            makeDiv(1, {
+              direction: "escalated",
+              reason: "Manual review",
+              signal_source: "model-b",
+              signal_detail: "High confidence",
+            }),
+          ])}
+        />
+        <ProbeItems />
+        <HighlightsCard />
+      </HighlightsStoreProvider>
+    ));
+
+    const slides = screen.getAllByTestId("highlight-slide");
+    expect(slides).toHaveLength(2);
+    expect(screen.getByTestId("item-safety-divergence:0").textContent).toBe(
+      "Discounted: Fact signal",
+    );
+    expect(screen.getByTestId("item-safety-divergence:1").textContent).toBe(
+      "Escalated: Manual review",
+    );
+    expect(screen.getByTestId("item-safety-divergence:0").getAttribute("data-severity")).toBe(
+      "info",
+    );
+    expect(screen.getByTestId("item-safety-divergence:1").getAttribute("data-severity")).toBe(
+      "warn",
+    );
+  });
+
+  it("does not render highlight slides when recommendation divergences are missing", () => {
+    render(() => (
+      <HighlightsStoreProvider>
+        <SafetyHighlightsBridge recommendation={{ level: "safe", rationale: "No divergences" }} />
+        <HighlightsCard />
+      </HighlightsStoreProvider>
+    ));
+
+    expect(screen.queryByTestId("highlight-slide")).toBeNull();
   });
 });
