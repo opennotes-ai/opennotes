@@ -140,6 +140,43 @@ ORDER BY j.finished_at DESC
 LIMIT $1
 """
 
+_RECENT_UNFILTERED_SQL = """
+SELECT
+    j.job_id,
+    j.normalized_url,
+    j.url AS source_url,
+    j.finished_at,
+    j.preview_description,
+    j.sidebar_payload->'headline'->>'text' AS headline_summary_text,
+    j.sidebar_payload->'weather_report' AS weather_report_json,
+    j.sidebar_payload->'safety'->'recommendation' AS safety_recommendation_json,
+    j.sections,
+    j.status,
+    j.page_title,
+    s.screenshot_storage_key
+FROM vibecheck_jobs j
+INNER JOIN (
+    SELECT DISTINCT ON (normalized_url)
+        normalized_url,
+        screenshot_storage_key,
+        expires_at
+    FROM vibecheck_scrapes
+    WHERE screenshot_storage_key IS NOT NULL
+      AND expires_at > now()
+    ORDER BY normalized_url,
+             CASE WHEN tier = 'interact' THEN 0 ELSE 1 END
+) s ON s.normalized_url = j.normalized_url
+WHERE j.status IN ('done', 'partial')
+  AND (j.source_type IS NULL OR j.source_type = 'url')
+  AND j.finished_at IS NOT NULL
+  AND j.preview_description IS NOT NULL
+  AND j.expired_at IS NULL
+  AND s.screenshot_storage_key IS NOT NULL
+  AND s.expires_at > now()
+ORDER BY j.finished_at DESC
+LIMIT $1
+"""
+
 
 class ScreenshotSigner(Protocol):
     """Minimal protocol for the dependency the route hands list_recent."""
@@ -276,6 +313,29 @@ def _safety_recommendation_from_row(
         return None
 
 
+def _recent_analysis_from_row(
+    row: Any, *, signer: ScreenshotSigner
+) -> RecentAnalysis | None:
+    signed = signer.sign_screenshot_key(row["screenshot_storage_key"])
+    if signed is None:
+        return None
+    return RecentAnalysis(
+        job_id=row["job_id"],
+        source_url=row["source_url"],
+        page_title=row["page_title"],
+        screenshot_url=signed,
+        preview_description=row["preview_description"],
+        headline_summary=row["headline_summary_text"],
+        weather_report=_weather_report_from_row(
+            row["weather_report_json"], job_id=row["job_id"]
+        ),
+        safety_recommendation=_safety_recommendation_from_row(
+            row["safety_recommendation_json"], job_id=row["job_id"]
+        ),
+        completed_at=row["finished_at"],
+    )
+
+
 async def list_recent(
     pool: Any,
     *,
@@ -321,30 +381,34 @@ async def list_recent(
             continue
         if not _passes_partial_threshold(row["sections"], row["status"]):
             continue
-        signed = signer.sign_screenshot_key(row["screenshot_storage_key"])
-        if signed is None:
+        recent_analysis = _recent_analysis_from_row(row, signer=signer)
+        if recent_analysis is None:
             continue
-        out.append(
-            RecentAnalysis(
-                job_id=row["job_id"],
-                source_url=row["source_url"],
-                page_title=row["page_title"],
-                screenshot_url=signed,
-                preview_description=row["preview_description"],
-                headline_summary=row["headline_summary_text"],
-                weather_report=_weather_report_from_row(
-                    row["weather_report_json"], job_id=row["job_id"]
-                ),
-                safety_recommendation=_safety_recommendation_from_row(
-                    row["safety_recommendation_json"], job_id=row["job_id"]
-                ),
-                completed_at=row["finished_at"],
-            )
-        )
+        out.append(recent_analysis)
         seen_normalized.add(normalized)
         if len(out) >= limit:
             break
     return out
 
 
-__all__ = ["ScreenshotSigner", "list_recent"]
+async def list_recent_unfiltered(
+    pool: Any,
+    *,
+    limit: int,
+    signer: ScreenshotSigner,
+) -> list[RecentAnalysis]:
+    """Return latest rows for the internal gallery without public filters."""
+    if limit <= 0:
+        return []
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(_RECENT_UNFILTERED_SQL, limit)
+
+    out: list[RecentAnalysis] = []
+    for row in rows:
+        recent_analysis = _recent_analysis_from_row(row, signer=signer)
+        if recent_analysis is not None:
+            out.append(recent_analysis)
+    return out
+
+
+__all__ = ["ScreenshotSigner", "list_recent", "list_recent_unfiltered"]

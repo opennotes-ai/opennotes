@@ -24,6 +24,7 @@ from src.jobs.recent_query import (
     _is_blocked_url,
     _passes_partial_threshold,
     list_recent,
+    list_recent_unfiltered,
 )
 from tests.conftest import VIBECHECK_JOBS_DDL
 
@@ -993,3 +994,69 @@ class TestListRecentDedupAfterFilter:
         result = await list_recent(db_pool, limit=5, signer=_StubSigner())
         assert len(result) == 1
         assert result[0].job_id == old
+
+
+class TestListRecentUnfiltered:
+    async def test_includes_rows_filtered_by_public_gallery_defaults(
+        self, db_pool: Any
+    ) -> None:
+        clean_url = "https://example.com/internal-gallery-clean"
+        clean_job = await _seed_job(
+            db_pool,
+            url=clean_url,
+            finished_at=datetime.now(UTC) - timedelta(seconds=3),
+        )
+        await _seed_scrape(db_pool, url=clean_url)
+
+        private_url = "http://localhost/internal-only"
+        private_job = await _seed_job(
+            db_pool,
+            url=private_url,
+            finished_at=datetime.now(UTC) - timedelta(seconds=2),
+        )
+        await _seed_scrape(db_pool, url=private_url)
+
+        partial_url = "https://example.com/internal-gallery-partial"
+        partial_job = await _seed_job(
+            db_pool,
+            url=partial_url,
+            status="partial",
+            sections=_partial_sections(done=1, total=10),
+            finished_at=datetime.now(UTC) - timedelta(seconds=1),
+        )
+        await _seed_scrape(db_pool, url=partial_url)
+
+        duplicate_url = "https://example.com/internal-gallery-duplicate"
+        older_duplicate = await _seed_job(
+            db_pool,
+            url=duplicate_url,
+            finished_at=datetime.now(UTC) - timedelta(seconds=5),
+        )
+        await _seed_scrape(db_pool, url=duplicate_url)
+        async with db_pool.acquire() as conn:
+            newer_duplicate = await conn.fetchval(
+                """
+                INSERT INTO vibecheck_jobs
+                    (url, normalized_url, host, status, sections,
+                     finished_at, preview_description)
+                VALUES ($1, $2, 'example.com', 'done', $3::jsonb, $4, $5)
+                RETURNING job_id
+                """,
+                f"{duplicate_url}?utm_source=newer",
+                duplicate_url,
+                json.dumps(_full_sections()),
+                datetime.now(UTC),
+                "newer duplicate row",
+            )
+
+        result = await list_recent_unfiltered(
+            db_pool, limit=10, signer=_StubSigner()
+        )
+
+        assert [row.job_id for row in result] == [
+            newer_duplicate,
+            partial_job,
+            private_job,
+            clean_job,
+            older_duplicate,
+        ]
