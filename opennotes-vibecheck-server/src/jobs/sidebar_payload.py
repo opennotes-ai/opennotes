@@ -48,6 +48,22 @@ from src.analyses.tone._scd_schemas import SCDReport
 from src.jobs.section_defaults import empty_section_data
 
 
+def _parse_weather(value: Any | None) -> WeatherReport | None:
+    if value is None:
+        return None
+    if isinstance(value, str):
+        return WeatherReport.model_validate(json.loads(value))
+    return WeatherReport.model_validate(value)
+
+
+def _parse_overall(value: Any | None) -> OverallDecision | None:
+    if value is None:
+        return None
+    if isinstance(value, str):
+        return OverallDecision.model_validate(json.loads(value))
+    return OverallDecision.model_validate(value)
+
+
 def assemble_sidebar_payload(
     url: str,
     sections: dict[SectionSlug, SectionSlot],
@@ -236,20 +252,8 @@ def assemble_sidebar_payload(
         else None
     )
 
-    weather = (
-        WeatherReport.model_validate(json.loads(weather_report))
-        if isinstance(weather_report, str)
-        else WeatherReport.model_validate(weather_report)
-        if weather_report is not None
-        else None
-    )
-    overall = (
-        OverallDecision.model_validate(json.loads(overall_decision))
-        if isinstance(overall_decision, str)
-        else OverallDecision.model_validate(overall_decision)
-        if overall_decision is not None
-        else None
-    )
+    weather = _parse_weather(weather_report)
+    overall = _parse_overall(overall_decision)
 
     return SidebarPayload(
         source_url=url,

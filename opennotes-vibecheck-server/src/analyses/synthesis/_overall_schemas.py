@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from enum import StrEnum
-from typing import Literal
 
 from pydantic import BaseModel
 
@@ -16,4 +15,3 @@ class OverallVerdict(StrEnum):
 class OverallDecision(BaseModel):
     verdict: OverallVerdict
     reason: str
-    status: Literal["final"] = "final"

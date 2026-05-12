@@ -1093,12 +1093,6 @@ export interface components {
             verdict: components["schemas"]["OverallVerdict"];
             /** Reason */
             reason: string;
-            /**
-             * Status
-             * @default final
-             * @constant
-             */
-            status: "final";
         };
         /**
          * OverallVerdict

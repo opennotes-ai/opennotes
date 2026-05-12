@@ -3034,7 +3034,6 @@ describe("HighlightsCard + OverallRecommendationCard DOM order (TASK-1612.06 + 1
             overall: {
               verdict: "pass",
               reason: "Server synthesis",
-              status: "final",
             },
             safety: {
               harmful_content_matches: [],

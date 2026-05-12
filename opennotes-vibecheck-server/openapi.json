@@ -2291,12 +2291,6 @@
           "reason": {
             "type": "string",
             "title": "Reason"
-          },
-          "status": {
-            "type": "string",
-            "const": "final",
-            "title": "Status",
-            "default": "final"
           }
         },
         "type": "object",

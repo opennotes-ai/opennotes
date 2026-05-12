@@ -81,7 +81,6 @@ export function escalateForFlashpoint(
   return {
     verdict: "flag",
     reason: `Conversation flashpoint risk: ${highest}`,
-    status: "final",
   };
 }
 
@@ -102,7 +101,6 @@ export function escalateForMisleadingOnTopic(
   return {
     verdict: "flag",
     reason: "Misleading framing in on-topic discussion",
-    status: "final",
   };
 }
 
@@ -235,7 +233,6 @@ function decideFromSafety(
   return {
     verdict: verdictFromLevel(recommendation.level),
     reason,
-    status: "final",
   };
 }
 

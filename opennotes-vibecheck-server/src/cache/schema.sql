@@ -294,6 +294,8 @@ ALTER TABLE public.vibecheck_jobs
 -- TASK-1623.01: server-side overall recommendation synthesis output.
 -- Nullable for old rows and optional-agent failure; web keeps deterministic
 -- fallback rules when this column is null.
+-- RLS: overall_decision inherits vibecheck_jobs table-level RLS lockdown;
+-- anon/authenticated have no grants or policies on this table.
 ALTER TABLE public.vibecheck_jobs
     ADD COLUMN IF NOT EXISTS overall_decision JSONB;
 

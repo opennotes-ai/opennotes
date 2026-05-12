@@ -47,17 +47,15 @@ def _minimal_sidebar_payload(**overrides: object) -> SidebarPayload:
     return SidebarPayload(**payload)
 
 
-def test_overall_decision_status_defaults_to_final() -> None:
+def test_overall_decision_has_no_reserved_status_field() -> None:
     decision = OverallDecision.model_validate(
         {"verdict": "flag", "reason": "Misleading framing"}
     )
 
     assert decision.verdict is OverallVerdict.FLAG
-    assert decision.status == "final"
     assert decision.model_dump(mode="json") == {
         "verdict": "flag",
         "reason": "Misleading framing",
-        "status": "final",
     }
 
 
@@ -79,4 +77,3 @@ def test_sidebar_payload_round_trips_populated_overall() -> None:
     assert parsed.overall is not None
     assert parsed.overall.verdict is OverallVerdict.PASS
     assert parsed.overall.reason == "No notable concerns"
-    assert parsed.overall.status == "final"

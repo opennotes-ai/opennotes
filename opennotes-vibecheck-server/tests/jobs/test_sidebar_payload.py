@@ -144,7 +144,7 @@ def _weather_report_dict() -> dict[str, Any]:
 
 
 def _overall_decision_dict() -> dict[str, Any]:
-    return {"verdict": "flag", "reason": "Server synthesis", "status": "final"}
+    return {"verdict": "flag", "reason": "Server synthesis"}
 
 
 class TestAssembleSidebarPayload:
@@ -441,7 +441,7 @@ class TestAssembleSidebarPayload:
         )
 
         assert sidebar.overall is not None
-        assert sidebar.overall.status == "final"
+        assert sidebar.overall.reason == "Server synthesis"
 
     def test_null_overall_decision_stays_none(self):
         sidebar = assemble_sidebar_payload(

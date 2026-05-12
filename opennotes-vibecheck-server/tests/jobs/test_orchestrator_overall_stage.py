@@ -119,7 +119,7 @@ async def test_overall_recommendation_step_writes_decision_when_agent_succeeds(
     assert conn.written["job_id"] == job_id
     assert conn.written["task_attempt"] == task_attempt
     parsed = json.loads(conn.written["overall_json"])
-    assert parsed == {"verdict": "pass", "reason": "Server synthesis", "status": "final"}
+    assert parsed == {"verdict": "pass", "reason": "Server synthesis"}
 
 
 @pytest.mark.asyncio

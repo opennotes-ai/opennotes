@@ -257,7 +257,6 @@ def test_row_to_job_state_preserves_valid_overall_decision() -> None:
     payload["overall"] = {
         "verdict": "flag",
         "reason": "Server synthesis",
-        "status": "final",
     }
     row["sidebar_payload"] = payload
 
@@ -309,7 +308,6 @@ def test_row_to_job_state_preserves_valid_inflight_overall_decision() -> None:
     row["overall_decision"] = {
         "verdict": "pass",
         "reason": "Server synthesis",
-        "status": "final",
     }
 
     job = _row_to_job_state(row)

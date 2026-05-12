@@ -59,7 +59,7 @@ import json
 import logging
 import time
 from dataclasses import dataclass
-from typing import Any, Final, Literal, NoReturn
+from typing import Any, Final, Literal, NoReturn, cast
 from urllib.parse import urlparse
 from uuid import UUID, uuid4
 
@@ -415,10 +415,10 @@ WHERE job_id = $1
   AND attempt_id = $3
 """
 
-# TASK-1508.04.03: load all section data plus the freshly-written safety
-# recommendation and job-level page metadata so the headline summarizer can
-# synthesize from the structured outputs without re-reading raw utterances.
-_LOAD_HEADLINE_INPUTS_SQL = """
+# TASK-1508.04.03/TASK-1623.06: load all section data plus freshly-written
+# synthesis inputs so headline, weather, and overall stages can synthesize from
+# structured outputs without re-reading raw utterances.
+_LOAD_SYNTHESIS_INPUTS_SQL = """
 SELECT
     j.sections,
     j.safety_recommendation,
@@ -2610,7 +2610,7 @@ async def _run_weather_report_step(
     """
     try:
         async with pool.acquire() as conn:
-            row = await conn.fetchrow(_LOAD_HEADLINE_INPUTS_SQL, job_id, task_attempt)
+            row = await conn.fetchrow(_LOAD_SYNTHESIS_INPUTS_SQL, job_id, task_attempt)
         if row is None:
             return
 
@@ -2650,7 +2650,7 @@ async def _run_overall_recommendation_step(
     """Synthesize the overall recommendation and persist it to vibecheck_jobs."""
     try:
         async with pool.acquire() as conn:
-            row = await conn.fetchrow(_LOAD_HEADLINE_INPUTS_SQL, job_id, task_attempt)
+            row = await conn.fetchrow(_LOAD_SYNTHESIS_INPUTS_SQL, job_id, task_attempt)
         if row is None:
             return
 
@@ -2702,80 +2702,32 @@ async def _run_headline_weather_steps(
     consistent and avoids duplicated span wiring.
     """
 
+    def _span_attrs() -> dict[str, str]:
+        attrs = {"job_id": str(job_id), "attempt_id": str(task_attempt)}
+        if slug is not None:
+            attrs["slug"] = slug.value
+        return attrs
+
+    def _stage_span(name: str) -> Any:
+        return cast(Any, logfire.span)(name, **_span_attrs())
+
     async def _run_headline_stage() -> None:
-        if slug is None:
-            with logfire.span(
-                f"{stage_prefix}.headline_summary",
-                job_id=str(job_id),
-                attempt_id=str(task_attempt),
-            ):
-                await _set_last_stage(
-                    pool, job_id, task_attempt, _STAGE_HEADLINE_SUMMARY
-                )
-                await _run_headline_summary_step(
-                    pool, job_id, task_attempt, settings
-                )
-        else:
-            with logfire.span(
-                f"{stage_prefix}.headline_summary",
-                job_id=str(job_id),
-                attempt_id=str(task_attempt),
-                slug=slug.value,
-            ):
-                await _set_last_stage(
-                    pool, job_id, task_attempt, _STAGE_HEADLINE_SUMMARY
-                )
-                await _run_headline_summary_step(
-                    pool, job_id, task_attempt, settings
-                )
+        with _stage_span(f"{stage_prefix}.headline_summary"):
+            await _set_last_stage(pool, job_id, task_attempt, _STAGE_HEADLINE_SUMMARY)
+            await _run_headline_summary_step(pool, job_id, task_attempt, settings)
 
     async def _run_overall_stage() -> None:
-        if slug is None:
-            with logfire.span(
-                f"{stage_prefix}.overall_recommendation",
-                job_id=str(job_id),
-                attempt_id=str(task_attempt),
-            ):
-                await _set_last_stage(
-                    pool, job_id, task_attempt, _STAGE_OVERALL_RECOMMENDATION
-                )
-                await _run_overall_recommendation_step(pool, job_id, task_attempt, settings)
-        else:
-            with logfire.span(
-                f"{stage_prefix}.overall_recommendation",
-                job_id=str(job_id),
-                attempt_id=str(task_attempt),
-                slug=slug.value,
-            ):
-                await _set_last_stage(
-                    pool, job_id, task_attempt, _STAGE_OVERALL_RECOMMENDATION
-                )
-                await _run_overall_recommendation_step(pool, job_id, task_attempt, settings)
+        with _stage_span(f"{stage_prefix}.overall_recommendation"):
+            await _set_last_stage(
+                pool, job_id, task_attempt, _STAGE_OVERALL_RECOMMENDATION
+            )
+            await _run_overall_recommendation_step(pool, job_id, task_attempt, settings)
 
     async def _run_weather_stage() -> None:
-        if slug is None:
-            with logfire.span(
-                f"{stage_prefix}.weather_report",
-                job_id=str(job_id),
-                attempt_id=str(task_attempt),
-            ):
-                await _set_last_stage(
-                    pool, job_id, task_attempt, _STAGE_WEATHER_REPORT
-                )
-                await _run_weather_report_step(pool, job_id, task_attempt, settings)
-                await _run_overall_stage()
-        else:
-            with logfire.span(
-                f"{stage_prefix}.weather_report",
-                job_id=str(job_id),
-                attempt_id=str(task_attempt),
-                slug=slug.value,
-            ):
-                await _set_last_stage(
-                    pool, job_id, task_attempt, _STAGE_WEATHER_REPORT
-                )
-                await _run_weather_report_step(pool, job_id, task_attempt, settings)
-                await _run_overall_stage()
+        with _stage_span(f"{stage_prefix}.weather_report"):
+            await _set_last_stage(pool, job_id, task_attempt, _STAGE_WEATHER_REPORT)
+            await _run_weather_report_step(pool, job_id, task_attempt, settings)
+            await _run_overall_stage()
 
     await asyncio.gather(_run_headline_stage(), _run_weather_stage())
 
@@ -2795,7 +2747,7 @@ async def _run_headline_summary_step(
     SidebarPayload with `headline=None` and the UI degrades gracefully.
     """
     async with pool.acquire() as conn:
-        row = await conn.fetchrow(_LOAD_HEADLINE_INPUTS_SQL, job_id, task_attempt)
+        row = await conn.fetchrow(_LOAD_SYNTHESIS_INPUTS_SQL, job_id, task_attempt)
     if row is None:
         return
 

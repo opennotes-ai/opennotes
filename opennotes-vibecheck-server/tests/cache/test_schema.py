@@ -442,6 +442,21 @@ class TestIdempotency:
         assert (
             "ALTER TABLE public.vibecheck_jobs\n    ADD COLUMN IF NOT EXISTS overall_decision JSONB"
         ) in schema_sql
+        assert "overall_decision inherits vibecheck_jobs table-level RLS lockdown" in schema_sql
+
+    def test_overall_decision_has_no_client_role_grants_or_policies(
+        self, schema_sql: str
+    ) -> None:
+        forbidden = [
+            line
+            for line in schema_sql.splitlines()
+            if "vibecheck_jobs" in line
+            and (
+                line.strip().startswith("CREATE POLICY")
+                or re.search(r"\bGRANT\b.*\b(?:anon|authenticated)\b", line)
+            )
+        ]
+        assert forbidden == []
 
     def test_retired_truth_labels_are_rewritten_in_weather_jsonb(self, schema_sql: str) -> None:
         assert "TASK-1578.02: rewrite retired TruthLabel values" in schema_sql

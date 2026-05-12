@@ -390,7 +390,6 @@ async def test_maybe_finalize_job_round_trips_overall_decision_to_sidebar_payloa
     overall_decision = {
         "verdict": "flag",
         "reason": "Server synthesis",
-        "status": "final",
     }
     job_id = await _insert_job(
         db_pool,
