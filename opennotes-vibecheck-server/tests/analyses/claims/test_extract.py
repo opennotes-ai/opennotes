@@ -234,3 +234,63 @@ async def test_extract_claims_bulk_preserves_chunk_refs(
     assert claim.chunk_idx == 0
     assert claim.chunk_count is not None
     assert claim.chunk_count > 1
+
+
+async def test_extract_claims_bulk_returns_one_entry_per_chunk(
+    settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    long_text = "This policy would devastate the economy. " * 500
+
+    def fake_build_agent(_settings, *, output_type=None, system_prompt=None, name=None):
+        assert output_type is BulkClaimExtractionResponse
+        assert system_prompt is not None
+        assert "numbered list of text segments" in system_prompt.lower()
+        assert "bracketed index" in system_prompt.lower()
+        return object()
+
+    async def fake_run_vertex_agent_with_retry(_agent, user_prompt: str):
+        prompt_lines = [line for line in user_prompt.splitlines() if line.startswith("[")]
+        assert len(prompt_lines) > 1
+        return _FakeRunResult(
+            output=BulkClaimExtractionResponse.model_validate(
+                {
+                    "results": [
+                        {
+                            "utterance_index": index,
+                            "claims": [
+                                {
+                                    "claim_text": f"Chunk {index} contains a policy claim.",
+                                    "category": ClaimCategory.PREDICTIONS,
+                                    "confidence": 0.92,
+                                }
+                            ],
+                        }
+                        for index, _line in enumerate(prompt_lines)
+                    ]
+                }
+            )
+        )
+
+    monkeypatch.setattr(extract_mod, "build_agent", fake_build_agent)
+    monkeypatch.setattr(
+        extract_mod,
+        "run_vertex_agent_with_retry",
+        fake_run_vertex_agent_with_retry,
+    )
+
+    claims_by_utterance = await extract_claims_bulk(
+        [
+            Utterance(
+                utterance_id="comment-1",
+                kind="comment",
+                text=long_text,
+                author="alice",
+            )
+        ],
+        settings,
+    )
+
+    claims = claims_by_utterance[0]
+    assert len(claims) > 1
+    assert [claim.chunk_idx for claim in claims] == list(range(len(claims)))
+    assert {claim.chunk_count for claim in claims} == {len(claims)}

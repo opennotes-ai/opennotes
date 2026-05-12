@@ -122,16 +122,23 @@ async def dedupe_claims(  # noqa: PLR0912 - clustering flow is intentionally exp
         authors_seen: list[str] = []
         author_set: set[str] = set()
         utterance_ids: list[str] = []
+        utterance_set: set[str] = set()
         chunk_refs: list[ChunkRef] = []
+        chunk_ref_set: set[tuple[str, int | None]] = set()
         for claim in members:
-            utterance_ids.append(claim.utterance_id)
-            chunk_refs.append(
-                ChunkRef(
-                    utterance_id=claim.utterance_id,
-                    chunk_idx=claim.chunk_idx,
-                    chunk_count=claim.chunk_count,
+            if claim.utterance_id not in utterance_set:
+                utterance_set.add(claim.utterance_id)
+                utterance_ids.append(claim.utterance_id)
+            chunk_ref_key = (claim.utterance_id, claim.chunk_idx)
+            if chunk_ref_key not in chunk_ref_set:
+                chunk_ref_set.add(chunk_ref_key)
+                chunk_refs.append(
+                    ChunkRef(
+                        utterance_id=claim.utterance_id,
+                        chunk_idx=claim.chunk_idx,
+                        chunk_count=claim.chunk_count,
+                    )
                 )
-            )
             author = author_by_utterance.get(claim.utterance_id)
             if author and author not in author_set:
                 author_set.add(author)

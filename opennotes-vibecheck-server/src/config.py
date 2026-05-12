@@ -82,7 +82,9 @@ class Settings(BaseSettings):
     PREMISES_MAX_CLAIMS_PER_BATCH: int = 30
     VIBECHECK_CHUNK_THRESHOLD_TOKENS: int = 800
     VIBECHECK_CHUNK_MAX_TOKENS: int = 600
-    VIBECHECK_GCP_MODERATION_CHUNK_ENABLED: bool = True
+    VIBECHECK_MODERATION_CHUNK_ENABLED: bool = True
+    VIBECHECK_GCP_MODERATION_CONCURRENCY: int = 8
+    VIBECHECK_GCP_MODERATION_TIMEOUT_SEC: float = 20.0
 
     # --- Cloud Tasks + internal worker endpoint (TASK-1473.12) ---
     # Defaults map the dev/test shape: empty strings so enqueue_job short-
@@ -193,6 +195,17 @@ class Settings(BaseSettings):
         if value < 0:
             raise ValueError("trends/oppositions max clusters must be >= 0")
         return value
+
+    @model_validator(mode="after")
+    def _validate_chunk_token_bounds(self) -> "Settings":
+        if self.VIBECHECK_CHUNK_MAX_TOKENS > self.VIBECHECK_CHUNK_THRESHOLD_TOKENS:
+            raise ValueError(
+                "VIBECHECK_CHUNK_MAX_TOKENS must be <= "
+                "VIBECHECK_CHUNK_THRESHOLD_TOKENS "
+                f"(got max={self.VIBECHECK_CHUNK_MAX_TOKENS}, "
+                f"threshold={self.VIBECHECK_CHUNK_THRESHOLD_TOKENS})"
+            )
+        return self
 
     @model_validator(mode="after")
     def _video_intelligence_requires_staging_bucket(self) -> "Settings":

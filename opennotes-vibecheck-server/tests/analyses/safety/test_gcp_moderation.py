@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Mapping, Sequence
-from unittest.mock import patch
+from unittest.mock import call, patch
 
 import httpx
 import pytest
@@ -18,6 +18,7 @@ from src.analyses.safety.gcp_moderation import (
     GcpModerationTransientError,
     moderate_texts_gcp,
 )
+from src.config import Settings
 from src.utterances.schema import Utterance
 
 
@@ -39,6 +40,14 @@ def make_moderation_response(categories: Sequence[Mapping[str, object]]) -> http
 
     body = json.dumps({"moderationCategories": categories})
     return httpx.Response(200, content=body.encode(), headers={"content-type": "application/json"})
+
+
+class DummySpan:
+    def __enter__(self) -> DummySpan:
+        return self
+
+    def __exit__(self, *args: object) -> None:
+        return None
 
 
 class TestEmptyInput:
@@ -160,6 +169,106 @@ class TestAboveThreshold:
         assert aggregate.chunk_count == chunk_match.chunk_count
         assert aggregate.utterance_text == long_text
 
+    async def test_chunking_disabled_uses_single_whole_utterance_request(self):
+        long_text = "toxic sentence in a long post. " * 500
+        requests: list[str] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            import json
+
+            payload = json.loads(request.content.decode())
+            requests.append(payload["document"]["content"])
+            return make_moderation_response([{"name": "Toxic", "confidence": 0.9}])
+
+        transport = httpx.MockTransport(handler)
+        settings = Settings(VIBECHECK_MODERATION_CHUNK_ENABLED=False)
+        async with httpx.AsyncClient(transport=transport) as client:
+            with patch("src.analyses.safety.gcp_moderation.get_access_token", return_value="tok"):
+                result = await moderate_texts_gcp(
+                    [make_utterance(utterance_id="utt_long", text=long_text)],
+                    httpx_client=client,
+                    settings=settings,
+                    threshold=0.5,
+                )
+
+        assert requests == [long_text]
+        assert result[0].chunk_idx is None
+        assert result[0].chunk_count == 1
+
+    async def test_aggregate_chunk_count_matches_total_chunks_not_flagged_count(self):
+        long_text = "toxic sentence in a long post. " * 500
+        requests: list[str] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            import json
+
+            payload = json.loads(request.content.decode())
+            requests.append(payload["document"]["content"])
+            confidence = 0.9 if len(requests) in {1, 3} else 0.1
+            return make_moderation_response([{"name": "Toxic", "confidence": confidence}])
+
+        transport = httpx.MockTransport(handler)
+        async with httpx.AsyncClient(transport=transport) as client:
+            with patch("src.analyses.safety.gcp_moderation.get_access_token", return_value="tok"):
+                result = await moderate_texts_gcp(
+                    [make_utterance(utterance_id="utt_long", text=long_text)],
+                    httpx_client=client,
+                    threshold=0.5,
+                )
+
+        chunk_matches = [match for match in result if match.chunk_idx is not None]
+        aggregate = next(match for match in result if match.chunk_idx is None)
+        assert len(requests) > len(chunk_matches)
+        assert aggregate.chunk_count == len(requests)
+
+    async def test_batch_span_records_utterance_and_chunk_counts(self):
+        def handler(request: httpx.Request) -> httpx.Response:
+            return make_moderation_response([{"name": "Toxic", "confidence": 0.1}])
+
+        transport = httpx.MockTransport(handler)
+        async with httpx.AsyncClient(transport=transport) as client:
+            with patch("src.analyses.safety.gcp_moderation.get_access_token", return_value="tok"):
+                with patch(
+                    "src.analyses.safety.gcp_moderation.logfire.span",
+                    return_value=DummySpan(),
+                ) as span:
+                    await moderate_texts_gcp(
+                        [
+                            make_utterance(utterance_id="utt_1", text="one"),
+                            make_utterance(utterance_id="utt_2", text="two"),
+                        ],
+                        httpx_client=client,
+                    )
+
+        assert (
+            call(
+                "vibecheck.gcp_moderation.batch",
+                utterance_count=2,
+                chunk_count=2,
+                fan_out_ratio=1.0,
+            )
+            in span.call_args_list
+        )
+
+    async def test_timeout_uses_configured_setting(self):
+        timeouts: list[object] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            timeouts.append(request.extensions["timeout"]["connect"])
+            return make_moderation_response([{"name": "Toxic", "confidence": 0.1}])
+
+        transport = httpx.MockTransport(handler)
+        settings = Settings(VIBECHECK_GCP_MODERATION_TIMEOUT_SEC=5.0)
+        async with httpx.AsyncClient(transport=transport) as client:
+            with patch("src.analyses.safety.gcp_moderation.get_access_token", return_value="tok"):
+                await moderate_texts_gcp(
+                    [make_utterance()],
+                    httpx_client=client,
+                    settings=settings,
+                )
+
+        assert timeouts == [5.0]
+
 
 class TestMultipleCategories:
     async def test_multiple_categories_flagged_correctly(self):
@@ -255,6 +364,33 @@ class TestConcurrency:
                 await moderate_texts_gcp(utterances, httpx_client=client)
 
         assert max_concurrent <= 8
+
+    async def test_concurrency_uses_configured_setting(self):
+        max_concurrent = 0
+        current_concurrent = 0
+        lock = asyncio.Lock()
+
+        async def async_handler(request: httpx.Request) -> httpx.Response:
+            nonlocal max_concurrent, current_concurrent
+            async with lock:
+                current_concurrent += 1
+                max_concurrent = max(max_concurrent, current_concurrent)
+            await asyncio.sleep(0.01)
+            async with lock:
+                current_concurrent -= 1
+            return make_moderation_response([{"name": "Toxic", "confidence": 0.1}])
+
+        class TrackingTransport(httpx.AsyncBaseTransport):
+            async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
+                return await async_handler(request)
+
+        utterances = [make_utterance(utterance_id=f"utt_{i}", text=f"text {i}") for i in range(8)]
+        settings = Settings(VIBECHECK_GCP_MODERATION_CONCURRENCY=2)
+        async with httpx.AsyncClient(transport=TrackingTransport()) as client:
+            with patch("src.analyses.safety.gcp_moderation.get_access_token", return_value="tok"):
+                await moderate_texts_gcp(utterances, httpx_client=client, settings=settings)
+
+        assert max_concurrent <= 2
 
 
 class TestUtteranceId:

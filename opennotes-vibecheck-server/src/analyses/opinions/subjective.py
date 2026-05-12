@@ -19,7 +19,7 @@ from src.utterances.chunking_service import Chunk, get_chunking_service
 from src.utterances.schema import Utterance
 
 _SYSTEM_PROMPT = (
-    "You extract SUBJECTIVE claims from a single utterance. A subjective claim "
+    "You extract SUBJECTIVE claims from a text segment. A subjective claim "
     "expresses an opinion, preference, evaluation, or stance that cannot be "
     "verified against an external source ('the UI is ugly', 'I like the new "
     "layout', 'this change is bad'). DO NOT extract factual, verifiable "
@@ -37,10 +37,13 @@ def _utterance_id(utterance: Utterance, index: int = 0) -> str:
 
 
 _BULK_SYSTEM_PROMPT = (
-    _SYSTEM_PROMPT + " You will receive a numbered list of utterances. Return one "
-    "`_PerUtteranceSubjectiveClaims` per input utterance, matching the "
-    "input index. Preserve order. Emit an empty `claims` list for "
-    "utterances without subjective content."
+    _SYSTEM_PROMPT
+    + " You will receive a numbered list of text segments. Each segment is a "
+    "contiguous chunk of a longer utterance; multiple segments may come from "
+    "the same utterance. Return one `_PerUtteranceSubjectiveClaims` per "
+    "numbered segment, with `utterance_index` matching the bracketed input "
+    "index. Preserve order. Emit an empty `claims` list for segments without "
+    "subjective content."
 )
 
 
@@ -74,7 +77,7 @@ async def extract_subjective_claims_bulk(
         return []
 
     out: list[list[SubjectiveClaim]] = [[] for _ in utterances]
-    chunking_service = await get_chunking_service(settings or get_settings())
+    chunking_service = get_chunking_service(settings or get_settings())
     chunk_refs: list[tuple[int, Chunk]] = []
     prompt_lines: list[str] = []
     for i, u in enumerate(utterances):

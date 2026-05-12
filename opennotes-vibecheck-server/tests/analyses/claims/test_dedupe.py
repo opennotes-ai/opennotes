@@ -251,3 +251,70 @@ async def test_empty_claims_returns_empty_report(
     assert report.total_claims == 0
     assert report.total_unique == 0
     assert report.deduped_claims == []
+
+
+async def test_dedupe_collapses_repeated_utterance_in_cluster(
+    settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    texts = ["same chunk claim one", "same chunk claim two"]
+    _patch_embeddings(monkeypatch, {text: [1.0, 0.0] for text in texts})
+    claims = [
+        Claim(
+            claim_text=texts[0],
+            utterance_id="u1",
+            confidence=0.9,
+            chunk_idx=1,
+            chunk_count=3,
+        ),
+        Claim(
+            claim_text=texts[1],
+            utterance_id="u1",
+            confidence=0.8,
+            chunk_idx=1,
+            chunk_count=3,
+        ),
+    ]
+    utterances = [Utterance(utterance_id="u1", kind="post", text="source", author="alice")]
+
+    report = await dedupe_claims(claims, utterances, settings)
+
+    cluster = report.deduped_claims[0]
+    assert cluster.occurrence_count == 2
+    assert cluster.utterance_ids == ["u1"]
+    assert len(cluster.chunk_refs) == 1
+    assert cluster.chunk_refs[0].utterance_id == "u1"
+    assert cluster.chunk_refs[0].chunk_idx == 1
+    assert cluster.chunk_refs[0].chunk_count == 3
+
+
+async def test_dedupe_keeps_distinct_chunks_of_same_utterance(
+    settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    texts = ["first chunk claim", "second chunk claim"]
+    _patch_embeddings(monkeypatch, {text: [1.0, 0.0] for text in texts})
+    claims = [
+        Claim(
+            claim_text=texts[0],
+            utterance_id="u1",
+            confidence=0.9,
+            chunk_idx=0,
+            chunk_count=2,
+        ),
+        Claim(
+            claim_text=texts[1],
+            utterance_id="u1",
+            confidence=0.8,
+            chunk_idx=1,
+            chunk_count=2,
+        ),
+    ]
+    utterances = [Utterance(utterance_id="u1", kind="post", text="source", author="alice")]
+
+    report = await dedupe_claims(claims, utterances, settings)
+
+    cluster = report.deduped_claims[0]
+    assert cluster.utterance_ids == ["u1"]
+    assert [(ref.utterance_id, ref.chunk_idx) for ref in cluster.chunk_refs] == [
+        ("u1", 0),
+        ("u1", 1),
+    ]
