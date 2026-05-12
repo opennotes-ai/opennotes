@@ -1311,6 +1311,38 @@
         "title": "DedupedClaim",
         "description": "A cluster of semantically-equivalent claims across utterances."
       },
+      "Divergence": {
+        "properties": {
+          "direction": {
+            "type": "string",
+            "enum": [
+              "discounted",
+              "escalated"
+            ],
+            "title": "Direction"
+          },
+          "signal_source": {
+            "type": "string",
+            "title": "Signal Source"
+          },
+          "signal_detail": {
+            "type": "string",
+            "title": "Signal Detail"
+          },
+          "reason": {
+            "type": "string",
+            "title": "Reason"
+          }
+        },
+        "type": "object",
+        "required": [
+          "direction",
+          "signal_source",
+          "signal_detail",
+          "reason"
+        ],
+        "title": "Divergence"
+      },
       "ErrorCode": {
         "type": "string",
         "enum": [
@@ -2625,6 +2657,13 @@
             },
             "type": "array",
             "title": "Unavailable Inputs"
+          },
+          "divergences": {
+            "items": {
+              "$ref": "#/components/schemas/Divergence"
+            },
+            "type": "array",
+            "title": "Divergences"
           }
         },
         "type": "object",

@@ -637,6 +637,20 @@ export interface components {
              */
             facts_to_verify: number;
         };
+        /** Divergence */
+        Divergence: {
+            /**
+             * Direction
+             * @enum {string}
+             */
+            direction: "discounted" | "escalated";
+            /** Signal Source */
+            signal_source: string;
+            /** Signal Detail */
+            signal_detail: string;
+            /** Reason */
+            reason: string;
+        };
         /**
          * ErrorCode
          * @description Stable error codes the frontend branches on for inline copy + retry UX.
@@ -1310,6 +1324,8 @@ export interface components {
             top_signals?: string[];
             /** Unavailable Inputs */
             unavailable_inputs?: string[];
+            /** Divergences */
+            divergences?: components["schemas"]["Divergence"][];
         };
         /**
          * SafetySection
