@@ -3,6 +3,7 @@
 Covers TASK-1474.12 ACs 2-4 (parallel OpenAI + GCP, partial-success,
 both-fail raises ModerationSlotError).
 """
+
 from __future__ import annotations
 
 from typing import Literal
@@ -70,6 +71,7 @@ class TestBothProvidersSucceed:
         from src.analyses.safety.moderation_slot import run_safety_moderation
 
         openai_match = make_match(utterance_id="utt_1", source="openai")
+        openai_match.utterance_text = ""
         payload = type(
             "Payload",
             (),
@@ -110,6 +112,8 @@ class TestBothProvidersSucceed:
                 "scores": {"violence": 0.9},
                 "flagged_categories": ["violence"],
                 "source": "openai",
+                "chunk_idx": None,
+                "chunk_count": None,
             }
         ]
 

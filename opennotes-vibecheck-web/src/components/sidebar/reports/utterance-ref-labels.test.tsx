@@ -46,6 +46,18 @@ describe("report utterance reference labels", () => {
           occurrence_count: 2,
           author_count: 1,
           utterance_ids: ["comment-1-bbb", "reply-3-ddd"],
+          chunk_refs: [
+            {
+              utterance_id: "comment-1-bbb",
+              chunk_idx: 2,
+              chunk_count: 3,
+            },
+            {
+              utterance_id: "reply-3-ddd",
+              chunk_idx: 0,
+              chunk_count: 2,
+            },
+          ],
           representative_authors: ["author-a"],
           facts_to_verify: 0,
           supporting_facts: [
@@ -67,14 +79,14 @@ describe("report utterance reference labels", () => {
 
     expect(
       screen.getByTestId("deduped-claim-utterance-ref").textContent,
-    ).toBe("comment #1");
+    ).toBe("comment #1 §3");
     expect(screen.getByText("(external)")).toBeDefined();
 
     await fireEvent.click(screen.getByTestId("deduped-claim-more-utterances"));
 
     expect(
       screen.getByTestId("deduped-claim-popover-utterance-ref").textContent,
-    ).toBe("reply #1");
+    ).toBe("reply #1 §1");
   });
 
   it("renders flashpoint refs from utterance context", () => {
@@ -108,6 +120,8 @@ describe("report utterance reference labels", () => {
         scores: { harassment: 0.92 },
         flagged_categories: ["harassment"],
         source: "openai",
+        chunk_idx: 1,
+        chunk_count: 2,
       },
     ];
 
@@ -116,7 +130,7 @@ describe("report utterance reference labels", () => {
     ));
 
     expect(screen.getByTestId("safety-utterance-ref").textContent).toBe(
-      "comment #2",
+      "comment #2 §2",
     );
   });
 
@@ -126,6 +140,8 @@ describe("report utterance reference labels", () => {
         claim_text: "This feels unfair.",
         stance: "opposes",
         utterance_id: "comment-1-bbb",
+        chunk_idx: 0,
+        chunk_count: 3,
       },
     ];
 
@@ -135,6 +151,6 @@ describe("report utterance reference labels", () => {
 
     expect(
       screen.getByTestId("subjective-claim-utterance-ref").textContent,
-    ).toBe("comment #1");
+    ).toBe("comment #1 §1");
   });
 });

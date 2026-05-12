@@ -30,6 +30,21 @@ describe("<UtteranceRef />", () => {
     expect(screen.getByRole("button", { name: "comment #1" })).toBeDefined();
   });
 
+  it("renders chunk suffixes in the generated label", () => {
+    render(() => (
+      <UtterancesProvider value={[anchor("comment-1-bbb", 1)]}>
+        <UtteranceRef
+          utteranceId="comment-1-bbb"
+          chunkIdx={1}
+          chunkCount={3}
+          onClick={vi.fn()}
+        />
+      </UtterancesProvider>
+    ));
+
+    expect(screen.getByRole("button", { name: "comment #1 §2" })).toBeDefined();
+  });
+
   it("renders a custom label verbatim", () => {
     render(() => (
       <UtteranceRef

@@ -163,6 +163,8 @@ def _harmful_match(utterance_id: str, text: str) -> dict[str, Any]:
         "scores": {"harassment": 0.91},
         "flagged_categories": ["harassment"],
         "source": "openai",
+        "chunk_idx": None,
+        "chunk_count": None,
     }
 
 
@@ -577,15 +579,7 @@ async def test_analyzing_with_one_done_slot_returns_partial_sidebar_payload(
     assert body["sidebar_payload"]["source_url"] == url
     # Done slot data should be present; running slots get empty defaults
     assert body["sidebar_payload"]["safety"]["harmful_content_matches"] == [
-        {
-            "utterance_id": "u-live-safety",
-            "utterance_text": "Live safety match",
-            "max_score": 0.91,
-            "categories": {"harassment": True},
-            "scores": {"harassment": 0.91},
-            "flagged_categories": ["harassment"],
-            "source": "openai",
-        }
+        _harmful_match("u-live-safety", "Live safety match")
     ]
     assert body["sidebar_payload"]["tone_dynamics"]["flashpoint_matches"] == []
 

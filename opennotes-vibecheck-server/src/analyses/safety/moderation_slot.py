@@ -6,6 +6,7 @@ if one provider fails the other's matches are still emitted. Both failing
 raises `ModerationSlotError` so the downstream slot worker can retry via
 Cloud Tasks.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -37,9 +38,7 @@ async def run_safety_moderation(
 ) -> dict[str, Any]:
     utterances = list(getattr(payload, "utterances", []) or [])
     utterance_text_by_id = {
-        str(getattr(utterance, "utterance_id", "") or ""): (
-            getattr(utterance, "text", "") or ""
-        )
+        str(getattr(utterance, "utterance_id", "") or ""): (getattr(utterance, "text", "") or "")
         for utterance in utterances
     }
 
@@ -51,10 +50,8 @@ async def run_safety_moderation(
 
     async with httpx.AsyncClient() as hx:
         openai_task = check_content_moderation_bulk(utterances, moderation_service)
-        gcp_task = moderate_texts_gcp(utterances, httpx_client=hx)
-        openai_res, gcp_res = await asyncio.gather(
-            openai_task, gcp_task, return_exceptions=True
-        )
+        gcp_task = moderate_texts_gcp(utterances, httpx_client=hx, settings=settings)
+        openai_res, gcp_res = await asyncio.gather(openai_task, gcp_task, return_exceptions=True)
 
     matches: list[dict[str, Any]] = []
     if isinstance(openai_res, BaseException):
@@ -63,9 +60,10 @@ async def run_safety_moderation(
         for m in openai_res:
             if m is not None:
                 match = m.model_dump()
-                match["utterance_text"] = utterance_text_by_id.get(
-                    str(match.get("utterance_id", ""))
-                ) or match.get("utterance_text", "")
+                if not match.get("utterance_text"):
+                    match["utterance_text"] = (
+                        utterance_text_by_id.get(str(match.get("utterance_id", ""))) or ""
+                    )
                 matches.append(match)
     if isinstance(gcp_res, BaseException):
         logger.warning("gcp moderation failed: %s", gcp_res)
@@ -73,9 +71,10 @@ async def run_safety_moderation(
         for m in gcp_res:
             if m is not None:
                 match = m.model_dump()
-                match["utterance_text"] = utterance_text_by_id.get(
-                    str(match.get("utterance_id", ""))
-                ) or match.get("utterance_text", "")
+                if not match.get("utterance_text"):
+                    match["utterance_text"] = (
+                        utterance_text_by_id.get(str(match.get("utterance_id", ""))) or ""
+                    )
                 matches.append(match)
 
     if isinstance(openai_res, BaseException) and isinstance(gcp_res, BaseException):
