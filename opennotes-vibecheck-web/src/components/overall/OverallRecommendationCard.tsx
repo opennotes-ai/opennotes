@@ -25,7 +25,7 @@ function isFalsePositiveRationale(text: string): boolean {
 }
 
 function isRawModerationScoreSignal(text: string): boolean {
-  return /^(?:text\s*:\s*)?[a-z][a-z /-]*\s+(?:score\s+)?\d(?:\.\d+)?$/i.test(
+  return /^(?:text\s*:\s*)?[a-z][a-z /-]*\s+(?:score\s+)?\d+\.\d+$/i.test(
     text.trim(),
   );
 }
@@ -112,10 +112,14 @@ export function OverallRecommendationCard(
           data-testid="overall-recommendation-card"
           class={`flex items-center gap-2 border p-3 text-sm font-semibold ${VERDICT_CLASSES[data().verdict]}`}
         >
-          <span data-testid="overall-recommendation-verdict">
+          <span data-testid="overall-recommendation-verdict" class="shrink-0">
             {data().verdict === "pass" ? "Overall: OK." : "Overall: Flag!"}
           </span>
-          <span data-testid="overall-recommendation-reason" class="font-normal">
+          <span
+            data-testid="overall-recommendation-reason"
+            class="font-normal min-w-0 flex-1 truncate"
+            title={data().reason}
+          >
             {data().reason}
           </span>
         </Card>

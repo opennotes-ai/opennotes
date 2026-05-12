@@ -196,7 +196,7 @@ describe("<OverallRecommendationCard />", () => {
     expect(reason.textContent).toBe("Content is safe");
   });
 
-  it("renders long rationale first clause verbatim", () => {
+  it("renders rationale first clause without word truncation", () => {
     render(() => (
       <OverallRecommendationCard
         recommendation={makeRecommendation({
@@ -240,6 +240,87 @@ describe("<OverallRecommendationCard />", () => {
     ));
 
     expect(screen.queryByTestId("overall-recommendation-card")).toBeNull();
+  });
+
+  it("does not treat benign integer-trailing signals as raw moderation scores", () => {
+    render(() => (
+      <OverallRecommendationCard
+        recommendation={makeRecommendation({
+          level: "caution",
+          top_signals: ["Phishing link 1"],
+          rationale:
+            "Moderation flags judged to be false positives. Some risk remains.",
+        })}
+      />
+    ));
+
+    const reason = screen.getByTestId("overall-recommendation-reason");
+    expect(reason.textContent).toBe("Phishing link 1");
+  });
+
+  it("does not treat year-trailing signals as raw moderation scores", () => {
+    render(() => (
+      <OverallRecommendationCard
+        recommendation={makeRecommendation({
+          level: "caution",
+          top_signals: ["Adult imagery 2024"],
+          rationale:
+            "Moderation flags judged to be false positives. Concerns remain.",
+        })}
+      />
+    ));
+
+    const reason = screen.getByTestId("overall-recommendation-reason");
+    expect(reason.textContent).toBe("Adult imagery 2024");
+  });
+
+  it("still suppresses decimal-scored signals when rationale is FP", () => {
+    render(() => (
+      <OverallRecommendationCard
+        recommendation={makeRecommendation({
+          level: "caution",
+          top_signals: ["text: Legal 1.0", "Repeated low-severity toxicity"],
+          rationale:
+            "Legal scores are judged to be false positives. Repeated low-severity toxicity remains.",
+        })}
+      />
+    ));
+
+    const reason = screen.getByTestId("overall-recommendation-reason");
+    expect(reason.textContent).toBe("Repeated low-severity toxicity");
+  });
+
+  it("empty-leading top_signal yields next non-empty signal (PR #554 .find precedence)", () => {
+    render(() => (
+      <OverallRecommendationCard
+        recommendation={makeRecommendation({
+          level: "safe",
+          top_signals: ["", "Real signal"],
+          rationale: "Should not fall through to rationale.",
+        })}
+      />
+    ));
+
+    const reason = screen.getByTestId("overall-recommendation-reason");
+    expect(reason.textContent).toBe("Real signal");
+  });
+
+  it("reason span has truncate constraint and title tooltip for overflow", () => {
+    const longSignal =
+      "An extremely long top signal description that would otherwise push the verdict row outside of the card boundary on narrow viewports";
+    render(() => (
+      <OverallRecommendationCard
+        recommendation={makeRecommendation({
+          level: "safe",
+          top_signals: [longSignal],
+        })}
+      />
+    ));
+
+    const reason = screen.getByTestId("overall-recommendation-reason");
+    expect(reason.className).toContain("truncate");
+    expect(reason.className).toContain("min-w-0");
+    expect(reason.getAttribute("title")).toBe(longSignal);
   });
 
   it("whitespace-only rationale and no signals returns null (card not rendered)", () => {
