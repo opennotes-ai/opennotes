@@ -139,6 +139,29 @@ describe("HeadlineLeadIn headline skeleton", () => {
   });
 });
 
+describe("HeadlineLeadIn grid alignment (TASK-1612.01)", () => {
+  it("applies items-start to 2-column grid so headline card does not stretch to weather card height", () => {
+    render(() => (
+      <HeadlineLeadIn
+        headline={makeHeadline()}
+        weatherReport={makeWeatherReport()}
+      />
+    ));
+    const root = screen.getByTestId("headline-lead-in");
+    const cls = root.getAttribute("class") ?? "";
+    expect(cls).toMatch(/\bitems-start\b/);
+  });
+
+  it("does not apply items-start to single-column layout (no weather present)", () => {
+    render(() => (
+      <HeadlineLeadIn headline={makeHeadline()} weatherReport={null} />
+    ));
+    const root = screen.getByTestId("headline-lead-in");
+    const cls = root.getAttribute("class") ?? "";
+    expect(cls).not.toMatch(/\bitems-start\b/);
+  });
+});
+
 describe("HeadlineLeadIn weather-column collapse", () => {
   it("uses auto-fit 2-column layout while weather is loading (skeleton case)", () => {
     render(() => (

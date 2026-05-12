@@ -12,4 +12,24 @@ if (typeof window !== "undefined") {
       dispatchEvent: vi.fn(),
     }),
   });
+
+  if (typeof window.ResizeObserver === "undefined") {
+    window.ResizeObserver = class ResizeObserver {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    };
+  }
+
+  if (typeof window.IntersectionObserver === "undefined") {
+    window.IntersectionObserver = class IntersectionObserver {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+      takeRecords() { return []; }
+      readonly root = null;
+      readonly rootMargin = "";
+      readonly thresholds = [];
+    };
+  }
 }

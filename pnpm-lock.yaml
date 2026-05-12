@@ -353,6 +353,12 @@ importers:
       echarts:
         specifier: ^6.0.0
         version: 6.0.0
+      embla-carousel-autoplay:
+        specifier: 9.0.0-rc02
+        version: 9.0.0-rc02(embla-carousel@9.0.0-rc02)
+      embla-carousel-ssr:
+        specifier: 9.0.0-rc02
+        version: 9.0.0-rc02(embla-carousel@9.0.0-rc02)
       google-auth-library:
         specifier: ^10.6.1
         version: 10.6.2
@@ -460,6 +466,15 @@ importers:
       '@opennotes/tokens':
         specifier: workspace:*
         version: link:../tokens
+      embla-carousel-autoplay:
+        specifier: 9.0.0-rc02
+        version: 9.0.0-rc02(embla-carousel@9.0.0-rc02)
+      embla-carousel-solid:
+        specifier: 9.0.0-rc02
+        version: 9.0.0-rc02(solid-js@1.9.12)
+      embla-carousel-ssr:
+        specifier: 9.0.0-rc02
+        version: 9.0.0-rc02(embla-carousel@9.0.0-rc02)
     devDependencies:
       '@kobalte/core':
         specifier: ^0.13.11
@@ -470,6 +485,9 @@ importers:
       '@solidjs/testing-library':
         specifier: ^0.8.10
         version: 0.8.10(@solidjs/router@0.15.4(solid-js@1.9.12))(solid-js@1.9.12)
+      '@testing-library/jest-dom':
+        specifier: ^6.9.1
+        version: 6.9.1
       '@types/node':
         specifier: ^20.19.39
         version: 20.19.39
@@ -494,6 +512,9 @@ importers:
       typescript:
         specifier: ^5.7.3
         version: 5.9.3
+      vite-plugin-solid:
+        specifier: ^2.11.12
+        version: 2.11.12(@testing-library/jest-dom@6.9.1)(solid-js@1.9.12)(vite@6.4.2(@types/node@20.19.39)(jiti@2.6.1)(lightningcss@1.32.0)(terser@5.46.1)(tsx@4.21.0))
       vitest:
         specifier: ^4.0.18
         version: 4.1.4(@opentelemetry/api@1.9.1)(@types/node@20.19.39)(jsdom@29.0.2)(vite@6.4.2(@types/node@20.19.39)(jiti@2.6.1)(lightningcss@1.32.0)(terser@5.46.1)(tsx@4.21.0))
@@ -3752,6 +3773,29 @@ packages:
 
   electron-to-chromium@1.5.340:
     resolution: {integrity: sha512-908qahOGocRMinT2nM3ajCEM99H4iPdv84eagPP3FfZy/1ZGeOy2CZYzjhms81ckOPCXPlW7LkY4XpxD8r1DrA==}
+
+  embla-carousel-autoplay@9.0.0-rc02:
+    resolution: {integrity: sha512-xmHUL/dVL0EN9Tf6EeWirc1eEYEr8uxEG4l4QxzRPrUbHhshTzPcKfB0DatAmOI6rcTldqQsslbffNqQmg9E3Q==}
+    peerDependencies:
+      embla-carousel: 9.0.0-rc02
+
+  embla-carousel-reactive-utils@9.0.0-rc02:
+    resolution: {integrity: sha512-H1c+yUbcVST9eJoGU+05L1vSDyBs0hf/Gf1OadHYIJ3asBfyvn6oaGCs2wXq1D8/f09y0wwCxeRxT9UZU/TxJA==}
+    peerDependencies:
+      embla-carousel: 9.0.0-rc02
+
+  embla-carousel-solid@9.0.0-rc02:
+    resolution: {integrity: sha512-Q5Hya84Cr/b1qUV7DLW+nbP7NHDfQPz3hY+DnUfl2xMxS8H4+ESEHxN7ovEmLUvV/XUhkZBcK18m2UhRtFUbEQ==}
+    peerDependencies:
+      solid-js: ^1.0.0
+
+  embla-carousel-ssr@9.0.0-rc02:
+    resolution: {integrity: sha512-cgzc8L36Y5BWkP+UR3CQalWyCVM7JWvvjRt2wmXWNnVuIyXuoRdZ/3/AdTsppEC/J29jOvi9m9cikfbP41rBtw==}
+    peerDependencies:
+      embla-carousel: 9.0.0-rc02
+
+  embla-carousel@9.0.0-rc02:
+    resolution: {integrity: sha512-GOQBX6v5cNk/ptfuHUoHhW9rvl5KeSGsBoppaUqtihu2kDmQAyzvnH/95r3TaSScFSJTj68V9AM6E5nq3jUVcQ==}
 
   emittery@0.13.1:
     resolution: {integrity: sha512-DeWwawk6r5yR9jFgnDKYt4sLS0LmHJJi3ZOnb5/JdbYwj3nW+FxQnHIjhBKz8YLC7oRNPVM9NQ47I3CVx34eqQ==}
@@ -10001,6 +10045,26 @@ snapshots:
   ee-first@1.1.1: {}
 
   electron-to-chromium@1.5.340: {}
+
+  embla-carousel-autoplay@9.0.0-rc02(embla-carousel@9.0.0-rc02):
+    dependencies:
+      embla-carousel: 9.0.0-rc02
+
+  embla-carousel-reactive-utils@9.0.0-rc02(embla-carousel@9.0.0-rc02):
+    dependencies:
+      embla-carousel: 9.0.0-rc02
+
+  embla-carousel-solid@9.0.0-rc02(solid-js@1.9.12):
+    dependencies:
+      embla-carousel: 9.0.0-rc02
+      embla-carousel-reactive-utils: 9.0.0-rc02(embla-carousel@9.0.0-rc02)
+      solid-js: 1.9.12
+
+  embla-carousel-ssr@9.0.0-rc02(embla-carousel@9.0.0-rc02):
+    dependencies:
+      embla-carousel: 9.0.0-rc02
+
+  embla-carousel@9.0.0-rc02: {}
 
   emittery@0.13.1: {}
 
