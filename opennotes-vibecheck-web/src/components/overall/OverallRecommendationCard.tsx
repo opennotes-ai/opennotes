@@ -121,18 +121,38 @@ function isFalsePositiveRationale(text: string): boolean {
 }
 
 function isRawModerationScoreSignal(text: string): boolean {
-  return /^(?:text\s*:\s*)?[a-z][a-z /-]*\s+(?:score\s+)?\d+\.\d+$/i.test(
-    text.trim(),
-  );
+  const stripped = text.trim();
+  // Prefix-form: text:/image:/video: followed by a category-ish body ending
+  // in a decimal score (e.g. "image: max_likelihood 0.25", "text: Firearms &
+  // Weapons 0.769"). The body excludes digits to keep the match linear and
+  // avoid quadratic backtracking on malformed input.
+  if (/^(?:text|image|video)\s*:\s*[^\d\s][^\d]*\d+\.\d+$/i.test(stripped)) {
+    return true;
+  }
+  // No-prefix form: a short label-shaped string followed by a final decimal,
+  // e.g. "Firearms & Weapons 0.769" or "Death, Harm & Tragedy 0.85". Char
+  // class allows letters, spaces, '&', ',', '/', '-', and apostrophe so GCP
+  // categories like "Children's Interests" or "War & Conflict" match too.
+  return /^[a-z][a-z &,/'\-]*\s+(?:score\s+)?\d+\.\d+$/i.test(stripped);
+}
+
+function clauseContainsRawScore(clause: string): boolean {
+  // Catches embedded decimals like "Legal 1.0" or "0.769" inside a longer
+  // sentence — the suppress path should skip these clauses entirely, not
+  // just clauses that are themselves raw signals.
+  return /\d+\.\d+/.test(clause);
 }
 
 function rationaleConcernClauses(rationale: string): string[] {
   return rationale
-    .split(/[.;]|\s*,\s*but\s+|\s+but\s+/i)
+    // Split on sentence-ending '.' and ';' but NOT on decimals like "1.0".
+    // Also split on " but " / ", but " to break compound concession clauses.
+    .split(/(?<!\d)\.(?!\d)|;|\s*,\s*but\s+|\s+but\s+/i)
     .map((clause) => clause.trim())
     .filter((clause) => clause.length > 0)
     .filter((clause) => !isFalsePositiveRationale(clause))
-    .filter((clause) => !isRawModerationScoreSignal(clause));
+    .filter((clause) => !isRawModerationScoreSignal(clause))
+    .filter((clause) => !clauseContainsRawScore(clause));
 }
 
 function deriveReason(recommendation: SafetyRecommendation): string | null {
