@@ -9,9 +9,29 @@ type RiskLevel = components["schemas"]["RiskLevel"];
 
 export type OverallVerdict = "pass" | "flag";
 
+export interface OverallDecision {
+  verdict: OverallVerdict;
+  reason: string;
+}
+
+// The set of signals the overall verdict is decided over. Slots are grouped
+// by level — higher-level slots carry already-synthesized agent outputs;
+// lower-level slots carry raw analyzer findings. Today only the higher-level
+// safety recommendation and flashpoint matches participate; lower-level
+// signals are reserved for upcoming rules and the server-side
+// overall-recommendation agent that will eventually own this synthesis.
+export interface OverallSignals {
+  // Higher-level: synthesized agent outputs.
+  safetyRecommendation: SafetyRecommendation | null;
+  flashpointMatches?: FlashpointMatch[] | null;
+  // Lower-level: raw per-analyzer findings. Reserved slot, intentionally
+  // empty for now.
+  lowLevel?: Record<string, never>;
+}
+
 export interface OverallRecommendationCardProps {
   recommendation: SafetyRecommendation | null;
-  overall?: { verdict: OverallVerdict; reason: string } | null;
+  overall?: OverallDecision | null;
   flashpointMatches?: FlashpointMatch[] | null;
 }
 
@@ -42,10 +62,10 @@ function highestFlashpointRisk(
 }
 
 export function escalateForFlashpoint(
-  base: { verdict: OverallVerdict; reason: string } | null,
+  base: OverallDecision | null,
   recommendation: SafetyRecommendation | null,
   flashpointMatches: FlashpointMatch[] | null | undefined,
-): { verdict: OverallVerdict; reason: string } | null {
+): OverallDecision | null {
   if (base === null) return null;
   if (base.verdict !== "pass") return base;
   if (recommendation?.level !== "mild") return base;
@@ -121,11 +141,9 @@ function deriveReason(recommendation: SafetyRecommendation): string | null {
   return trimmedClause;
 }
 
-// TODO: replace derivation with top-level overall-recommendation agent response
-// once the server-side overall recommendation agent (upcoming) is integrated.
-function deriveOverall(
+function decideFromSafety(
   recommendation: SafetyRecommendation,
-): { verdict: OverallVerdict; reason: string } | null {
+): OverallDecision | null {
   const reason = deriveReason(recommendation);
   if (reason === null) {
     return null;
@@ -136,6 +154,31 @@ function deriveOverall(
   };
 }
 
+// Decide the overall verdict over the cross-signal bag. The function is a
+// composition of per-signal rules:
+//   1. Start from the higher-level safety recommendation (agent synthesis of
+//      lower-level moderation / web-risk / image / video findings).
+//   2. Apply tone-dynamics escalation when the safety verdict is mild but
+//      the conversation flashpoint detector says otherwise.
+//   3. (Future rules over lower-level signals layer in here.)
+//
+// This stays web-side until the server-side overall-recommendation agent
+// ships and owns the full synthesis; see
+// `docs/architecture/overall-verdict-cross-signal-escalation.md`.
+export function decideOverall(
+  signals: OverallSignals,
+): OverallDecision | null {
+  if (signals.safetyRecommendation === null) {
+    return null;
+  }
+  const base = decideFromSafety(signals.safetyRecommendation);
+  return escalateForFlashpoint(
+    base,
+    signals.safetyRecommendation,
+    signals.flashpointMatches,
+  );
+}
+
 const VERDICT_CLASSES: Record<OverallVerdict, string> = {
   pass: "bg-muted text-muted-foreground border-border",
   flag: "bg-destructive/5 text-destructive border-destructive/40",
@@ -144,15 +187,12 @@ const VERDICT_CLASSES: Record<OverallVerdict, string> = {
 export function OverallRecommendationCard(
   props: OverallRecommendationCardProps,
 ): JSX.Element | null {
-  const resolved = (): { verdict: OverallVerdict; reason: string } | null => {
+  const resolved = (): OverallDecision | null => {
     if (props.overall != null) return props.overall;
-    if (props.recommendation == null) return null;
-    const base = deriveOverall(props.recommendation);
-    return escalateForFlashpoint(
-      base,
-      props.recommendation,
-      props.flashpointMatches,
-    );
+    return decideOverall({
+      safetyRecommendation: props.recommendation,
+      flashpointMatches: props.flashpointMatches,
+    });
   };
 
   return (

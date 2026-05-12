@@ -26,9 +26,13 @@ Concretely: the safety agent rated a civil personal-attack thread `mild` (no slu
 
 ## Where computed
 
-Web-side, in `OverallRecommendationCard` via an exported helper `escalateForFlashpoint(base, recommendation, flashpointMatches)`.
+Web-side, in `OverallRecommendationCard.tsx`, via:
 
-Rationale: the long-standing TODO at the top of `OverallRecommendationCard.tsx` plans to replace web derivation with a server-side overall-recommendation agent that does the full synthesis (safety + tone dynamics + page content + anything else that lands). Adding server schema fields for each cross-signal rule before that agent ships would create churn for logic the agent will own anyway. Web-side keeps each rule small and easy to remove.
+- `decideOverall(signals: OverallSignals): OverallDecision | null` — the composition function. Takes a typed bag of signals (higher-level: `safetyRecommendation`, `flashpointMatches`; lower-level slot reserved) and runs each cross-signal rule in turn.
+- `decideFromSafety(recommendation)` — rule 1, the safety-recommendation base verdict.
+- `escalateForFlashpoint(base, recommendation, matches)` — rule 2, the tone-dynamics escalation described above.
+
+Rationale: the synthesis lives web-side only until the server-side overall-recommendation agent ships and owns the full cross-signal decision (safety + tone dynamics + page content + anything else that lands). Adding server schema fields for each rule before that agent ships would create churn for logic the agent will own anyway. Web-side keeps each rule small and easy to remove.
 
 ## Signal scope
 
@@ -49,7 +53,7 @@ When the server-side overall-recommendation agent ships, it owns the full synthe
 1. Server emits the final overall verdict + reason on the payload.
 2. `analyze.tsx` passes that through as `props.overall` (the existing manual-override path).
 3. Drop `flashpointMatches` from `OverallRecommendationCardProps` and remove `escalateForFlashpoint`.
-4. `deriveOverall` either also goes away, or stays only as a defensive fallback for legacy payloads.
+4. `decideOverall` / `decideFromSafety` either also go away, or stay only as a defensive fallback for legacy payloads.
 
 The third-variant question (an explicit "Overall: Caution!" between OK and Flag) becomes a server-side decision at that point.
 
