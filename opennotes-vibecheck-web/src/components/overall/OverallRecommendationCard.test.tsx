@@ -22,7 +22,7 @@ function makeRecommendation(
 }
 
 describe("<OverallRecommendationCard />", () => {
-  it("renders 'Overall: Pass.' for safe level with top_signals[0] as reason", () => {
+  it("renders 'Overall: OK.' for safe level with top_signals[0] as reason", () => {
     render(() => (
       <OverallRecommendationCard
         recommendation={makeRecommendation({
@@ -34,11 +34,11 @@ describe("<OverallRecommendationCard />", () => {
 
     const verdict = screen.getByTestId("overall-recommendation-verdict");
     const reason = screen.getByTestId("overall-recommendation-reason");
-    expect(verdict.textContent).toBe("Overall: Pass.");
+    expect(verdict.textContent).toBe("Overall: OK.");
     expect(reason.textContent).toBe("educational context");
   });
 
-  it("renders 'Overall: Pass.' for mild level", () => {
+  it("renders 'Overall: OK.' for mild level", () => {
     render(() => (
       <OverallRecommendationCard
         recommendation={makeRecommendation({
@@ -49,7 +49,7 @@ describe("<OverallRecommendationCard />", () => {
     ));
 
     const verdict = screen.getByTestId("overall-recommendation-verdict");
-    expect(verdict.textContent).toBe("Overall: Pass.");
+    expect(verdict.textContent).toBe("Overall: OK.");
   });
 
   it("renders 'Overall: Flag!' for unsafe level", () => {
@@ -106,24 +106,26 @@ describe("<OverallRecommendationCard />", () => {
 
     const verdict = screen.getByTestId("overall-recommendation-verdict");
     const reason = screen.getByTestId("overall-recommendation-reason");
-    expect(verdict.textContent).toBe("Overall: Pass.");
+    expect(verdict.textContent).toBe("Overall: OK.");
     expect(reason.textContent).toBe("manually reviewed");
   });
 
-  it("truncates long top_signal to ≤6 words", () => {
+  it("renders long top_signal verbatim", () => {
     render(() => (
       <OverallRecommendationCard
         recommendation={makeRecommendation({
           level: "safe",
-          top_signals: ["one two three four five six seven eight"],
+          top_signals: [
+            "Text moderation flags triggered, but judged to be false positives.",
+          ],
         })}
       />
     ));
 
     const reason = screen.getByTestId("overall-recommendation-reason");
-    const words = reason.textContent?.trim().split(/\s+/) ?? [];
-    expect(words.length).toBeLessThanOrEqual(6);
-    expect(reason.textContent).toBe("one two three four five six");
+    expect(reason.textContent).toBe(
+      "Text moderation flags triggered, but judged to be false positives.",
+    );
   });
 
   it("falls back to rationale first clause when top_signals is empty", () => {
@@ -139,6 +141,23 @@ describe("<OverallRecommendationCard />", () => {
 
     const reason = screen.getByTestId("overall-recommendation-reason");
     expect(reason.textContent).toBe("Content is safe");
+  });
+
+  it("renders long rationale first clause verbatim", () => {
+    render(() => (
+      <OverallRecommendationCard
+        recommendation={makeRecommendation({
+          level: "safe",
+          top_signals: [],
+          rationale: "Text moderation flags triggered but judged false positives, no issues found.",
+        })}
+      />
+    ));
+
+    const reason = screen.getByTestId("overall-recommendation-reason");
+    expect(reason.textContent).toBe(
+      "Text moderation flags triggered but judged false positives",
+    );
   });
 
   it("whitespace-only top_signals[0] falls back to rationale", () => {

@@ -18,18 +18,12 @@ function verdictFromLevel(level: SafetyLevel): OverallVerdict {
   return PASS_LEVELS.includes(level) ? "pass" : "flag";
 }
 
-function truncateToWords(text: string, maxWords: number): string {
-  const words = text.trim().split(/\s+/);
-  if (words.length <= maxWords) return text.trim();
-  return words.slice(0, maxWords).join(" ");
-}
-
 function deriveReason(recommendation: SafetyRecommendation): string | null {
   const signals = recommendation.top_signals;
   if (signals && signals.length > 0) {
     const firstSignal = signals[0]?.trim();
     if (firstSignal) {
-      return truncateToWords(firstSignal, 6);
+      return firstSignal;
     }
   }
   const rationale = recommendation.rationale.trim();
@@ -41,7 +35,7 @@ function deriveReason(recommendation: SafetyRecommendation): string | null {
   if (!trimmedClause) {
     return null;
   }
-  return truncateToWords(trimmedClause, 6);
+  return trimmedClause;
 }
 
 // TODO: replace derivation with top-level overall-recommendation agent response
@@ -81,7 +75,7 @@ export function OverallRecommendationCard(
           class={`flex items-center gap-2 border p-3 text-sm font-semibold ${VERDICT_CLASSES[data().verdict]}`}
         >
           <span data-testid="overall-recommendation-verdict">
-            {data().verdict === "pass" ? "Overall: Pass." : "Overall: Flag!"}
+            {data().verdict === "pass" ? "Overall: OK." : "Overall: Flag!"}
           </span>
           <span data-testid="overall-recommendation-reason" class="font-normal">
             {data().reason}

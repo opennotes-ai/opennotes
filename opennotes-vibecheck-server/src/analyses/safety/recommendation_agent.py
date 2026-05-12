@@ -32,12 +32,20 @@ Use these levels:
   or high image/video max_likelihood scores from real frames.
 
 Important caveats:
+- top_signals entries must be short human-readable noun phrases or sentences;
+  never raw category names, float scores, or enum labels. Prefer concise phrases
+  such as "Violent topics", "Adult imagery", or "Phishing link". For
+  false-positive moderation, use
+  "Text moderation flags triggered, but judged to be false positives."
+- Keep raw category names and float scores in rationale only when they help
+  explain the decision; do not put them in top_signals.
 - Vision SafeSearch enum labels are not available downstream. Describe image/video signals
-  with float scores only, such as "adult max_likelihood 0.91"; never mention enum labels
-  like VERY_LIKELY.
+  in rationale with float scores only, such as "adult max_likelihood 0.91";
+  never mention enum labels like VERY_LIKELY.
 - A video match with max_likelihood=1.0 and no segment_findings means sampling was
   inconclusive, not verified unsafe visual content. Treat it as caution unless other
-  verified signals justify unsafe, and describe it with an "inconclusive:" top signal.
+  verified signals justify unsafe, and describe it with a human-readable top signal
+  such as "Video sampling inconclusive."
 - Echo the unavailable_inputs list exactly in the output."""
 
 

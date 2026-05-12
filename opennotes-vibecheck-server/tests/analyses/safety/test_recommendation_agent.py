@@ -39,6 +39,18 @@ def test_recommendation_prompt_defines_all_four_levels() -> None:
     assert "- unsafe: verified high-risk signals" in RECOMMENDATION_SYSTEM_PROMPT
 
 
+def test_recommendation_prompt_requires_human_readable_top_signals() -> None:
+    assert (
+        "top_signals entries must be short human-readable noun phrases or sentences"
+        in RECOMMENDATION_SYSTEM_PROMPT
+    )
+    assert (
+        "Text moderation flags triggered, but judged to be false positives."
+        in RECOMMENDATION_SYSTEM_PROMPT
+    )
+    assert "Violent topics" in RECOMMENDATION_SYSTEM_PROMPT
+
+
 async def test_run_safety_recommendation_serializes_inputs_for_agent(monkeypatch):
     agent = StubAgent(
         SafetyRecommendation(
