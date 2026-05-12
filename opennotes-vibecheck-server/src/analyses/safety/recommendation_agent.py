@@ -37,6 +37,11 @@ Important caveats:
   such as "Violent topics", "Adult imagery", or "Phishing link". For
   false-positive moderation, use
   "Text moderation flags triggered, but judged to be false positives."
+- In false-positive-heavy caution cases, do not lead top_signals with dismissed raw moderation scores.
+  Examples of dismissed raw scores include "text: Legal 1.0", "text: Firearms 0.98", or
+  "text: Illicit Drugs 0.93". If caution still applies, top_signals[0] must name
+  the remaining verified concern, such as "Repeated low-severity toxicity" or
+  "Mild violent rhetoric".
 - Keep raw category names and float scores in rationale only when they help
   explain the decision; do not put them in top_signals.
 - Vision SafeSearch enum labels are not available downstream. Describe image/video signals

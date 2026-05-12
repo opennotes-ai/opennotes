@@ -128,6 +128,59 @@ describe("<OverallRecommendationCard />", () => {
     );
   });
 
+  it("keeps caution flagged but skips raw false-positive score reason", () => {
+    render(() => (
+      <OverallRecommendationCard
+        recommendation={makeRecommendation({
+          level: "caution",
+          top_signals: [
+            "text: Legal 1.0",
+            "Repeated low-severity toxicity",
+          ],
+          rationale:
+            "Legal, Firearms, and Illicit Drugs scores are judged to be false positives. Repeated low-severity toxicity remains.",
+        })}
+      />
+    ));
+
+    const verdict = screen.getByTestId("overall-recommendation-verdict");
+    const reason = screen.getByTestId("overall-recommendation-reason");
+    expect(verdict.textContent).toBe("Overall: Flag!");
+    expect(reason.textContent).toBe("Repeated low-severity toxicity");
+  });
+
+  it("falls back to remaining rationale concern when first signal is a false-positive score", () => {
+    render(() => (
+      <OverallRecommendationCard
+        recommendation={makeRecommendation({
+          level: "caution",
+          top_signals: ["text: Legal 1.0"],
+          rationale:
+            "Legal, Firearms, and Illicit Drugs scores are judged to be false positives. Mild violent rhetoric remains.",
+        })}
+      />
+    ));
+
+    const reason = screen.getByTestId("overall-recommendation-reason");
+    expect(reason.textContent).toBe("Mild violent rhetoric remains");
+  });
+
+  it("finds remaining rationale concern after false-positive but clause", () => {
+    render(() => (
+      <OverallRecommendationCard
+        recommendation={makeRecommendation({
+          level: "caution",
+          top_signals: ["text: Legal 1.0"],
+          rationale:
+            "Legal score is judged to be false positive, but repeated low-severity toxicity remains.",
+        })}
+      />
+    ));
+
+    const reason = screen.getByTestId("overall-recommendation-reason");
+    expect(reason.textContent).toBe("repeated low-severity toxicity remains");
+  });
+
   it("falls back to rationale first clause when top_signals is empty", () => {
     render(() => (
       <OverallRecommendationCard

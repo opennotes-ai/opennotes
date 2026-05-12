@@ -18,17 +18,55 @@ function verdictFromLevel(level: SafetyLevel): OverallVerdict {
   return PASS_LEVELS.includes(level) ? "pass" : "flag";
 }
 
+function isFalsePositiveRationale(text: string): boolean {
+  return /false positives?|judged (?:to be )?false positives?|dismissed/i.test(
+    text,
+  );
+}
+
+function isRawModerationScoreSignal(text: string): boolean {
+  return /^(?:text\s*:\s*)?[a-z][a-z /-]*\s+(?:score\s+)?\d(?:\.\d+)?$/i.test(
+    text.trim(),
+  );
+}
+
+function rationaleConcernClauses(rationale: string): string[] {
+  return rationale
+    .split(/[.;]|\s*,\s*but\s+|\s+but\s+/i)
+    .map((clause) => clause.trim())
+    .filter((clause) => clause.length > 0)
+    .filter((clause) => !isFalsePositiveRationale(clause))
+    .filter((clause) => !isRawModerationScoreSignal(clause));
+}
+
 function deriveReason(recommendation: SafetyRecommendation): string | null {
   const signals = recommendation.top_signals;
+  const rationale = recommendation.rationale.trim();
+  const hasRawScoreSignal = signals?.some((signal) =>
+    isRawModerationScoreSignal(signal),
+  ) ?? false;
+  const suppressRawScoreSignals =
+    hasRawScoreSignal && isFalsePositiveRationale(rationale);
   if (signals && signals.length > 0) {
-    const firstSignal = signals[0]?.trim();
-    if (firstSignal) {
+    const firstSignal = signals
+      .map((signal) => signal.trim())
+      .find(
+        (signal) =>
+          signal.length > 0 &&
+          (!suppressRawScoreSignals || !isRawModerationScoreSignal(signal)),
+      );
+    if (firstSignal !== undefined) {
       return firstSignal;
     }
   }
-  const rationale = recommendation.rationale.trim();
   if (!rationale) {
     return null;
+  }
+  if (suppressRawScoreSignals) {
+    const concernClause = rationaleConcernClauses(rationale)[0];
+    if (concernClause) {
+      return concernClause;
+    }
   }
   const firstClause = rationale.split(/[,.]/, 1)[0] ?? rationale;
   const trimmedClause = firstClause.trim();

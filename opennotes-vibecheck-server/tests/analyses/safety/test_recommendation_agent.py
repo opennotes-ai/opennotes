@@ -51,6 +51,15 @@ def test_recommendation_prompt_requires_human_readable_top_signals() -> None:
     assert "Violent topics" in RECOMMENDATION_SYSTEM_PROMPT
 
 
+def test_recommendation_prompt_prioritizes_remaining_concern_after_false_positives() -> None:
+    assert "false-positive-heavy caution cases" in RECOMMENDATION_SYSTEM_PROMPT
+    assert "do not lead top_signals with dismissed raw moderation scores" in (
+        RECOMMENDATION_SYSTEM_PROMPT
+    )
+    assert "Repeated low-severity toxicity" in RECOMMENDATION_SYSTEM_PROMPT
+    assert "Mild violent rhetoric" in RECOMMENDATION_SYSTEM_PROMPT
+
+
 async def test_run_safety_recommendation_serializes_inputs_for_agent(monkeypatch):
     agent = StubAgent(
         SafetyRecommendation(
