@@ -17,18 +17,12 @@ type WeatherLabelEntry = {
 type WeatherVariant = keyof typeof VARIANT_CLASSES;
 
 export const VARIANT_CLASSES = {
-  sky:          "inline-flex rounded-md px-2 py-1 text-lg font-semibold text-sky-700 dark:text-sky-300",
-  indigo:       "inline-flex rounded-md px-2 py-1 text-lg font-semibold text-indigo-700 dark:text-indigo-300",
-  stone:        "inline-flex rounded-md px-2 py-1 text-lg font-semibold text-stone-700 dark:text-stone-300",
-  emerald:      "inline-flex rounded-md px-2 py-1 text-lg font-semibold text-emerald-700 dark:text-emerald-300",
-  teal:         "inline-flex rounded-md px-2 py-1 text-lg font-semibold text-teal-700 dark:text-teal-300",
-  cyan:         "inline-flex rounded-md px-2 py-1 text-lg font-semibold text-cyan-700 dark:text-cyan-300",
-  lime:         "inline-flex rounded-md px-2 py-1 text-lg font-semibold text-lime-700 dark:text-lime-300",
-  fuchsia:      "inline-flex rounded-md px-2 py-1 text-lg font-semibold text-fuchsia-700 dark:text-fuchsia-300",
-  amber:        "inline-flex rounded-md px-2 py-1 text-lg font-semibold text-amber-700 dark:text-amber-300",
-  slate:        "inline-flex rounded-md px-2 py-1 text-lg font-semibold text-slate-700 dark:text-slate-300",
-  orange:       "inline-flex rounded-md px-2 py-1 text-lg font-semibold text-orange-700 dark:text-orange-300",
-  violet:       "inline-flex rounded-md px-2 py-1 text-lg font-semibold text-violet-700 dark:text-violet-300",
+  positive:     "inline-flex rounded-md px-2 py-1 text-lg font-semibold text-emerald-700 dark:text-emerald-300",
+  evidence:     "inline-flex rounded-md px-2 py-1 text-lg font-semibold text-sky-700 dark:text-sky-300",
+  personal:     "inline-flex rounded-md px-2 py-1 text-lg font-semibold text-indigo-700 dark:text-indigo-300",
+  neutral:      "inline-flex rounded-md px-2 py-1 text-lg font-semibold text-stone-700 dark:text-stone-300",
+  edge:         "inline-flex rounded-md px-2 py-1 text-lg font-semibold text-orange-700 dark:text-orange-300",
+  negative:     "inline-flex rounded-md px-2 py-1 text-lg font-semibold text-fuchsia-700 dark:text-fuchsia-300",
   "emerald-soft": "inline-flex rounded-md px-2 py-1 text-lg font-semibold text-emerald-800 dark:text-emerald-300 bg-emerald-100/70 dark:bg-emerald-900/30",
   yellow:       "inline-flex rounded-md px-2 py-1 text-lg font-semibold text-yellow-800 dark:text-yellow-300 bg-yellow-100/70 dark:bg-yellow-900/30",
   "amber-strong": "inline-flex rounded-md px-2 py-1 text-lg font-semibold text-amber-800 dark:text-amber-300 bg-amber-100/80 dark:bg-amber-900/40",
@@ -66,7 +60,7 @@ const _axisDefinitionsExhaustive: _AxisDefinitionsExhaustive = true;
 export const AXIS_DEFINITIONS: Record<AxisType, AxisDefinition> =
   weatherLabelsJson.axis_definitions as Record<AxisType, AxisDefinition>;
 
-const DEFAULT_VARIANT: WeatherVariant = "slate";
+const DEFAULT_VARIANT: WeatherVariant = "neutral";
 
 const WEATHER_LABELS = weatherLabelsJson as unknown as Record<string, WeatherLabelEntry>;
 
@@ -105,18 +99,12 @@ export function getAxisDefinition(axis: AxisType): AxisDefinition {
 }
 
 export const VARIANT_TEXT_CLASSES = {
-  sky:            "text-sky-700 dark:text-sky-300",
-  indigo:         "text-indigo-700 dark:text-indigo-300",
-  stone:          "text-stone-700 dark:text-stone-300",
-  emerald:        "text-emerald-700 dark:text-emerald-300",
-  teal:           "text-teal-700 dark:text-teal-300",
-  cyan:           "text-cyan-700 dark:text-cyan-300",
-  lime:           "text-lime-700 dark:text-lime-300",
-  fuchsia:        "text-fuchsia-700 dark:text-fuchsia-300",
-  amber:          "text-amber-700 dark:text-amber-300",
-  slate:          "text-slate-700 dark:text-slate-300",
-  orange:         "text-orange-700 dark:text-orange-300",
-  violet:         "text-violet-700 dark:text-violet-300",
+  positive:       "text-emerald-700 dark:text-emerald-300",
+  evidence:       "text-sky-700 dark:text-sky-300",
+  personal:       "text-indigo-700 dark:text-indigo-300",
+  neutral:        "text-stone-700 dark:text-stone-300",
+  edge:           "text-orange-700 dark:text-orange-300",
+  negative:       "text-fuchsia-700 dark:text-fuchsia-300",
   "emerald-soft": "text-emerald-700 dark:text-emerald-300",
   yellow:         "text-yellow-700 dark:text-yellow-300",
   "amber-strong": "text-amber-700 dark:text-amber-300",

@@ -81,20 +81,20 @@ describe("formatWeatherLabel — unknown slugs fall back to default title-caser"
 });
 
 describe("formatWeatherVariant", () => {
-  it("returns 'sky' for sourced", () => {
-    expect(formatWeatherVariant("sourced")).toBe("sky");
+  it("returns 'evidence' for sourced", () => {
+    expect(formatWeatherVariant("sourced")).toBe("evidence");
   });
 
-  it("returns 'indigo' for first_person", () => {
-    expect(formatWeatherVariant("first_person")).toBe("indigo");
+  it("returns 'personal' for first_person", () => {
+    expect(formatWeatherVariant("first_person")).toBe("personal");
   });
 
-  it("returns 'emerald' for insightful", () => {
-    expect(formatWeatherVariant("insightful")).toBe("emerald");
+  it("returns 'positive' for insightful", () => {
+    expect(formatWeatherVariant("insightful")).toBe("positive");
   });
 
-  it("returns 'slate' as default for unknown slugs", () => {
-    expect(formatWeatherVariant("unknown_slug")).toBe("slate");
+  it("returns 'neutral' as default for unknown slugs", () => {
+    expect(formatWeatherVariant("unknown_slug")).toBe("neutral");
   });
 });
 
@@ -110,7 +110,6 @@ type WeatherLabelEntry = {
 const NON_VARIANT_KEYS_TEST = new Set([
   "variant_hex_colors",
   "valence_hex_colors",
-  "variant_valence_groups",
   "axis_definitions",
 ]);
 const VARIANT_ENTRIES = Object.entries(weatherLabelsJson).filter(
@@ -175,9 +174,17 @@ describe("palette — no classic primary colors in VARIANT_CLASSES", () => {
     }
   });
 
-  it("contains 'lime' and 'fuchsia' keys in VARIANT_CLASSES", () => {
-    expect(Object.keys(VARIANT_CLASSES)).toContain("lime");
-    expect(Object.keys(VARIANT_CLASSES)).toContain("fuchsia");
+  it("contains the six valence keys in VARIANT_CLASSES", () => {
+    expect(Object.keys(VARIANT_CLASSES)).toEqual(
+      expect.arrayContaining([
+        "positive",
+        "evidence",
+        "personal",
+        "neutral",
+        "edge",
+        "negative",
+      ]),
+    );
   });
 });
 
@@ -230,13 +237,11 @@ describe("weather-labels.json — valence color groups", () => {
     }
   });
 
-  it("keeps the variant to valence-group map aligned with each label entry", () => {
+  it("uses the valence group as the non-safety variant name", () => {
     for (const [key, entry] of NON_SAFETY_VARIANT_ENTRIES) {
       expect(
-        weatherLabelsJson.variant_valence_groups[
-          entry.variant as keyof typeof weatherLabelsJson.variant_valence_groups
-        ],
-        `entry "${key}" variant "${entry.variant}" has a mismatched valence group`,
+        entry.variant,
+        `entry "${key}" should use its valence_group as the variant name`,
       ).toBe(entry.valence_group);
     }
   });
