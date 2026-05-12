@@ -69,13 +69,18 @@ function buildCumulativeOption(
   return {
     tooltip: { trigger: "axis" },
     legend: { bottom: 0, type: "scroll" },
-    grid: { left: 50, right: 20, top: 30, bottom: 40 },
+    grid: { left: 10, right: 20, top: 30, bottom: 40 },
     xAxis: {
       type: "category",
       data: timestamps,
       axisLabel: { formatter: formatAxisDate },
     },
-    yAxis: { type: "value" },
+    yAxis: {
+      type: "value",
+      axisLabel: { show: false },
+      axisTick: { show: false },
+      axisLine: { show: false },
+    },
     series,
   };
 }
