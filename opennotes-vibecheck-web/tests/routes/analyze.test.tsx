@@ -2271,6 +2271,10 @@ describe("AnalyzePage utterance refs", () => {
     setPolledJobState(jobWithFlashpoint());
     await flushMicrotasks();
 
+    expect(
+      (await screen.findByTestId("flashpoint-utterance-ref")).textContent,
+    ).toBe("comment #1");
+
     fireEvent.click(await screen.findByTestId("flashpoint-utterance-ref"));
     await waitFor(() => {
       expect(

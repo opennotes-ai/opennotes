@@ -80,7 +80,6 @@ export default function HighlightsReport(props: HighlightsReportProps) {
                           {(id) => (
                             <UtteranceRef
                               utteranceId={String(id())}
-                              label={`turn ${id()}`}
                               onClick={
                                 props.onUtteranceClick ?? (() => undefined)
                               }

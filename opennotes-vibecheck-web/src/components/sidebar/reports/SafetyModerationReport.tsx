@@ -133,10 +133,9 @@ export default function SafetyModerationReport(
                           when={match.utterance_text?.trim()}
                           fallback={
                             <p class="mt-2 font-mono text-[11px] text-muted-foreground">
-                              utterance{" "}
+                              source{" "}
                               <UtteranceRef
                                 utteranceId={String(match.utterance_id)}
-                                label={String(match.utterance_id)}
                                 onClick={props.onUtteranceClick ?? (() => undefined)}
                                 disabled={
                                   !props.canJumpToUtterance ||
