@@ -85,6 +85,7 @@ from src.analyses.opinions.trends_oppositions_slot import (
     run_trends_oppositions,
 )
 from src.analyses.safety._schemas import (
+    Divergence,
     HarmfulContentMatch,
     ImageModerationMatch,
     SafetyRecommendation,
@@ -96,6 +97,7 @@ from src.analyses.safety.moderation_slot import run_safety_moderation
 from src.analyses.safety.recommendation_agent import (
     SafetyRecommendationInputs,
     run_safety_recommendation,
+    safety_recommendation_divergence_attrs,
 )
 from src.analyses.safety.video_intelligence_worker import run_video_intelligence
 from src.analyses.safety.video_moderation_worker import run_video_moderation
@@ -124,6 +126,7 @@ from src.analyses.tone._flashpoint_schemas import FlashpointMatch
 from src.analyses.tone._scd_schemas import SCDReport
 from src.analyses.tone.flashpoint_slot import run_flashpoint
 from src.analyses.tone.scd_slot import run_scd
+from src.cache.normalize import normalize_url
 from src.cache.scrape_cache import (
     CachedScrape,
     ScrapeTier,
@@ -353,7 +356,9 @@ WHERE job_id = $1
 """
 
 _LOAD_SAFETY_SECTIONS_SQL = """
-SELECT sections
+SELECT
+    sections,
+    url
 FROM vibecheck_jobs
 WHERE job_id = $1
   AND attempt_id = $2
@@ -423,6 +428,7 @@ SELECT
     j.sections,
     j.safety_recommendation,
     j.weather_report,
+    j.url,
     j.page_title AS page_title,
     j.page_kind AS page_kind
 FROM vibecheck_jobs j
@@ -2293,7 +2299,8 @@ def _done_slot_data(
 
 def _build_safety_recommendation_inputs(
     sections: dict[str, Any],
-) -> SafetyRecommendationInputs:
+    source_url: str | None = None,
+) -> tuple[SafetyRecommendationInputs, list[Divergence]]:
     unavailable_inputs: list[str] = []
     moderation_data = _done_slot_data(
         sections,
@@ -2319,24 +2326,69 @@ def _build_safety_recommendation_inputs(
         unavailable_inputs,
         "video_moderation",
     )
-    return SafetyRecommendationInputs(
-        harmful_content_matches=[
-            HarmfulContentMatch.model_validate(match)
-            for match in moderation_data.get("harmful_content_matches", [])
-        ],
-        web_risk_findings=[
-            WebRiskFinding.model_validate(finding)
-            for finding in web_risk_data.get("findings", [])
-        ],
-        image_moderation_matches=[
-            ImageModerationMatch.model_validate(match)
-            for match in image_data.get("matches", [])
-        ],
-        video_moderation_matches=[
-            VideoModerationMatch.model_validate(match)
-            for match in video_data.get("matches", [])
-        ],
-        unavailable_inputs=unavailable_inputs,
+    normalized_source_url = normalize_url(source_url) if source_url else None
+
+    web_risk_findings = _filter_same_page_web_risk_findings(
+        web_risk_data.get("findings", []),
+        normalized_source_url=normalized_source_url,
+    )
+    filtered_count = len(web_risk_data.get("findings", [])) - len(web_risk_findings)
+    synthesized_divergences = [
+        Divergence(
+            direction="discounted",
+            signal_source="Web Risk",
+            signal_detail="Same-page URL",
+            reason="The flagged URL is the same page under analysis.",
+        )
+        for _ in range(filtered_count)
+    ]
+
+    return (
+        SafetyRecommendationInputs(
+            harmful_content_matches=[
+                HarmfulContentMatch.model_validate(match)
+                for match in moderation_data.get("harmful_content_matches", [])
+            ],
+            web_risk_findings=web_risk_findings,
+            image_moderation_matches=[
+                ImageModerationMatch.model_validate(match)
+                for match in image_data.get("matches", [])
+            ],
+            video_moderation_matches=[
+                VideoModerationMatch.model_validate(match)
+                for match in video_data.get("matches", [])
+            ],
+            unavailable_inputs=unavailable_inputs,
+            source_url=source_url,
+        ),
+        synthesized_divergences,
+    )
+
+
+def _filter_same_page_web_risk_findings(
+    findings: Any,
+    *,
+    normalized_source_url: str | None,
+) -> list[WebRiskFinding]:
+    web_risk_findings: list[WebRiskFinding] = []
+    for finding in findings:
+        web_risk_finding = WebRiskFinding.model_validate(finding)
+        if normalized_source_url is not None:
+            normalized_finding_url = normalize_url(web_risk_finding.url)
+            if normalized_finding_url == normalized_source_url:
+                continue
+
+        web_risk_findings.append(web_risk_finding)
+    return web_risk_findings
+
+
+def _merge_safety_divergences(
+    recommendation: SafetyRecommendation, divergences: list[Divergence]
+) -> SafetyRecommendation:
+    if not divergences:
+        return recommendation
+    return recommendation.model_copy(
+        update={"divergences": [*recommendation.divergences, *divergences]}
     )
 
 
@@ -2352,8 +2404,20 @@ async def _run_safety_recommendation_step(
         return
 
     try:
-        inputs = _build_safety_recommendation_inputs(_parse_sections(row["sections"]))
+        source_url = row["url"]
+        inputs, synthesized_divergences = _build_safety_recommendation_inputs(
+            _parse_sections(row["sections"]),
+            source_url=source_url,
+        )
         recommendation = await run_safety_recommendation(inputs, settings)
+        recommendation = _merge_safety_divergences(
+            recommendation, synthesized_divergences
+        )
+        logfire.info(
+            "safety_recommendation_final_divergences",
+            synthesized_divergence_count=len(synthesized_divergences),
+            **safety_recommendation_divergence_attrs(recommendation),
+        )
     except Exception:
         logger.exception(
             "safety recommendation step failed for job %s attempt %s",
@@ -2375,6 +2439,7 @@ async def _run_safety_recommendation_step(
 def _build_headline_summary_inputs(
     sections: dict[str, Any],
     safety_recommendation_raw: Any,
+    source_url: str | None,
     page_title: str | None,
     page_kind_raw: str | None,
 ) -> HeadlineSummaryInputs:
@@ -2441,10 +2506,10 @@ def _build_headline_summary_inputs(
             HarmfulContentMatch.model_validate(match)
             for match in moderation_data.get("harmful_content_matches", [])
         ],
-        web_risk_findings=[
-            WebRiskFinding.model_validate(finding)
-            for finding in web_risk_data.get("findings", [])
-        ],
+        web_risk_findings=_filter_same_page_web_risk_findings(
+            web_risk_data.get("findings", []),
+            normalized_source_url=normalize_url(source_url) if source_url else None,
+        ),
         image_moderation_matches=[
             ImageModerationMatch.model_validate(match)
             for match in image_data.get("matches", [])
@@ -2755,6 +2820,7 @@ async def _run_headline_summary_step(
         inputs = _build_headline_summary_inputs(
             _parse_sections(row["sections"]),
             row["safety_recommendation"],
+            row["url"],
             row["page_title"],
             row["page_kind"],
         )

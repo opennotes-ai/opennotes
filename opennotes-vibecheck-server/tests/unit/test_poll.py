@@ -627,6 +627,7 @@ async def test_non_terminal_partial_payload_includes_safety_and_headline_columns
         "rationale": "Safety coverage is incomplete.",
         "top_signals": ["web risk unavailable"],
         "unavailable_inputs": ["web_risk"],
+        "divergences": [],
     }
     assert body["sidebar_payload"]["headline"] == {
         "text": "A developing story with partial analysis.",

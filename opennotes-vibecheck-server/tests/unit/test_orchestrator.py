@@ -20,7 +20,11 @@ from uuid import UUID, uuid4
 import asyncpg
 import pytest
 
-from src.analyses.safety._schemas import SafetyLevel, SafetyRecommendation
+from src.analyses.safety._schemas import (
+    Divergence,
+    SafetyLevel,
+    SafetyRecommendation,
+)
 from src.analyses.schemas import ErrorCode, SectionSlot, SectionSlug, SectionState
 from src.cache.scrape_cache import CachedScrape, SupabaseScrapeCache
 from src.coral import (
@@ -809,15 +813,25 @@ class FakePool:
 
 
 class SafetyRecommendationConn:
-    def __init__(self, sections, *, attempt_matches: bool = True) -> None:
+    def __init__(
+        self,
+        sections,
+        *,
+        attempt_matches: bool = True,
+        url: str | None = None,
+    ) -> None:
         self.sections = sections
         self.attempt_matches = attempt_matches
+        self.url = url
         self.written = None
 
     async def fetchrow(self, query, job_id, task_attempt):
+        assert (
+            "final_url" not in query
+        ), "safety recommendation SQL should not read final_url"
         if not self.attempt_matches:
             return None
-        return {"sections": self.sections}
+        return {"sections": self.sections, "url": self.url}
 
     async def execute(self, query, job_id, recommendation_json, task_attempt):
         self.written = {
@@ -880,22 +894,163 @@ async def test_safety_recommendation_step_writes_serialized_recommendation(monke
             level=SafetyLevel.UNSAFE,
             rationale="Verified malware URL and high moderation score.",
             top_signals=["Web Risk MALWARE on https://bad.example"],
+            divergences=[
+                {
+                    "direction": "escalated",
+                    "signal_source": "web_risk",
+                    "signal_detail": "MALWARE risk detected",
+                    "reason": "Safety recommendation elevated due to confirmed malware URL.",
+                }
+            ],
         )
 
     monkeypatch.setattr(orchestrator, "run_safety_recommendation", fake_run)
 
     job_id = uuid4()
     task_attempt = uuid4()
-    conn = SafetyRecommendationConn(_sections_for_safety_step())
+    conn = SafetyRecommendationConn(
+        _sections_for_safety_step(),
+        url="https://input.example/article",
+    )
 
     await orchestrator._run_safety_recommendation_step(
         FakePool(conn), job_id, task_attempt, MagicMock()
     )
 
     assert calls[0].web_risk_findings[0].threat_types == ["MALWARE"]
+    assert calls[0].source_url == "https://input.example/article"
     assert conn.written is not None
-    assert '"level": "unsafe"' in conn.written["recommendation_json"]
+    assert (
+        "safety_recommendation = $2::jsonb" in conn.written["query"]
+    )
+    recommendation_json = json.loads(conn.written["recommendation_json"])
+    assert recommendation_json["level"] == "unsafe"
+    assert recommendation_json["divergences"] == [
+        {
+            "direction": "escalated",
+            "signal_source": "web_risk",
+            "signal_detail": "MALWARE risk detected",
+            "reason": "Safety recommendation elevated due to confirmed malware URL.",
+        }
+    ]
     assert conn.written["task_attempt"] == task_attempt
+
+
+async def test_safety_recommendation_step_uses_job_url_for_source_url(
+    monkeypatch,
+) -> None:
+    from src.jobs import orchestrator
+
+    calls: list[Any] = []
+
+    async def fake_run(inputs, settings):
+        calls.append(inputs)
+        return SafetyRecommendation(
+            level=SafetyLevel.CAUTION,
+            rationale="No material concerns.",
+            top_signals=[],
+        )
+
+    monkeypatch.setattr(orchestrator, "run_safety_recommendation", fake_run)
+
+    conn = SafetyRecommendationConn(
+        _sections_for_safety_step(),
+        url="https://input.example/article",
+    )
+
+    await orchestrator._run_safety_recommendation_step(
+        FakePool(conn), uuid4(), uuid4(), MagicMock()
+    )
+
+    assert calls[0].source_url == "https://input.example/article"
+
+
+async def test_build_safety_recommendation_inputs_filters_same_page_web_risk_findings(
+) -> None:
+    from src.jobs import orchestrator
+
+    sections = _sections_for_safety_step(
+        **{
+            SectionSlug.SAFETY_WEB_RISK.value: _slot(
+                SectionState.DONE,
+                {
+                    "findings": [
+                        {
+                            "url": "https://example.com/article?utm_source=campaign",
+                            "threat_types": ["MALWARE"],
+                        },
+                        {
+                            "url": "https://example.com/other",
+                            "threat_types": ["SOCIAL_ENGINEERING"],
+                        },
+                    ]
+                },
+            )
+        }
+    )
+    inputs, synthetic_divergences = orchestrator._build_safety_recommendation_inputs(
+        sections,
+        source_url="https://example.com/article",
+    )
+
+    assert [finding.url for finding in inputs.web_risk_findings] == [
+        "https://example.com/other",
+    ]
+    assert len(synthetic_divergences) == 1
+    assert synthetic_divergences == [
+        Divergence(
+            direction="discounted",
+            signal_source="Web Risk",
+            signal_detail="Same-page URL",
+            reason="The flagged URL is the same page under analysis.",
+        )
+    ]
+
+
+async def test_build_safety_recommendation_inputs_keeps_mismatched_web_risk_findings(
+) -> None:
+    from src.jobs import orchestrator
+
+    sections = _sections_for_safety_step(
+        **{
+            SectionSlug.SAFETY_WEB_RISK.value: _slot(
+                SectionState.DONE,
+                {
+                    "findings": [
+                        {
+                            "url": "https://example.com/other-page",
+                            "threat_types": ["MALWARE"],
+                        }
+                    ]
+                },
+            )
+        }
+    )
+    inputs, synthetic_divergences = orchestrator._build_safety_recommendation_inputs(
+        sections,
+        source_url="https://example.com/article",
+    )
+
+    assert [finding.url for finding in inputs.web_risk_findings] == [
+        "https://example.com/other-page",
+    ]
+    assert synthetic_divergences == []
+
+
+async def test_build_safety_recommendation_inputs_keeps_findings_when_source_url_is_none(
+) -> None:
+    from src.jobs import orchestrator
+
+    sections = _sections_for_safety_step()
+    inputs, synthetic_divergences = orchestrator._build_safety_recommendation_inputs(
+        sections,
+        source_url=None,
+    )
+
+    assert [finding.url for finding in inputs.web_risk_findings] == [
+        "https://bad.example",
+    ]
+    assert synthetic_divergences == []
 
 
 async def test_safety_recommendation_step_marks_failed_slots_unavailable(monkeypatch):
@@ -4518,12 +4673,14 @@ class HeadlineSummaryConn:
         sections,
         *,
         safety_recommendation: Any = None,
+        url: str = "https://example.com/article",
         page_title: str | None = None,
         page_kind: str | None = "other",
         attempt_matches: bool = True,
     ) -> None:
         self.sections = sections
         self.safety_recommendation = safety_recommendation
+        self.url = url
         self.page_title = page_title
         self.page_kind = page_kind
         self.attempt_matches = attempt_matches
@@ -4535,6 +4692,7 @@ class HeadlineSummaryConn:
         return {
             "sections": self.sections,
             "safety_recommendation": self.safety_recommendation,
+            "url": self.url,
             "page_title": self.page_title,
             "page_kind": self.page_kind,
         }
@@ -4803,6 +4961,7 @@ def test_build_headline_summary_inputs_propagates_safety_recommendation(monkeypa
             "top_signals": ["topic-match content score 0.51"],
             "unavailable_inputs": [],
         },
+        None,
         "Title",
         "article",
     )
@@ -4812,12 +4971,50 @@ def test_build_headline_summary_inputs_propagates_safety_recommendation(monkeypa
     assert "safety_recommendation" not in inputs.unavailable_inputs
 
 
+def test_build_headline_summary_inputs_filters_same_page_web_risk_findings():
+    from src.jobs import orchestrator
+
+    sections = orchestrator._parse_sections(
+        _all_sections_done(
+            **{
+                SectionSlug.SAFETY_WEB_RISK.value: _slot(
+                    SectionState.DONE,
+                    {
+                        "findings": [
+                            {
+                                "url": "https://example.com/article?utm_source=feed",
+                                "threat_types": ["MALWARE"],
+                            },
+                            {
+                                "url": "https://example.com/download",
+                                "threat_types": ["SOCIAL_ENGINEERING"],
+                            },
+                        ]
+                    },
+                )
+            }
+        )
+    )
+
+    inputs = orchestrator._build_headline_summary_inputs(
+        sections,
+        None,
+        "https://example.com/article",
+        "Title",
+        "article",
+    )
+
+    assert [finding.url for finding in inputs.web_risk_findings] == [
+        "https://example.com/download"
+    ]
+
+
 def test_build_headline_summary_inputs_marks_safety_unavailable_when_null(monkeypatch):
     from src.jobs import orchestrator
 
     sections = orchestrator._parse_sections(_all_sections_done())
     inputs = orchestrator._build_headline_summary_inputs(
-        sections, None, None, None
+        sections, None, None, None, None
     )
 
     assert inputs.safety_recommendation is None
@@ -4841,7 +5038,7 @@ def test_build_headline_summary_inputs_propagates_trends_and_highlights_data(mon
         )
     )
     inputs = orchestrator._build_headline_summary_inputs(
-        sections, None, "Title", "article"
+        sections, None, None, "Title", "article"
     )
 
     assert inputs.trends_oppositions is not None
@@ -4874,7 +5071,7 @@ def test_build_headline_summary_inputs_marks_missing_opinion_slots_unavailable(s
         )
     )
     inputs = orchestrator._build_headline_summary_inputs(
-        sections, None, "Title", "article"
+        sections, None, None, "Title", "article"
     )
 
     if slug == SectionSlug.OPINIONS_SENTIMENTS_TRENDS_OPPOSITIONS:

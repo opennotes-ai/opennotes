@@ -7,6 +7,7 @@ import pytest
 from pydantic import ValidationError
 
 from src.analyses.safety._schemas import (
+    Divergence,
     HarmfulContentMatch,
     ImageModerationMatch,
     SafetyLevel,
@@ -148,6 +149,72 @@ class TestSafetyRecommendation:
 
         assert recommendation.top_signals == []
         assert recommendation.unavailable_inputs == []
+
+    def test_safety_recommendation_defaults_divergences_to_empty(self) -> None:
+        recommendation = SafetyRecommendation(
+            level=SafetyLevel.SAFE,
+            rationale="No safety issues detected.",
+        )
+
+        assert recommendation.divergences == []
+
+    def test_safety_recommendation_round_trips_with_divergences(self) -> None:
+        recommendation = SafetyRecommendation(
+            level=SafetyLevel.UNSAFE,
+            rationale="Confidence adjusted by weighted signals.",
+            divergences=[
+                Divergence(
+                    direction="discounted",
+                    signal_source="openai",
+                    signal_detail="Some signal was weak",
+                    reason="Lowered due to context ambiguity",
+                ),
+                {
+                    "direction": "escalated",
+                    "signal_source": "gcp",
+                    "signal_detail": "Video contains explicit scene",
+                    "reason": "Raised because multiple cues aligned",
+                },
+            ],
+        )
+
+        serialized = recommendation.model_dump_json()
+        restored = SafetyRecommendation.model_validate_json(serialized)
+
+        assert restored.divergences[0].direction == "discounted"
+        assert restored.divergences[0].signal_source == "openai"
+        assert restored.divergences[0].signal_detail == "Some signal was weak"
+        assert restored.divergences[0].reason == "Lowered due to context ambiguity"
+        assert restored.divergences[1].direction == "escalated"
+        assert restored.divergences[1].signal_source == "gcp"
+        assert restored.divergences[1].signal_detail == "Video contains explicit scene"
+        assert restored.divergences[1].reason == "Raised because multiple cues aligned"
+
+    def test_divergence_rejects_missing_required_fields(self) -> None:
+        with pytest.raises(ValidationError):
+            SafetyRecommendation(
+                level=SafetyLevel.CAUTION,
+                rationale="Needs stronger context",
+                divergences=[cast(Any, {"direction": "discounted", "reason": "x"})],
+            )
+
+    def test_divergence_rejects_unknown_direction(self) -> None:
+        with pytest.raises(ValidationError):
+            SafetyRecommendation(
+                level=SafetyLevel.CAUTION,
+                rationale="Needs stronger context",
+                divergences=[
+                    cast(
+                        Any,
+                        {
+                            "direction": "neutral",
+                            "signal_source": "openai",
+                            "signal_detail": "none",
+                            "reason": "x",
+                        },
+                    )
+                ],
+            )
 
     def test_safety_recommendation_round_trips_mild_level(self) -> None:
         recommendation = SafetyRecommendation(

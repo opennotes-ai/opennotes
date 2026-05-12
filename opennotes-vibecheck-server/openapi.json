@@ -1311,6 +1311,41 @@
         "title": "DedupedClaim",
         "description": "A cluster of semantically-equivalent claims across utterances."
       },
+      "Divergence": {
+        "properties": {
+          "direction": {
+            "type": "string",
+            "enum": [
+              "discounted",
+              "escalated"
+            ],
+            "title": "Direction"
+          },
+          "signal_source": {
+            "type": "string",
+            "title": "Signal Source",
+            "description": "Short display-ready source label, such as Text moderation, Web Risk, Image moderation, Video moderation, or Combined signals. Do not use raw enum values, snake_case identifiers, or scores."
+          },
+          "signal_detail": {
+            "type": "string",
+            "title": "Signal Detail",
+            "description": "Short display-ready description of the adjusted signal. Do not use raw category names, enum labels, or float scores."
+          },
+          "reason": {
+            "type": "string",
+            "title": "Reason",
+            "description": "User-readable reason the raw signal was discounted or escalated."
+          }
+        },
+        "type": "object",
+        "required": [
+          "direction",
+          "signal_source",
+          "signal_detail",
+          "reason"
+        ],
+        "title": "Divergence"
+      },
       "ErrorCode": {
         "type": "string",
         "enum": [
@@ -2625,6 +2660,13 @@
             },
             "type": "array",
             "title": "Unavailable Inputs"
+          },
+          "divergences": {
+            "items": {
+              "$ref": "#/components/schemas/Divergence"
+            },
+            "type": "array",
+            "title": "Divergences"
           }
         },
         "type": "object",
