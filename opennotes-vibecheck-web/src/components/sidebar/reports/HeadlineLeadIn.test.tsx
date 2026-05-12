@@ -264,7 +264,7 @@ describe("HeadlineLeadIn skeleton visibility (TASK-1605)", () => {
     expect(screen.getByTestId("weather-report-skeleton")).toBeDefined();
   });
 
-  it("headline skeleton bars use a higher-contrast class than bg-muted alone (bg-muted-foreground/15)", () => {
+  it("headline skeleton bars use default visible Skeleton styling", () => {
     render(() => (
       <HeadlineLeadIn
         headline={null}
@@ -277,11 +277,13 @@ describe("HeadlineLeadIn skeleton visibility (TASK-1605)", () => {
     expect(bars.length).toBeGreaterThanOrEqual(2);
     bars.forEach((bar) => {
       const cls = bar.getAttribute("class") ?? "";
-      expect(cls).toMatch(/bg-muted-foreground\/25/);
+      expect(cls).toMatch(/\bh-4\b/);
+      expect(cls).toMatch(/\bbg-muted\b/);
+      expect(cls).not.toMatch(/bg-muted-foreground\/25/);
     });
   });
 
-  it("weather skeleton bars use a higher-contrast class than bg-muted alone (bg-muted-foreground/15)", () => {
+  it("weather skeleton word bars use default visible Skeleton styling", () => {
     render(() => (
       <HeadlineLeadIn
         headline={null}
@@ -300,7 +302,9 @@ describe("HeadlineLeadIn skeleton visibility (TASK-1605)", () => {
       expect(skeletons.length).toBeGreaterThanOrEqual(1);
       skeletons.forEach((bar) => {
         const cls = bar.getAttribute("class") ?? "";
-        expect(cls).toMatch(/bg-muted-foreground\/25/);
+        expect(cls).toMatch(/\bh-4\b/);
+        expect(cls).toMatch(/\bbg-muted\b/);
+        expect(cls).not.toMatch(/bg-muted-foreground\/25/);
       });
     }
   });
