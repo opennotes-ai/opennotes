@@ -20,6 +20,7 @@ from src.analyses.claims._claims_schemas import (
 from src.config import Settings
 from src.services.gemini_agent import build_agent, run_vertex_agent_with_retry
 from src.services.vertex_limiter import vertex_slot
+from src.utterances.chunking_service import Chunk, get_chunking_service
 from src.utterances.schema import Utterance
 
 _SYSTEM_PROMPT = (
@@ -72,15 +73,18 @@ async def extract_claims_bulk(utterances: list[Utterance], settings: Settings) -
     if not utterances:
         return []
 
-    usable_indices: list[int] = []
+    chunk_refs: list[tuple[int, Chunk]] = []
     prompt_lines: list[str] = []
+    chunking_service = await get_chunking_service(settings)
     for i, u in enumerate(utterances):
-        text = (u.text or "").strip()
         uid = u.utterance_id or ""
-        if not text or not uid:
+        if not uid:
             continue
-        usable_indices.append(i)
-        prompt_lines.append(f"[{i}] {text}")
+        for chunk in chunking_service.chunk_text(u.text or ""):
+            if not chunk.text.strip():
+                continue
+            chunk_refs.append((i, chunk))
+            prompt_lines.append(f"[{len(chunk_refs) - 1}] {chunk.text}")
 
     out: list[list[Claim]] = [[] for _ in utterances]
     if not prompt_lines:
@@ -102,20 +106,25 @@ async def extract_claims_bulk(utterances: list[Utterance], settings: Settings) -
         )
 
     for entry in response.results:
-        idx = entry.utterance_index
-        if 0 <= idx < len(utterances):
+        flat_idx = entry.utterance_index
+        if 0 <= flat_idx < len(chunk_refs):
+            idx, chunk = chunk_refs[flat_idx]
             uid = utterances[idx].utterance_id or ""
             if not uid:
                 continue
-            out[idx] = [
-                Claim(
-                    claim_text=c.claim_text,
-                    utterance_id=uid,
-                    category=c.category,
-                    confidence=c.confidence,
-                )
-                for c in entry.claims
-            ]
+            out[idx].extend(
+                [
+                    Claim(
+                        claim_text=c.claim_text,
+                        utterance_id=uid,
+                        category=c.category,
+                        confidence=c.confidence,
+                        chunk_idx=chunk.chunk_idx if chunk.chunk_count > 1 else None,
+                        chunk_count=chunk.chunk_count,
+                    )
+                    for c in entry.claims
+                ]
+            )
     return out
 
 

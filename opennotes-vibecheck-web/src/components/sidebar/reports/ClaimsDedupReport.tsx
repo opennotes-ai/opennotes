@@ -15,6 +15,7 @@ import { FeedbackBell } from "../../feedback/FeedbackBell";
 type ClaimsReport = components["schemas"]["ClaimsReport"];
 type DedupedClaim = components["schemas"]["DedupedClaim"];
 type ClaimCategory = components["schemas"]["ClaimCategory"];
+type ChunkRef = components["schemas"]["ChunkRef"];
 type Premise = components["schemas"]["Premise"];
 type SupportingFact = components["schemas"]["SupportingFact"];
 
@@ -132,9 +133,14 @@ export default function ClaimsDedupReport(props: ClaimsDedupReportProps) {
                     {(claim) => {
                       const popoverId = createUniqueId();
                       const isOpen = () => openPopoverId() === popoverId;
-                      const utteranceIds = () => claim.utterance_ids ?? [];
-                      const primaryId = () => utteranceIds()[0];
-                      const remainingIds = () => utteranceIds().slice(1);
+                      const chunkRefs = (): ChunkRef[] =>
+                        claim.chunk_refs?.length
+                          ? claim.chunk_refs
+                          : (claim.utterance_ids ?? []).map((utteranceId) => ({
+                              utterance_id: utteranceId,
+                            }));
+                      const primaryRef = () => chunkRefs()[0];
+                      const remainingRefs = () => chunkRefs().slice(1);
                       const supportingFacts = () =>
                         claim.supporting_facts ?? [];
                       const factsToVerify = () => claim.facts_to_verify ?? 0;
@@ -167,19 +173,21 @@ export default function ClaimsDedupReport(props: ClaimsDedupReportProps) {
                               {claim.author_count === 1 ? "" : "s"}
                             </span>
                           </p>
-                          <Show when={primaryId()}>
-                            {(id) => (
+                          <Show when={primaryRef()}>
+                            {(ref) => (
                               <div
                                 data-testid="deduped-claim-utterance-refs"
                                 class="relative mt-1 flex flex-wrap items-center gap-1"
                               >
                                 <UtteranceRef
-                                  utteranceId={String(id())}
+                                  utteranceId={String(ref().utterance_id)}
+                                  chunkIdx={ref().chunk_idx}
+                                  chunkCount={ref().chunk_count}
                                   onClick={props.onUtteranceClick ?? (() => undefined)}
                                   disabled={disabled()}
                                   testId="deduped-claim-utterance-ref"
                                 />
-                                <Show when={remainingIds().length > 0}>
+                                <Show when={remainingRefs().length > 0}>
                                   <button
                                     type="button"
                                     data-testid="deduped-claim-more-utterances"
@@ -193,22 +201,24 @@ export default function ClaimsDedupReport(props: ClaimsDedupReportProps) {
                                       )
                                     }
                                   >
-                                    +{remainingIds().length} more
+                                    +{remainingRefs().length} more
                                   </button>
                                   <Show when={isOpen()}>
                                     <div
                                       id={popoverId}
                                       role="dialog"
-                                      aria-label={`${remainingIds().length} additional utterance reference${
-                                        remainingIds().length === 1 ? "" : "s"
+                                      aria-label={`${remainingRefs().length} additional utterance reference${
+                                        remainingRefs().length === 1 ? "" : "s"
                                       }`}
                                       data-testid="deduped-claim-utterance-popover"
                                       class="absolute left-0 top-full z-10 mt-1 flex flex-wrap gap-1 rounded-md border border-border bg-popover p-2 shadow-md"
                                     >
-                                      <For each={remainingIds()}>
-                                        {(remainingId) => (
+                                      <For each={remainingRefs()}>
+                                        {(remainingRef) => (
                                           <UtteranceRef
-                                            utteranceId={String(remainingId)}
+                                            utteranceId={String(remainingRef.utterance_id)}
+                                            chunkIdx={remainingRef.chunk_idx}
+                                            chunkCount={remainingRef.chunk_count}
                                             onClick={props.onUtteranceClick ?? (() => undefined)}
                                             disabled={disabled()}
                                             testId="deduped-claim-popover-utterance-ref"

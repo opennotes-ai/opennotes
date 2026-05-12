@@ -136,6 +136,8 @@ export default function SafetyModerationReport(
                               source{" "}
                               <UtteranceRef
                                 utteranceId={String(match.utterance_id)}
+                                chunkIdx={match.chunk_idx}
+                                chunkCount={match.chunk_count}
                                 onClick={props.onUtteranceClick ?? (() => undefined)}
                                 disabled={
                                   !props.canJumpToUtterance ||
@@ -154,6 +156,20 @@ export default function SafetyModerationReport(
                                 testId="safety-utterance-text"
                                 class="text-xs leading-relaxed text-foreground"
                               />
+                              <p class="mt-1 font-mono text-[11px] text-muted-foreground">
+                                source{" "}
+                                <UtteranceRef
+                                  utteranceId={String(match.utterance_id)}
+                                  chunkIdx={match.chunk_idx}
+                                  chunkCount={match.chunk_count}
+                                  onClick={props.onUtteranceClick ?? (() => undefined)}
+                                  disabled={
+                                    !props.canJumpToUtterance ||
+                                    !props.onUtteranceClick
+                                  }
+                                  testId="safety-utterance-ref"
+                                />
+                              </p>
                             </div>
                           )}
                         </Show>

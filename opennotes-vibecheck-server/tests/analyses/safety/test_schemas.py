@@ -1,4 +1,5 @@
 """Behavior contracts for the safety analysis schemas (TASK-1474.02)."""
+
 from __future__ import annotations
 
 from typing import Any, cast
@@ -17,6 +18,40 @@ from src.analyses.safety._schemas import (
 )
 from src.analyses.safety._vision_likelihood import likelihood_to_score
 from src.analyses.schemas import SafetySection
+
+
+def test_harmful_content_match_accepts_legacy_payload_without_chunk_fields() -> None:
+    match = HarmfulContentMatch.model_validate(
+        {
+            "utterance_id": "post-0",
+            "utterance_text": "legacy",
+            "max_score": 0.8,
+            "categories": {"violence": True},
+            "scores": {"violence": 0.8},
+            "flagged_categories": ["violence"],
+            "source": "openai",
+        }
+    )
+
+    assert match.chunk_idx is None
+    assert match.chunk_count is None
+
+
+def test_harmful_content_match_preserves_chunk_fields() -> None:
+    match = HarmfulContentMatch(
+        utterance_id="post-0",
+        utterance_text="chunk text",
+        max_score=0.8,
+        categories={"violence": True},
+        scores={"violence": 0.8},
+        flagged_categories=["violence"],
+        source="openai",
+        chunk_idx=1,
+        chunk_count=3,
+    )
+
+    assert match.model_dump()["chunk_idx"] == 1
+    assert match.model_dump()["chunk_count"] == 3
 
 
 class TestWebRiskFinding:

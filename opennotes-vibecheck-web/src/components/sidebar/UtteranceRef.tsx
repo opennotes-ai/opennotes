@@ -4,6 +4,8 @@ import { utteranceLabel } from "./utteranceLabel";
 
 export interface UtteranceRefProps {
   utteranceId: string;
+  chunkIdx?: number | null;
+  chunkCount?: number | null;
   onClick: (utteranceId: string) => void;
   label?: string;
   disabled?: boolean;
@@ -21,7 +23,13 @@ const DISABLED_CLASS = "select-none opacity-60";
 export default function UtteranceRef(props: UtteranceRefProps): JSX.Element {
   const utterances = useUtterances();
   const label = () =>
-    props.label ?? utteranceLabel(props.utteranceId, utterances());
+    props.label ??
+    utteranceLabel(
+      props.utteranceId,
+      utterances(),
+      props.chunkIdx,
+      props.chunkCount,
+    );
   const classes = () =>
     [BASE_CLASS, props.disabled ? DISABLED_CLASS : ENABLED_CLASS, props.class]
       .filter(Boolean)

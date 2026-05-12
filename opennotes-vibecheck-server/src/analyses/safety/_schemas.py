@@ -43,6 +43,8 @@ class HarmfulContentMatch(BaseModel):
     scores: dict[str, float]
     flagged_categories: list[str] = Field(default_factory=list)
     source: Literal["openai", "gcp"] = "openai"
+    chunk_idx: int | None = None
+    chunk_count: int | None = None
 
 
 class WebRiskFinding(BaseModel):

@@ -4,6 +4,7 @@ Kept in a per-package `_claims_schemas.py` so the `src/analyses/claims/` namespa
 stays self-contained and parallel agents can land sibling modules
 (`known_misinfo.py`, etc.) without touching a shared schemas file.
 """
+
 from __future__ import annotations
 
 from enum import StrEnum
@@ -54,6 +55,14 @@ class Claim(BaseModel):
     utterance_id: str
     category: ClaimCategory = ClaimCategory.POTENTIALLY_FACTUAL
     confidence: float = Field(ge=0.0, le=1.0)
+    chunk_idx: int | None = None
+    chunk_count: int | None = None
+
+
+class ChunkRef(BaseModel):
+    utterance_id: str
+    chunk_idx: int | None = None
+    chunk_count: int | None = None
 
 
 class ExtractedClaim(BaseModel):
@@ -100,6 +109,7 @@ class DedupedClaim(BaseModel):
     occurrence_count: int = Field(ge=1)
     author_count: int = Field(ge=0)
     utterance_ids: list[str]
+    chunk_refs: list[ChunkRef] = Field(default_factory=list)
     representative_authors: list[str]
     supporting_facts: list[SupportingFact] = Field(default_factory=list)
     premise_ids: list[str] = Field(default_factory=list)

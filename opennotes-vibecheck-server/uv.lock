@@ -443,6 +443,36 @@ wheels = [
 ]
 
 [[package]]
+name = "chonkie"
+version = "1.6.5"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "chonkie-core" },
+    { name = "httpx" },
+    { name = "numpy" },
+    { name = "tenacity" },
+    { name = "tokie" },
+    { name = "tqdm" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/07/09/6686674e41f02efc0d58873aee80a378d6d30a4336b02f8c466c1829113d/chonkie-1.6.5.tar.gz", hash = "sha256:756cd71428c9a55c58e2aed792671858cb9d4624b4a4ad5332c1c37bbd22a8b7", size = 197766, upload-time = "2026-05-06T01:17:52.03Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/fd/f0/a45cb628c137369a1836c2664b05d40011a62c0e0252460875c11de34737/chonkie-1.6.5-py3-none-any.whl", hash = "sha256:d28659c54de4cad5e54d45a786961492017f1c7196f35c257a4229e30a33a9d4", size = 240886, upload-time = "2026-05-06T01:17:49.985Z" },
+]
+
+[[package]]
+name = "chonkie-core"
+version = "0.10.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "numpy" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/d2/63/f351f5b6b1ecb17cbd92e482b1ae346b8abaeb105a4748eceae80bd04fa9/chonkie_core-0.10.1.tar.gz", hash = "sha256:cbca989c32c983ee3f7f899494b8efdaa32796429675705cf9c37b27f9dd8a46", size = 53359, upload-time = "2026-03-30T06:18:04.156Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/49/fe/b282f9db7835f3e94a78cd53c8f1f60fe2b3ccc27cdb0ae8340ee4983801/chonkie_core-0.10.1-cp311-cp311-macosx_11_0_arm64.whl", hash = "sha256:c563b3bebd00570a7f3d8e45a38cb72269633854ded63aee0785d7be437af40b", size = 342275, upload-time = "2026-03-30T06:17:30.461Z" },
+    { url = "https://files.pythonhosted.org/packages/53/d0/e49e62ff577ed632148701c5087ca066d6f1cd0295b5ab90561ebb88cfcd/chonkie_core-0.10.1-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:e519e26ddefa4cafeea56cacf8710598e553a731850d01b065d6517f07bb92cf", size = 394795, upload-time = "2026-03-30T06:17:33.008Z" },
+]
+
+[[package]]
 name = "click"
 version = "8.3.2"
 source = { registry = "https://pypi.org/simple" }
@@ -2165,6 +2195,7 @@ source = { editable = "." }
 dependencies = [
     { name = "asyncpg" },
     { name = "beautifulsoup4" },
+    { name = "chonkie" },
     { name = "dspy-ai" },
     { name = "email-validator" },
     { name = "fast-json-repair" },
@@ -2210,6 +2241,7 @@ requires-dist = [
     { name = "asyncpg", specifier = ">=0.29.0" },
     { name = "basedpyright", marker = "extra == 'dev'", specifier = ">=1.17.0" },
     { name = "beautifulsoup4", specifier = ">=4.12.0" },
+    { name = "chonkie", specifier = ">=1.6.5" },
     { name = "dspy-ai", specifier = ">=2.5.0" },
     { name = "email-validator", specifier = ">=2.3.0" },
     { name = "fast-json-repair", specifier = ">=0.2.0" },
@@ -3756,6 +3788,16 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/fd/18/a545c4ea42af3df6effd7d13d250ba77a0a86fb20393143bbb9a92e434d4/tokenizers-0.22.2-cp39-abi3-win32.whl", hash = "sha256:a6bf3f88c554a2b653af81f3204491c818ae2ac6fbc09e76ef4773351292bc92", size = 2502363, upload-time = "2026-01-05T10:45:20.593Z" },
     { url = "https://files.pythonhosted.org/packages/65/71/0670843133a43d43070abeb1949abfdef12a86d490bea9cd9e18e37c5ff7/tokenizers-0.22.2-cp39-abi3-win_amd64.whl", hash = "sha256:c9ea31edff2968b44a88f97d784c2f16dc0729b8b143ed004699ebca91f05c48", size = 2747786, upload-time = "2026-01-05T10:45:18.411Z" },
     { url = "https://files.pythonhosted.org/packages/72/f4/0de46cfa12cdcbcd464cc59fde36912af405696f687e53a091fb432f694c/tokenizers-0.22.2-cp39-abi3-win_arm64.whl", hash = "sha256:9ce725d22864a1e965217204946f830c37876eee3b2ba6fc6255e8e903d5fcbc", size = 2612133, upload-time = "2026-01-05T10:45:17.232Z" },
+]
+
+[[package]]
+name = "tokie"
+version = "0.0.9"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/95/3c/f76865a207ca5fdac17842ddcd5ca4b27699c81cb8424b3290d9b3603970/tokie-0.0.9.tar.gz", hash = "sha256:b2439850258890d7ecf1e21aeeebe06d8ae81879b8349959438da2841fe6553c", size = 135349, upload-time = "2026-05-05T18:21:49.305Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/5f/8b/fc17d1bce38325c7b10e6c8c19cceea24c6446adba7b2cad74d2fe9fd1bf/tokie-0.0.9-cp311-cp311-macosx_11_0_arm64.whl", hash = "sha256:abb5332d2b93843fa3c59383a1c3436efb2681d09bda55f24a16c5fdfa7cce99", size = 2466408, upload-time = "2026-05-05T18:21:28.263Z" },
+    { url = "https://files.pythonhosted.org/packages/47/1a/003d601df91fabf454d108c5068272964deb7fe8f592a4577d4ed1fe9658/tokie-0.0.9-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:2be6b136796ae8066a6ef666c4b2f8bd29729353c30388f236a2c1950ea7bfc7", size = 2769237, upload-time = "2026-05-05T18:21:29.585Z" },
 ]
 
 [[package]]

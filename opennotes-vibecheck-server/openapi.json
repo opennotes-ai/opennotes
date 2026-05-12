@@ -1131,6 +1131,41 @@
         "title": "AnalyzeResponse",
         "description": "202 handoff payload.\n\nThe response shape is intentionally minimal: the client uses `job_id` to\npoll `GET /api/analyze/{job_id}` (TASK-1473.14) for progressive fill.\n`cached=true` signals that the pipeline was skipped because a fresh\n`vibecheck_analyses` row was already available \u2014 the polled job will\nreach `status=done` immediately."
       },
+      "ChunkRef": {
+        "properties": {
+          "utterance_id": {
+            "type": "string",
+            "title": "Utterance Id"
+          },
+          "chunk_idx": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Chunk Idx"
+          },
+          "chunk_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Chunk Count"
+          }
+        },
+        "type": "object",
+        "required": [
+          "utterance_id"
+        ],
+        "title": "ChunkRef"
+      },
       "ClaimCategory": {
         "type": "string",
         "enum": [
@@ -1271,6 +1306,13 @@
             },
             "type": "array",
             "title": "Utterance Ids"
+          },
+          "chunk_refs": {
+            "items": {
+              "$ref": "#/components/schemas/ChunkRef"
+            },
+            "type": "array",
+            "title": "Chunk Refs"
           },
           "representative_authors": {
             "items": {
@@ -1764,6 +1806,28 @@
             ],
             "title": "Source",
             "default": "openai"
+          },
+          "chunk_idx": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Chunk Idx"
+          },
+          "chunk_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Chunk Count"
           }
         },
         "type": "object",
@@ -3101,6 +3165,28 @@
               "evaluates"
             ],
             "title": "Stance"
+          },
+          "chunk_idx": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Chunk Idx"
+          },
+          "chunk_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Chunk Count"
           }
         },
         "type": "object",

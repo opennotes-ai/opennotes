@@ -62,7 +62,9 @@ class TestCheckContentModeration:
 
     async def test_returns_none_when_not_flagged(self):
         mock_service = AsyncMock()
-        mock_service.moderate_text = AsyncMock(return_value=make_moderation_result(flagged=False))
+        mock_service.moderate_texts = AsyncMock(
+            return_value=[make_moderation_result(flagged=False)]
+        )
 
         utterance = make_utterance(text="harmless message")
         result = await check_content_moderation(
@@ -75,7 +77,9 @@ class TestCheckContentModeration:
     async def test_does_not_expose_multimodal_path(self):
         """POC is text-only — moderate_multimodal must never be called."""
         mock_service = AsyncMock()
-        mock_service.moderate_text = AsyncMock(return_value=make_moderation_result(flagged=False))
+        mock_service.moderate_texts = AsyncMock(
+            return_value=[make_moderation_result(flagged=False)]
+        )
         mock_service.moderate_multimodal = AsyncMock()
 
         utterance = make_utterance(text="hello")
@@ -86,17 +90,16 @@ class TestCheckContentModeration:
 
         mock_service.moderate_multimodal.assert_not_called()
 
-    async def test_returns_none_on_exception(self):
+    async def test_raises_transient_error_on_exception(self):
         mock_service = AsyncMock()
-        mock_service.moderate_text = AsyncMock(side_effect=Exception("API error"))
+        mock_service.moderate_texts = AsyncMock(side_effect=Exception("API error"))
 
         utterance = make_utterance()
-        result = await check_content_moderation(
-            utterance=utterance,
-            moderation_service=mock_service,
-        )
-
-        assert result is None
+        with pytest.raises(OpenAIModerationTransientError):
+            await check_content_moderation(
+                utterance=utterance,
+                moderation_service=mock_service,
+            )
 
 
 class TestModerationResultSchema:
@@ -176,7 +179,7 @@ class TestBulkModeration:
 
         results = await check_content_moderation_bulk([utt_flagged, utt_clean], mock_service)
 
-        assert len(results) == 2
+        assert len(results) == 1
         match = results[0]
         assert isinstance(match, HarmfulContentMatch)
         assert match.utterance_id == "utt_a"
@@ -184,7 +187,40 @@ class TestBulkModeration:
         assert match.scores == {"hate": 0.91, "violence": 0.03}
         assert match.flagged_categories == ["hate"]
         assert match.max_score == pytest.approx(0.91)
-        assert results[1] is None
+
+    async def test_long_utterance_emits_chunk_match_and_aggregate(self):
+        mock_service = AsyncMock()
+        long_text = "first chunk sentence. " * 500
+        utterance = make_utterance(utterance_id="utt_long", text=long_text)
+
+        def response_for_texts(texts: list[str]) -> list[ModerationResult]:
+            assert len(texts) > 1
+            return [
+                make_moderation_result(
+                    flagged=index == 0,
+                    max_score=0.94 if index == 0 else 0.01,
+                    categories={"hate": index == 0},
+                    scores={"hate": 0.94 if index == 0 else 0.01},
+                    flagged_categories=["hate"] if index == 0 else [],
+                )
+                for index, _text in enumerate(texts)
+            ]
+
+        mock_service.moderate_texts = AsyncMock(side_effect=response_for_texts)
+
+        results = await check_content_moderation_bulk([utterance], mock_service)
+
+        assert len(results) == 2
+        chunk_match = results[0]
+        aggregate = results[1]
+        assert chunk_match.utterance_id == "utt_long"
+        assert chunk_match.chunk_idx == 0
+        assert chunk_match.chunk_count is not None
+        assert chunk_match.chunk_count > 1
+        assert chunk_match.utterance_text != long_text
+        assert aggregate.chunk_idx is None
+        assert aggregate.chunk_count == chunk_match.chunk_count
+        assert aggregate.utterance_text == long_text
 
     async def test_single_moderate_texts_call_multimodal_never_invoked(self):
         mock_service = AsyncMock()

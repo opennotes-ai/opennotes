@@ -80,6 +80,9 @@ class Settings(BaseSettings):
     EVIDENCE_SYNTHESIS_CANDIDATE_CAP: int = 60
     EVIDENCE_GROUNDED_FETCH_GROUPS_PER_CALL: int = 1
     PREMISES_MAX_CLAIMS_PER_BATCH: int = 30
+    VIBECHECK_CHUNK_THRESHOLD_TOKENS: int = 800
+    VIBECHECK_CHUNK_MAX_TOKENS: int = 600
+    VIBECHECK_GCP_MODERATION_CHUNK_ENABLED: bool = True
 
     # --- Cloud Tasks + internal worker endpoint (TASK-1473.12) ---
     # Defaults map the dev/test shape: empty strings so enqueue_job short-

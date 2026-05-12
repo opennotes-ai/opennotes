@@ -3,6 +3,7 @@
 TDD: tests written before implementation. Each test covers one AC
 from TASK-1474.08.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -75,7 +76,7 @@ class TestEmptyText:
                     httpx_client=client,
                 )
 
-        assert result == [None]
+        assert result == []
         assert call_count == 0
 
 
@@ -98,7 +99,7 @@ class TestBelowThreshold:
                     threshold=0.5,
                 )
 
-        assert result == [None]
+        assert result == []
 
 
 class TestAboveThreshold:
@@ -124,6 +125,40 @@ class TestAboveThreshold:
         assert match.source == "gcp"
         assert match.flagged_categories == ["Toxic"]
         assert match.max_score == pytest.approx(0.9)
+
+    async def test_long_utterance_emits_chunk_match_and_aggregate(self):
+        long_text = "toxic sentence in a long post. " * 500
+        requests: list[str] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            import json
+
+            payload = json.loads(request.content.decode())
+            content = payload["document"]["content"]
+            requests.append(content)
+            confidence = 0.9 if len(requests) == 1 else 0.1
+            return make_moderation_response([{"name": "Toxic", "confidence": confidence}])
+
+        transport = httpx.MockTransport(handler)
+        async with httpx.AsyncClient(transport=transport) as client:
+            with patch("src.analyses.safety.gcp_moderation.get_access_token", return_value="tok"):
+                result = await moderate_texts_gcp(
+                    [make_utterance(utterance_id="utt_long", text=long_text)],
+                    httpx_client=client,
+                    threshold=0.5,
+                )
+
+        assert len(requests) > 1
+        assert len(result) == 2
+        chunk_match = result[0]
+        aggregate = result[1]
+        assert chunk_match.chunk_idx == 0
+        assert chunk_match.chunk_count is not None
+        assert chunk_match.chunk_count > 1
+        assert chunk_match.utterance_text != long_text
+        assert aggregate.chunk_idx is None
+        assert aggregate.chunk_count == chunk_match.chunk_count
+        assert aggregate.utterance_text == long_text
 
 
 class TestMultipleCategories:
