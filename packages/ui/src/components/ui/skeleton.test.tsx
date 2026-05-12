@@ -1,6 +1,8 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { describe, expect, it } from "vitest";
+import { cleanup, render } from "@solidjs/testing-library";
+import { afterEach, describe, expect, it } from "vitest";
+import { Skeleton } from "./skeleton";
 
 const skeletonSource = readFileSync(
   resolve("src/components/ui/skeleton.tsx"),
@@ -8,8 +10,20 @@ const skeletonSource = readFileSync(
 );
 
 describe("<Skeleton /> shimmer primitive", () => {
-  it("builds on the Kobalte Skeleton primitive (role/aria attrs come from Kobalte)", () => {
-    expect(skeletonSource).toContain("@kobalte/core/skeleton");
+  afterEach(() => {
+    cleanup();
+  });
+
+  it("keeps caller height and width classes without inline sizing overrides", () => {
+    const { container } = render(() => <Skeleton class="h-4 w-11/12" />);
+    const root = container.querySelector("[data-opennotes-skeleton]");
+    expect(root).not.toBeNull();
+
+    const cls = root?.getAttribute("class") ?? "";
+    expect(cls).toMatch(/\bh-4\b/);
+    expect(cls).toMatch(/\bw-11\/12\b/);
+    expect((root as HTMLElement).style.height).toBe("");
+    expect((root as HTMLElement).style.width).toBe("");
   });
 
   it("renders a shimmer overlay element marked with data-skeleton-shimmer", () => {

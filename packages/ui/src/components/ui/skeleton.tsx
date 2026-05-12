@@ -1,6 +1,5 @@
 import type { ComponentProps, JSX } from "solid-js";
 import { splitProps } from "solid-js";
-import * as SkeletonPrimitive from "@kobalte/core/skeleton";
 import { cn } from "../../utils";
 
 const SHIMMER_STYLES = `
@@ -36,30 +35,27 @@ const SHIMMER_STYLES = `
 }
 `;
 
-export interface SkeletonProps extends ComponentProps<"div"> {
-  visible?: boolean;
-  radius?: number;
-}
+export interface SkeletonProps extends ComponentProps<"div"> {}
 
 export function Skeleton(props: SkeletonProps): JSX.Element {
   const [local, others] = splitProps(props, [
     "class",
-    "visible",
-    "radius",
     "children",
+    "role",
+    "aria-busy",
   ]);
   return (
-    <SkeletonPrimitive.Root
+    <div
       data-opennotes-skeleton=""
-      visible={local.visible}
-      radius={local.radius}
+      role={local.role ?? "status"}
+      aria-busy={local["aria-busy"] ?? "true"}
       class={cn("rounded-md bg-muted", local.class)}
       {...others}
     >
       <style>{SHIMMER_STYLES}</style>
       <span aria-hidden="true" data-skeleton-shimmer="" />
       {local.children}
-    </SkeletonPrimitive.Root>
+    </div>
   );
 }
 

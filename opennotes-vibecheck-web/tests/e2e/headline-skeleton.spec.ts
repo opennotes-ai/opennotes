@@ -373,7 +373,7 @@ test.beforeEach(() => {
 test("AC1+AC2+AC3: skeletons appear, shimmer animates, then resolve to real headline + weather", async ({
   page,
 }) => {
-  await page.goto(`${webBaseUrl}/analyze?job=${RESOLUTION_JOB_ID}`);
+  await page.goto(`${webBaseUrl}/analyze?job=${SKELETON_JOB_ID}`);
 
   const headlineSkeleton = page.locator(
     '[data-testid="headline-summary-skeleton"]',
@@ -439,6 +439,12 @@ test("AC1+AC2+AC3: skeletons appear, shimmer animates, then resolve to real head
       labelCell.locator("[data-opennotes-skeleton]"),
     ).toHaveCount(0);
   }
+
+  const releaseResponse = await fetch(
+    `${apiBaseUrl}/api/test/release-skeleton`,
+    { method: "POST" },
+  );
+  expect(releaseResponse.ok).toBeTruthy();
 
   // AC3: Once sidebar_payload arrives, skeletons must disappear and the
   // real headline-summary testid renders.
@@ -527,9 +533,18 @@ async function assertNoEmptyContainers(page: import("@playwright/test").Page) {
   // weather-report-skeleton: if present, must have at least one skeleton row.
   const weatherSkel = page.locator('[data-testid="weather-report-skeleton"]');
   if ((await weatherSkel.count()) > 0) {
-    const rows = await weatherSkel.locator(
+    let rows = await weatherSkel.locator(
       '[data-testid^="weather-skeleton-"]',
     ).count();
+    if (rows === 0) {
+      await page.waitForTimeout(50);
+      rows =
+        (await weatherSkel.count()) > 0
+          ? await weatherSkel
+              .locator('[data-testid^="weather-skeleton-"]')
+              .count()
+          : 1;
+    }
     expect(
       rows,
       "weather-report-skeleton must contain at least one skeleton row",
@@ -638,16 +653,20 @@ test("AC2 .07: help button popover renders the abstract Truth/Relevance/Sentimen
   page,
 }) => {
   await page.goto(`${webBaseUrl}/analyze?job=${RESOLUTION_JOB_ID}`);
-  const helpButton = page.getByRole("button", { name: /explain.*weather/i });
+  const weatherReport = page.locator('[data-testid="weather-report"]');
+  await expect(weatherReport).toBeVisible({ timeout: 15_000 });
+
+  const helpButton = weatherReport.getByRole("button", {
+    name: /explain.*weather/i,
+  });
   await expect(helpButton).toBeVisible({ timeout: 15_000 });
   await helpButton.click();
 
   await expect(page.getByText(/Truth/).first()).toBeVisible();
   await expect(page.getByText(/Relevance/).first()).toBeVisible();
   await expect(page.getByText(/Sentiment/).first()).toBeVisible();
-  await expect(
-    page.getByText(/Epistemic stance|Whether claims are sourced/i),
-  ).toBeVisible();
+  await expect(page.getByText(/speaking from evidence/i)).toBeVisible();
+  await expect(page.getByText(/stays on the subject/i)).toBeVisible();
 });
 
 test("AC3 .07: weather skeleton word-shape eval cells contain Skeleton primitives", async ({
