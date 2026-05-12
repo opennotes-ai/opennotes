@@ -1,4 +1,4 @@
-import { createSignal } from "solid-js";
+import { createEffect, createSignal } from "solid-js";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   cleanup,
@@ -49,6 +49,22 @@ function makeWeatherReport(
     },
     ...overrides,
   };
+}
+
+function classAttr(el: Element): string {
+  return el.getAttribute("class") ?? "";
+}
+
+function expectFullOpacity(testId: string): void {
+  expect(classAttr(screen.getByTestId(testId))).toContain("opacity-100");
+  expect(classAttr(screen.getByTestId(testId))).not.toContain("opacity-70");
+}
+
+function expectDimmed(testId: string): void {
+  const classes = classAttr(screen.getByTestId(testId));
+  expect(classes).toContain("opacity-70");
+  expect(classes).toContain("motion-safe:transition-opacity");
+  expect(classes).toContain("motion-safe:duration-150");
 }
 
 afterEach(() => {
@@ -713,6 +729,197 @@ describe("WeatherReport", () => {
     render(() => <WeatherReport report={null} />);
     const root = screen.getByTestId("weather-report-skeleton");
     expect(root.className).not.toContain("pr-8");
+  });
+
+  describe("cross-highlight", () => {
+    it("hovering a lobe dims the other two lobes and axis pairs", () => {
+      render(() => (
+        <WeatherReport
+          report={makeWeatherReport()}
+          safetyRecommendation={makeSafetyRecommendation()}
+        />
+      ));
+
+      fireEvent.pointerEnter(screen.getByTestId("weather-lobe-truth"));
+
+      expectFullOpacity("weather-lobe-truth");
+      expectDimmed("weather-lobe-relevance");
+      expectDimmed("weather-lobe-sentiment");
+      expectFullOpacity("weather-axis-pair-truth");
+      expectDimmed("weather-axis-pair-relevance");
+      expectDimmed("weather-axis-pair-sentiment");
+      expect(classAttr(screen.getByTestId("weather-axis-pair-safety"))).not.toContain("opacity-70");
+    });
+
+    it("hovering an axis pair highlights the matching lobe and dims the other pairs", () => {
+      render(() => (
+        <WeatherReport
+          report={makeWeatherReport()}
+          safetyRecommendation={makeSafetyRecommendation()}
+        />
+      ));
+
+      fireEvent.pointerEnter(screen.getByTestId("weather-axis-pair-relevance"));
+
+      expectDimmed("weather-lobe-truth");
+      expectFullOpacity("weather-lobe-relevance");
+      expectDimmed("weather-lobe-sentiment");
+      expectDimmed("weather-axis-pair-truth");
+      expectFullOpacity("weather-axis-pair-relevance");
+      expectDimmed("weather-axis-pair-sentiment");
+      expect(classAttr(screen.getByTestId("weather-axis-pair-safety"))).not.toContain("opacity-70");
+    });
+
+    it("first lobe tap highlights without opening a popover; second tap opens that axis popover", async () => {
+      vi.useFakeTimers();
+      try {
+        render(() => (
+          <WeatherReport
+            report={makeWeatherReport()}
+            safetyRecommendation={makeSafetyRecommendation()}
+          />
+        ));
+
+        const truthLobe = screen.getByTestId("weather-lobe-truth");
+        fireEvent.click(truthLobe);
+
+        expectFullOpacity("weather-lobe-truth");
+        expectDimmed("weather-lobe-relevance");
+        expect(screen.queryByText(/direct, lived experience/i)).toBeNull();
+        expect(screen.queryByText(/moderation, web risk/i)).toBeNull();
+
+        vi.advanceTimersByTime(100);
+        fireEvent.click(truthLobe);
+
+        await screen.findByText(/direct, lived experience/i);
+        expect(screen.queryByText(/moderation, web risk/i)).toBeNull();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("lobe tap window expires before a repeat tap can open the axis popover", () => {
+      vi.useFakeTimers();
+      try {
+        render(() => (
+          <WeatherReport
+            report={makeWeatherReport()}
+            safetyRecommendation={makeSafetyRecommendation()}
+          />
+        ));
+
+        const truthLobe = screen.getByTestId("weather-lobe-truth");
+        fireEvent.click(truthLobe);
+        vi.advanceTimersByTime(1600);
+        fireEvent.click(truthLobe);
+
+        expect(screen.queryByText(/direct, lived experience/i)).toBeNull();
+        expectFullOpacity("weather-lobe-truth");
+        expectDimmed("weather-lobe-relevance");
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("focusing an axis pair highlights the matching lobe and blur clears it", async () => {
+      render(() => (
+        <WeatherReport
+          report={makeWeatherReport()}
+          safetyRecommendation={makeSafetyRecommendation()}
+        />
+      ));
+
+      const truthTrigger = screen.getByTestId("weather-axis-card-truth");
+      fireEvent.focusIn(truthTrigger);
+
+      expectFullOpacity("weather-lobe-truth");
+      expectDimmed("weather-lobe-relevance");
+
+      fireEvent.focusOut(truthTrigger);
+
+      await waitFor(() => {
+        expectFullOpacity("weather-lobe-truth");
+        expectFullOpacity("weather-lobe-relevance");
+        expectFullOpacity("weather-axis-pair-relevance");
+      });
+    });
+
+    it("opening any popover suppresses dimming until hover resumes", async () => {
+      render(() => (
+        <WeatherReport
+          report={makeWeatherReport()}
+          safetyRecommendation={makeSafetyRecommendation()}
+        />
+      ));
+
+      fireEvent.pointerEnter(screen.getByTestId("weather-lobe-truth"));
+      expectDimmed("weather-lobe-relevance");
+
+      fireEvent.click(screen.getByTestId("weather-axis-card-safety"));
+      await screen.findByText(/moderation, web risk/i);
+      expectFullOpacity("weather-lobe-truth");
+      expectFullOpacity("weather-lobe-relevance");
+      expectFullOpacity("weather-axis-pair-relevance");
+
+      fireEvent.keyDown(document.activeElement ?? document.body, { key: "Escape" });
+      await waitFor(() => {
+        expect(screen.queryByText(/moderation, web risk/i)).toBeNull();
+      });
+
+      fireEvent.pointerEnter(screen.getByTestId("weather-lobe-truth"));
+      expectDimmed("weather-lobe-relevance");
+    });
+
+    it("axis popover click keeps SidebarStore highlightedGroup behavior unchanged", async () => {
+      let highlightedGroup: string | null = null;
+      function StoreProbe() {
+        const store = useSidebarStore();
+        createEffect(() => {
+          highlightedGroup = store?.highlightedGroup() ?? null;
+        });
+        return null;
+      }
+
+      render(() => (
+        <SidebarStoreProvider>
+          <StoreProbe />
+          <WeatherReport
+            report={makeWeatherReport()}
+            safetyRecommendation={makeSafetyRecommendation()}
+          />
+        </SidebarStoreProvider>
+      ));
+
+      fireEvent.click(screen.getByTestId("weather-axis-card-truth"));
+      await screen.findByText(/direct, lived experience/i);
+
+      await waitFor(() => {
+        expect(highlightedGroup).toBe("Facts/claims");
+      });
+
+      fireEvent.keyDown(document.activeElement ?? document.body, { key: "Escape" });
+
+      await waitFor(() => {
+        expect(highlightedGroup).toBeNull();
+      });
+    });
+
+    it("safety pair hover and focus do not trigger cross-highlight", () => {
+      render(() => (
+        <WeatherReport
+          report={makeWeatherReport()}
+          safetyRecommendation={makeSafetyRecommendation()}
+        />
+      ));
+
+      fireEvent.pointerEnter(screen.getByTestId("weather-axis-pair-safety"));
+      fireEvent.focusIn(screen.getByTestId("weather-axis-card-safety"));
+
+      expectFullOpacity("weather-lobe-truth");
+      expectFullOpacity("weather-lobe-relevance");
+      expectFullOpacity("weather-lobe-sentiment");
+      expect(classAttr(screen.getByTestId("weather-axis-pair-safety"))).not.toContain("opacity-70");
+    });
   });
 
   describe("WeatherSymbol shape selection per safety level", () => {

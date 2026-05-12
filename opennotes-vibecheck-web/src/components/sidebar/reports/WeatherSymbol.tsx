@@ -2,6 +2,7 @@ import type { JSX } from "solid-js";
 import { Switch, Match } from "solid-js";
 
 export type SafetyLevel = "safe" | "mild" | "caution" | "unsafe" | "unknown";
+export type WeatherLobeAxis = "truth" | "relevance" | "sentiment";
 
 interface TrefoilColors {
   lobe0: string;
@@ -29,27 +30,67 @@ export interface WeatherSymbolProps {
   lobeColors: [string, string, string];
   size?: number | string;
   class?: string;
+  hoveredAxis?: WeatherLobeAxis | null;
+  onLobeEnter?: (axis: WeatherLobeAxis) => void;
+  onLobeLeave?: (axis: WeatherLobeAxis) => void;
+  onLobeTap?: (axis: WeatherLobeAxis) => void;
 }
 
 const LOBE_PATH = "M0 0 C -6 -10, -16 -22, 0 -32 C 16 -22, 6 -10, 0 0 Z";
+const LOBES: Array<{
+  axis: WeatherLobeAxis;
+  rotation: number;
+  colorKey: keyof TrefoilColors;
+}> = [
+  { axis: "truth", rotation: 0, colorKey: "lobe0" },
+  { axis: "relevance", rotation: 120, colorKey: "lobe1" },
+  { axis: "sentiment", rotation: 240, colorKey: "lobe2" },
+];
 
-function Trefoil(props: { colors: TrefoilColors; scale: number; tx: number; ty: number }): JSX.Element {
+function lobeClass(activeAxis: WeatherLobeAxis | null | undefined, axis: WeatherLobeAxis): string {
+  if (activeAxis == null || activeAxis === axis) {
+    return "opacity-100";
+  }
+  return "motion-safe:transition-opacity motion-safe:duration-150 opacity-70";
+}
+
+function Trefoil(props: {
+  colors: TrefoilColors;
+  hoveredAxis?: WeatherLobeAxis | null;
+  onLobeEnter?: (axis: WeatherLobeAxis) => void;
+  onLobeLeave?: (axis: WeatherLobeAxis) => void;
+  onLobeTap?: (axis: WeatherLobeAxis) => void;
+  scale: number;
+  tx: number;
+  ty: number;
+}): JSX.Element {
   return (
     <g transform={`translate(${props.tx} ${props.ty}) scale(${props.scale})`}>
-      <path d={LOBE_PATH} fill={props.colors.lobe0} />
-      <g transform="rotate(120)">
-        <path d={LOBE_PATH} fill={props.colors.lobe1} />
-      </g>
-      <g transform="rotate(240)">
-        <path d={LOBE_PATH} fill={props.colors.lobe2} />
-      </g>
-      <path d={LOBE_PATH} fill="none" stroke={props.colors.stroke} stroke-width="1.75" stroke-linejoin="round" stroke-linecap="round" />
-      <g transform="rotate(120)">
-        <path d={LOBE_PATH} fill="none" stroke={props.colors.stroke} stroke-width="1.75" stroke-linejoin="round" stroke-linecap="round" />
-      </g>
-      <g transform="rotate(240)">
-        <path d={LOBE_PATH} fill="none" stroke={props.colors.stroke} stroke-width="1.75" stroke-linejoin="round" stroke-linecap="round" />
-      </g>
+      {LOBES.map((lobe) => (
+        <g
+          data-axis={lobe.axis}
+          data-testid={`weather-lobe-${lobe.axis}`}
+          transform={lobe.rotation === 0 ? undefined : `rotate(${lobe.rotation})`}
+          class={lobeClass(props.hoveredAxis, lobe.axis)}
+          pointer-events="visiblePainted"
+          onPointerEnter={() => props.onLobeEnter?.(lobe.axis)}
+          onPointerLeave={() => props.onLobeLeave?.(lobe.axis)}
+          onClick={(event) => {
+            event.stopPropagation();
+            props.onLobeTap?.(lobe.axis);
+          }}
+        >
+          <path d={LOBE_PATH} fill={props.colors[lobe.colorKey]} />
+          <path
+            d={LOBE_PATH}
+            fill="none"
+            stroke={props.colors.stroke}
+            stroke-width="1.75"
+            stroke-linejoin="round"
+            stroke-linecap="round"
+          />
+        </g>
+      ))}
     </g>
   );
 }
@@ -84,7 +125,16 @@ export function WeatherSymbol(props: WeatherSymbolProps): JSX.Element {
             stroke-width="5"
             transform="translate(9 9) scale(0.82)"
           />
-          <Trefoil colors={trefoilColors()} scale={0.78} tx={50} ty={50} />
+          <Trefoil
+            colors={trefoilColors()}
+            hoveredAxis={props.hoveredAxis}
+            onLobeEnter={props.onLobeEnter}
+            onLobeLeave={props.onLobeLeave}
+            onLobeTap={props.onLobeTap}
+            scale={0.78}
+            tx={50}
+            ty={50}
+          />
         </svg>
       </Match>
       <Match when={props.level === "mild"}>
@@ -109,7 +159,16 @@ export function WeatherSymbol(props: WeatherSymbolProps): JSX.Element {
             stroke-width="4"
             transform="translate(8.5 8.5) scale(0.83)"
           />
-          <Trefoil colors={trefoilColors()} scale={0.78} tx={50} ty={50} />
+          <Trefoil
+            colors={trefoilColors()}
+            hoveredAxis={props.hoveredAxis}
+            onLobeEnter={props.onLobeEnter}
+            onLobeLeave={props.onLobeLeave}
+            onLobeTap={props.onLobeTap}
+            scale={0.78}
+            tx={50}
+            ty={50}
+          />
         </svg>
       </Match>
       <Match when={props.level === "caution"}>
@@ -134,7 +193,16 @@ export function WeatherSymbol(props: WeatherSymbolProps): JSX.Element {
             stroke-width="3.5"
             transform="translate(10.5 13.44) scale(0.79)"
           />
-          <Trefoil colors={trefoilColors()} scale={0.65} tx={50} ty={62} />
+          <Trefoil
+            colors={trefoilColors()}
+            hoveredAxis={props.hoveredAxis}
+            onLobeEnter={props.onLobeEnter}
+            onLobeLeave={props.onLobeLeave}
+            onLobeTap={props.onLobeTap}
+            scale={0.65}
+            tx={50}
+            ty={62}
+          />
         </svg>
       </Match>
       <Match when={props.level === "unsafe"}>
@@ -159,7 +227,16 @@ export function WeatherSymbol(props: WeatherSymbolProps): JSX.Element {
             stroke-width="5"
             transform="translate(8.5 8.5) scale(0.83)"
           />
-          <Trefoil colors={trefoilColors()} scale={0.72} tx={50} ty={50} />
+          <Trefoil
+            colors={trefoilColors()}
+            hoveredAxis={props.hoveredAxis}
+            onLobeEnter={props.onLobeEnter}
+            onLobeLeave={props.onLobeLeave}
+            onLobeTap={props.onLobeTap}
+            scale={0.72}
+            tx={50}
+            ty={50}
+          />
         </svg>
       </Match>
       <Match when={props.level === "unknown"}>
