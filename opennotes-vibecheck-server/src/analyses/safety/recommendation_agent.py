@@ -12,6 +12,7 @@ import logfire
 from src.analyses.safety._schemas import (
     HarmfulContentMatch,
     ImageModerationMatch,
+    SafetyLevel,
     SafetyRecommendation,
     VideoModerationMatch,
     WebRiskFinding,
@@ -103,9 +104,9 @@ _VISION_FLOAT_RE = re.compile(
 )
 _VISION_ENUM_RE = re.compile(
     r"\b(VERY_LIKELY|LIKELY|POSSIBLE|UNLIKELY|VERY_UNLIKELY)\b",
-    re.IGNORECASE,
 )
 _SANITIZER_PLACEHOLDER = "Verified concern requires review"
+_PLACEHOLDER_LEVELS = {SafetyLevel.CAUTION, SafetyLevel.UNSAFE}
 
 
 def _is_raw_signal(value: str) -> bool:
@@ -129,7 +130,7 @@ def _sanitize_top_signals(recommendation: SafetyRecommendation) -> SafetyRecomme
             )
             continue
         kept.append(entry)
-    if not kept and original:
+    if not kept and original and recommendation.level in _PLACEHOLDER_LEVELS:
         kept = [_SANITIZER_PLACEHOLDER]
     if kept == original:
         return recommendation

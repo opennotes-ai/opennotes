@@ -292,9 +292,11 @@ async def test_multiple_low_severity_flags_do_not_return_mild(monkeypatch):
     assert result.level == SafetyLevel.CAUTION
 
 
-def _recommendation(top_signals: list[str]) -> SafetyRecommendation:
+def _recommendation(
+    top_signals: list[str], level: SafetyLevel = SafetyLevel.CAUTION
+) -> SafetyRecommendation:
     return SafetyRecommendation(
-        level=SafetyLevel.CAUTION,
+        level=level,
         rationale="stub",
         top_signals=top_signals,
     )
@@ -349,3 +351,52 @@ def test_sanitize_leaves_empty_list_empty() -> None:
 def test_sanitize_preserves_benign_integer_suffix_signal() -> None:
     result = _sanitize_top_signals(_recommendation(["Phishing link 1"]))
     assert result.top_signals == ["Phishing link 1"]
+
+
+def test_sanitize_preserves_prose_with_lowercase_likely() -> None:
+    result = _sanitize_top_signals(_recommendation(["Likely scam"]))
+    assert result.top_signals == ["Likely scam"]
+
+
+def test_sanitize_preserves_prose_with_lowercase_possible() -> None:
+    result = _sanitize_top_signals(_recommendation(["Possible phishing link"]))
+    assert result.top_signals == ["Possible phishing link"]
+
+
+def test_sanitize_preserves_prose_with_lowercase_unlikely() -> None:
+    result = _sanitize_top_signals(_recommendation(["Unlikely false positive"]))
+    assert result.top_signals == ["Unlikely false positive"]
+
+
+def test_sanitize_still_strips_uppercase_vision_enum() -> None:
+    result = _sanitize_top_signals(
+        _recommendation(["adult VERY_LIKELY", "Real concern"])
+    )
+    assert result.top_signals == ["Real concern"]
+
+
+def test_sanitize_omits_placeholder_for_safe_when_all_stripped() -> None:
+    result = _sanitize_top_signals(
+        _recommendation(
+            ["text: Legal 1.0", "adult VERY_LIKELY"], level=SafetyLevel.SAFE
+        )
+    )
+    assert result.top_signals == []
+
+
+def test_sanitize_omits_placeholder_for_mild_when_all_stripped() -> None:
+    result = _sanitize_top_signals(
+        _recommendation(
+            ["text: Legal 1.0", "adult VERY_LIKELY"], level=SafetyLevel.MILD
+        )
+    )
+    assert result.top_signals == []
+
+
+def test_sanitize_inserts_placeholder_for_unsafe_when_all_stripped() -> None:
+    result = _sanitize_top_signals(
+        _recommendation(
+            ["text: Legal 1.0", "adult VERY_LIKELY"], level=SafetyLevel.UNSAFE
+        )
+    )
+    assert result.top_signals == ["Verified concern requires review"]
