@@ -121,9 +121,21 @@ function isFalsePositiveRationale(text: string): boolean {
 }
 
 function isRawModerationScoreSignal(text: string): boolean {
-  return /^(?:text\s*:\s*)?[a-z][a-z /-]*\s+(?:score\s+)?\d+\.\d+$/i.test(
-    text.trim(),
-  );
+  const stripped = text.trim();
+  // Prefix-form: text:/image:/video: followed by anything that ends in a
+  // decimal score (e.g. "image: max_likelihood 0.25", "text: Firearms &
+  // Weapons 0.769"). The prefix is a strong enough signal that we can be
+  // lenient about the body — agents are explicitly told not to put raw
+  // category labels in top_signals, so any "<analyzer>:" prefix here is
+  // already a raw leak.
+  if (/^(?:text|image|video)\s*:\s*\S.*\s+\d+\.\d+$/i.test(stripped)) {
+    return true;
+  }
+  // No-prefix form: a short label-shaped string followed by a final decimal,
+  // e.g. "Firearms & Weapons 0.769" or "Death, Harm & Tragedy 0.85". Char
+  // class allows letters, spaces, '&', ',', '/', '-', and apostrophe so GCP
+  // categories like "Children's Interests" or "War & Conflict" match too.
+  return /^[a-z][a-z &,/'\-]*\s+(?:score\s+)?\d+\.\d+$/i.test(stripped);
 }
 
 function rationaleConcernClauses(rationale: string): string[] {

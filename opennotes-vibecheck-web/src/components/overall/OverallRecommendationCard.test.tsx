@@ -303,6 +303,121 @@ describe("<OverallRecommendationCard />", () => {
     expect(reason.textContent).toBe("Adult imagery 2024");
   });
 
+  it("suppresses 'text: Firearms & Weapons 0.769' (ampersand in category)", () => {
+    render(() => (
+      <OverallRecommendationCard
+        recommendation={makeRecommendation({
+          level: "caution",
+          top_signals: [
+            "text: Legal 1.0",
+            "text: Firearms & Weapons 0.769",
+            "Repeated low-severity toxicity",
+          ],
+          rationale:
+            "Legal and Firearms & Weapons scores are clearly false positives. Repeated low-severity toxicity remains.",
+        })}
+      />
+    ));
+
+    const reason = screen.getByTestId("overall-recommendation-reason");
+    expect(reason.textContent).toBe("Repeated low-severity toxicity");
+  });
+
+  it("suppresses 'text: Death, Harm & Tragedy 0.85' (comma + ampersand)", () => {
+    render(() => (
+      <OverallRecommendationCard
+        recommendation={makeRecommendation({
+          level: "caution",
+          top_signals: [
+            "text: Death, Harm & Tragedy 0.85",
+            "Repeated low-severity toxicity",
+          ],
+          rationale:
+            "Death, Harm & Tragedy score is judged to be a false positive. Repeated low-severity toxicity remains.",
+        })}
+      />
+    ));
+
+    const reason = screen.getByTestId("overall-recommendation-reason");
+    expect(reason.textContent).toBe("Repeated low-severity toxicity");
+  });
+
+  it("suppresses 'image: max_likelihood 0.25' (image prefix)", () => {
+    render(() => (
+      <OverallRecommendationCard
+        recommendation={makeRecommendation({
+          level: "caution",
+          top_signals: [
+            "image: max_likelihood 0.25",
+            "Repeated low-severity toxicity",
+          ],
+          rationale:
+            "Image scores judged to be false positives. Repeated low-severity toxicity remains.",
+        })}
+      />
+    ));
+
+    const reason = screen.getByTestId("overall-recommendation-reason");
+    expect(reason.textContent).toBe("Repeated low-severity toxicity");
+  });
+
+  it("suppresses 'Firearms & Weapons 0.769' without text: prefix", () => {
+    render(() => (
+      <OverallRecommendationCard
+        recommendation={makeRecommendation({
+          level: "caution",
+          top_signals: [
+            "Firearms & Weapons 0.769",
+            "Repeated low-severity toxicity",
+          ],
+          rationale: "Firearms score judged to be a false positive. Repeated low-severity toxicity remains.",
+        })}
+      />
+    ));
+
+    const reason = screen.getByTestId("overall-recommendation-reason");
+    expect(reason.textContent).toBe("Repeated low-severity toxicity");
+  });
+
+  it("does not classify humanized prose like 'Mild violent rhetoric' as raw", () => {
+    render(() => (
+      <OverallRecommendationCard
+        recommendation={makeRecommendation({
+          level: "caution",
+          top_signals: ["text: Legal 1.0", "Mild violent rhetoric"],
+          rationale: "Legal score judged to be a false positive. Mild violent rhetoric remains.",
+        })}
+      />
+    ));
+
+    const reason = screen.getByTestId("overall-recommendation-reason");
+    expect(reason.textContent).toBe("Mild violent rhetoric");
+  });
+
+  it("reproduces production job 9c9dafb1 — surfaces humanized concern over raw scores", () => {
+    render(() => (
+      <OverallRecommendationCard
+        recommendation={makeRecommendation({
+          level: "caution",
+          top_signals: [
+            "text: Legal 1.0",
+            "text: Firearms & Weapons 0.769",
+            "text: Illicit Drugs 0.7",
+            "text: Toxic 0.674",
+            "image: max_likelihood 0.25",
+          ],
+          rationale:
+            "The text analysis returned multiple high-scoring matches (Legal 1.0, Firearms & Weapons 0.769, Illicit Drugs 0.7), but these are clearly false positives triggered by programming languages and tech terminology. However, the text also contains multiple verified low-severity signals of toxicity and mild violence from users venting, which together warrant a caution rating.",
+        })}
+      />
+    ));
+
+    const reason = screen.getByTestId("overall-recommendation-reason");
+    // Must not be any of the raw-score top_signals.
+    expect(reason.textContent).not.toMatch(/\d+\.\d+/);
+    expect(reason.textContent).not.toMatch(/^(?:text|image|video):/i);
+  });
+
   it("still suppresses decimal-scored signals when rationale is FP", () => {
     render(() => (
       <OverallRecommendationCard
