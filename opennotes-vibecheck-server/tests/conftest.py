@@ -82,6 +82,7 @@ CREATE TABLE vibecheck_jobs (
     safety_recommendation JSONB,
     headline_summary JSONB,
     weather_report JSONB,
+    overall_decision JSONB,
     last_stage TEXT,
     preview_description TEXT,
     extract_transient_attempts INT NOT NULL DEFAULT 0,

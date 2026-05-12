@@ -1069,6 +1069,7 @@ async def test_run_pipeline_names_post_extraction_spans_by_available_utterances(
     monkeypatch.setattr(orchestrator, "_run_safety_recommendation_step", noop)
     monkeypatch.setattr(orchestrator, "_run_headline_summary_step", noop)
     monkeypatch.setattr(orchestrator, "_run_weather_report_step", noop)
+    monkeypatch.setattr(orchestrator, "_run_overall_recommendation_step", noop)
     monkeypatch.setattr(orchestrator, "maybe_finalize_job", noop_finalize)
 
     await orchestrator._run_pipeline(
@@ -1083,6 +1084,7 @@ async def test_run_pipeline_names_post_extraction_spans_by_available_utterances(
         "vibecheck.with_utterances.safety_recommendation",
         "vibecheck.with_utterances.headline_summary",
         "vibecheck.with_utterances.weather_report",
+        "vibecheck.with_utterances.overall_recommendation",
         "vibecheck.with_utterances.finalize",
     ]
 

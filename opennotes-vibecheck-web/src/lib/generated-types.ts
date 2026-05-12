@@ -1088,6 +1088,17 @@ export interface components {
             trends_oppositions?: components["schemas"]["TrendsOppositionsReport"] | null;
             highlights?: components["schemas"]["OpinionsHighlightsReport"] | null;
         };
+        /** OverallDecision */
+        OverallDecision: {
+            verdict: components["schemas"]["OverallVerdict"];
+            /** Reason */
+            reason: string;
+        };
+        /**
+         * OverallVerdict
+         * @enum {string}
+         */
+        OverallVerdict: "pass" | "flag";
         /**
          * PageKind
          * @description Shape of the source page the extractor handled.
@@ -1461,6 +1472,7 @@ export interface components {
             image_moderation?: components["schemas"]["ImageModerationSection"];
             video_moderation?: components["schemas"]["VideoModerationSection"];
             headline?: components["schemas"]["HeadlineSummary"] | null;
+            overall?: components["schemas"]["OverallDecision"] | null;
             weather_report?: components["schemas"]["WeatherReport"] | null;
             /**
              * Utterances

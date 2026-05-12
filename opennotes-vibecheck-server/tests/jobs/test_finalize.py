@@ -382,6 +382,45 @@ async def test_maybe_finalize_job_round_trips_weather_report_to_sidebar_payload(
     assert payload_dict["weather_report"] == weather_report
 
 
+@pytest.mark.asyncio
+async def test_maybe_finalize_job_round_trips_overall_decision_to_sidebar_payload(
+    db_pool: Any,
+) -> None:
+    task_attempt = uuid4()
+    overall_decision = {
+        "verdict": "flag",
+        "reason": "Server synthesis",
+    }
+    job_id = await _insert_job(
+        db_pool,
+        attempt_id=task_attempt,
+        url="https://example.com/overall-thread",
+    )
+
+    async with db_pool.acquire() as conn:
+        await conn.execute(
+            "UPDATE vibecheck_jobs SET overall_decision = $2::jsonb WHERE job_id = $1",
+            job_id,
+            json.dumps(overall_decision),
+        )
+
+    finalized = await maybe_finalize_job(
+        db_pool,
+        job_id,
+        expected_task_attempt=task_attempt,
+    )
+
+    assert finalized is True
+    async with db_pool.acquire() as conn:
+        payload = await conn.fetchval(
+            "SELECT sidebar_payload FROM vibecheck_jobs WHERE job_id = $1",
+            job_id,
+        )
+
+    payload_dict = json.loads(payload) if isinstance(payload, str) else dict(payload)
+    assert payload_dict["overall"] == overall_decision
+
+
 class TestAssemblePayloadWiresNewSafetySections:
     """Codex P0.3 regression: the finalize step MUST copy web_risk / image_mod /
     video_mod slot data into the SidebarPayload. Before this fix, those slots

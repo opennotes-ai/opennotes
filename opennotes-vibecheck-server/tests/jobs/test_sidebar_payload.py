@@ -143,6 +143,10 @@ def _weather_report_dict() -> dict[str, Any]:
     }
 
 
+def _overall_decision_dict() -> dict[str, Any]:
+    return {"verdict": "flag", "reason": "Server synthesis"}
+
+
 class TestAssembleSidebarPayload:
     def test_returns_sidebar_payload_with_source_url(self):
         sidebar = assemble_sidebar_payload("https://example.com", {})
@@ -417,6 +421,33 @@ class TestAssembleSidebarPayload:
             "https://example.com", _minimal_done_sections(), weather_report=None
         )
         assert sidebar.weather_report is None
+
+    def test_overall_decision_dict_parses(self):
+        sidebar = assemble_sidebar_payload(
+            "https://example.com",
+            _minimal_done_sections(),
+            overall_decision=_overall_decision_dict(),
+        )
+
+        assert sidebar.overall is not None
+        assert sidebar.overall.verdict == "flag"
+        assert sidebar.overall.reason == "Server synthesis"
+
+    def test_overall_decision_json_string_parses(self):
+        sidebar = assemble_sidebar_payload(
+            "https://example.com",
+            _minimal_done_sections(),
+            overall_decision=json.dumps(_overall_decision_dict()),
+        )
+
+        assert sidebar.overall is not None
+        assert sidebar.overall.reason == "Server synthesis"
+
+    def test_null_overall_decision_stays_none(self):
+        sidebar = assemble_sidebar_payload(
+            "https://example.com", _minimal_done_sections(), overall_decision=None
+        )
+        assert sidebar.overall is None
 
     def test_utterances_default_to_empty_list(self):
         sidebar = assemble_sidebar_payload("https://example.com", _minimal_done_sections())

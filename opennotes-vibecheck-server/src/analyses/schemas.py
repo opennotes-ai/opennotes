@@ -35,6 +35,7 @@ from src.analyses.safety._schemas import (
     WebRiskFinding,
 )
 from src.analyses.stream_types import UtteranceStreamType
+from src.analyses.synthesis._overall_schemas import OverallDecision, OverallVerdict
 from src.analyses.synthesis._weather_schemas import WeatherReport
 from src.analyses.tone._flashpoint_schemas import FlashpointMatch
 from src.analyses.tone._scd_schemas import SCDReport
@@ -262,6 +263,7 @@ class SidebarPayload(BaseModel):
     image_moderation: ImageModerationSection = Field(default_factory=ImageModerationSection)
     video_moderation: VideoModerationSection = Field(default_factory=VideoModerationSection)
     headline: HeadlineSummary | None = None
+    overall: OverallDecision | None = None
     weather_report: WeatherReport | None = None
     utterances: list[UtteranceAnchor] = Field(
         default_factory=list,
@@ -393,6 +395,8 @@ __all__ = [
     "JobState",
     "JobStatus",
     "OpinionsSection",
+    "OverallDecision",
+    "OverallVerdict",
     "PageKind",
     "RecentAnalysis",
     "SafetyRecommendation",

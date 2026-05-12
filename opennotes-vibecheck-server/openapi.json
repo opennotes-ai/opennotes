@@ -2283,6 +2283,31 @@
         "title": "OpinionsSection",
         "description": "Sentiment distribution and extracted subjective claims."
       },
+      "OverallDecision": {
+        "properties": {
+          "verdict": {
+            "$ref": "#/components/schemas/OverallVerdict"
+          },
+          "reason": {
+            "type": "string",
+            "title": "Reason"
+          }
+        },
+        "type": "object",
+        "required": [
+          "verdict",
+          "reason"
+        ],
+        "title": "OverallDecision"
+      },
+      "OverallVerdict": {
+        "type": "string",
+        "enum": [
+          "pass",
+          "flag"
+        ],
+        "title": "OverallVerdict"
+      },
       "PageKind": {
         "type": "string",
         "enum": [
@@ -2998,6 +3023,16 @@
             "anyOf": [
               {
                 "$ref": "#/components/schemas/HeadlineSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "overall": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OverallDecision"
               },
               {
                 "type": "null"

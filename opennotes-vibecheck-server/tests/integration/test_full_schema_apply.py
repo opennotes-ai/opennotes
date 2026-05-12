@@ -723,6 +723,33 @@ async def test_vibecheck_feedback_no_dedicated_select_policy_for_anon(
     )
 
 
+async def test_vibecheck_jobs_overall_decision_not_readable_by_authenticated(
+    full_schema_conn: asyncpg.Connection,
+) -> None:
+    await _apply_full_schema_as_superuser(full_schema_conn)
+
+    column_grants = await full_schema_conn.fetch(
+        """
+        SELECT grantee, privilege_type
+        FROM information_schema.column_privileges
+        WHERE table_schema = 'public'
+          AND table_name = 'vibecheck_jobs'
+          AND column_name = 'overall_decision'
+          AND grantee IN ('anon', 'authenticated')
+        """
+    )
+    assert column_grants == []
+
+    await full_schema_conn.execute("SET ROLE authenticated")
+    try:
+        with pytest.raises(asyncpg.InsufficientPrivilegeError):
+            await full_schema_conn.fetchval(
+                "SELECT overall_decision FROM public.vibecheck_jobs LIMIT 1"
+            )
+    finally:
+        await full_schema_conn.execute("RESET ROLE")
+
+
 async def test_vibecheck_feedback_check_constraint_rejects_invalid_initial_type(
     full_schema_conn: asyncpg.Connection,
 ) -> None:

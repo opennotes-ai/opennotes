@@ -41,10 +41,27 @@ from src.analyses.schemas import (
     VideoModerationSection,
     WebRiskSection,
 )
+from src.analyses.synthesis._overall_schemas import OverallDecision
 from src.analyses.synthesis._weather_schemas import WeatherReport
 from src.analyses.tone._flashpoint_schemas import FlashpointMatch
 from src.analyses.tone._scd_schemas import SCDReport
 from src.jobs.section_defaults import empty_section_data
+
+
+def _parse_weather(value: Any | None) -> WeatherReport | None:
+    if value is None:
+        return None
+    if isinstance(value, str):
+        return WeatherReport.model_validate(json.loads(value))
+    return WeatherReport.model_validate(value)
+
+
+def _parse_overall(value: Any | None) -> OverallDecision | None:
+    if value is None:
+        return None
+    if isinstance(value, str):
+        return OverallDecision.model_validate(json.loads(value))
+    return OverallDecision.model_validate(value)
 
 
 def assemble_sidebar_payload(
@@ -53,6 +70,7 @@ def assemble_sidebar_payload(
     safety_recommendation: Any | None = None,
     headline_summary: Any | None = None,
     weather_report: Any | None = None,
+    overall_decision: Any | None = None,
     utterances: list[UtteranceAnchor] | None = None,
     page_title: str | None = None,
     page_kind: PageKind = PageKind.OTHER,
@@ -234,13 +252,8 @@ def assemble_sidebar_payload(
         else None
     )
 
-    weather = (
-        WeatherReport.model_validate(json.loads(weather_report))
-        if isinstance(weather_report, str)
-        else WeatherReport.model_validate(weather_report)
-        if weather_report is not None
-        else None
-    )
+    weather = _parse_weather(weather_report)
+    overall = _parse_overall(overall_decision)
 
     return SidebarPayload(
         source_url=url,
@@ -257,6 +270,7 @@ def assemble_sidebar_payload(
         facts_claims=facts,
         opinions_sentiments=opinions,
         headline=headline,
+        overall=overall,
         weather_report=weather,
         utterances=utterances or [],
     )

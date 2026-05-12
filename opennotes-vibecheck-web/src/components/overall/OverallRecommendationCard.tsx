@@ -10,11 +10,7 @@ type WeatherReport = components["schemas"]["WeatherReport"];
 type RelevanceLabel = WeatherReport["relevance"]["label"];
 
 export type OverallVerdict = "pass" | "flag";
-
-export interface OverallDecision {
-  verdict: OverallVerdict;
-  reason: string;
-}
+export type OverallDecision = components["schemas"]["OverallDecision"];
 
 // The set of signals the overall verdict is decided over. The verdict is a
 // cost-benefit decision — "should a moderator intervene?" — weighing
@@ -22,9 +18,9 @@ export interface OverallDecision {
 // (what's the benefit of intervening — is the content worth the effort?).
 //
 // Slots are grouped by level: higher-level slots carry already-synthesized
-// agent outputs; lower-level slots carry raw analyzer findings. Lower-level
-// signals are reserved for upcoming rules and the server-side
-// overall-recommendation agent that will eventually own this synthesis.
+// agent outputs; lower-level slots carry raw analyzer findings. The server
+// overall-recommendation agent now owns this synthesis when `overall` is
+// present; this web-side signal bag remains the deterministic fallback.
 export interface OverallSignals {
   // Risk side — higher-level synthesized agent outputs.
   safetyRecommendation: SafetyRecommendation | null;
@@ -240,10 +236,10 @@ function decideFromSafety(
   };
 }
 
-// Decide the overall verdict over the cross-signal bag. The function is a
-// cost-benefit composition: should a moderator intervene, given the risk
-// signals (cost of NOT intervening) and the utility signals (benefit of
-// intervening — is the content worth it)?
+// Fallback decision over the cross-signal bag when the server has not supplied
+// an OverallDecision. The function is a cost-benefit composition: should a
+// moderator intervene, given the risk signals (cost of NOT intervening) and
+// the utility signals (benefit of intervening — is the content worth it)?
 //
 // Rules layer in priority order:
 //   1. Risk-side base: the higher-level safety recommendation (agent
@@ -256,8 +252,7 @@ function decideFromSafety(
 //      attention.
 //   4. (Future rules over lower-level signals layer in here.)
 //
-// This stays web-side until the server-side overall-recommendation agent
-// ships and owns the full synthesis; see
+// Keep this web-side path alive for old/null server responses; see
 // `docs/architecture/overall-verdict-cross-signal-escalation.md`.
 export function decideOverall(
   signals: OverallSignals,

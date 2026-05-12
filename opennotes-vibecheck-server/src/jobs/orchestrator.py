@@ -59,7 +59,7 @@ import json
 import logging
 import time
 from dataclasses import dataclass
-from typing import Any, Final, Literal, NoReturn
+from typing import Any, Final, Literal, NoReturn, cast
 from urllib.parse import urlparse
 from uuid import UUID, uuid4
 
@@ -107,9 +107,14 @@ from src.analyses.schemas import (
     SectionSlug,
     SectionState,
 )
+from src.analyses.synthesis._weather_schemas import WeatherReport
 from src.analyses.synthesis.headline_summary_agent import (
     HeadlineSummaryInputs,
     run_headline_summary,
+)
+from src.analyses.synthesis.overall_recommendation_agent import (
+    OverallInputs,
+    evaluate_overall,
 )
 from src.analyses.synthesis.weather_report_agent import (
     WeatherInputs,
@@ -410,13 +415,14 @@ WHERE job_id = $1
   AND attempt_id = $3
 """
 
-# TASK-1508.04.03: load all section data plus the freshly-written safety
-# recommendation and job-level page metadata so the headline summarizer can
-# synthesize from the structured outputs without re-reading raw utterances.
-_LOAD_HEADLINE_INPUTS_SQL = """
+# TASK-1508.04.03/TASK-1623.06: load all section data plus freshly-written
+# synthesis inputs so headline, weather, and overall stages can synthesize from
+# structured outputs without re-reading raw utterances.
+_LOAD_SYNTHESIS_INPUTS_SQL = """
 SELECT
     j.sections,
     j.safety_recommendation,
+    j.weather_report,
     j.page_title AS page_title,
     j.page_kind AS page_kind
 FROM vibecheck_jobs j
@@ -435,6 +441,14 @@ WHERE job_id = $1
 _WRITE_WEATHER_REPORT_SQL = """
 UPDATE vibecheck_jobs
 SET weather_report = $2::jsonb,
+    updated_at = now()
+WHERE job_id = $1
+  AND attempt_id = $3
+"""
+
+_WRITE_OVERALL_DECISION_SQL = """
+UPDATE vibecheck_jobs
+SET overall_decision = $2::jsonb,
     updated_at = now()
 WHERE job_id = $1
   AND attempt_id = $3
@@ -472,6 +486,7 @@ _STAGE_RUN_SECTIONS = "run_sections"
 _STAGE_SAFETY_RECOMMENDATION = "safety_recommendation"
 _STAGE_HEADLINE_SUMMARY = "headline_summary"
 _STAGE_WEATHER_REPORT = "weather_report"
+_STAGE_OVERALL_RECOMMENDATION = "overall_recommendation"
 _STAGE_FINALIZE = "finalize"
 
 
@@ -2535,6 +2550,52 @@ def _build_weather_report_inputs(
     )
 
 
+def _build_overall_recommendation_inputs(
+    sections: dict[str, Any],
+    safety_recommendation_raw: Any,
+    weather_report_raw: Any,
+    page_title: str | None,
+    page_kind_raw: str | None,
+) -> OverallInputs:
+    unavailable_inputs: list[str] = []
+    slot_inputs = _headline_and_weather_slot_inputs(sections, unavailable_inputs)
+
+    flashpoint_data = slot_inputs["flashpoint_data"]
+    safety_recommendation: SafetyRecommendation | None = None
+    if safety_recommendation_raw is not None:
+        raw_payload = (
+            json.loads(safety_recommendation_raw)
+            if isinstance(safety_recommendation_raw, str)
+            else safety_recommendation_raw
+        )
+        safety_recommendation = SafetyRecommendation.model_validate(raw_payload)
+    else:
+        unavailable_inputs.append("safety_recommendation")
+
+    weather_report: WeatherReport | None = None
+    if weather_report_raw is not None:
+        raw_weather = (
+            json.loads(weather_report_raw)
+            if isinstance(weather_report_raw, str)
+            else weather_report_raw
+        )
+        weather_report = WeatherReport.model_validate(raw_weather)
+    else:
+        unavailable_inputs.append("weather_report")
+
+    return OverallInputs(
+        page_title=page_title,
+        page_kind=_coerce_page_kind(page_kind_raw),
+        safety_recommendation=safety_recommendation,
+        flashpoint_matches=[
+            FlashpointMatch.model_validate(match)
+            for match in flashpoint_data.get("flashpoint_matches", [])
+        ],
+        weather_report=weather_report,
+        unavailable_inputs=unavailable_inputs,
+    )
+
+
 async def _run_weather_report_step(
     pool: Any,
     job_id: UUID,
@@ -2549,7 +2610,7 @@ async def _run_weather_report_step(
     """
     try:
         async with pool.acquire() as conn:
-            row = await conn.fetchrow(_LOAD_HEADLINE_INPUTS_SQL, job_id, task_attempt)
+            row = await conn.fetchrow(_LOAD_SYNTHESIS_INPUTS_SQL, job_id, task_attempt)
         if row is None:
             return
 
@@ -2580,6 +2641,51 @@ async def _run_weather_report_step(
         return
 
 
+async def _run_overall_recommendation_step(
+    pool: Any,
+    job_id: UUID,
+    task_attempt: UUID,
+    settings: Settings,
+) -> None:
+    """Synthesize the overall recommendation and persist it to vibecheck_jobs."""
+    try:
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(_LOAD_SYNTHESIS_INPUTS_SQL, job_id, task_attempt)
+        if row is None:
+            return
+
+        inputs = _build_overall_recommendation_inputs(
+            _parse_sections(row["sections"]),
+            row["safety_recommendation"],
+            row["weather_report"],
+            row["page_title"],
+            row["page_kind"],
+        )
+        decision = await evaluate_overall(
+            inputs,
+            settings,
+            job_id=job_id,
+        )
+        if decision is None:
+            return
+
+        decision_json = json.dumps(decision.model_dump(mode="json"))
+        async with pool.acquire() as conn:
+            await conn.execute(
+                _WRITE_OVERALL_DECISION_SQL,
+                job_id,
+                decision_json,
+                task_attempt,
+            )
+    except Exception:
+        logger.exception(
+            "overall recommendation step failed for job %s attempt %s",
+            job_id,
+            task_attempt,
+        )
+        return
+
+
 async def _run_headline_weather_steps(
     pool: Any,
     job_id: UUID,
@@ -2596,55 +2702,32 @@ async def _run_headline_weather_steps(
     consistent and avoids duplicated span wiring.
     """
 
+    def _span_attrs() -> dict[str, str]:
+        attrs = {"job_id": str(job_id), "attempt_id": str(task_attempt)}
+        if slug is not None:
+            attrs["slug"] = slug.value
+        return attrs
+
+    def _stage_span(name: str) -> Any:
+        return cast(Any, logfire.span)(name, **_span_attrs())
+
     async def _run_headline_stage() -> None:
-        if slug is None:
-            with logfire.span(
-                f"{stage_prefix}.headline_summary",
-                job_id=str(job_id),
-                attempt_id=str(task_attempt),
-            ):
-                await _set_last_stage(
-                    pool, job_id, task_attempt, _STAGE_HEADLINE_SUMMARY
-                )
-                await _run_headline_summary_step(
-                    pool, job_id, task_attempt, settings
-                )
-        else:
-            with logfire.span(
-                f"{stage_prefix}.headline_summary",
-                job_id=str(job_id),
-                attempt_id=str(task_attempt),
-                slug=slug.value,
-            ):
-                await _set_last_stage(
-                    pool, job_id, task_attempt, _STAGE_HEADLINE_SUMMARY
-                )
-                await _run_headline_summary_step(
-                    pool, job_id, task_attempt, settings
-                )
+        with _stage_span(f"{stage_prefix}.headline_summary"):
+            await _set_last_stage(pool, job_id, task_attempt, _STAGE_HEADLINE_SUMMARY)
+            await _run_headline_summary_step(pool, job_id, task_attempt, settings)
+
+    async def _run_overall_stage() -> None:
+        with _stage_span(f"{stage_prefix}.overall_recommendation"):
+            await _set_last_stage(
+                pool, job_id, task_attempt, _STAGE_OVERALL_RECOMMENDATION
+            )
+            await _run_overall_recommendation_step(pool, job_id, task_attempt, settings)
 
     async def _run_weather_stage() -> None:
-        if slug is None:
-            with logfire.span(
-                f"{stage_prefix}.weather_report",
-                job_id=str(job_id),
-                attempt_id=str(task_attempt),
-            ):
-                await _set_last_stage(
-                    pool, job_id, task_attempt, _STAGE_WEATHER_REPORT
-                )
-                await _run_weather_report_step(pool, job_id, task_attempt, settings)
-        else:
-            with logfire.span(
-                f"{stage_prefix}.weather_report",
-                job_id=str(job_id),
-                attempt_id=str(task_attempt),
-                slug=slug.value,
-            ):
-                await _set_last_stage(
-                    pool, job_id, task_attempt, _STAGE_WEATHER_REPORT
-                )
-                await _run_weather_report_step(pool, job_id, task_attempt, settings)
+        with _stage_span(f"{stage_prefix}.weather_report"):
+            await _set_last_stage(pool, job_id, task_attempt, _STAGE_WEATHER_REPORT)
+            await _run_weather_report_step(pool, job_id, task_attempt, settings)
+            await _run_overall_stage()
 
     await asyncio.gather(_run_headline_stage(), _run_weather_stage())
 
@@ -2664,7 +2747,7 @@ async def _run_headline_summary_step(
     SidebarPayload with `headline=None` and the UI degrades gracefully.
     """
     async with pool.acquire() as conn:
-        row = await conn.fetchrow(_LOAD_HEADLINE_INPUTS_SQL, job_id, task_attempt)
+        row = await conn.fetchrow(_LOAD_SYNTHESIS_INPUTS_SQL, job_id, task_attempt)
     if row is None:
         return
 

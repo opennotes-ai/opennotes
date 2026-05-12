@@ -85,6 +85,8 @@ def _mock_poll_row(
         "updated_at": now,
         "safety_recommendation": None,
         "headline_summary": None,
+        "overall_decision": None,
+        "weather_report": None,
         "last_stage": None,
         "heartbeat_at": None,
         "source_type": source_type,
@@ -249,6 +251,24 @@ def test_row_to_job_state_preserves_valid_weather_report() -> None:
     assert job.sidebar_payload_complete is True
 
 
+def test_row_to_job_state_preserves_valid_overall_decision() -> None:
+    row = _mock_poll_row(status="done")
+    payload = _minimal_terminal_sidebar_payload(row["url"])
+    payload["overall"] = {
+        "verdict": "flag",
+        "reason": "Server synthesis",
+    }
+    row["sidebar_payload"] = payload
+
+    job = _row_to_job_state(row)
+
+    assert job.sidebar_payload is not None
+    assert job.sidebar_payload.overall is not None
+    assert job.sidebar_payload.overall.verdict == "flag"
+    assert job.sidebar_payload.overall.reason == "Server synthesis"
+    assert job.sidebar_payload_complete is True
+
+
 def test_row_to_job_state_strips_invalid_inflight_weather_report() -> None:
     """In-flight (non-terminal) jobs with at least one DONE section assemble
     a partial sidebar via assemble_sidebar_payload, which validates
@@ -273,6 +293,28 @@ def test_row_to_job_state_strips_invalid_inflight_weather_report() -> None:
 
     assert job.sidebar_payload is not None
     assert job.sidebar_payload.weather_report is None
+    assert job.sidebar_payload_complete is False
+
+
+def test_row_to_job_state_preserves_valid_inflight_overall_decision() -> None:
+    row = _mock_poll_row(status="analyzing")
+    row["sections"] = {
+        SectionSlug.SAFETY_MODERATION.value: {
+            "state": SectionState.DONE.value,
+            "attempt_id": str(uuid4()),
+            "data": {"harmful_content_matches": []},
+        }
+    }
+    row["overall_decision"] = {
+        "verdict": "pass",
+        "reason": "Server synthesis",
+    }
+
+    job = _row_to_job_state(row)
+
+    assert job.sidebar_payload is not None
+    assert job.sidebar_payload.overall is not None
+    assert job.sidebar_payload.overall.verdict == "pass"
     assert job.sidebar_payload_complete is False
 
 

@@ -56,6 +56,7 @@ from src.analyses.schemas import (
     SidebarPayload,
     UtteranceStreamType,
 )
+from src.analyses.synthesis._overall_schemas import OverallDecision
 from src.analyses.synthesis._weather_schemas import WeatherReport
 from src.cache.scrape_cache import canonical_cache_key
 from src.config import Settings, get_settings
@@ -537,6 +538,7 @@ SELECT
     j.updated_at,
     j.safety_recommendation,
     j.headline_summary,
+    j.overall_decision,
     j.weather_report,
     j.last_stage,
     j.heartbeat_at,
@@ -660,6 +662,22 @@ def _safe_weather_report_dict(weather_raw: Any, *, job_id: Any) -> Any:
     return decoded
 
 
+def _safe_overall_decision_dict(overall_raw: Any, *, job_id: Any) -> Any:
+    if overall_raw is None:
+        return None
+    decoded = json.loads(overall_raw) if isinstance(overall_raw, str) else overall_raw
+    try:
+        OverallDecision.model_validate(decoded)
+    except ValidationError as exc:
+        logger.warning(
+            "in-flight overall_decision failed validation; dropping (job_id=%s): %s",
+            job_id,
+            _safe_validation_error_summary(exc),
+        )
+        return None
+    return decoded
+
+
 def _row_to_job_state(row: Any) -> JobState:
     status = JobStatus(row["status"])
     source_type = row.get("source_type", "url")
@@ -690,6 +708,9 @@ def _row_to_job_state(row: Any) -> JobState:
             headline_summary=row.get("headline_summary", None),
             weather_report=_safe_weather_report_dict(
                 row.get("weather_report", None), job_id=row["job_id"]
+            ),
+            overall_decision=_safe_overall_decision_dict(
+                row.get("overall_decision", None), job_id=row["job_id"]
             ),
             utterances=[],
             page_title=row.get("page_title", None),
@@ -767,6 +788,7 @@ _STAGE_LABEL_MAP: dict[str, str] = {
     "safety_recommendation": "Computing safety guidance",
     "headline_summary": "Writing summary",
     "weather_report": "Writing weather report",
+    "overall_recommendation": "Writing overall recommendation",
     "finalize": "Finalizing results",
 }
 
