@@ -136,13 +136,18 @@ function sidebarPayload() {
   return {
     headline: null,
     utterances: [
-      { position: 3, utterance_id: "scd-utt" },
+      { position: 1, utterance_id: "post-0-aaa" },
+      { position: 2, utterance_id: "comment-1-bbb" },
+      { position: 3, utterance_id: "comment-2-ccc" },
+      { position: 4, utterance_id: "reply-3-ddd" },
+      { position: 5, utterance_id: "comment-4-eee" },
+      { position: 6, utterance_id: "comment-5-fff" },
     ],
     safety: {
       recommendation: null,
       harmful_content_matches: [
         {
-          utterance_id: "safety-utt",
+          utterance_id: "post-0-aaa",
           utterance_text: "",
           max_score: 0.91,
           flagged_categories: ["harassment"],
@@ -159,7 +164,7 @@ function sidebarPayload() {
       flashpoint_matches: [
         {
           scan_type: "conversation_flashpoint",
-          utterance_id: "flash-utt",
+          utterance_id: "comment-1-bbb",
           derailment_score: 88,
           risk_level: "Heated",
           reasoning: "The exchange becomes confrontational.",
@@ -187,7 +192,7 @@ function sidebarPayload() {
             canonical_text: "The same factual claim appears twice.",
             occurrence_count: 2,
             author_count: 1,
-            utterance_ids: ["claim-utt", "claim-extra-utt"],
+            utterance_ids: ["comment-4-eee", "reply-3-ddd"],
           },
         ],
         total_claims: 2,
@@ -206,7 +211,7 @@ function sidebarPayload() {
         },
         subjective_claims: [
           {
-            utterance_id: "subjective-utt",
+            utterance_id: "comment-5-fff",
             claim_text: "This is the best possible interpretation.",
             stance: "opinion",
           },
@@ -230,17 +235,17 @@ function archiveHtml(): string {
       </head>
       <body>
         <article>
-          <p data-utterance-id="safety-utt">Safety utterance near the top.</p>
+          <p data-utterance-id="post-0-aaa">Source post near the top.</p>
           <div class="spacer"></div>
-          <p data-utterance-id="flash-utt">Flashpoint utterance in the middle.</p>
+          <p data-utterance-id="comment-1-bbb">Flashpoint comment in the middle.</p>
           <div class="spacer"></div>
-          <p data-utterance-id="scd-utt">Speaker dynamics utterance.</p>
+          <p data-utterance-id="comment-2-ccc">Speaker dynamics comment.</p>
           <div class="spacer"></div>
-          <p data-utterance-id="claim-utt">Deduped claim utterance.</p>
+          <p data-utterance-id="comment-4-eee">Deduped claim comment.</p>
           <div class="spacer"></div>
-          <p data-utterance-id="claim-extra-utt">Additional deduped claim utterance.</p>
+          <p data-utterance-id="reply-3-ddd">Additional deduped claim reply.</p>
           <div class="spacer"></div>
-          <p data-utterance-id="subjective-utt">Subjective claim utterance near the bottom.</p>
+          <p data-utterance-id="comment-5-fff">Subjective claim comment near the bottom.</p>
         </article>
       </body>
     </html>`;
@@ -257,7 +262,7 @@ function archiveFrame(page: Page): FrameLocator {
 
 async function waitForArchivedFrame(page: Page): Promise<void> {
   await expect(page.getByTestId("page-frame-archived-iframe")).toBeVisible();
-  await expect(archiveFrame(page).locator('[data-utterance-id="safety-utt"]')).toBeVisible();
+  await expect(archiveFrame(page).locator('[data-utterance-id="post-0-aaa"]')).toBeVisible();
 }
 
 async function iframeScrollY(page: Page): Promise<number> {
@@ -428,10 +433,15 @@ test("utterance refs switch to archive, scroll to five report targets, and move 
 }) => {
   await gotoAnalyze(page);
 
+  await expect(page.getByTestId("safety-utterance-ref")).toHaveText("main post");
+  await expect(page.getByTestId("flashpoint-utterance-ref")).toHaveText("comment #1");
+  await expect(page.getByTestId("subjective-claim-utterance-ref")).toHaveText("comment #4");
+  await expect(page.getByTestId("deduped-claim-utterance-ref")).toHaveText("comment #3");
+
   await page.getByTestId("flashpoint-utterance-ref").click();
   await waitForArchivedFrame(page);
-  await expectOnlyRing(page, "flash-utt");
-  await expectTargetInViewport(page, "flash-utt");
+  await expectOnlyRing(page, "comment-1-bbb");
+  await expectTargetInViewport(page, "comment-1-bbb");
   await expect(page.getByRole("button", { name: "Archived" })).toHaveAttribute(
     "aria-pressed",
     "true",
@@ -441,7 +451,7 @@ test("utterance refs switch to archive, scroll to five report targets, and move 
   await activateAndExpectJump(
     page,
     page.getByTestId("safety-utterance-ref"),
-    "safety-utt",
+    "post-0-aaa",
     "enter",
   );
 
@@ -449,7 +459,7 @@ test("utterance refs switch to archive, scroll to five report targets, and move 
   await activateAndExpectJump(
     page,
     page.getByTestId("subjective-claim-utterance-ref"),
-    "subjective-utt",
+    "comment-5-fff",
     "space",
   );
   await expect.poll(async () => iframeScrollY(page)).toBeGreaterThan(belowStart);
@@ -457,13 +467,13 @@ test("utterance refs switch to archive, scroll to five report targets, and move 
   await activateAndExpectJump(
     page,
     page.getByTestId("scd-arc-range"),
-    "scd-utt",
+    "comment-2-ccc",
   );
 
   await activateAndExpectJump(
     page,
     page.getByTestId("deduped-claim-utterance-ref"),
-    "claim-utt",
+    "comment-4-eee",
   );
 });
 
@@ -479,7 +489,7 @@ test("utterance refs scroll upward when the archived target was already passed",
   await activateAndExpectJump(
     page,
     page.getByTestId("safety-utterance-ref"),
-    "safety-utt",
+    "post-0-aaa",
   );
   await expect.poll(async () => iframeScrollY(page)).toBeLessThan(500);
 });

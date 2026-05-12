@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@solidjs/testing-library";
+import type { JSX } from "solid-js";
 import type { components } from "~/lib/generated-types";
 import { UtterancesProvider } from "../UtterancesContext";
 import ClaimsDedupReport from "./ClaimsDedupReport";
@@ -27,7 +28,7 @@ const anchors = [
   anchor("reply-3-ddd", 4),
 ];
 
-function renderWithUtterances(children: () => Element) {
+function renderWithUtterances(children: () => JSX.Element) {
   return render(() => (
     <UtterancesProvider value={anchors}>{children()}</UtterancesProvider>
   ));
