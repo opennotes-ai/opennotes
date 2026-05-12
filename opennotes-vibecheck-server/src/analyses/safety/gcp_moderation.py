@@ -14,9 +14,10 @@ import asyncio
 from collections import defaultdict
 
 import httpx
+import logfire
 
 from src.analyses.safety._schemas import HarmfulContentMatch
-from src.config import Settings
+from src.config import Settings, get_settings
 from src.monitoring import external_api_span
 from src.services.gcp_adc import CLOUD_PLATFORM_SCOPE, get_access_token
 from src.utterances.chunking_service import Chunk, get_chunking_service
@@ -38,13 +39,15 @@ async def moderate_texts_gcp(
 ) -> list[HarmfulContentMatch]:
     if not utterances:
         return []
+    resolved_settings = settings or get_settings()
     token = get_access_token(CLOUD_PLATFORM_SCOPE)
     if not token:
         raise GcpModerationTransientError("ADC token unavailable")
-    sem = asyncio.Semaphore(8)
+    sem = asyncio.Semaphore(resolved_settings.VIBECHECK_GCP_MODERATION_CONCURRENCY)
 
-    chunking_service = await get_chunking_service(settings)
+    chunking_service = get_chunking_service(resolved_settings)
     scanable: list[tuple[int, Utterance, Chunk]] = []
+    chunk_count_by_utterance: dict[int, int] = {}
     for utterance_index, utterance in enumerate(utterances):
         chunks = (
             [
@@ -56,9 +59,10 @@ async def moderate_texts_gcp(
                     chunk_count=1,
                 )
             ]
-            if settings is not None and not settings.VIBECHECK_GCP_MODERATION_CHUNK_ENABLED
+            if not resolved_settings.VIBECHECK_MODERATION_CHUNK_ENABLED
             else chunking_service.chunk_text(utterance.text or "")
         )
+        chunk_count_by_utterance[utterance_index] = len(chunks)
         for chunk in chunks:
             if chunk.text.strip():
                 scanable.append((utterance_index, utterance, chunk))
@@ -79,7 +83,7 @@ async def moderate_texts_gcp(
                             "Content-Type": "application/json",
                         },
                         json={"document": {"type": "PLAIN_TEXT", "content": chunk.text}},
-                        timeout=20.0,
+                        timeout=resolved_settings.VIBECHECK_GCP_MODERATION_TIMEOUT_SEC,
                     )
                 except httpx.HTTPError as exc:
                     obs.set_error_category("network")
@@ -121,7 +125,15 @@ async def moderate_texts_gcp(
                     chunk_count=chunk.chunk_count,
                 )
 
-    chunk_results = list(await asyncio.gather(*(one(u, c) for _, u, c in scanable)))
+    # TODO(circuit-breaker): per-host breaker is deferred; this task only adds
+    # visibility and tunable bounds around the external fan-out.
+    with logfire.span(
+        "vibecheck.gcp_moderation.batch",
+        utterance_count=len(utterances),
+        chunk_count=len(scanable),
+        fan_out_ratio=len(scanable) / max(1, len(utterances)),
+    ):
+        chunk_results = list(await asyncio.gather(*(one(u, c) for _, u, c in scanable)))
     matches: list[HarmfulContentMatch] = []
     flagged_by_utterance: dict[int, list[HarmfulContentMatch]] = defaultdict(list)
     for (utterance_index, _utterance, chunk), result in zip(scanable, chunk_results, strict=True):
@@ -132,13 +144,22 @@ async def moderate_texts_gcp(
             flagged_by_utterance[utterance_index].append(result)
 
     for utterance_index, chunk_matches in flagged_by_utterance.items():
-        matches.append(_aggregate_matches(utterances[utterance_index], chunk_matches))
+        matches.append(
+            _aggregate_matches(
+                utterances[utterance_index],
+                chunk_matches,
+                chunk_count=chunk_count_by_utterance[utterance_index],
+            )
+        )
 
     return matches
 
 
 def _aggregate_matches(
-    utterance: Utterance, chunk_matches: list[HarmfulContentMatch]
+    utterance: Utterance,
+    chunk_matches: list[HarmfulContentMatch],
+    *,
+    chunk_count: int,
 ) -> HarmfulContentMatch:
     scores: dict[str, float] = {}
     categories: dict[str, bool] = {}
@@ -161,5 +182,5 @@ def _aggregate_matches(
         scores=scores,
         flagged_categories=flagged,
         chunk_idx=None,
-        chunk_count=chunk_matches[0].chunk_count,
+        chunk_count=chunk_count,
     )

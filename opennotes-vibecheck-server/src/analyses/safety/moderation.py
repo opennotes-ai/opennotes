@@ -61,10 +61,25 @@ async def check_content_moderation_bulk(
         return []
 
     settings = get_settings()
-    chunking_service = await get_chunking_service(settings)
+    chunking_service = get_chunking_service(settings)
     scanable: list[tuple[int, Utterance, Chunk]] = []
+    chunk_count_by_utterance: dict[int, int] = {}
     for utterance_index, utterance in enumerate(utterances):
-        for chunk in chunking_service.chunk_text(utterance.text or ""):
+        chunks = (
+            [
+                Chunk(
+                    text=utterance.text or "",
+                    start_offset=0,
+                    end_offset=len(utterance.text or ""),
+                    chunk_idx=0,
+                    chunk_count=1,
+                )
+            ]
+            if not settings.VIBECHECK_MODERATION_CHUNK_ENABLED
+            else chunking_service.chunk_text(utterance.text or "")
+        )
+        chunk_count_by_utterance[utterance_index] = len(chunks)
+        for chunk in chunks:
             scanable.append((utterance_index, utterance, chunk))
 
     if not scanable:
@@ -103,13 +118,22 @@ async def check_content_moderation_bulk(
         if not chunk_matches:
             continue
         utterance = utterances[orig_idx]
-        matches.append(_aggregate_matches(utterance, chunk_matches))
+        matches.append(
+            _aggregate_matches(
+                utterance,
+                chunk_matches,
+                chunk_count=chunk_count_by_utterance[orig_idx],
+            )
+        )
 
     return matches
 
 
 def _aggregate_matches(
-    utterance: Utterance, chunk_matches: list[HarmfulContentMatch]
+    utterance: Utterance,
+    chunk_matches: list[HarmfulContentMatch],
+    *,
+    chunk_count: int,
 ) -> HarmfulContentMatch:
     scores: dict[str, float] = {}
     categories: dict[str, bool] = {}
@@ -132,7 +156,7 @@ def _aggregate_matches(
         scores=scores,
         flagged_categories=flagged,
         chunk_idx=None,
-        chunk_count=chunk_matches[0].chunk_count,
+        chunk_count=chunk_count,
     )
 
 

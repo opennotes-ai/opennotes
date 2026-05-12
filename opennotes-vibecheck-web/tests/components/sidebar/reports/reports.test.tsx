@@ -233,6 +233,107 @@ describe("<SafetyModerationReport />", () => {
 
     expect(onUtteranceClick).toHaveBeenCalledWith("utt-1");
   });
+
+  it("groups chunked matches under one parent row per provider utterance", () => {
+    const matches: HarmfulContentMatch[] = [
+      {
+        utterance_id: "utt-1",
+        utterance_text: "Full harmful utterance.",
+        max_score: 0.91,
+        flagged_categories: ["harassment"],
+        categories: { harassment: true },
+        scores: { harassment: 0.91 },
+        source: "openai",
+        chunk_idx: null,
+        chunk_count: 3,
+      },
+      {
+        utterance_id: "utt-1",
+        utterance_text: "Chunk one.",
+        max_score: 0.81,
+        flagged_categories: ["harassment"],
+        categories: { harassment: true },
+        scores: { harassment: 0.81 },
+        source: "openai",
+        chunk_idx: 0,
+        chunk_count: 3,
+      },
+      {
+        utterance_id: "utt-1",
+        utterance_text: "Chunk two.",
+        max_score: 0.84,
+        flagged_categories: ["harassment"],
+        categories: { harassment: true },
+        scores: { harassment: 0.84 },
+        source: "openai",
+        chunk_idx: 1,
+        chunk_count: 3,
+      },
+    ];
+
+    render(() => <SafetyModerationReport matches={matches} />);
+
+    expect(screen.getByTestId("safety-count").textContent).toBe("1 flagged");
+    expect(screen.getAllByTestId("safety-parent-row")).toHaveLength(1);
+    expect(screen.getAllByTestId("safety-chunk-row")).toHaveLength(2);
+    expect(screen.getByTestId("safety-chunk-details").textContent).toContain(
+      "2 chunks",
+    );
+  });
+
+  it("keeps separate parent rows when both providers flag the same utterance", () => {
+    const matches: HarmfulContentMatch[] = [
+      {
+        utterance_id: "utt-1",
+        utterance_text: "OpenAI aggregate.",
+        max_score: 0.91,
+        flagged_categories: ["harassment"],
+        categories: { harassment: true },
+        scores: { harassment: 0.91 },
+        source: "openai",
+        chunk_idx: null,
+        chunk_count: 2,
+      },
+      {
+        utterance_id: "utt-1",
+        utterance_text: "GCP aggregate.",
+        max_score: 0.91,
+        flagged_categories: ["Toxic"],
+        categories: { Toxic: true },
+        scores: { Toxic: 0.91 },
+        source: "gcp",
+        chunk_idx: null,
+        chunk_count: 2,
+      },
+    ];
+
+    render(() => <SafetyModerationReport matches={matches} />);
+
+    expect(screen.getByTestId("safety-count").textContent).toBe("2 flagged");
+    expect(screen.getAllByTestId("safety-parent-row")).toHaveLength(2);
+  });
+
+  it("renders a single chunk match without child rows", () => {
+    const matches: HarmfulContentMatch[] = [
+      {
+        utterance_id: "utt-1",
+        utterance_text: "Single chunk harmful sentence.",
+        max_score: 0.82,
+        flagged_categories: ["harassment"],
+        categories: { harassment: true },
+        scores: {},
+        source: "openai",
+        chunk_idx: null,
+        chunk_count: 1,
+      },
+    ];
+
+    render(() => <SafetyModerationReport matches={matches} />);
+
+    expect(screen.getByTestId("safety-count").textContent).toBe("1 flagged");
+    expect(screen.getAllByTestId("safety-parent-row")).toHaveLength(1);
+    expect(screen.queryByTestId("safety-chunk-row")).toBeNull();
+  });
 });
 
 describe("<WebRiskReport />", () => {

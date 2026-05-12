@@ -1,7 +1,7 @@
 """Unit tests for the harmful-content moderation capability."""
 
 import logging
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -11,6 +11,7 @@ from src.analyses.safety.moderation import (
     check_content_moderation,
     check_content_moderation_bulk,
 )
+from src.config import Settings
 from src.services.openai_moderation import ModerationResult
 from src.utterances.schema import Utterance
 
@@ -221,6 +222,92 @@ class TestBulkModeration:
         assert aggregate.chunk_idx is None
         assert aggregate.chunk_count == chunk_match.chunk_count
         assert aggregate.utterance_text == long_text
+
+    async def test_chunking_disabled_sends_one_text_per_utterance(self):
+        mock_service = AsyncMock()
+        long_text = "first chunk sentence. " * 500
+        mock_service.moderate_texts = AsyncMock(
+            return_value=[
+                make_moderation_result(
+                    flagged=True,
+                    max_score=0.94,
+                    categories={"hate": True},
+                    scores={"hate": 0.94},
+                    flagged_categories=["hate"],
+                )
+            ]
+        )
+
+        with patch(
+            "src.analyses.safety.moderation.get_settings",
+            return_value=Settings(VIBECHECK_MODERATION_CHUNK_ENABLED=False),
+        ):
+            results = await check_content_moderation_bulk(
+                [make_utterance(utterance_id="utt_long", text=long_text)],
+                mock_service,
+            )
+
+        mock_service.moderate_texts.assert_awaited_once_with([long_text])
+        assert len(results) == 1
+
+    async def test_chunking_disabled_returns_single_chunk_match(self):
+        mock_service = AsyncMock()
+        mock_service.moderate_texts = AsyncMock(
+            return_value=[
+                make_moderation_result(
+                    flagged=True,
+                    max_score=0.94,
+                    categories={"hate": True},
+                    scores={"hate": 0.94},
+                    flagged_categories=["hate"],
+                )
+            ]
+        )
+
+        with patch(
+            "src.analyses.safety.moderation.get_settings",
+            return_value=Settings(VIBECHECK_MODERATION_CHUNK_ENABLED=False),
+        ):
+            results = await check_content_moderation_bulk(
+                [
+                    make_utterance(
+                        utterance_id="utt_long",
+                        text="first chunk sentence. " * 500,
+                    )
+                ],
+                mock_service,
+            )
+
+        assert results[0].chunk_idx is None
+        assert results[0].chunk_count == 1
+
+    async def test_aggregate_chunk_count_matches_total_chunks_not_flagged_count(self):
+        mock_service = AsyncMock()
+        long_text = "first chunk sentence. " * 500
+        utterance = make_utterance(utterance_id="utt_long", text=long_text)
+
+        def response_for_texts(texts: list[str]) -> list[ModerationResult]:
+            assert len(texts) > 2
+            return [
+                make_moderation_result(
+                    flagged=index in {0, len(texts) - 1},
+                    max_score=0.94 if index in {0, len(texts) - 1} else 0.01,
+                    categories={"hate": index in {0, len(texts) - 1}},
+                    scores={"hate": 0.94 if index in {0, len(texts) - 1} else 0.01},
+                    flagged_categories=["hate"] if index in {0, len(texts) - 1} else [],
+                )
+                for index, _text in enumerate(texts)
+            ]
+
+        mock_service.moderate_texts = AsyncMock(side_effect=response_for_texts)
+
+        results = await check_content_moderation_bulk([utterance], mock_service)
+
+        chunk_matches = [match for match in results if match.chunk_idx is not None]
+        aggregate = next(match for match in results if match.chunk_idx is None)
+        assert len(chunk_matches) == 2
+        assert aggregate.chunk_count is not None
+        assert aggregate.chunk_count > len(chunk_matches)
 
     async def test_single_moderate_texts_call_multimodal_never_invoked(self):
         mock_service = AsyncMock()

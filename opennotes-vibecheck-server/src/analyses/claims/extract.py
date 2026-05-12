@@ -49,11 +49,14 @@ _SYSTEM_PROMPT = (
 
 
 _BULK_SYSTEM_PROMPT = (
-    _SYSTEM_PROMPT + "\n\n" + "You will receive a NUMBERED list of utterances. For each utterance, "
-    "return a `_PerUtteranceClaims` object whose `utterance_index` matches "
-    "the index in the input and whose `claims` list contains the extracted "
-    "claims from that utterance (empty list if none). Always emit one entry "
-    "per input utterance, even if empty, preserving input order by index."
+    _SYSTEM_PROMPT
+    + "\n\n"
+    + "You will receive a NUMBERED list of text segments. Each segment is a "
+    "contiguous chunk of a longer utterance; multiple segments may come from "
+    "the same utterance. Return one `_PerUtteranceClaims` object per numbered "
+    "segment, with `utterance_index` matching the segment's bracketed index "
+    "and `claims` containing claims from that segment only. Emit an empty "
+    "`claims` list for segments with no claims. Preserve input order by index."
 )
 
 
@@ -75,7 +78,7 @@ async def extract_claims_bulk(utterances: list[Utterance], settings: Settings) -
 
     chunk_refs: list[tuple[int, Chunk]] = []
     prompt_lines: list[str] = []
-    chunking_service = await get_chunking_service(settings)
+    chunking_service = get_chunking_service(settings)
     for i, u in enumerate(utterances):
         uid = u.utterance_id or ""
         if not uid:
