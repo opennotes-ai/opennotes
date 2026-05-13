@@ -101,6 +101,9 @@ from src.analyses.safety.recommendation_agent import (
 )
 from src.analyses.safety.video_intelligence_worker import run_video_intelligence
 from src.analyses.safety.video_moderation_worker import run_video_moderation
+from src.analyses.safety.vision_review_selection import (
+    select_images_for_vision_review,
+)
 from src.analyses.safety.web_risk_worker import run_web_risk
 from src.analyses.schemas import (
     ErrorCode,
@@ -2410,7 +2413,38 @@ async def _run_safety_recommendation_step(
             _parse_sections(row["sections"]),
             source_url=source_url,
         )
-        recommendation = await run_safety_recommendation(inputs, settings)
+        if settings.VIBECHECK_SAFETY_IMAGE_VISION_REVIEW_ENABLED:
+            image_urls = select_images_for_vision_review(
+                inputs, cap=settings.MAX_IMAGES_MODERATED
+            )
+        else:
+            image_urls = []
+
+        with logfire.span(
+            "safety_recommendation_step",
+            vision_review_image_count=len(image_urls),
+        ):
+            if image_urls:
+                try:
+                    recommendation = await run_safety_recommendation(
+                        inputs, settings, image_urls=image_urls
+                    )
+                except Exception as exc:
+                    # TASK-1639.06: any failure when image URLs were attached is
+                    # treated as a multimodal/vision-review failure (image fetch,
+                    # content-type mismatch, or Vertex multimodal error). Softens
+                    # to `image_vision_review` unavailable and retries text-only.
+                    logfire.warning(
+                        "safety_recommendation_vision_review_unavailable",
+                        image_url_count=len(image_urls),
+                        error_type=type(exc).__name__,
+                    )
+                    inputs.unavailable_inputs.append("image_vision_review")
+                    recommendation = await run_safety_recommendation(
+                        inputs, settings, image_urls=[]
+                    )
+            else:
+                recommendation = await run_safety_recommendation(inputs, settings)
         recommendation = _merge_safety_divergences(
             recommendation, synthesized_divergences
         )
