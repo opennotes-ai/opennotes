@@ -183,4 +183,53 @@ describe("buildNotifyEffect (notify-on-complete guard logic)", () => {
       dispose();
     });
   });
+
+  it("late-enable: job already terminal when notifyEnabled flips true → notify fires", async () => {
+    await createRoot(async (dispose) => {
+      const [jobStatus, setJobStatus] = createSignal<string | null>(null);
+      const [jobId, setJobId] = createSignal<string | null>(null);
+      const [notifyEnabled, setNotifyEnabled] = createSignal(false);
+
+      buildNotifyEffect({ jobStatus, jobId, notifyEnabled });
+
+      setJobId("job-late");
+      setJobStatus("done");
+      await flush();
+
+      expect(notifyMock).not.toHaveBeenCalled();
+
+      setNotifyEnabled(true);
+      await flush();
+
+      expect(notifyMock).toHaveBeenCalledTimes(1);
+      expect(notifyMock).toHaveBeenCalledWith("Vibecheck ready", {
+        body: "Your analysis is complete.",
+      });
+
+      dispose();
+    });
+  });
+
+  it("job-switch: new jobId while jobStatus still holds prior terminal 'done' → still notifies", async () => {
+    await createRoot(async (dispose) => {
+      const [jobStatus, setJobStatus] = createSignal<string | null>(null);
+      const [jobId, setJobId] = createSignal<string | null>(null);
+      const [notifyEnabled, setNotifyEnabled] = createSignal(true);
+
+      buildNotifyEffect({ jobStatus, jobId, notifyEnabled });
+
+      setJobId("job-switch-1");
+      setJobStatus("done");
+      await flush();
+
+      expect(notifyMock).toHaveBeenCalledTimes(1);
+
+      setJobId("job-switch-2");
+      await flush();
+
+      expect(notifyMock).toHaveBeenCalledTimes(2);
+
+      dispose();
+    });
+  });
 });

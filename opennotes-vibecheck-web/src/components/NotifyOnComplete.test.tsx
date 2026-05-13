@@ -114,4 +114,41 @@ describe("<NotifyOnComplete />", () => {
       expect(screen.getByTestId("notify-on-complete-enabled")).toBeTruthy();
     });
   });
+
+  it("shows enabled label immediately when permission is already 'granted' at mount (pre-granted)", async () => {
+    isSupported.mockReturnValue(true);
+    getPermission.mockReturnValue("granted");
+    const { default: NotifyOnComplete } = await import("./NotifyOnComplete");
+
+    render(() => (
+      <NotifyOnComplete jobStatus="running" onEnabledChange={() => {}} />
+    ));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("notify-on-complete-enabled")).toBeTruthy();
+    });
+    expect(screen.queryByRole("button")).toBeNull();
+  });
+
+  it("hides itself when jobStatus transitions from 'analyzing' to 'done'", async () => {
+    isSupported.mockReturnValue(true);
+    getPermission.mockReturnValue("default");
+    const { default: NotifyOnComplete } = await import("./NotifyOnComplete");
+    const { createSignal } = await import("solid-js");
+
+    const [jobStatus, setJobStatus] = createSignal<string | undefined>("analyzing");
+
+    render(() => (
+      <NotifyOnComplete jobStatus={jobStatus()} onEnabledChange={() => {}} />
+    ));
+
+    expect(screen.getByRole("button")).toBeTruthy();
+
+    setJobStatus("done");
+
+    await waitFor(() => {
+      expect(screen.queryByRole("button")).toBeNull();
+      expect(screen.queryByTestId("notify-on-complete-enabled")).toBeNull();
+    });
+  });
 });
