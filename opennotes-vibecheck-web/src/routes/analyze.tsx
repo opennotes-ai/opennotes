@@ -41,8 +41,7 @@ import type {
   SectionSlug,
 } from "~/lib/api-client.server";
 import { createPollingResource } from "~/lib/polling";
-import { notify } from "~/lib/notifications";
-import { titleFor, bodyFor, TERMINAL_JOB_STATUSES } from "./analyze.notifications";
+import { buildNotifyEffect, TERMINAL_JOB_STATUSES } from "./analyze.notifications";
 import { resolveHeadline } from "~/lib/headline-fallback";
 import {
   scrollToUtterance,
@@ -284,16 +283,7 @@ function AnalyzePageContent(props: { initialJobState: JobState | null }) {
     createSignal<ArchiveProbeState>("pending");
 
   const [notifyEnabled, setNotifyEnabled] = createSignal(false);
-  let firedForJobId: string | null = null;
-  createEffect(() => {
-    const status = jobStatus();
-    const id = jobId();
-    if (!id || !notifyEnabled()) return;
-    if (!TERMINAL_JOB_STATUSES.has(status ?? "")) return;
-    if (firedForJobId === id) return;
-    firedForJobId = id;
-    notify(titleFor(status!), { body: bodyFor(status!) });
-  });
+  buildNotifyEffect({ jobStatus: () => jobStatus() ?? null, jobId, notifyEnabled });
 
   let frameCompatRequest = 0;
   let archiveTerminalAt: number | null = null;
