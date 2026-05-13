@@ -14,7 +14,7 @@ describe("isSupported", () => {
     const win = { ...globalThis.window } as typeof window & {
       Notification?: unknown;
     };
-    delete win.Notification;
+    Reflect.deleteProperty(win, "Notification");
     vi.stubGlobal("window", win);
 
     const { isSupported } = await import("./notifications");
@@ -38,7 +38,7 @@ describe("getPermission", () => {
     const win = { ...globalThis.window } as typeof window & {
       Notification?: unknown;
     };
-    delete win.Notification;
+    Reflect.deleteProperty(win, "Notification");
     vi.stubGlobal("window", win);
 
     const { getPermission } = await import("./notifications");
@@ -71,7 +71,7 @@ describe("requestPermission", () => {
     const win = { ...globalThis.window } as typeof window & {
       Notification?: unknown;
     };
-    delete win.Notification;
+    Reflect.deleteProperty(win, "Notification");
     vi.stubGlobal("window", win);
 
     const { requestPermission } = await import("./notifications");
@@ -99,7 +99,7 @@ describe("notify", () => {
     const win = { ...globalThis.window } as typeof window & {
       Notification?: unknown;
     };
-    delete win.Notification;
+    Reflect.deleteProperty(win, "Notification");
     vi.stubGlobal("window", win);
 
     const { notify } = await import("./notifications");
