@@ -10,7 +10,7 @@ import pytest
 
 from src.analyses.claims._claims_schemas import ClaimCategory, ClaimsReport, DedupedClaim
 from src.analyses.opinions import trends_oppositions_slot
-from src.analyses.opinions._trends_schemas import TrendsOppositionsReport
+from src.analyses.opinions._trends_schemas import ClaimTrend, TrendsOppositionsReport
 from src.analyses.schemas import SectionSlug
 from src.config import Settings
 
@@ -217,11 +217,11 @@ async def test_trends_oppositions_retry_payload_none_reads_done_facts_slot_from_
     fake = AsyncMock(
         return_value=TrendsOppositionsReport(
             trends=[
-                {
-                    "label": "Retry-only fact",
-                    "cluster_texts": ["cluster-1"],
-                    "summary": "Two subjective/self clusters found.",
-                }
+                ClaimTrend(
+                    label="Retry-only fact",
+                    cluster_texts=["cluster-1"],
+                    summary="Two subjective/self clusters found.",
+                )
             ],
             oppositions=[],
             input_cluster_count=2,
@@ -386,11 +386,11 @@ async def test_trends_oppositions_filters_to_subjective_and_self_claims_and_call
 ) -> None:
     report = TrendsOppositionsReport(
         trends=[
-            {
-                "label": "Climate is debated",
-                "cluster_texts": ["Subj", "Self"],
-                "summary": "Subjective and self claims repeat.",
-            }
+            ClaimTrend(
+                label="Climate is debated",
+                cluster_texts=["Subj", "Self"],
+                summary="Subjective and self claims repeat.",
+            )
         ],
         oppositions=[],
         input_cluster_count=2,

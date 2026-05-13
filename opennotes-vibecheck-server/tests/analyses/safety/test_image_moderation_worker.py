@@ -257,7 +257,7 @@ async def test_partial_cache_hit_calls_annotate_only_for_missing():
             {"image_url": "https://example.com/cached.jpg", "result_payload": cached_payload}
         ]
 
-    upserted_rows: list = []
+    upserted_rows: list[tuple[str, object, object]] = []
     pool = _StubPool(fetch_fn=fetch_fn, upsert_fn=upserted_rows.extend)
 
     captured: list[list[str]] = []
@@ -338,7 +338,7 @@ async def test_none_results_not_persisted_to_cache():
     ])
     settings = _make_settings()
 
-    upserted_rows: list = []
+    upserted_rows: list[tuple[str, object, object]] = []
     pool = _StubPool(fetch_fn=lambda urls: [], upsert_fn=upserted_rows.extend)
 
     url_to_result = {

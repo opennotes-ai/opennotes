@@ -72,7 +72,7 @@ def _exploding_pdf_store_factory() -> type[object]:
 
 def test_router_includes_upload_pdf_route() -> None:
     assert any(
-        route.path == "/api/upload-pdf"
+        getattr(route, "path", None) == "/api/upload-pdf"
         for route in app.router.routes
         if getattr(route, "methods", None)
     )

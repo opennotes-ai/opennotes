@@ -85,7 +85,7 @@ def _style_value(element: Tag) -> str:
 
 
 def _class_values(element: Tag) -> list[str]:
-    value = element.get("class", [])
+    value = element.get("class")
     if isinstance(value, str):
         return value.split()
     if isinstance(value, list):

@@ -18,7 +18,7 @@ from typing import Any, cast
 from uuid import UUID
 
 import httpx
-from pydantic_ai import RunContext
+from pydantic_ai import Agent, RunContext
 
 from src.analyses.claims._factcheck_schemas import FactCheckMatch
 from src.analyses.claims.known_misinfo import check_known_misinformation
@@ -65,11 +65,14 @@ async def run_facts_claims_known_misinfo(
     if not deduped_claims:
         return {"known_misinformation": []}
 
-    agent = build_agent(
-        settings,
-        output_type=cast(Any, list[FactCheckMatch]),
-        system_prompt=FACTS_AGENT_SYSTEM_PROMPT,
-        name="vibecheck.facts",
+    agent = cast(
+        Agent[FactsAgentDeps, list[FactCheckMatch]],
+        build_agent(
+            settings,
+            output_type=cast(Any, list[FactCheckMatch]),
+            system_prompt=FACTS_AGENT_SYSTEM_PROMPT,
+            name="vibecheck.facts",
+        ),
     )
 
     @agent.tool

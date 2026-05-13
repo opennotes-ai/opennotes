@@ -28,11 +28,13 @@ def test_open_request_validates_with_valid_data():
 
 def test_open_request_rejects_invalid_initial_type():
     with pytest.raises(ValidationError) as exc_info:
-        FeedbackOpenRequest(
-            page_path="/dashboard",
-            user_agent="Mozilla/5.0",
-            bell_location="bottom-right",
-            initial_type="lol",
+        FeedbackOpenRequest.model_validate(
+            {
+                "page_path": "/dashboard",
+                "user_agent": "Mozilla/5.0",
+                "bell_location": "bottom-right",
+                "initial_type": "lol",
+            }
         )
     errors = exc_info.value.errors()
     field_paths = [e["loc"] for e in errors]
@@ -41,12 +43,14 @@ def test_open_request_rejects_invalid_initial_type():
 
 def test_open_request_rejects_extra_fields():
     with pytest.raises(ValidationError):
-        FeedbackOpenRequest(
-            page_path="/dashboard",
-            user_agent="Mozilla/5.0",
-            bell_location="bottom-right",
-            initial_type="thumbs_up",
-            unknown_extra_field="should_be_rejected",
+        FeedbackOpenRequest.model_validate(
+            {
+                "page_path": "/dashboard",
+                "user_agent": "Mozilla/5.0",
+                "bell_location": "bottom-right",
+                "initial_type": "thumbs_up",
+                "unknown_extra_field": "should_be_rejected",
+            }
         )
 
 
@@ -101,13 +105,15 @@ def test_combined_request_accepts_both_initial_and_final_types():
 
 def test_combined_request_rejects_extra_fields():
     with pytest.raises(ValidationError):
-        FeedbackCombinedRequest(
-            page_path="/home",
-            user_agent="Mozilla/5.0",
-            bell_location="top-left",
-            initial_type="thumbs_down",
-            final_type="message",
-            unknown_extra_field="should_be_rejected",
+        FeedbackCombinedRequest.model_validate(
+            {
+                "page_path": "/home",
+                "user_agent": "Mozilla/5.0",
+                "bell_location": "top-left",
+                "initial_type": "thumbs_down",
+                "final_type": "message",
+                "unknown_extra_field": "should_be_rejected",
+            }
         )
 
 

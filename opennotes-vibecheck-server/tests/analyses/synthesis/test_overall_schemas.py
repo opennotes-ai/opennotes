@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from typing import Any
 
 from src.analyses.claims._claims_schemas import ClaimsReport
 from src.analyses.opinions._schemas import OpinionsReport, SentimentStatsReport
@@ -16,7 +17,7 @@ from src.analyses.tone._scd_schemas import SCDReport
 
 
 def _minimal_sidebar_payload(**overrides: object) -> SidebarPayload:
-    payload = {
+    payload: dict[str, Any] = {
         "source_url": "https://example.com/post",
         "scraped_at": datetime(2026, 1, 1, tzinfo=UTC),
         "safety": SafetySection(),
@@ -44,7 +45,7 @@ def _minimal_sidebar_payload(**overrides: object) -> SidebarPayload:
         ),
     }
     payload.update(overrides)
-    return SidebarPayload(**payload)
+    return SidebarPayload.model_validate(payload)
 
 
 def test_overall_decision_has_no_reserved_status_field() -> None:

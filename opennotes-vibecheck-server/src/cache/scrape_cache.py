@@ -474,32 +474,20 @@ class SupabaseScrapeCache:
             (tier,) if tier is not None else ("scrape", "interact")
         )
         for t in tiers:
-            tombstone = {
-                "normalized_url": norm,
-                "tier": t,
-                "url": norm,
-                "final_url": None,
-                "host": host,
-                "page_kind": "other",
-                "page_title": None,
-                "markdown": None,
-                "html": None,
-                "screenshot_storage_key": None,
-                "scraped_at": now.isoformat(),
-                "expires_at": expires_past.isoformat(),
-                "evicted_at": now.isoformat(),
-            }
+            scraped_at = now.isoformat()
+            expires_at = expires_past.isoformat()
+            evicted_at = now.isoformat()
             try:
                 self._client.postgrest.rpc(
                     _UPSERT_EVICT_TOMBSTONE_RPC,
                     {
-                        "p_normalized_url": tombstone["normalized_url"],
-                        "p_tier": tombstone["tier"],
-                        "p_url": tombstone["url"],
-                        "p_host": tombstone["host"],
-                        "p_scraped_at": tombstone["scraped_at"],
-                        "p_expires_at": tombstone["expires_at"],
-                        "p_evicted_at": tombstone["evicted_at"],
+                        "p_normalized_url": norm,
+                        "p_tier": t,
+                        "p_url": norm,
+                        "p_host": host,
+                        "p_scraped_at": scraped_at,
+                        "p_expires_at": expires_at,
+                        "p_evicted_at": evicted_at,
                     },
                 ).execute()
             except Exception as exc:

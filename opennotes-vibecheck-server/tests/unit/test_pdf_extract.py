@@ -82,7 +82,7 @@ class FakeClient:
 def _settings() -> Settings:
     return cast(
         Settings,
-        SimpleNamespace(VIBECHECK_PDF_UPLOAD_BUCKET="pdf-bucket"),
+        cast(object, SimpleNamespace(VIBECHECK_PDF_UPLOAD_BUCKET="pdf-bucket")),
     )
 
 

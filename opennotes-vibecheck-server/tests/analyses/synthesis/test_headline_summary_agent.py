@@ -12,6 +12,7 @@ from src.analyses.claims._claims_schemas import ClaimsReport, DedupedClaim
 from src.analyses.claims._factcheck_schemas import FactCheckMatch
 from src.analyses.opinions._highlights_schemas import (
     HighlightsThresholdInfo,
+    OpinionsHighlight,
     OpinionsHighlightsReport,
 )
 from src.analyses.opinions._schemas import (
@@ -19,7 +20,7 @@ from src.analyses.opinions._schemas import (
     SentimentStatsReport,
     SubjectiveClaim,
 )
-from src.analyses.opinions._trends_schemas import TrendsOppositionsReport
+from src.analyses.opinions._trends_schemas import ClaimTrend, TrendsOppositionsReport
 from src.analyses.safety._schemas import (
     HarmfulContentMatch,
     ImageModerationMatch,
@@ -165,11 +166,11 @@ def _factcheck() -> FactCheckMatch:
 def _trends_report(*, has_signal: bool = False) -> TrendsOppositionsReport:
     return TrendsOppositionsReport(
         trends=[
-            {
-                "label": "same claim repeated",
-                "cluster_texts": ["a", "b"],
-                "summary": "Recurring framing",
-            }
+            ClaimTrend(
+                label="same claim repeated",
+                cluster_texts=["a", "b"],
+                summary="Recurring framing",
+            )
         ]
         if has_signal
         else [],
@@ -182,16 +183,16 @@ def _trends_report(*, has_signal: bool = False) -> TrendsOppositionsReport:
 def _highlights_report(*, has_signal: bool = False) -> OpinionsHighlightsReport:
     return OpinionsHighlightsReport(
         highlights=[
-            {
-                "cluster": {
-                    "canonical_text": "strong claim",
-                    "occurrence_count": 3,
-                    "author_count": 2,
-                    "utterance_ids": ["u1", "u2", "u3"],
-                    "representative_authors": ["alice"],
-                },
-                "crossed_scaled_threshold": True,
-            }
+            OpinionsHighlight(
+                cluster=DedupedClaim(
+                    canonical_text="strong claim",
+                    occurrence_count=3,
+                    author_count=2,
+                    utterance_ids=["u1", "u2", "u3"],
+                    representative_authors=["alice"],
+                ),
+                crossed_scaled_threshold=True,
+            )
         ]
         if has_signal
         else [],
