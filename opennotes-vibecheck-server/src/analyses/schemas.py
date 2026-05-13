@@ -342,9 +342,7 @@ class JobState(BaseModel):
     )
     utterance_stream_type: UtteranceStreamType | None = Field(
         default=None,
-        description=(
-            "Extracted utterance-stream shape, sourced from vibecheck_jobs."
-        ),
+        description=("Extracted utterance-stream shape, sourced from vibecheck_jobs."),
     )
     utterance_count: int = Field(
         default=0,

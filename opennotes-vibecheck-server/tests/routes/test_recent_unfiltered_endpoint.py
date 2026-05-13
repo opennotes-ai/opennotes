@@ -1,4 +1,5 @@
 """Endpoint tests for GET /api/internal/analyses/recent-unfiltered."""
+
 from __future__ import annotations
 
 import json
@@ -88,18 +89,14 @@ async def db_pool(_postgres_container: PostgresContainer) -> AsyncIterator[Any]:
 
 
 @pytest.fixture
-async def client(
-    db_pool: Any, monkeypatch: pytest.MonkeyPatch
-) -> AsyncIterator[httpx.AsyncClient]:
+async def client(db_pool: Any, monkeypatch: pytest.MonkeyPatch) -> AsyncIterator[httpx.AsyncClient]:
     monkeypatch.setenv("VIBECHECK_PRIVATE_PATH_PREFIX", "internal-prefix-for-tests")
     get_settings.cache_clear()
     app.state.cache = None
     app.state.db_pool = db_pool
     app.state.recent_signer = _StubSigner()
     transport = httpx.ASGITransport(app=app)
-    async with httpx.AsyncClient(
-        transport=transport, base_url="http://test"
-    ) as c:
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as c:
         yield c
     app.state.db_pool = None
     app.state.recent_signer = None
@@ -107,10 +104,7 @@ async def client(
 
 
 def _sections(done: int = 7, total: int = 7) -> dict[str, dict[str, str]]:
-    return {
-        f"slug{i}": {"state": "done" if i < done else "failed"}
-        for i in range(total)
-    }
+    return {f"slug{i}": {"state": "done" if i < done else "failed"} for i in range(total)}
 
 
 async def _seed_job_and_scrape(
@@ -165,9 +159,7 @@ class TestInternalRecentUnfilteredAuth:
         assert len(body) == 1
         assert body[0]["source_url"] == "http://localhost/private"
 
-    async def test_mismatched_prefix_returns_404(
-        self, client: httpx.AsyncClient
-    ) -> None:
+    async def test_mismatched_prefix_returns_404(self, client: httpx.AsyncClient) -> None:
         resp = await client.get(
             "/api/internal/analyses/recent-unfiltered",
             headers={"X-Internal-Prefix": "wrong"},
@@ -275,9 +267,7 @@ class TestInternalRecentUnfilteredShape:
 
 
 class TestInternalRecentUnfilteredLimit:
-    async def test_limit_clamps_to_one(
-        self, client: httpx.AsyncClient, db_pool: Any
-    ) -> None:
+    async def test_limit_clamps_to_one(self, client: httpx.AsyncClient, db_pool: Any) -> None:
         for i in range(3):
             await _seed_job_and_scrape(
                 db_pool,
@@ -293,9 +283,7 @@ class TestInternalRecentUnfilteredLimit:
         assert resp.status_code == 200
         assert len(resp.json()) == 1
 
-    async def test_limit_clamps_to_maximum(
-        self, client: httpx.AsyncClient, db_pool: Any
-    ) -> None:
+    async def test_limit_clamps_to_maximum(self, client: httpx.AsyncClient, db_pool: Any) -> None:
         for i in range(205):
             await _seed_job_and_scrape(
                 db_pool,

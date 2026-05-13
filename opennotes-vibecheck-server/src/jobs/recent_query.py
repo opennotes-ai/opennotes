@@ -30,6 +30,7 @@ no DNS; non-literal hosts incur one getaddrinfo per row at refresh time
 The configurable host denylist (TASK-1486) layers on top later — those
 filters live in this same function so the denylist sees the same shaped rows.
 """
+
 from __future__ import annotations
 
 import json
@@ -199,8 +200,7 @@ LIMIT $1
 class ScreenshotSigner(Protocol):
     """Minimal protocol for the dependency the route hands list_recent."""
 
-    def sign_screenshot_key(self, storage_key: str | None) -> str | None:
-        ...
+    def sign_screenshot_key(self, storage_key: str | None) -> str | None: ...
 
 
 def _has_secret_query_param(query: str) -> bool:
@@ -268,17 +268,13 @@ def _passes_partial_threshold(sections_raw: Any, status: str) -> bool:
     if status != "partial":
         return False
     sections = (
-        json.loads(sections_raw)
-        if isinstance(sections_raw, str)
-        else dict(sections_raw or {})
+        json.loads(sections_raw) if isinstance(sections_raw, str) else dict(sections_raw or {})
     )
     total = len(sections)
     if total == 0:
         return False
     done = sum(
-        1
-        for value in sections.values()
-        if isinstance(value, dict) and value.get("state") == "done"
+        1 for value in sections.values() if isinstance(value, dict) and value.get("state") == "done"
     )
     return done * 10 >= total * 9
 
@@ -306,9 +302,7 @@ def _weather_report_from_row(value: Any, *, job_id: UUID) -> WeatherReport | Non
         return None
 
 
-def _safety_recommendation_from_row(
-    value: Any, *, job_id: UUID
-) -> SafetyRecommendation | None:
+def _safety_recommendation_from_row(value: Any, *, job_id: UUID) -> SafetyRecommendation | None:
     """Parse a safety recommendation JSONB column, tolerating schema drift.
 
     Pre-existing rows may carry safety payloads from older label sets. A
@@ -331,9 +325,7 @@ def _safety_recommendation_from_row(
         return None
 
 
-def _recent_analysis_from_row(
-    row: Any, *, signer: ScreenshotSigner
-) -> RecentAnalysis | None:
+def _recent_analysis_from_row(row: Any, *, signer: ScreenshotSigner) -> RecentAnalysis | None:
     signed = signer.sign_screenshot_key(row["screenshot_storage_key"])
     if signed is None:
         return None
@@ -344,9 +336,7 @@ def _recent_analysis_from_row(
         screenshot_url=signed,
         preview_description=row["preview_description"],
         headline_summary=row["headline_summary_text"],
-        weather_report=_weather_report_from_row(
-            row["weather_report_json"], job_id=row["job_id"]
-        ),
+        weather_report=_weather_report_from_row(row["weather_report_json"], job_id=row["job_id"]),
         safety_recommendation=_safety_recommendation_from_row(
             row["safety_recommendation_json"], job_id=row["job_id"]
         ),
@@ -428,9 +418,7 @@ def _internal_recent_analysis_from_row(
         screenshot_url=signed_url,
         preview_description=row["preview_description"],
         headline_summary=row["headline_summary_text"],
-        weather_report=_weather_report_from_row(
-            row["weather_report_json"], job_id=row["job_id"]
-        ),
+        weather_report=_weather_report_from_row(row["weather_report_json"], job_id=row["job_id"]),
         safety_recommendation=_safety_recommendation_from_row(
             row["safety_recommendation_json"], job_id=row["job_id"]
         ),
