@@ -623,6 +623,78 @@ describe("<PageFrame />", () => {
       expect(screen.queryByTestId("page-frame-archived-loading")).toBeNull();
     });
   });
+
+  it("archived iframe sits inside a padded wrapper (TASK-1636.03)", () => {
+    render(() => (
+      <PageFrame
+        url="https://example.com/article"
+        canIframe={false}
+        blockingHeader="content-security-policy: frame-ancestors 'none'"
+        archivedPreviewUrl="/api/x"
+        screenshotUrl={null}
+        previewMode="archived"
+        archivedRenderMode="html"
+      />
+    ));
+
+    const iframe = screen.getByTestId("page-frame-archived-iframe") as HTMLIFrameElement;
+    const iframeClass = iframe.getAttribute("class") ?? "";
+    expect(iframeClass).toMatch(/\brounded-md\b/);
+
+    const wrapper = iframe.parentElement as HTMLElement;
+    const wrapperClass = wrapper.getAttribute("class") ?? "";
+    expect(wrapperClass).toMatch(/\bp-2\b|\bsm:p-3\b/);
+  });
+
+  it("archived banner no longer renders a border-b (TASK-1636.03)", () => {
+    render(() => (
+      <PageFrame
+        url="https://example.com/article"
+        canIframe={false}
+        blockingHeader="content-security-policy: frame-ancestors 'none'"
+        archivedPreviewUrl="/api/x"
+        screenshotUrl={null}
+        previewMode="archived"
+        archivedRenderMode="html"
+      />
+    ));
+
+    const banner = screen.getByTestId("page-frame-archived-mode-banner");
+    const bannerClass = banner.getAttribute("class") ?? "";
+    expect(bannerClass).not.toContain("border-b");
+  });
+
+  it("raw markdown/text pre uses the same wrapper and rounded-md (TASK-1636.03)", async () => {
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      text: () => Promise.resolve("# Hello"),
+    });
+    vi.stubGlobal("fetch", mockFetch);
+
+    try {
+      render(() => (
+        <PageFrame
+          url="https://example.com/article"
+          canIframe={false}
+          blockingHeader="content-security-policy: frame-ancestors 'none'"
+          archivedPreviewUrl="/api/x"
+          screenshotUrl={null}
+          previewMode="archived"
+          archivedRenderMode="markdown"
+        />
+      ));
+
+      const pre = await screen.findByTestId("page-frame-archived-pre");
+      const preClass = pre.getAttribute("class") ?? "";
+      expect(preClass).toMatch(/\brounded-md\b/);
+
+      const wrapper = pre.parentElement as HTMLElement;
+      const wrapperClass = wrapper.getAttribute("class") ?? "";
+      expect(wrapperClass).toMatch(/\bp-2\b|\bsm:p-3\b/);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
 });
 
 describe("countdown interstitial (TASK-1495.07 + TASK-1483.13.02 escape hatch)", () => {

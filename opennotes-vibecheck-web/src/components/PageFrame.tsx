@@ -382,7 +382,7 @@ export default function PageFrame(props: PageFrameProps) {
             {(label) => (
               <div
                 data-testid="page-frame-archived-mode-banner"
-                class="text-xs text-muted-foreground px-3 py-1 border-b border-border"
+                class="text-xs text-muted-foreground px-3 py-1"
               >
                 {label()}
               </div>
@@ -392,18 +392,20 @@ export default function PageFrame(props: PageFrameProps) {
             when={isRawMode()}
             fallback={
               <>
-                <iframe
-                  data-testid="page-frame-archived-iframe"
-                  src={props.archivedPreviewUrl ?? ""}
-                  title="Archived page"
-                  sandbox="allow-same-origin"
-                  referrerpolicy="no-referrer"
-                  loading="lazy"
-                  ref={archivedIframeRef}
-                  onLoad={handleArchivedLoad}
-                  onError={handleArchivedError}
-                  class="h-full min-h-[60vh] w-full flex-1 border-0 bg-background"
-                />
+                <div class="flex min-h-[60vh] flex-1 flex-col p-2 sm:p-3">
+                  <iframe
+                    data-testid="page-frame-archived-iframe"
+                    src={props.archivedPreviewUrl ?? ""}
+                    title="Archived page"
+                    sandbox="allow-same-origin"
+                    referrerpolicy="no-referrer"
+                    loading="lazy"
+                    ref={archivedIframeRef}
+                    onLoad={handleArchivedLoad}
+                    onError={handleArchivedError}
+                    class="h-full min-h-[60vh] w-full flex-1 rounded-md border-0 bg-background"
+                  />
+                </div>
                 <Show when={!archivedLoaded() && !archivedFailed()}>
                   <div
                     data-testid="page-frame-archived-loading"
@@ -432,12 +434,14 @@ export default function PageFrame(props: PageFrameProps) {
                 </div>
               }
             >
-              <pre
-                data-testid="page-frame-archived-pre"
-                class="overflow-auto whitespace-pre-wrap break-words font-mono text-sm bg-muted/40 p-4 min-h-[60vh] flex-1 w-full m-0 rounded-none border-0"
-              >
-                {rawContent() ?? ""}
-              </pre>
+              <div class="flex min-h-[60vh] flex-1 flex-col p-2 sm:p-3">
+                <pre
+                  data-testid="page-frame-archived-pre"
+                  class="overflow-auto whitespace-pre-wrap break-words font-mono text-sm bg-muted/40 p-4 min-h-[60vh] flex-1 w-full m-0 rounded-md border-0"
+                >
+                  {rawContent() ?? ""}
+                </pre>
+              </div>
             </Show>
           </Show>
         </div>
