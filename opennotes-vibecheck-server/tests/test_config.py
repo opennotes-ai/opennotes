@@ -70,3 +70,63 @@ class TestVideoModerationProvider:
         )
         assert s.VIDEO_MODERATION_PROVIDER == "video_intelligence"
         assert s.GCS_VIDEO_STAGING_BUCKET == "vibecheck-video-staging-prod"
+
+
+class TestVertexSaturationRetrySettings:
+    def test_defaults_define_bounded_retry_policy(self) -> None:
+        s = Settings()
+
+        assert s.VERTEX_SATURATION_RETRY_ATTEMPTS == 2
+        assert s.VERTEX_SATURATION_RETRY_BASE_MS == 500
+        assert s.VERTEX_SATURATION_RETRY_MAX_MS == 4000
+        assert s.VERTEX_SATURATION_RETRY_JITTER_MS == 250
+
+    def test_accepts_environment_overrides(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.setenv("VERTEX_SATURATION_RETRY_ATTEMPTS", "3")
+        monkeypatch.setenv("VERTEX_SATURATION_RETRY_BASE_MS", "100")
+        monkeypatch.setenv("VERTEX_SATURATION_RETRY_MAX_MS", "1200")
+        monkeypatch.setenv("VERTEX_SATURATION_RETRY_JITTER_MS", "50")
+
+        s = Settings()
+
+        assert s.VERTEX_SATURATION_RETRY_ATTEMPTS == 3
+        assert s.VERTEX_SATURATION_RETRY_BASE_MS == 100
+        assert s.VERTEX_SATURATION_RETRY_MAX_MS == 1200
+        assert s.VERTEX_SATURATION_RETRY_JITTER_MS == 50
+
+    def test_zero_attempts_disables_retries(self) -> None:
+        s = Settings(VERTEX_SATURATION_RETRY_ATTEMPTS=0)
+
+        assert s.VERTEX_SATURATION_RETRY_ATTEMPTS == 0
+
+    @pytest.mark.parametrize(
+        "field",
+        [
+            "VERTEX_SATURATION_RETRY_ATTEMPTS",
+            "VERTEX_SATURATION_RETRY_JITTER_MS",
+        ],
+    )
+    def test_rejects_negative_retry_counts(self, field: str) -> None:
+        with pytest.raises(ValidationError, match="must be >= 0"):
+            Settings(**{field: -1})
+
+    @pytest.mark.parametrize(
+        "field",
+        [
+            "VERTEX_SATURATION_RETRY_BASE_MS",
+            "VERTEX_SATURATION_RETRY_MAX_MS",
+        ],
+    )
+    def test_rejects_non_positive_retry_intervals(self, field: str) -> None:
+        with pytest.raises(ValidationError, match="must be > 0"):
+            Settings(**{field: 0})
+
+    def test_rejects_max_below_base(self) -> None:
+        with pytest.raises(ValidationError, match="MAX_MS must be >= BASE_MS"):
+            Settings(
+                VERTEX_SATURATION_RETRY_BASE_MS=1000,
+                VERTEX_SATURATION_RETRY_MAX_MS=999,
+            )

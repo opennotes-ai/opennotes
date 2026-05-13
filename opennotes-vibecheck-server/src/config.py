@@ -27,6 +27,10 @@ class Settings(BaseSettings):
     VERTEX_LEASE_ACQUIRE_TIMEOUT_MS: int = 30_000
     VERTEX_LEASE_RETRY_MIN_MS: int = 25
     VERTEX_LEASE_RETRY_MAX_MS: int = 250
+    VERTEX_SATURATION_RETRY_ATTEMPTS: int = 2
+    VERTEX_SATURATION_RETRY_BASE_MS: int = 500
+    VERTEX_SATURATION_RETRY_MAX_MS: int = 4000
+    VERTEX_SATURATION_RETRY_JITTER_MS: int = 250
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
@@ -205,6 +209,26 @@ class Settings(BaseSettings):
         return value
 
     @field_validator(
+        "VERTEX_SATURATION_RETRY_ATTEMPTS",
+        "VERTEX_SATURATION_RETRY_JITTER_MS",
+    )
+    @classmethod
+    def _nonnegative_vertex_saturation_retry_numbers(cls, value: int) -> int:
+        if value < 0:
+            raise ValueError("Vertex saturation retry settings must be >= 0")
+        return value
+
+    @field_validator(
+        "VERTEX_SATURATION_RETRY_BASE_MS",
+        "VERTEX_SATURATION_RETRY_MAX_MS",
+    )
+    @classmethod
+    def _positive_vertex_saturation_retry_intervals(cls, value: int) -> int:
+        if value <= 0:
+            raise ValueError("Vertex saturation retry intervals must be > 0")
+        return value
+
+    @field_validator(
         "VIBECHECK_OPINIONS_HIGHLIGHTS_AUTHOR_DIVISOR",
         "VIBECHECK_OPINIONS_HIGHLIGHTS_OCCURRENCE_MULTIPLIER",
     )
@@ -231,6 +255,12 @@ class Settings(BaseSettings):
                 "GCS_VIDEO_STAGING_BUCKET is required when "
                 "VIDEO_MODERATION_PROVIDER=video_intelligence"
             )
+        return self
+
+    @model_validator(mode="after")
+    def _vertex_saturation_retry_max_at_least_base(self) -> "Settings":
+        if self.VERTEX_SATURATION_RETRY_MAX_MS < self.VERTEX_SATURATION_RETRY_BASE_MS:
+            raise ValueError("VERTEX_SATURATION_RETRY_MAX_MS must be >= BASE_MS")
         return self
 
     @model_validator(mode="after")
