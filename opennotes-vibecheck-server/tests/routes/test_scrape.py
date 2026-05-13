@@ -40,6 +40,7 @@ CREATE TABLE vibecheck_scrapes (
     page_title TEXT,
     markdown TEXT,
     html TEXT,
+    raw_html TEXT,
     screenshot_storage_key TEXT,
     scraped_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     expires_at TIMESTAMPTZ NOT NULL DEFAULT (now() + INTERVAL '72 hours'),
@@ -197,6 +198,91 @@ async def test_valid_payload_inserts_browser_scrape_job_and_enqueues(
     assert "<h1>Title</h1>" in scrape["html"]
     assert "Browser body" in scrape["markdown"]
     assert scrape["screenshot_storage_key"] is None
+
+
+async def test_load_browser_html_scrape_hydrates_raw_html_field(
+    client: httpx.AsyncClient, db_pool: Any
+) -> None:
+    """Worker-side regression: `_load_browser_html_scrape` must read the
+    `raw_html` column and hydrate `CachedScrape.raw_html`, so platform
+    detectors can see the unsanitized DOM submitted by the extension.
+    """
+    from src.jobs.orchestrator import _load_browser_html_scrape
+
+    url = "https://example.com/loader-test"
+    raw_dom = (
+        "<html><body>"
+        "<script>track()</script>"
+        "<article data-x=\"y\"><p>Original body</p></article>"
+        "</body></html>"
+    )
+
+    with patch.object(
+        scrape_route,
+        "check_urls",
+        new=AsyncMock(return_value={url: WebRiskFinding(url=url, threat_types=[])}),
+    ):
+        resp = await client.post(
+            "/api/scrape",
+            headers=_headers(),
+            json={"url": url, "html": raw_dom, "title": "Loader Test"},
+        )
+
+    assert resp.status_code == 201
+    job_id = UUID(resp.json()["job_id"])
+
+    cached = await _load_browser_html_scrape(db_pool, job_id)
+    assert cached is not None
+    assert cached.raw_html == raw_dom
+    assert "<script>" in cached.raw_html
+    # Sanitized display html drops scripts; original body preserved.
+    assert cached.html is not None
+    assert "<script>" not in cached.html
+    assert "Original body" in cached.html
+    assert cached.metadata is not None
+    assert cached.metadata.title == "Loader Test"
+
+
+async def test_browser_html_persists_raw_dom_and_sanitized_display_html(
+    client: httpx.AsyncClient, db_pool: Any
+) -> None:
+    """Extension submissions must preserve the original DOM in `raw_html`
+    while continuing to store a sanitized version in `html` for archive /
+    display rendering. Platform detectors need the unsanitized DOM context;
+    the display path needs the stripped version. They must NOT be the same
+    column.
+    """
+    url = "https://example.com/post-with-script"
+    raw_dom = (
+        "<html><body>"
+        "<script>alert('xss')</script>"
+        "<h1>Headline</h1>"
+        "<p data-platform=\"linkedin\">Body</p>"
+        "</body></html>"
+    )
+
+    with patch.object(
+        scrape_route,
+        "check_urls",
+        new=AsyncMock(return_value={url: WebRiskFinding(url=url, threat_types=[])}),
+    ):
+        resp = await client.post(
+            "/api/scrape",
+            headers=_headers(),
+            json={"url": url, "html": raw_dom, "title": "Headline"},
+        )
+
+    assert resp.status_code == 201
+    job_id = UUID(resp.json()["job_id"])
+    scrape = await _fetch_scrape_for_job(db_pool, job_id)
+    assert scrape is not None
+    # Original DOM preserved verbatim in raw_html (script tag still present).
+    assert scrape["raw_html"] == raw_dom
+    assert "<script>" in scrape["raw_html"]
+    # Sanitized display html drops the script element.
+    assert scrape["html"] is not None
+    assert "<script>" not in scrape["html"]
+    assert "Headline" in scrape["html"]
 
 
 async def test_screenshot_payload_persists_storage_key_and_mints_signed_url(

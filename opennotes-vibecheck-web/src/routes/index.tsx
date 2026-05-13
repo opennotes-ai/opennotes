@@ -40,7 +40,7 @@ function errorLabelFor(
     case "image_conversion_failed":
       return "We couldn't convert those images to a PDF. Try different images.";
     case "upstream_error":
-      return "The analyzer couldn't reach that page. Try again in a moment.";
+      return "The analyzer is temporarily unavailable. Try again in a moment.";
     default:
       return "Something went wrong. Please try another URL.";
   }

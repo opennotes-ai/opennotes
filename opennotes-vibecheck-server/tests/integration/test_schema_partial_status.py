@@ -117,6 +117,7 @@ CREATE TABLE IF NOT EXISTS public.vibecheck_scrapes (
     page_title TEXT,
     markdown TEXT,
     html TEXT,
+    raw_html TEXT,
     screenshot_storage_key TEXT,
     scraped_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     expires_at TIMESTAMPTZ NOT NULL DEFAULT (now() + INTERVAL '72 hours'),

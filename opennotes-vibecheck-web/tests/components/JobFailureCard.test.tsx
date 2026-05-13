@@ -94,10 +94,15 @@ describe("<JobFailureCard />", () => {
     expect(copy.textContent).toBe("We can't analyze that site yet.");
   });
 
-  it("uses exact 'The analyzer couldn't reach that page.' copy for upstream_error", async () => {
+  it("uses analyzer-availability copy for upstream_error (not page-content phrasing)", async () => {
     renderCard({ url: URL, errorCode: "upstream_error" });
     const copy = await screen.findByTestId("job-failure-copy");
-    expect(copy.textContent).toBe("The analyzer couldn't reach that page.");
+    expect(copy.textContent).toBe("The analyzer is temporarily unavailable.");
+    // Regression for TASK-1483.16.08.18: limiter-backend outages route to
+    // upstream_error and must NOT surface the extraction_failed
+    // "page content" phrasing that misled extension users.
+    expect(copy.textContent).not.toContain("page's content");
+    expect(copy.textContent).not.toContain("couldn't read");
   });
 
   it("uses exact extraction_failed copy", async () => {
@@ -191,7 +196,7 @@ describe("<JobFailureCard />", () => {
       ["unsupported_site", "This site blocks automated readers."],
       [
         "upstream_error",
-        "The site may be blocking automated readers, or it could be a temporary outage — try again in a moment.",
+        "Our analyzer or one of its upstream providers is having trouble right now — try again in a moment.",
       ],
       [
         "extraction_failed",

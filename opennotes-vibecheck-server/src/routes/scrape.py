@@ -165,6 +165,7 @@ async def _insert_browser_scrape_and_job(
     normalized_url: str,
     host: str,
     html: str,
+    raw_html: str,
     markdown: str,
     title: str | None,
     screenshot_bytes: bytes | None,
@@ -183,12 +184,12 @@ async def _insert_browser_scrape_and_job(
             """
             INSERT INTO vibecheck_scrapes (
                 normalized_url, tier, url, final_url, host, page_kind,
-                page_title, markdown, html, screenshot_storage_key,
+                page_title, markdown, html, raw_html, screenshot_storage_key,
                 job_id, attempt_id, scraped_at, expires_at, evicted_at
             )
             VALUES (
                 $1, 'browser_html', $2, $2, $3, 'other',
-                $4, $5, $6, $7, $8, $9,
+                $4, $5, $6, $7, $8, $9, $10,
                 now(), now() + INTERVAL '72 hours', NULL
             )
             """,
@@ -198,6 +199,7 @@ async def _insert_browser_scrape_and_job(
             title,
             markdown,
             html,
+            raw_html,
             screenshot_storage_key,
             job_id,
             attempt_id,
@@ -305,6 +307,7 @@ async def submit_scrape(  # noqa: PLR0911
             normalized_url=normalized_url,
             host=host,
             html=sanitized_html,
+            raw_html=body.html,
             markdown=markdown,
             title=body.title,
             screenshot_bytes=screenshot_bytes,

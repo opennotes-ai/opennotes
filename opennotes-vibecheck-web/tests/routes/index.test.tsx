@@ -77,7 +77,7 @@ describe("HomePage (landing route)", () => {
   it("surfaces upstream_error from the query string", async () => {
     renderAt("/?error=upstream_error");
     const alert = await screen.findByRole("alert");
-    expect(alert.textContent).toMatch(/couldn't reach/i);
+    expect(alert.textContent).toMatch(/analyzer is temporarily unavailable/i);
   });
 
   it("renders without an alert when no error query param is set", async () => {

@@ -37,7 +37,7 @@ function copyFor(
     case "unsupported_site":
       return `We can't analyze ${errorHost ?? "that site"} yet.`;
     case "upstream_error":
-      return "The analyzer couldn't reach that page.";
+      return "The analyzer is temporarily unavailable.";
     case "extraction_failed":
       return "We couldn't read this page's content.";
     case "pdf_too_large":
@@ -86,7 +86,7 @@ function detailFor(code: PublicErrorCode | null): string {
     case "unsupported_site":
       return "This site blocks automated readers.";
     case "upstream_error":
-      return "The site may be blocking automated readers, or it could be a temporary outage — try again in a moment.";
+      return "Our analyzer or one of its upstream providers is having trouble right now — try again in a moment.";
     case "extraction_failed":
       return "This often happens when a site blocks automated readers (login walls, paywalls, captchas, or bot protection).";
     case "pdf_too_large":
