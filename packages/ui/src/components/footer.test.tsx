@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
+import { render, screen, cleanup } from "@solidjs/testing-library";
 import { Footer } from "./footer";
 
 describe("<Footer /> source contract", () => {
@@ -45,10 +46,9 @@ describe("<Footer /> source contract", () => {
     expect(footerSource).toContain("<footer");
   });
 
-  it("does not access window/document at module top level (SSR-safe)", () => {
-    const beforeExport = footerSource.split("export function Footer")[0];
-    expect(beforeExport).not.toMatch(/\bwindow\./);
-    expect(beforeExport).not.toMatch(/\bdocument\./);
+  it("does not access window/document anywhere in module (SSR-safe)", () => {
+    expect(footerSource).not.toMatch(/\bwindow\./);
+    expect(footerSource).not.toMatch(/\bdocument\./);
   });
 
   it("does not use @kobalte/core directly", () => {
@@ -59,5 +59,44 @@ describe("<Footer /> source contract", () => {
 describe("<Footer /> module surface", () => {
   it("exports the Footer component as a function", () => {
     expect(typeof Footer).toBe("function");
+  });
+});
+
+describe("<Footer /> render behavior", () => {
+  afterEach(() => {
+    cleanup();
+  });
+
+  it("renders copyright text with the current year", () => {
+    render(() => <Footer />);
+    expect(screen.getByText(new RegExp(String(new Date().getFullYear())))).toBeTruthy();
+  });
+
+  it("renders Privacy link pointing to opennotes.ai/privacy", () => {
+    const { container } = render(() => <Footer />);
+    const link = container.querySelector('a[href="https://opennotes.ai/privacy"]');
+    expect(link).toBeTruthy();
+    expect(link?.textContent).toContain("Privacy");
+  });
+
+  it("renders Terms link pointing to opennotes.ai/terms", () => {
+    const { container } = render(() => <Footer />);
+    const link = container.querySelector('a[href="https://opennotes.ai/terms"]');
+    expect(link).toBeTruthy();
+    expect(link?.textContent).toContain("Terms");
+  });
+
+  it("policy links open externally with noopener noreferrer", () => {
+    const { container } = render(() => <Footer />);
+    const links = container.querySelectorAll('a[target="_blank"]');
+    expect(links.length).toBe(2);
+    for (const link of Array.from(links)) {
+      expect(link.getAttribute("rel")).toBe("noopener noreferrer");
+    }
+  });
+
+  it("renders a footer landmark element", () => {
+    const { container } = render(() => <Footer />);
+    expect(container.querySelector("footer")).toBeTruthy();
   });
 });
