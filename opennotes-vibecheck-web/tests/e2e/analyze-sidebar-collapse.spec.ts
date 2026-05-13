@@ -10,12 +10,17 @@ const PREPOPULATED_JOB_B = "34343434-3434-7343-8343-343434343434";
 const LIVE_JOB_ID = "56565656-5656-7565-8565-565656565656";
 const ATTEMPT_ID = "78787878-7878-7787-8787-787878787878";
 const SOURCE_URL = "https://quizlet.com/blog/groups-are-now-classes/";
+// Top-level groups that honor collapseTopLevelByDefault.
+// "section-group-body-sentiments" is intentionally excluded — Sentiments is
+// sticky-open by design (parent TASK-1633 AC #2).
 const SECTION_BODY_TEST_IDS = [
   "section-group-body-safety",
   "section-group-body-tone-dynamics",
   "section-group-body-facts-claims",
-  "section-group-body-opinions-sentiments",
+  "section-group-body-opinions",
 ] as const;
+
+const SENTIMENTS_BODY_TEST_ID = "section-group-body-sentiments";
 
 let apiServer: Server;
 let apiBaseUrl = "";
@@ -95,13 +100,19 @@ function sectionData(slug: string): Record<string, unknown> {
     return { known_misinformation: [] };
   }
   if (slug === "opinions_sentiments__sentiment") {
+    // Non-empty fixture so the SentimentReport actually mounts. A regression
+    // that hides the report when data is present would now fail.
     return {
       sentiment_stats: {
-        per_utterance: [],
-        positive_pct: 0,
-        negative_pct: 0,
-        neutral_pct: 100,
-        mean_valence: 0,
+        per_utterance: [
+          { utterance_id: "u-1", valence: 0.6, label: "positive" },
+          { utterance_id: "u-2", valence: -0.4, label: "negative" },
+          { utterance_id: "u-3", valence: 0.0, label: "neutral" },
+        ],
+        positive_pct: 33,
+        negative_pct: 33,
+        neutral_pct: 34,
+        mean_valence: 0.067,
       },
     };
   }
@@ -357,6 +368,105 @@ test("live job collapses top-level sidebar groups when headline and weather arri
   await expect(page.locator('[data-testid="headline-summary"]')).toBeVisible();
   await expect(page.locator('[data-testid="weather-report"]')).toBeVisible();
   await expectTopLevelGroupsCollapsed(page);
+});
+
+test("top-level sidebar cards render in order Safety, Sentiments, Tone/dynamics, Facts/claims, Opinions", async ({
+  page,
+}) => {
+  await page.goto(`${webBaseUrl}/analyze?job=${PREPOPULATED_JOB_A}`);
+
+  await expect(page.locator('[data-testid="analysis-sidebar"]')).toBeVisible();
+  const expectedLabels = [
+    "Safety",
+    "Sentiments",
+    "Tone/dynamics",
+    "Facts/claims",
+    "Opinions",
+  ];
+  // Strict locator: only the SectionGroup root nodes carry data-section-group.
+  // This rejects any extra unrecognized group inserted between the expected
+  // five (the previous filter-by-allowlist silently tolerated a 6th group).
+  const observed = await page
+    .locator('[data-testid="analysis-sidebar"] [data-section-group]')
+    .evaluateAll((nodes) =>
+      nodes.map((n) => n.getAttribute("data-section-group") ?? ""),
+    );
+  expect(observed).toEqual(expectedLabels);
+});
+
+test("Sentiments card stays expanded when headline/weather payload collapses other top-level cards", async ({
+  page,
+}) => {
+  await page.goto(`${webBaseUrl}/analyze?job=${LIVE_JOB_ID}`);
+
+  // Persistence-through-transition: assert Sentiments is visible BEFORE the
+  // headline/weather payload triggers the auto-collapse, not only after.
+  await expect(
+    page.locator('[data-testid="analysis-sidebar"]'),
+  ).toHaveAttribute("data-job-status", "analyzing");
+  await expectTopLevelGroupsExpanded(page);
+  await expect(
+    page.locator(`[data-testid="${SENTIMENTS_BODY_TEST_ID}"]`),
+  ).toBeVisible();
+
+  await expect(page.locator('[data-testid="headline-summary"]')).toBeVisible();
+  await expectTopLevelGroupsCollapsed(page);
+  await expect(
+    page.locator(`[data-testid="${SENTIMENTS_BODY_TEST_ID}"]`),
+  ).toBeVisible();
+  // Regression guard: the SentimentReport itself (not just the group body)
+  // must remain mounted with non-empty fixture data.
+  await expect(
+    page.locator('[data-testid="report-opinions_sentiments__sentiment"]'),
+  ).toBeVisible();
+});
+
+test("collapsing Opinions card leaves Sentiments visible", async ({ page }) => {
+  await page.goto(`${webBaseUrl}/analyze?job=${PREPOPULATED_JOB_A}`);
+  await expect(page.locator('[data-testid="headline-summary"]')).toBeVisible();
+  await expectTopLevelGroupsCollapsed(page);
+
+  // Expand Opinions, then collapse it; Sentiments body must remain visible.
+  await page.locator('[data-testid="section-toggle-Opinions"]').click();
+  await expect(
+    page.locator('[data-testid="section-group-body-opinions"]'),
+  ).toBeVisible();
+  await page.locator('[data-testid="section-toggle-Opinions"]').click();
+  await expect(
+    page.locator('[data-testid="section-group-body-opinions"]'),
+  ).toBeHidden();
+  await expect(
+    page.locator(`[data-testid="${SENTIMENTS_BODY_TEST_ID}"]`),
+  ).toBeVisible();
+});
+
+test("user can independently collapse the Sentiments card without affecting Opinions", async ({
+  page,
+}) => {
+  await page.goto(`${webBaseUrl}/analyze?job=${PREPOPULATED_JOB_A}`);
+  await expect(page.locator('[data-testid="headline-summary"]')).toBeVisible();
+  await expectTopLevelGroupsCollapsed(page);
+  await expect(
+    page.locator(`[data-testid="${SENTIMENTS_BODY_TEST_ID}"]`),
+  ).toBeVisible();
+
+  // Open Opinions first so the independence claim is testable. A regression
+  // that incorrectly tied Sentiments→Opinions would collapse Opinions when
+  // Sentiments is collapsed; with Opinions starting collapsed the test would
+  // pass either way.
+  await page.locator('[data-testid="section-toggle-Opinions"]').click();
+  await expect(
+    page.locator('[data-testid="section-group-body-opinions"]'),
+  ).toBeVisible();
+
+  await page.locator('[data-testid="section-toggle-Sentiments"]').click();
+  await expect(
+    page.locator(`[data-testid="${SENTIMENTS_BODY_TEST_ID}"]`),
+  ).toBeHidden();
+  // Opinions stays open — collapsing Sentiments must not affect it.
+  await expect(
+    page.locator('[data-testid="section-group-body-opinions"]'),
+  ).toBeVisible();
 });
 
 test("client-side navigation between prepopulated jobs keeps sidebar groups collapsed", async ({

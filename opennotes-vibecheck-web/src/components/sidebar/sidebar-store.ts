@@ -2,12 +2,16 @@ import { createSignal } from "solid-js";
 
 export const ALL_LABELS = [
   "Safety",
+  "Sentiments",
   "Tone/dynamics",
   "Facts/claims",
-  "Opinions/sentiments",
+  "Opinions",
 ] as const;
 
 export type SectionGroupLabel = (typeof ALL_LABELS)[number];
+
+export const STICKY_OPEN_LABELS: ReadonlySet<SectionGroupLabel> =
+  new Set<SectionGroupLabel>(["Sentiments"]);
 
 export interface SidebarStore {
   isOpen: (label: SectionGroupLabel) => boolean;
@@ -21,8 +25,11 @@ export interface SidebarStore {
 export function createSidebarStore(opts?: { defaultOpen?: () => boolean }): SidebarStore {
   const defaultOpen = () => opts?.defaultOpen?.() ?? true;
 
+  const initialFor = (label: SectionGroupLabel) =>
+    STICKY_OPEN_LABELS.has(label) ? true : defaultOpen();
+
   const signals = new Map<SectionGroupLabel, ReturnType<typeof createSignal<boolean>>>(
-    ALL_LABELS.map((label) => [label, createSignal(defaultOpen())]),
+    ALL_LABELS.map((label) => [label, createSignal(initialFor(label))]),
   );
 
   const [highlightedGroup, setHighlightedGroup] = createSignal<SectionGroupLabel | null>(null);
@@ -37,13 +44,14 @@ export function createSidebarStore(opts?: { defaultOpen?: () => boolean }): Side
 
   function isolateGroup(target: SectionGroupLabel): void {
     for (const label of ALL_LABELS) {
-      signals.get(label)![1](label === target);
+      const open = label === target || STICKY_OPEN_LABELS.has(label);
+      signals.get(label)![1](open);
     }
   }
 
   function reset(): void {
     for (const label of ALL_LABELS) {
-      signals.get(label)![1](defaultOpen());
+      signals.get(label)![1](initialFor(label));
     }
   }
 

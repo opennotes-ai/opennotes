@@ -1164,7 +1164,7 @@ describe("SectionGroup", () => {
   it("shows no sentences scored when a sentence badge count is zero", () => {
     render(() => (
       <SectionGroup
-        label="Opinions/sentiments"
+        label="Opinions"
         slugs={["opinions_sentiments__sentiment"]}
         sections={{
           opinions_sentiments__sentiment: {
@@ -1191,7 +1191,7 @@ describe("SectionGroup", () => {
   it("shows based on 1 sentence when a sentence badge count is singular", () => {
     render(() => (
       <SectionGroup
-        label="Opinions/sentiments"
+        label="Opinions"
         slugs={["opinions_sentiments__sentiment"]}
         sections={{
           opinions_sentiments__sentiment: {
@@ -1218,7 +1218,7 @@ describe("SectionGroup", () => {
   it("shows based on N sentences when a sentence badge count is plural", () => {
     render(() => (
       <SectionGroup
-        label="Opinions/sentiments"
+        label="Opinions"
         slugs={["opinions_sentiments__sentiment"]}
         sections={{
           opinions_sentiments__sentiment: {
@@ -1556,20 +1556,21 @@ describe("SectionGroup", () => {
 });
 
 describe("Sidebar", () => {
-  it("renders all four named clusters with counters when sections is empty", () => {
+  it("renders all five named clusters with counters when sections is empty", () => {
     render(() => <Sidebar sections={{}} />);
 
     const aside = screen.getByTestId("analysis-sidebar");
     expect(aside.getAttribute("aria-live")).toBeNull();
 
     const counters = screen.getAllByTestId("section-group-counter");
-    expect(counters).toHaveLength(4);
+    expect(counters).toHaveLength(5);
 
     expect(screen.getByTestId("section-group-Safety")).toBeDefined();
+    expect(screen.getByTestId("section-group-Sentiments")).toBeDefined();
     expect(screen.getByTestId("section-group-Tone/dynamics")).toBeDefined();
     expect(screen.getByTestId("section-group-Facts/claims")).toBeDefined();
     expect(
-      screen.getByTestId("section-group-Opinions/sentiments"),
+      screen.getByTestId("section-group-Opinions"),
     ).toBeDefined();
   });
 
@@ -1593,7 +1594,7 @@ describe("Sidebar", () => {
     expect(aside.getAttribute("aria-live")).toBeNull();
 
     const liveRegions = aside.querySelectorAll('[aria-live="polite"]');
-    expect(liveRegions.length).toBe(4);
+    expect(liveRegions.length).toBe(5);
     for (const node of liveRegions) {
       expect(node.getAttribute("role")).toBe("status");
       expect(node.classList.contains("sr-only")).toBe(true);
@@ -1608,7 +1609,7 @@ describe("Sidebar", () => {
       expect(text).toMatch(/^\d+\/\d+$/);
       const ariaLabel = c.getAttribute("aria-label") ?? "";
       expect(ariaLabel).toMatch(
-        /^(Safety|Tone\/dynamics|Facts\/claims|Opinions\/sentiments): \d+\sof\s\d+\ssections complete$/,
+        /^(Safety|Sentiments|Tone\/dynamics|Facts\/claims|Opinions): \d+\sof\s\d+\ssections complete$/,
       );
       expect(c.getAttribute("role")).toBeNull();
     }
@@ -1640,9 +1641,10 @@ describe("Sidebar", () => {
         "section-group-counter",
       );
     expect(byLabel("Safety")?.textContent).toBe("4/4");
+    expect(byLabel("Sentiments")?.textContent).toBe("1/1");
     expect(byLabel("Tone/dynamics")?.textContent).toBe("2/2");
     expect(byLabel("Facts/claims")?.textContent).toBe("2/2");
-    expect(byLabel("Opinions/sentiments")?.textContent).toBe("3/3");
+    expect(byLabel("Opinions")?.textContent).toBe("2/2");
 
     const ALL_SLUGS = [
       "safety__moderation",

@@ -83,8 +83,10 @@ const FACTS_SLUGS: SectionSlugLiteral[] = [
   "facts_claims__dedup",
   "facts_claims__known_misinfo",
 ];
-const OPINIONS_SLUGS: SectionSlugLiteral[] = [
+const SENTIMENT_SLUGS: SectionSlugLiteral[] = [
   "opinions_sentiments__sentiment",
+];
+const OPINIONS_SLUGS: SectionSlugLiteral[] = [
   "opinions_sentiments__trends_oppositions",
   "opinions_sentiments__highlights",
 ];
@@ -457,7 +459,7 @@ const FACTS_COUNTS: Partial<
   },
 };
 
-const OPINIONS_EMPTINESS: Partial<
+const SENTIMENT_EMPTINESS: Partial<
   Record<SectionSlugLiteral, (data: unknown) => boolean>
 > = {
   opinions_sentiments__sentiment: (data) => {
@@ -469,6 +471,20 @@ const OPINIONS_EMPTINESS: Partial<
       stats.neutral_pct === 0
     );
   },
+};
+
+const SENTIMENT_COUNTS: Partial<
+  Record<SectionSlugLiteral, (data: unknown) => SlotCountBadge>
+> = {
+  opinions_sentiments__sentiment: (data) => {
+    const total = extractSentimentStats(data).per_utterance.length;
+    return { total, kind: "sentences" };
+  },
+};
+
+const OPINIONS_EMPTINESS: Partial<
+  Record<SectionSlugLiteral, (data: unknown) => boolean>
+> = {
   opinions_sentiments__trends_oppositions: (data) => {
     const report = extractTrendsOppositionsReport(data);
     return report.trends.length === 0 && report.oppositions.length === 0;
@@ -480,10 +496,6 @@ const OPINIONS_EMPTINESS: Partial<
 const OPINIONS_COUNTS: Partial<
   Record<SectionSlugLiteral, (data: unknown) => SlotCountBadge>
 > = {
-  opinions_sentiments__sentiment: (data) => {
-    const total = extractSentimentStats(data).per_utterance.length;
-    return { total, kind: "sentences" };
-  },
   opinions_sentiments__trends_oppositions: (data) => {
     const report = extractTrendsOppositionsReport(data);
     return { total: report.trends.length + report.oppositions.length };
@@ -597,7 +609,7 @@ export default function Sidebar(props: SidebarProps) {
       <KnownMisinfoReport matches={extractKnownMisinfo(data)} />
     ),
   }));
-  const opinionsRender = createMemo<
+  const sentimentRender = createMemo<
     Partial<Record<SectionSlugLiteral, (data: unknown) => JSX.Element>>
   >(() => ({
     opinions_sentiments__sentiment: (data) => (
@@ -606,6 +618,10 @@ export default function Sidebar(props: SidebarProps) {
         anchors={utterances()}
       />
     ),
+  }));
+  const opinionsRender = createMemo<
+    Partial<Record<SectionSlugLiteral, (data: unknown) => JSX.Element>>
+  >(() => ({
     opinions_sentiments__trends_oppositions: (data) => (
       <TrendsOppositionsReport
         report={extractTrendsOppositionsReport(data)}
@@ -725,6 +741,26 @@ export default function Sidebar(props: SidebarProps) {
             : {})}
         />
         <SectionGroup
+          label="Sentiments"
+          slugs={SENTIMENT_SLUGS}
+          sections={effectiveSections()}
+          defaultOpen={true}
+          render={sentimentRender()}
+          emptinessChecks={SENTIMENT_EMPTINESS}
+          counts={SENTIMENT_COUNTS}
+          jobId={props.jobId}
+          onRetry={props.onRetry}
+          cachedHint={props.cachedHint}
+          renderRevision={canJump()}
+          {...(store
+            ? {
+                open: store.isOpen("Sentiments"),
+                onOpenChange: (o: boolean) => store.setOpen("Sentiments", o),
+                highlighted: store.highlightedGroup() === "Sentiments",
+              }
+            : {})}
+        />
+        <SectionGroup
           label="Tone/dynamics"
           slugs={TONE_SLUGS}
           sections={effectiveSections()}
@@ -773,7 +809,7 @@ export default function Sidebar(props: SidebarProps) {
             : {})}
         />
         <SectionGroup
-          label="Opinions/sentiments"
+          label="Opinions"
           slugs={OPINIONS_SLUGS}
           sections={effectiveSections()}
           defaultOpen={props.collapseTopLevelByDefault !== true}
@@ -786,11 +822,11 @@ export default function Sidebar(props: SidebarProps) {
           renderRevision={opinionsRenderRevision()}
           {...(store
             ? {
-                open: store.isOpen("Opinions/sentiments"),
+                open: store.isOpen("Opinions"),
                 onOpenChange: (o: boolean) =>
-                  store.setOpen("Opinions/sentiments", o),
+                  store.setOpen("Opinions", o),
                 highlighted:
-                  store.highlightedGroup() === "Opinions/sentiments",
+                  store.highlightedGroup() === "Opinions",
               }
             : {})}
         />
