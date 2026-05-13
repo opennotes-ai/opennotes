@@ -619,7 +619,7 @@ async def archive_preview(
     job_id: str | None = Query(None),
     generate: bool = Query(False),
     source_type: str = Query("url"),
-    format: str | None = Query(None),
+    content_format: str | None = Query(None, alias="format"),
 ) -> Response:
     parsed_job_id = _parse_archive_job_id(job_id)
     if source_type == "pdf":
@@ -654,13 +654,14 @@ async def archive_preview(
         await _revalidate_archive_final_url(
             cached, original_url=url, scrape_cache=scrape_cache, tier=cached_tier or "scrape"
         )
-        if format == "text":
+        if content_format == "text":
             raw = cached.markdown or cached.html or ""
             return Response(
                 content=raw,
                 headers={
                     "content-type": "text/plain; charset=utf-8",
                     "cache-control": "no-store, private",
+                    "x-content-type-options": "nosniff",
                 },
             )
         return await _render_archive_response(
