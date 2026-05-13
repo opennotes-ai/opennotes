@@ -31,12 +31,17 @@ export function notify(
   if (Notification.permission !== "granted") return null;
 
   const { onClick, ...notificationOptions } = options ?? {};
-  const notification = new Notification(
-    title,
-    Object.keys(notificationOptions).length > 0
-      ? notificationOptions
-      : undefined,
-  );
+  let notification: Notification;
+  try {
+    notification = new Notification(
+      title,
+      Object.keys(notificationOptions).length > 0
+        ? notificationOptions
+        : undefined,
+    );
+  } catch {
+    return null;
+  }
 
   notification.onclick = (_e: Event) => {
     window.focus();

@@ -186,4 +186,21 @@ describe("notify", () => {
 
     expect(focusSpy).toHaveBeenCalledTimes(1);
   });
+
+  it("returns null when the Notification constructor throws", async () => {
+    const ThrowingNotification = vi.fn().mockImplementation(() => {
+      throw new Error("Notification constructor failed");
+    }) as unknown as typeof Notification & {
+      permission: NotificationPermission;
+      requestPermission: () => Promise<NotificationPermission>;
+    };
+    ThrowingNotification.permission = "granted" as NotificationPermission;
+    ThrowingNotification.requestPermission = vi.fn();
+    vi.stubGlobal("Notification", ThrowingNotification);
+    vi.stubGlobal("window", { ...globalThis.window, focus: vi.fn() });
+
+    const { notify } = await import("./notifications");
+    const result = notify("Hello");
+    expect(result).toBeNull();
+  });
 });
