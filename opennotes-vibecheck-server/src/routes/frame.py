@@ -324,6 +324,9 @@ async def _has_cached_archive(
     if cached.html:
         render_mode = "html_full_page" if tier == _BROWSER_HTML_ARCHIVE_TIER else "html_extracted"
         return True, render_mode
+    # NOTE: markdown and text modes are reserved for future use.
+    # _get_cached_archive only returns entries with cached.html today,
+    # making these branches currently unreachable.
     if cached.markdown:
         return True, "markdown"
     return True, "text"
