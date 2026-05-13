@@ -289,19 +289,17 @@ export default function PageFrame(props: PageFrameProps) {
       const textUrl = url.includes("?") ? `${url}&format=text` : `${url}?format=text`;
       try {
         const res = await fetch(textUrl);
-        if (!res.ok) return null;
+        if (!res.ok) {
+          setArchivedFailed(true);
+          return null;
+        }
         return await res.text();
       } catch {
+        setArchivedFailed(true);
         return null;
       }
     },
   );
-
-  createEffect(() => {
-    if (showArchived() && isRawMode() && !rawContent.loading && rawContent() === null) {
-      setArchivedFailed(true);
-    }
-  });
 
   function archiveRenderModeLabel(
     mode: "html" | "markdown" | "text" | null | undefined,
