@@ -397,7 +397,7 @@ test("CSP frame-ancestors auto-resolves to archive immediately, no countdown (TA
 
   // Tab press follows the auto-resolved mode.
   await expect(
-    page.getByRole("button", { name: "Archived" }),
+    page.getByRole("button", { name: "Snapshot" }),
   ).toHaveAttribute("aria-pressed", "true");
   await expect(
     page.getByRole("button", { name: "Original" }),
@@ -458,7 +458,7 @@ test("manual preview mode clicks switch visible previews (TASK-1483.13.02)", asy
     page.getByTestId("page-frame-screenshot"),
   ).toBeVisible();
 
-  await page.getByRole("button", { name: "Archived" }).click();
+  await page.getByRole("button", { name: "Snapshot" }).click();
   await expect(
     page.getByTestId("page-frame-archived-iframe"),
   ).toBeVisible();
@@ -508,7 +508,7 @@ test("tab aria-pressed is correct after auto-resolution; Original disabled and n
   ).toBeVisible({ timeout: 5_000 });
 
   await expect(
-    page.getByRole("button", { name: "Archived" }),
+    page.getByRole("button", { name: "Snapshot" }),
   ).toHaveAttribute("aria-pressed", "true");
   await expect(
     page.getByRole("button", { name: "Original" }),
@@ -518,7 +518,7 @@ test("tab aria-pressed is correct after auto-resolution; Original disabled and n
   // Force-clicking disabled Original must not change pressed state.
   await page.getByTestId("preview-mode-original").click({ force: true });
   await expect(
-    page.getByRole("button", { name: "Archived" }),
+    page.getByRole("button", { name: "Snapshot" }),
   ).toHaveAttribute("aria-pressed", "true");
   await expect(
     page.getByRole("button", { name: "Original" }),
@@ -594,13 +594,13 @@ test("Original tab is disabled when canIframe=false; click is a noop; tooltip sh
 
   // Capture which tab is currently pressed (Archived in this fixture).
   const archivedPressedBefore = await page
-    .getByRole("button", { name: "Archived" })
+    .getByRole("button", { name: "Snapshot" })
     .getAttribute("aria-pressed");
   expect(archivedPressedBefore).toBe("true");
 
   // Force-click the disabled Original button — must not change resolved mode.
   await original.click({ force: true });
-  await expect(page.getByRole("button", { name: "Archived" })).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByRole("button", { name: "Snapshot" })).toHaveAttribute("aria-pressed", "true");
   await expect(page.getByRole("button", { name: "Original" })).toHaveAttribute("aria-pressed", "false");
   await expect(page.getByTestId("page-frame-archived-iframe")).toBeVisible();
 
