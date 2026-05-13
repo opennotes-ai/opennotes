@@ -62,8 +62,6 @@ export function HighlightsCard(): JSX.Element | null {
     const emblaApi = api();
     if (!emblaApi) return;
 
-    emblaApi.plugins()?.autoplay?.play();
-
     let rafId: number;
 
     function tick() {

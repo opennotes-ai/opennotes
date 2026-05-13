@@ -290,10 +290,10 @@ describe("HighlightsCard", () => {
   });
 
   describe("autoplay start", () => {
-    it("calls play() on the autoplay plugin when the carousel api becomes available", () => {
+    it("does not call play() on the autoplay plugin (relies on playOnInit default to avoid racing Embla init)", () => {
       mockAutoplayPlay.mockClear();
       renderWithItems([makeItem("1", "A"), makeItem("2", "B")]);
-      expect(mockAutoplayPlay).toHaveBeenCalledOnce();
+      expect(mockAutoplayPlay).not.toHaveBeenCalled();
     });
   });
 });
