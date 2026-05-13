@@ -159,23 +159,25 @@ class TestSafetyRecommendation:
         assert recommendation.divergences == []
 
     def test_safety_recommendation_round_trips_with_divergences(self) -> None:
-        recommendation = SafetyRecommendation(
-            level=SafetyLevel.UNSAFE,
-            rationale="Confidence adjusted by weighted signals.",
-            divergences=[
-                Divergence(
-                    direction="discounted",
-                    signal_source="openai",
-                    signal_detail="Some signal was weak",
-                    reason="Lowered due to context ambiguity",
-                ),
-                {
-                    "direction": "escalated",
-                    "signal_source": "gcp",
-                    "signal_detail": "Video contains explicit scene",
-                    "reason": "Raised because multiple cues aligned",
-                },
-            ],
+        recommendation = SafetyRecommendation.model_validate(
+            {
+                "level": SafetyLevel.UNSAFE,
+                "rationale": "Confidence adjusted by weighted signals.",
+                "divergences": [
+                    Divergence(
+                        direction="discounted",
+                        signal_source="openai",
+                        signal_detail="Some signal was weak",
+                        reason="Lowered due to context ambiguity",
+                    ),
+                    {
+                        "direction": "escalated",
+                        "signal_source": "gcp",
+                        "signal_detail": "Video contains explicit scene",
+                        "reason": "Raised because multiple cues aligned",
+                    },
+                ],
+            }
         )
 
         serialized = recommendation.model_dump_json()

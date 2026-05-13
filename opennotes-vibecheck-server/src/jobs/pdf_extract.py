@@ -43,7 +43,7 @@ class PDFExtractionError(Exception):
 
 
 def _clean_pdf_html(html: str | None) -> str:
-    cleaned = strip_for_llm(html or "")
+    cleaned = strip_for_llm(html or "") or ""
     return cleaned.strip()
 
 

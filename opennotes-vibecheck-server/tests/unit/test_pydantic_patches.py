@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sys
+from collections.abc import Generator
 from types import ModuleType
 from typing import Any
 from unittest.mock import MagicMock, patch
@@ -24,7 +25,7 @@ def _reset_patch() -> None:
 
 
 @pytest.fixture(autouse=True)
-def _reset_patch_fixture() -> pytest.Generator[None, None, None]:
+def _reset_patch_fixture() -> Generator[None, None, None]:
     _reset_patch()
     yield
     _reset_patch()

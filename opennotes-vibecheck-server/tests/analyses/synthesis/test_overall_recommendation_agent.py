@@ -8,8 +8,13 @@ import pytest
 
 from src.analyses.safety._schemas import SafetyLevel, SafetyRecommendation
 from src.analyses.schemas import PageKind
-from src.analyses.synthesis._overall_schemas import OverallDecision
-from src.analyses.synthesis._weather_schemas import WeatherAxis, WeatherReport
+from src.analyses.synthesis._overall_schemas import OverallDecision, OverallVerdict
+from src.analyses.synthesis._weather_schemas import (
+    RelevanceLabel,
+    TruthLabel,
+    WeatherAxis,
+    WeatherReport,
+)
 from src.analyses.synthesis.overall_recommendation_agent import (
     OVERALL_RECOMMENDATION_SYSTEM_PROMPT,
     OverallInputs,
@@ -47,10 +52,10 @@ def _flashpoint(risk_level: RiskLevel) -> FlashpointMatch:
     )
 
 
-def _weather(truth: str, relevance: str) -> WeatherReport:
+def _weather(truth: TruthLabel, relevance: RelevanceLabel) -> WeatherReport:
     return WeatherReport(
-        truth=WeatherAxis(label=truth),
-        relevance=WeatherAxis(label=relevance),
+        truth=WeatherAxis[TruthLabel](label=truth),
+        relevance=WeatherAxis[RelevanceLabel](label=relevance),
         sentiment=WeatherAxis(label="neutral"),
     )
 
@@ -281,7 +286,7 @@ async def test_agent_can_escalate_pass_candidate_to_flag(monkeypatch) -> None:
 
     async def fake_run(_agent, _prompt: str):
         return SimpleNamespace(
-            output=OverallDecision(verdict="flag", reason="Agent escalation")
+            output=OverallDecision(verdict=OverallVerdict.FLAG, reason="Agent escalation")
         )
 
     monkeypatch.setattr(
@@ -304,7 +309,7 @@ async def test_agent_can_escalate_pass_candidate_to_flag(monkeypatch) -> None:
         job_id=UUID("33333333-3333-3333-3333-333333333333"),
     )
 
-    assert result == OverallDecision(verdict="flag", reason="Agent escalation")
+    assert result == OverallDecision(verdict=OverallVerdict.FLAG, reason="Agent escalation")
 
 
 @pytest.mark.asyncio
@@ -314,7 +319,7 @@ async def test_agent_cannot_downgrade_flag_candidate_to_pass(monkeypatch) -> Non
 
     async def fake_run(_agent, _prompt: str):
         return SimpleNamespace(
-            output=OverallDecision(verdict="pass", reason="Agent downgrade")
+            output=OverallDecision(verdict=OverallVerdict.PASS, reason="Agent downgrade")
         )
 
     monkeypatch.setattr(
@@ -337,7 +342,7 @@ async def test_agent_cannot_downgrade_flag_candidate_to_pass(monkeypatch) -> Non
         job_id=UUID("44444444-4444-4444-4444-444444444444"),
     )
 
-    assert result == OverallDecision(verdict="flag", reason="candidate flag")
+    assert result == OverallDecision(verdict=OverallVerdict.FLAG, reason="candidate flag")
 
 
 @pytest.mark.asyncio

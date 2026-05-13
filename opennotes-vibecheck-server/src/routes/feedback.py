@@ -93,7 +93,7 @@ async def submit_feedback(
     feedback_id: UUID,
     payload: FeedbackSubmitRequest,
     request: Request,
-) -> dict:
+) -> dict[str, str]:
     pool = _get_db_pool(request)
     async with pool.acquire() as conn:
         result = await conn.execute(

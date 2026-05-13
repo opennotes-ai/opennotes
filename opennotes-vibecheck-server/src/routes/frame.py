@@ -30,6 +30,7 @@ from src.utils.html_sanitize import extract_archive_main_content, strip_for_disp
 from src.utils.url_security import InvalidURL, validate_public_http_url
 from src.utterances.annotate_html import annotate_utterances_in_html
 from src.utterances.lookup import get_utterances_for_archive
+from src.utterances.schema import Utterance
 
 logger = get_logger(__name__)
 
@@ -453,7 +454,7 @@ def _archive_display_html(
     cached_html: str | None,
     cached_markdown: str | None,
     *,
-    utterances: list | None = None,
+    utterances: list[Utterance] | None = None,
 ) -> str | None:
     """Pick the archive iframe body for `cached_html`/`cached_markdown`.
 
@@ -535,7 +536,7 @@ async def _fetch_archive_utterances(
     request: Request,
     job_id: UUID | None,
     requested_url: str,
-) -> list:
+) -> list[Utterance]:
     if job_id is None:
         return []
     pool = getattr(request.app.state, "db_pool", None)
@@ -551,7 +552,7 @@ async def _fetch_archive_utterances(
 
 def _extracted_preserves_utterances(
     extracted_html: str,
-    utterances: list,
+    utterances: list[Utterance],
 ) -> bool:
     """Return True iff every utterance text appears in `extracted_html`.
 

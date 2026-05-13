@@ -16,6 +16,7 @@ interaction patterns.
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any, cast
@@ -1147,7 +1148,7 @@ async def test_extract_utterances_classifies_vertex_limiter_backend_unavailable_
     _stub_agent(monkeypatch, _payload())
 
     @asynccontextmanager
-    async def _failing_slot(_settings: Any) -> Any:
+    async def _failing_slot(_settings: Any) -> AsyncIterator[None]:
         raise VertexLimiterBackendUnavailableError(
             "Vertex limiter Redis backend unavailable"
         )

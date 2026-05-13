@@ -895,12 +895,12 @@ async def test_safety_recommendation_step_writes_serialized_recommendation(monke
             rationale="Verified malware URL and high moderation score.",
             top_signals=["Web Risk MALWARE on https://bad.example"],
             divergences=[
-                {
-                    "direction": "escalated",
-                    "signal_source": "web_risk",
-                    "signal_detail": "MALWARE risk detected",
-                    "reason": "Safety recommendation elevated due to confirmed malware URL.",
-                }
+                Divergence(
+                    direction="escalated",
+                    signal_source="web_risk",
+                    signal_detail="MALWARE risk detected",
+                    reason="Safety recommendation elevated due to confirmed malware URL.",
+                )
             ],
         )
 
