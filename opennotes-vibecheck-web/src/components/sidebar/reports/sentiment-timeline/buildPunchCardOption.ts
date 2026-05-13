@@ -68,6 +68,7 @@ export function buildPunchCardOption(buckets: SentimentBucket[]): EChartsOption 
     name: label,
     type: "scatter" as const,
     itemStyle: { color },
+    emphasis: { scale: false },
     symbolSize,
     data: buckets.map((bucket): ScatterDatum => [
       midpointMs(bucket),

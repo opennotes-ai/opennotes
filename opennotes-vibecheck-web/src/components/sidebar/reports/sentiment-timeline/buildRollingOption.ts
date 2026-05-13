@@ -75,7 +75,7 @@ export function buildRollingOption(buckets: SentimentBucket[]): EChartsOption {
   });
 
   return {
-    grid: { top: 8, right: 8, bottom: 24, left: 32 },
+    grid: { top: 8, right: 8, bottom: 24, left: 64 },
     tooltip: {
       trigger: "axis",
       formatter: (rawParams) => {
@@ -123,16 +123,16 @@ export function buildRollingOption(buckets: SentimentBucket[]): EChartsOption {
       type: "value",
       min: 0,
       max: 100,
-      axisLabel: {
-        formatter: "{value}%",
-      },
+      axisLabel: { show: false },
+      axisTick: { show: false },
+      axisLine: { show: false },
     },
     series: SERIES_META.map(({ key, name, color }) => ({
       name,
       type: "bar" as const,
       stack: "sentiment",
       itemStyle: { color },
-      emphasis: { focus: "series" as const },
+      emphasis: { disabled: true },
       data: buckets.map((bucket) => [bucket.startMs, bucket.runningPct[key]]),
     })),
   };
