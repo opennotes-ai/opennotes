@@ -6,6 +6,7 @@ import { MetaProvider, Title, Meta } from "@solidjs/meta";
 import { NavBar } from "@opennotes/ui/components/nav-bar";
 import ModeToggle from "@opennotes/ui/components/mode-toggle";
 import { Logo } from "@opennotes/ui/components/logo";
+import { Footer } from "@opennotes/ui/components/footer";
 
 export default function App() {
   return (
@@ -54,6 +55,7 @@ export default function App() {
           >
             <Suspense>{props.children}</Suspense>
           </ErrorBoundary>
+          <Footer />
         </MetaProvider>
       )}
     >
