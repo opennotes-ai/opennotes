@@ -10,12 +10,17 @@ const PREPOPULATED_JOB_B = "34343434-3434-7343-8343-343434343434";
 const LIVE_JOB_ID = "56565656-5656-7565-8565-565656565656";
 const ATTEMPT_ID = "78787878-7878-7787-8787-787878787878";
 const SOURCE_URL = "https://quizlet.com/blog/groups-are-now-classes/";
+// Top-level groups that honor collapseTopLevelByDefault.
+// "section-group-body-sentiments" is intentionally excluded — Sentiments is
+// sticky-open by design (parent TASK-1633 AC #2).
 const SECTION_BODY_TEST_IDS = [
   "section-group-body-safety",
   "section-group-body-tone-dynamics",
   "section-group-body-facts-claims",
-  "section-group-body-opinions-sentiments",
+  "section-group-body-opinions",
 ] as const;
+
+const SENTIMENTS_BODY_TEST_ID = "section-group-body-sentiments";
 
 let apiServer: Server;
 let apiBaseUrl = "";
@@ -357,6 +362,80 @@ test("live job collapses top-level sidebar groups when headline and weather arri
   await expect(page.locator('[data-testid="headline-summary"]')).toBeVisible();
   await expect(page.locator('[data-testid="weather-report"]')).toBeVisible();
   await expectTopLevelGroupsCollapsed(page);
+});
+
+test("top-level sidebar cards render in order Safety, Sentiments, Tone/dynamics, Facts/claims, Opinions", async ({
+  page,
+}) => {
+  await page.goto(`${webBaseUrl}/analyze?job=${PREPOPULATED_JOB_A}`);
+
+  await expect(page.locator('[data-testid="analysis-sidebar"]')).toBeVisible();
+  const expectedIds = [
+    "section-group-Safety",
+    "section-group-Sentiments",
+    "section-group-Tone/dynamics",
+    "section-group-Facts/claims",
+    "section-group-Opinions",
+  ];
+  const observed = await page
+    .locator('[data-testid="analysis-sidebar"] [data-testid^="section-group-"]')
+    .evaluateAll((nodes, allowed) =>
+      nodes
+        .map((n) => n.getAttribute("data-testid") ?? "")
+        .filter((id) => allowed.includes(id)),
+      expectedIds,
+    );
+  expect(observed).toEqual(expectedIds);
+});
+
+test("Sentiments card stays expanded when headline/weather payload collapses other top-level cards", async ({
+  page,
+}) => {
+  await page.goto(`${webBaseUrl}/analyze?job=${LIVE_JOB_ID}`);
+
+  await expect(page.locator('[data-testid="headline-summary"]')).toBeVisible();
+  await expectTopLevelGroupsCollapsed(page);
+  await expect(
+    page.locator(`[data-testid="${SENTIMENTS_BODY_TEST_ID}"]`),
+  ).toBeVisible();
+});
+
+test("collapsing Opinions card leaves Sentiments visible", async ({ page }) => {
+  await page.goto(`${webBaseUrl}/analyze?job=${PREPOPULATED_JOB_A}`);
+  await expect(page.locator('[data-testid="headline-summary"]')).toBeVisible();
+  await expectTopLevelGroupsCollapsed(page);
+
+  // Expand Opinions, then collapse it; Sentiments body must remain visible.
+  await page.locator('[data-testid="section-toggle-Opinions"]').click();
+  await expect(
+    page.locator('[data-testid="section-group-body-opinions"]'),
+  ).toBeVisible();
+  await page.locator('[data-testid="section-toggle-Opinions"]').click();
+  await expect(
+    page.locator('[data-testid="section-group-body-opinions"]'),
+  ).toBeHidden();
+  await expect(
+    page.locator(`[data-testid="${SENTIMENTS_BODY_TEST_ID}"]`),
+  ).toBeVisible();
+});
+
+test("user can independently collapse the Sentiments card without affecting Opinions", async ({
+  page,
+}) => {
+  await page.goto(`${webBaseUrl}/analyze?job=${PREPOPULATED_JOB_A}`);
+  await expect(page.locator('[data-testid="headline-summary"]')).toBeVisible();
+  await expectTopLevelGroupsCollapsed(page);
+  await expect(
+    page.locator(`[data-testid="${SENTIMENTS_BODY_TEST_ID}"]`),
+  ).toBeVisible();
+
+  await page.locator('[data-testid="section-toggle-Sentiments"]').click();
+  await expect(
+    page.locator(`[data-testid="${SENTIMENTS_BODY_TEST_ID}"]`),
+  ).toBeHidden();
+  await expect(
+    page.locator('[data-testid="section-group-body-opinions"]'),
+  ).toBeHidden();
 });
 
 test("client-side navigation between prepopulated jobs keeps sidebar groups collapsed", async ({
