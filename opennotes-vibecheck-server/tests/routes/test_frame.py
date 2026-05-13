@@ -259,6 +259,54 @@ class TestFrameCompat:
         assert resp.json()["has_archive"] is False
         assert calls == ["interact", "scrape"]
 
+    def test_frame_compat_returns_html_render_mode_for_html_archive(
+        self, client: TestClient, httpx_mock: HTTPXMock
+    ) -> None:
+        from src.cache.scrape_cache import CachedScrape
+
+        class StubCache:
+            async def get(
+                self, url: str, *, tier: str = "scrape"
+            ) -> CachedScrape | None:
+                if tier in ("browser_html", "interact"):
+                    return None
+                return CachedScrape(html="<main>Archived</main>")
+
+        httpx_mock.add_response(
+            method="HEAD",
+            url="https://render-html.example.com/",
+            headers={"x-frame-options": "DENY"},
+        )
+        with patch("src.routes.frame.get_scrape_cache", return_value=StubCache()):
+            resp = client.get(
+                "/api/frame-compat", params={"url": "https://render-html.example.com/"}
+            )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["has_archive"] is True
+        assert body["archive_render_mode"] == "html"
+
+    def test_frame_compat_returns_none_render_mode_when_no_archive(
+        self, client: TestClient, httpx_mock: HTTPXMock
+    ) -> None:
+        class StubCache:
+            async def get(self, url: str, *, tier: str = "scrape") -> None:
+                return None
+
+        httpx_mock.add_response(
+            method="HEAD",
+            url="https://no-archive-mode.example.com/",
+            headers={"x-frame-options": "DENY"},
+        )
+        with patch("src.routes.frame.get_scrape_cache", return_value=StubCache()):
+            resp = client.get(
+                "/api/frame-compat", params={"url": "https://no-archive-mode.example.com/"}
+            )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["has_archive"] is False
+        assert body["archive_render_mode"] is None
+
     def test_csp_frame_ancestors_none_blocks(
         self, client: TestClient, httpx_mock: HTTPXMock
     ) -> None:
@@ -1190,6 +1238,75 @@ class TestArchivePreview:
         )
         assert "Archived preview" in resp.text
         assert "alert(1)" not in resp.text
+
+    def test_archive_preview_text_format_returns_plain_text(
+        self, client: TestClient
+    ) -> None:
+        from src.cache.scrape_cache import CachedScrape
+
+        class StubCache:
+            async def get(
+                self, url: str, *, tier: str = "scrape"
+            ) -> CachedScrape:
+                return CachedScrape(
+                    html="<main><h1>Headline</h1><p>Body</p></main>",
+                    markdown="# Headline\n\nBody",
+                )
+
+        with patch("src.routes.frame.get_scrape_cache", return_value=StubCache()):
+            resp = client.get(
+                "/api/archive-preview",
+                params={"url": "https://example.com/article", "format": "text"},
+            )
+        assert resp.status_code == 200
+        assert resp.headers["content-type"] == "text/plain; charset=utf-8"
+        assert resp.headers["cache-control"] == "no-store, private"
+        assert "content-security-policy" not in resp.headers
+        assert "Headline" in resp.text
+        assert "<main>" not in resp.text
+
+    def test_archive_preview_text_format_falls_back_to_html_when_no_markdown(
+        self, client: TestClient
+    ) -> None:
+        from src.cache.scrape_cache import CachedScrape
+
+        class StubCache:
+            async def get(
+                self, url: str, *, tier: str = "scrape"
+            ) -> CachedScrape:
+                return CachedScrape(html="<main><p>Body only</p></main>")
+
+        with patch("src.routes.frame.get_scrape_cache", return_value=StubCache()):
+            resp = client.get(
+                "/api/archive-preview",
+                params={"url": "https://example.com/article", "format": "text"},
+            )
+        assert resp.status_code == 200
+        assert resp.headers["content-type"] == "text/plain; charset=utf-8"
+        assert "Body only" in resp.text
+
+    def test_archive_preview_no_format_still_returns_html(
+        self, client: TestClient
+    ) -> None:
+        from src.cache.scrape_cache import CachedScrape
+
+        class StubCache:
+            async def get(
+                self, url: str, *, tier: str = "scrape"
+            ) -> CachedScrape:
+                return CachedScrape(
+                    html="<main><h1>Regression</h1></main>",
+                    markdown="# Regression",
+                )
+
+        with patch("src.routes.frame.get_scrape_cache", return_value=StubCache()):
+            resp = client.get(
+                "/api/archive-preview",
+                params={"url": "https://example.com/article"},
+            )
+        assert resp.status_code == 200
+        assert "text/html" in resp.headers["content-type"]
+        assert "Regression" in resp.text
 
     def test_cached_html_with_matching_job_id_returns_annotated_html(
         self, client: TestClient

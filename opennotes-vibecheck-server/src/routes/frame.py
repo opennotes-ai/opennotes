@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import re
 from inspect import isawaitable
-from typing import Any
+from typing import Any, Literal
 from urllib.parse import urlparse
 from uuid import UUID
 
@@ -155,6 +155,7 @@ class FrameCompatResponse(BaseModel):
     blocking_header: str | None
     csp_frame_ancestors: str | None = None
     has_archive: bool = False
+    archive_render_mode: Literal["html", "markdown", "text"] | None = None
 
 
 class ScreenshotResponse(BaseModel):
@@ -267,7 +268,7 @@ async def frame_compat(
 ) -> FrameCompatResponse:
     _validate_http_url(url)
     parsed_job_id = _parse_archive_job_id(job_id)
-    headers, has_archive = await asyncio.gather(
+    headers, (has_archive, archive_render_mode) = await asyncio.gather(
         _probe_target(url),
         _has_cached_archive(url, request=request, job_id=parsed_job_id),
     )
@@ -277,6 +278,7 @@ async def frame_compat(
         blocking_header=blocking_header,
         csp_frame_ancestors=csp_frame_ancestors,
         has_archive=has_archive,
+        archive_render_mode=archive_render_mode,
     )
 
 
@@ -307,17 +309,23 @@ def get_scrape_cache() -> SupabaseScrapeCache:
 
 async def _has_cached_archive(
     url: str, *, request: Request | None = None, job_id: UUID | None = None
-) -> bool:
+) -> tuple[bool, Literal["html", "markdown", "text"] | None]:
     try:
         scrape_cache = get_scrape_cache()
     except Exception as exc:
         logger.info("archive cache lookup failed for %s: %s", url, exc)
-        return False
+        return False, None
 
     cached, _ = await _get_cached_archive(
         url, scrape_cache, request=request, job_id=job_id, require_usable=True
     )
-    return bool(cached)
+    if not cached:
+        return False, None
+    if cached.html:
+        return True, "html"
+    if cached.markdown:
+        return True, "markdown"
+    return True, "text"
 
 
 async def _get_cached_archive(
@@ -611,6 +619,7 @@ async def archive_preview(
     job_id: str | None = Query(None),
     generate: bool = Query(False),
     source_type: str = Query("url"),
+    format: str | None = Query(None),
 ) -> Response:
     parsed_job_id = _parse_archive_job_id(job_id)
     if source_type == "pdf":
@@ -645,6 +654,15 @@ async def archive_preview(
         await _revalidate_archive_final_url(
             cached, original_url=url, scrape_cache=scrape_cache, tier=cached_tier or "scrape"
         )
+        if format == "text":
+            raw = cached.markdown or cached.html or ""
+            return Response(
+                content=raw,
+                headers={
+                    "content-type": "text/plain; charset=utf-8",
+                    "cache-control": "no-store, private",
+                },
+            )
         return await _render_archive_response(
             cached.html,
             cached.markdown,
