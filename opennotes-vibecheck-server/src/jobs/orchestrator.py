@@ -371,6 +371,7 @@ SELECT
     page_title,
     markdown,
     html,
+    raw_html,
     screenshot_storage_key
 FROM vibecheck_scrapes
 WHERE tier = 'browser_html'
@@ -401,7 +402,7 @@ async def _load_browser_html_scrape(
     return CachedScrape(
         markdown=row["markdown"] or "",
         html=row["html"],
-        raw_html=None,
+        raw_html=row["raw_html"],
         screenshot=None,
         links=None,
         metadata=ScrapeMetadata(

@@ -52,7 +52,10 @@ from src.services.gemini_agent import (
     google_vertex_model_name,
     run_vertex_agent_with_retry,
 )
-from src.services.vertex_limiter import vertex_slot
+from src.services.vertex_limiter import (
+    VertexLimiterBackendUnavailableError,
+    vertex_slot,
+)
 from src.utils.html_sanitize import strip_for_llm
 from src.utterances.errors import (
     TransientExtractionError,
@@ -231,6 +234,15 @@ async def extract_utterances(
         try:
             async with vertex_slot(settings):
                 result = await run_vertex_agent_with_retry(agent, user_prompt, deps=deps)  # pyright: ignore[reportArgumentType]
+        except VertexLimiterBackendUnavailableError as exc:
+            transient = TransientExtractionError(
+                provider="vertex_limiter",
+                status=type(exc).__name__,
+                model_name=model_name,
+                fallback_message=f"Vertex limiter backend unavailable: {exc}",
+            )
+            _set_upstream_span_attrs(span, transient)
+            raise transient from exc
         except Exception as exc:
             transient = classify_pydantic_ai_error(exc, model_name=model_name)
             if transient is not None:

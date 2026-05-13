@@ -4635,6 +4635,7 @@ async def test_run_pipeline_uses_browser_html_cache_without_classifying(
                 "page_title": "Private",
                 "markdown": "private page",
                 "html": "<html><body>private browser html</body></html>",
+                "raw_html": "<html><body><script>x()</script>private browser html</body></html>",
                 "screenshot_storage_key": None,
             }
 

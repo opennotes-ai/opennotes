@@ -1129,6 +1129,40 @@ async def test_extract_utterances_classifies_firecrawl_503_as_transient(
 
 
 @pytest.mark.asyncio
+async def test_extract_utterances_classifies_vertex_limiter_backend_unavailable_as_transient(
+    monkeypatch: pytest.MonkeyPatch, settings: Settings
+) -> None:
+    """When the Vertex limiter Redis backend is unavailable, the limiter raises
+    VertexLimiterBackendUnavailableError from `vertex_slot(...)`. The extractor
+    must surface this as TransientExtractionError(provider="vertex_limiter") so
+    Cloud Tasks redelivers and the job is not terminally flipped to
+    EXTRACTION_FAILED with "We couldn't read this page's content."
+    """
+    from contextlib import asynccontextmanager
+
+    from src.services.vertex_limiter import VertexLimiterBackendUnavailableError
+
+    client = _FakeFirecrawlClient(result=_scrape())
+    cache = _FakeScrapeCache()
+    _stub_agent(monkeypatch, _payload())
+
+    @asynccontextmanager
+    async def _failing_slot(_settings: Any) -> Any:
+        raise VertexLimiterBackendUnavailableError(
+            "Vertex limiter Redis backend unavailable"
+        )
+        yield  # pragma: no cover
+
+    monkeypatch.setattr("src.utterances.extractor.vertex_slot", _failing_slot)
+
+    with pytest.raises(TransientExtractionError) as exc_info:
+        await _call(TARGET_URL, client, cache, settings)
+
+    assert exc_info.value.provider == "vertex_limiter"
+    assert "limiter" in exc_info.value.fallback_message.lower()
+
+
+@pytest.mark.asyncio
 async def test_extract_utterances_classifies_firecrawl_404_as_terminal(
     monkeypatch: pytest.MonkeyPatch, settings: Settings
 ) -> None:
