@@ -17,11 +17,36 @@ import {
   type CarouselApi,
 } from "@opennotes/ui/components/ui/carousel";
 
-type EmblaInstance = ReturnType<NonNullable<CarouselApi>>;
+type EmblaInstance = NonNullable<ReturnType<NonNullable<CarouselApi>>>;
 import { ProgressCircle } from "@opennotes/ui/components/ui/progress-circle";
 import { useHighlights } from "./HighlightsStoreProvider";
 
 export const HIGHLIGHTS_AUTOPLAY_MS = 5000;
+
+function readAutoplayProgress(embla: EmblaInstance): number {
+  try {
+    const autoplayPlugin = embla.plugins()?.autoplay;
+    if (!autoplayPlugin?.isPlaying()) {
+      return 0;
+    }
+
+    const timeLeft = autoplayPlugin.timeUntilNext();
+    if (
+      typeof timeLeft !== "number" ||
+      !Number.isFinite(timeLeft) ||
+      timeLeft <= 0
+    ) {
+      return 0;
+    }
+
+    const pct = Math.round(
+      ((HIGHLIGHTS_AUTOPLAY_MS - timeLeft) / HIGHLIGHTS_AUTOPLAY_MS) * 100,
+    );
+    return Math.min(100, Math.max(0, pct));
+  } catch {
+    return 0;
+  }
+}
 
 export function HighlightsCard(): JSX.Element | null {
   const store = useHighlights();
@@ -45,29 +70,7 @@ export function HighlightsCard(): JSX.Element | null {
       const embla = api();
       if (!embla) return;
 
-      const autoplayPlugin = embla.plugins()?.autoplay;
-      if (!autoplayPlugin) {
-        setProgress(0);
-        rafId = requestAnimationFrame(tick);
-        return;
-      }
-
-      if (!autoplayPlugin.isPlaying()) {
-        setProgress(0);
-        rafId = requestAnimationFrame(tick);
-        return;
-      }
-
-      const timeLeft = autoplayPlugin.timeUntilNext();
-      if (timeLeft === null || timeLeft <= 0) {
-        setProgress(0);
-      } else {
-        const pct = Math.round(
-          ((HIGHLIGHTS_AUTOPLAY_MS - timeLeft) / HIGHLIGHTS_AUTOPLAY_MS) * 100,
-        );
-        setProgress(Math.min(100, Math.max(0, pct)));
-      }
-
+      setProgress(readAutoplayProgress(embla));
       rafId = requestAnimationFrame(tick);
     }
 
