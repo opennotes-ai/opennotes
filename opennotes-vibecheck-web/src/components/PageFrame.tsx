@@ -468,7 +468,7 @@ export default function PageFrame(props: PageFrameProps) {
           class="flex flex-1 flex-col items-center gap-3 pt-6 px-8 text-center"
         >
           <p class="text-sm text-foreground">
-            This page prevents being loaded in a frame. Please select Archived
+            This page prevents being loaded in a frame. Please select Snapshot
             or Screenshot above.
           </p>
           <p class="text-xs text-muted-foreground">Auto-switching in ~15s.</p>

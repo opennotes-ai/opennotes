@@ -732,6 +732,23 @@ describe("<PageFrame />", () => {
     expect(iframe.getAttribute("title")).toBe("Snapshot");
   });
 
+  it("archived banner shows 'Plain Text' for text render mode (TASK-1636.07)", () => {
+    render(() => (
+      <PageFrame
+        url="https://example.com/article"
+        canIframe={false}
+        blockingHeader="content-security-policy: frame-ancestors 'none'"
+        archivedPreviewUrl="/api/x"
+        screenshotUrl={null}
+        previewMode="archived"
+        archivedRenderMode="text"
+      />
+    ));
+
+    const banner = screen.getByTestId("page-frame-archived-mode-banner");
+    expect(banner.textContent).toBe("Plain Text");
+  });
+
   it("raw markdown/text pre uses the same wrapper and rounded-md (TASK-1636.03)", async () => {
     const mockFetch = vi.fn().mockResolvedValue({
       ok: true,
