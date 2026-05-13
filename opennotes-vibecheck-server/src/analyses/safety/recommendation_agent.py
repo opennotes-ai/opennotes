@@ -424,6 +424,30 @@ def _sanitize_top_signals(recommendation: SafetyRecommendation) -> SafetyRecomme
     return recommendation.model_copy(update={"top_signals": kept})
 
 
+def _flagged_image_count(inputs: SafetyRecommendationInputs) -> int:
+    return sum(
+        1
+        for match in inputs.image_moderation_matches
+        if match.flagged or match.max_likelihood >= FLAG_THRESHOLD
+    )
+
+
+def _discounted_image_signal_count(
+    recommendation: SafetyRecommendation,
+    inputs: SafetyRecommendationInputs,
+) -> int:
+    flagged = _flagged_image_count(inputs)
+    if flagged == 0:
+        return 0
+    discounted = sum(
+        1
+        for divergence in recommendation.divergences
+        if divergence.direction == "discounted"
+        and divergence.signal_source == "Image moderation"
+    )
+    return min(discounted, flagged)
+
+
 def _has_guardrail_downgrade_blocker(
     recommendation: SafetyRecommendation,
     inputs: SafetyRecommendationInputs,
@@ -436,10 +460,12 @@ def _has_guardrail_downgrade_blocker(
         return True
     if any(_has_verified_video_signal(match) for match in inputs.video_moderation_matches):
         return True
-    return any(
-        match.flagged or match.max_likelihood >= FLAG_THRESHOLD
-        for match in inputs.image_moderation_matches
-    )
+    flagged_images = _flagged_image_count(inputs)
+    if flagged_images > 0:
+        discounted_images = _discounted_image_signal_count(recommendation, inputs)
+        if discounted_images < flagged_images:
+            return True
+    return False
 
 
 def _is_inconclusive_video_match(match: VideoModerationMatch) -> bool:
@@ -488,7 +514,25 @@ def _apply_recommendation_guardrail(
         _is_inconclusive_video_match(match)
         for match in inputs.video_moderation_matches
     )
+    flagged_images = _flagged_image_count(inputs)
+    discounted_images = _discounted_image_signal_count(recommendation, inputs)
+    supported_image_signals = flagged_images - discounted_images
+
     if not inputs.harmful_content_matches:
+        if flagged_images > 0 and supported_image_signals == 0:
+            return (
+                recommendation.model_copy(
+                    update={
+                        "level": SafetyLevel.SAFE,
+                        "rationale": (
+                            "Visual evidence refuted the score-based image flags; "
+                            "no supported safety concern remains."
+                        ),
+                        "top_signals": [],
+                    }
+                ),
+                "all_image_signals_discounted",
+            )
         if not has_inconclusive_video:
             return recommendation, None
         return (
@@ -507,8 +551,9 @@ def _apply_recommendation_guardrail(
 
     discounted_text_signals = _discounted_text_signal_count(recommendation, inputs)
     supported_text_signals = len(inputs.harmful_content_matches) - discounted_text_signals
+    supported_signals = supported_text_signals + supported_image_signals
 
-    if supported_text_signals == 0:
+    if supported_signals == 0:
         return (
             recommendation.model_copy(
                 update={
@@ -523,7 +568,7 @@ def _apply_recommendation_guardrail(
             "all_text_signals_discounted",
         )
 
-    if supported_text_signals == 1:
+    if supported_signals == 1:
         return (
             recommendation.model_copy(
                 update={

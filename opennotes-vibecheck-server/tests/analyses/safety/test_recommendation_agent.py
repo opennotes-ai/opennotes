@@ -739,6 +739,129 @@ async def test_run_safety_recommendation_preserves_empty_divergences(monkeypatch
     assert result.divergences == []
 
 
+def _image_match(utterance_id: str, *, max_likelihood: float = 0.9) -> ImageModerationMatch:
+    return ImageModerationMatch(
+        utterance_id=utterance_id,
+        image_url=f"https://cdn.example/{utterance_id}.jpg",
+        adult=0.0,
+        violence=0.0,
+        racy=max_likelihood,
+        medical=0.0,
+        spoof=0.0,
+        flagged=True,
+        max_likelihood=max_likelihood,
+    )
+
+
+def _image_discount(utterance_id: str) -> Divergence:
+    return Divergence(
+        direction="discounted",
+        signal_source="Image moderation",
+        signal_detail=f"Image moderation signal {utterance_id}",
+        reason="Visual evidence refutes the score-based flag.",
+    )
+
+
+async def test_guardrail_downgrades_when_all_flagged_images_discounted_to_safe(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    agent = StubAgent(
+        _caution_recommendation(divergences=[_image_discount("u1")])
+    )
+    monkeypatch.setattr(
+        "src.analyses.safety.recommendation_agent.build_agent",
+        lambda *args, **kwargs: agent,
+    )
+
+    result = await run_safety_recommendation(
+        SafetyRecommendationInputs(
+            harmful_content_matches=[],
+            web_risk_findings=[],
+            image_moderation_matches=[_image_match("u1")],
+            video_moderation_matches=[],
+            unavailable_inputs=[],
+        ),
+        settings=Settings(),
+    )
+
+    assert result.level == SafetyLevel.SAFE
+
+
+async def test_guardrail_preserves_caution_when_image_discount_partial(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    agent = StubAgent(
+        _caution_recommendation(divergences=[_image_discount("u1")])
+    )
+    monkeypatch.setattr(
+        "src.analyses.safety.recommendation_agent.build_agent",
+        lambda *args, **kwargs: agent,
+    )
+
+    result = await run_safety_recommendation(
+        SafetyRecommendationInputs(
+            harmful_content_matches=[],
+            web_risk_findings=[],
+            image_moderation_matches=[_image_match("u1"), _image_match("u2")],
+            video_moderation_matches=[],
+            unavailable_inputs=[],
+        ),
+        settings=Settings(),
+    )
+
+    assert result.level == SafetyLevel.CAUTION
+
+
+async def test_guardrail_preserves_caution_when_image_discount_wrong_source(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    agent = StubAgent(
+        _caution_recommendation(divergences=[_text_discount("u1")])
+    )
+    monkeypatch.setattr(
+        "src.analyses.safety.recommendation_agent.build_agent",
+        lambda *args, **kwargs: agent,
+    )
+
+    result = await run_safety_recommendation(
+        SafetyRecommendationInputs(
+            harmful_content_matches=[],
+            web_risk_findings=[],
+            image_moderation_matches=[_image_match("u1")],
+            video_moderation_matches=[],
+            unavailable_inputs=[],
+        ),
+        settings=Settings(),
+    )
+
+    assert result.level == SafetyLevel.CAUTION
+
+
+async def test_guardrail_downgrades_to_mild_when_text_remains_after_image_discount(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    agent = StubAgent(
+        _caution_recommendation(divergences=[_image_discount("img-u1")])
+    )
+    monkeypatch.setattr(
+        "src.analyses.safety.recommendation_agent.build_agent",
+        lambda *args, **kwargs: agent,
+    )
+
+    result = await run_safety_recommendation(
+        SafetyRecommendationInputs(
+            harmful_content_matches=[_text_match("u1")],
+            web_risk_findings=[],
+            image_moderation_matches=[_image_match("img-u1")],
+            video_moderation_matches=[],
+            unavailable_inputs=[],
+        ),
+        settings=Settings(),
+    )
+
+    assert result.level == SafetyLevel.MILD
+
+
 async def test_guardrail_downgrades_all_discounted_text_signals_to_safe(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
