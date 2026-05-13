@@ -1,7 +1,8 @@
-import { createEffect, createSignal, JSX, Show } from "solid-js";
+import { batch, createEffect, createSignal, JSX, onMount, Show, untrack } from "solid-js";
 import {
   getPermission,
   isSupported,
+  NotificationPermissionState,
   requestPermission,
 } from "~/lib/notifications";
 import { TERMINAL_JOB_STATUSES } from "~/routes/analyze.notifications";
@@ -15,19 +16,33 @@ export default function NotifyOnComplete(
   props: NotifyOnCompleteProps,
 ): JSX.Element {
   const [optedIn, setOptedIn] = createSignal(false);
-  const [permission, setPermission] = createSignal(getPermission());
+  const [permission, setPermission] = createSignal<NotificationPermissionState>("unsupported");
+  const [inFlight, setInFlight] = createSignal(false);
+
+  onMount(() => {
+    const p = getPermission();
+    setPermission(p);
+    if (p === "granted") setOptedIn(true);
+  });
 
   const enabled = () => optedIn() && permission() === "granted";
 
   createEffect(() => {
-    props.onEnabledChange(enabled());
+    const e = enabled();
+    untrack(() => props.onEnabledChange(e));
   });
 
   const handleClick = async () => {
-    const result = await requestPermission();
-    setPermission(result);
-    if (result === "granted") {
-      setOptedIn(true);
+    if (inFlight()) return;
+    setInFlight(true);
+    try {
+      const result = await requestPermission();
+      batch(() => {
+        setPermission(result);
+        if (result === "granted") setOptedIn(true);
+      });
+    } finally {
+      setInFlight(false);
     }
   };
 
