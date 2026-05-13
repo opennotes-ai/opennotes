@@ -7,7 +7,7 @@ from uuid import UUID, uuid4
 
 import pytest
 
-from src.analyses.safety._schemas import SafetyRecommendation
+from src.analyses.safety._schemas import SafetyLevel, SafetyRecommendation
 from src.analyses.safety.recommendation_agent import SafetyRecommendationInputs
 from src.analyses.schemas import SectionSlug
 from src.jobs import orchestrator
@@ -81,7 +81,7 @@ def _flagged_image_sections() -> dict[str, Any]:
 
 def _safe_recommendation() -> SafetyRecommendation:
     return SafetyRecommendation(
-        level="safe",
+        level=SafetyLevel.SAFE,
         rationale="No concerning signals.",
         top_signals=[],
         unavailable_inputs=[],
