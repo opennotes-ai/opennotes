@@ -95,6 +95,18 @@ Important caveats:
       low visual concern) producing caution,
     - weak visual score plus weak textual cues and in-context risk alignment.
 - Divergences from upstream outputs must also be sanitized server-side.
+- Image vision review: when attached images are provided alongside this prompt,
+  they correspond to flagged ImageModerationMatch entries (load-bearing for the
+  verdict). Use them to confirm or refute the score-based finding:
+  - When attached images contradict SafeSearch score-based flags (e.g., racy
+    score is high but the image is innocuous or instructional), emit a
+    Divergence with direction="discounted" and signal_source="Image moderation"
+    describing why the visual evidence refutes the score.
+  - When attached images cannot be processed (fetch failure, unsupported
+    content type, multimodal API error visible to you as missing image
+    content), add "image_vision_review" to unavailable_inputs.
+  - These divergences must follow the same sanitization rules as other
+    divergences: short, display-ready text; no raw float scores or enum labels.
 
 Only emit divergences that are directly supported by inputs. Do not fabricate
 divergences."""

@@ -106,6 +106,15 @@ def test_recommendation_prompt_downgrades_all_discounted_complete_coverage() -> 
     assert "MUST emit a corresponding direction=\"discounted\" divergence" in RECOMMENDATION_SYSTEM_PROMPT
 
 
+def test_recommendation_prompt_describes_image_vision_review() -> None:
+    assert "Image moderation" in RECOMMENDATION_SYSTEM_PROMPT
+    assert "image_vision_review" in RECOMMENDATION_SYSTEM_PROMPT
+    assert 'direction="discounted"' in RECOMMENDATION_SYSTEM_PROMPT
+    assert "ImageModerationMatch" in RECOMMENDATION_SYSTEM_PROMPT
+    assert "contradict" in RECOMMENDATION_SYSTEM_PROMPT
+    assert "unavailable_inputs" in RECOMMENDATION_SYSTEM_PROMPT
+
+
 def test_recommendation_prompt_treats_inconclusive_video_as_incomplete_evidence() -> None:
     assert "sampling_inconclusive" in RECOMMENDATION_SYSTEM_PROMPT
     assert "incomplete evidence" in RECOMMENDATION_SYSTEM_PROMPT
