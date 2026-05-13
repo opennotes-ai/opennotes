@@ -29,6 +29,30 @@ const analyses: InternalRecentAnalysis[] = [
     safety_recommendation: null,
     completed_at: "2026-05-12T00:00:00Z",
   },
+  {
+    job_id: "job-pdf",
+    source_type: "pdf",
+    source_url: "https://example.com/report.pdf",
+    page_title: "Quarterly Report",
+    screenshot_url: null,
+    preview_description: null,
+    headline_summary: null,
+    weather_report: null,
+    safety_recommendation: null,
+    completed_at: "2026-05-12T00:00:01Z",
+  },
+  {
+    job_id: "job-html",
+    source_type: "browser_html",
+    source_url: "https://example.com/captured",
+    page_title: null,
+    screenshot_url: null,
+    preview_description: null,
+    headline_summary: null,
+    weather_report: null,
+    safety_recommendation: null,
+    completed_at: "2026-05-12T00:00:02Z",
+  },
 ];
 
 describe("loadInternalGalleryData", () => {
@@ -112,10 +136,22 @@ describe("<InternalGalleryGrid />", () => {
     render(() => <InternalGalleryGrid analyses={analyses} />);
 
     expect(screen.getByText("Internal gallery")).toBeInTheDocument();
-    expect(screen.getByTestId("internal-gallery-card")).toHaveAttribute(
-      "href",
-      "/analyze?job=job-1",
-    );
+    const cards = screen.getAllByTestId("internal-gallery-card");
+    expect(cards).toHaveLength(3);
+    expect(cards[0]).toHaveAttribute("href", "/analyze?job=job-1");
+    expect(cards[1]).toHaveAttribute("href", "/analyze?job=job-pdf");
+    expect(cards[2]).toHaveAttribute("href", "/analyze?job=job-html");
     expect(screen.queryByText(/filter/i)).toBeNull();
+  });
+
+  it("renders pdf and browser_html cards with null screenshot/preview", async () => {
+    const { InternalGalleryGrid } = await import("./gallery");
+
+    render(() => <InternalGalleryGrid analyses={analyses} />);
+
+    expect(screen.getByText("Quarterly Report")).toBeInTheDocument();
+    expect(screen.getAllByText("https://example.com/captured").length).toBeGreaterThan(0);
+    expect(screen.getByText("pdf")).toBeInTheDocument();
+    expect(screen.getByText("browser_html")).toBeInTheDocument();
   });
 });
