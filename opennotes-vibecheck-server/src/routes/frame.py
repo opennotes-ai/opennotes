@@ -323,6 +323,9 @@ async def _has_cached_archive(
         return False, None
     if cached.html:
         return True, "html"
+    # The branches below are not currently reachable: _get_cached_archive only returns
+    # entries where cached.html is truthy (browser_html and tier loops both gate on it).
+    # They are retained for when markdown-only archive entries are supported.
     if cached.markdown:
         return True, "markdown"
     return True, "text"

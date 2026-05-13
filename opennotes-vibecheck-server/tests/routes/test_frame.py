@@ -286,6 +286,43 @@ class TestFrameCompat:
         assert body["has_archive"] is True
         assert body["archive_render_mode"] == "html"
 
+    def test_frame_compat_returns_html_render_mode_for_cached_archive_with_both_html_and_markdown(
+        self, client: TestClient, httpx_mock: HTTPXMock
+    ) -> None:
+        """archive_render_mode is always 'html' when _get_cached_archive returns an entry,
+        because _get_cached_archive requires cached.html to be truthy. This test documents
+        that the 'markdown' and 'text' branches in _has_cached_archive are not currently
+        reachable in production.
+        """
+        from src.cache.scrape_cache import CachedScrape
+
+        class StubCache:
+            async def get(
+                self, url: str, *, tier: str = "scrape"
+            ) -> CachedScrape | None:
+                if tier in ("browser_html", "interact"):
+                    return None
+                return CachedScrape(
+                    html="<main>Archived</main>",
+                    markdown="Archived markdown body",
+                )
+
+        httpx_mock.add_response(
+            method="HEAD",
+            url="https://render-html-and-md.example.com/",
+            headers={"x-frame-options": "DENY"},
+        )
+        with patch("src.routes.frame.get_scrape_cache", return_value=StubCache()):
+            resp = client.get(
+                "/api/frame-compat",
+                params={"url": "https://render-html-and-md.example.com/"},
+            )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["has_archive"] is True
+        assert body["archive_render_mode"] == "html"
+        assert body["archive_render_mode"] != "markdown"
+
     def test_frame_compat_returns_none_render_mode_when_no_archive(
         self, client: TestClient, httpx_mock: HTTPXMock
     ) -> None:
