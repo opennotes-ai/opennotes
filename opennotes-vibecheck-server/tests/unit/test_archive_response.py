@@ -32,7 +32,9 @@ def test_archive_response_stylesheet_is_wrapped_in_style_tag() -> None:
     response = _archive_response("<html></html>")
 
     body = bytes(response.body).decode("utf-8")
-    assert f"<style>{_EXPECTED_DISPLAY_RULE}</style>" in body
+    assert body.startswith("<style>")
+    assert _EXPECTED_DISPLAY_RULE in body
+    assert "</style><html>" in body
 
 
 def test_archive_response_preserves_doctype_first() -> None:

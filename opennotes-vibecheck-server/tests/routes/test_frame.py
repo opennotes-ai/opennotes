@@ -11,6 +11,7 @@ from fastapi.testclient import TestClient
 from pytest_httpx import HTTPXMock
 
 from src.main import app
+from src.routes import frame
 
 
 @pytest.fixture
@@ -1845,10 +1846,9 @@ class TestArchivePreview:
                 params={"url": "https://example.com/fresh", "generate": "1"},
         )
         assert resp.status_code == 200
-        assert resp.text == (
-            "<style>img{max-width:100%!important;height:auto!important}</style>"
-            "<article>Fresh archive</article>"
-        )
+        assert resp.text.startswith("<style>")
+        assert "img{max-width:100%!important;height:auto!important}" in resp.text
+        assert resp.text.endswith("<article>Fresh archive</article>")
         assert cache.put_url == "https://example.com/fresh"
         assert cache.get_calls == ["interact", "scrape"]
 
@@ -2052,3 +2052,9 @@ class TestSSRFValidation:
         monkeypatch.setattr(socket, "getaddrinfo", _resolve_to_private)
         resp = client.get("/api/frame-compat", params={"url": "http://evil.example.com/"})
         assert resp.status_code == 400
+
+
+def test_archive_display_styles_include_comment_region_rules() -> None:
+    assert "[data-platform-comments]" in frame._ARCHIVE_DISPLAY_STYLES
+    assert ".opennotes-comments" in frame._ARCHIVE_DISPLAY_STYLES
+    assert ".opennotes-comment__body" in frame._ARCHIVE_DISPLAY_STYLES

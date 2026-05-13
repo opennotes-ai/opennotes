@@ -11,7 +11,7 @@ from .graphql import (
     fetch_coral_comments,
 )
 from .merge import merge_coral_into_scrape
-from .render import render_to_markdown
+from .render import render_comments_to_html, render_to_markdown
 
 __all__ = [
     "CoralCommentNode",
@@ -22,5 +22,6 @@ __all__ = [
     "detect_coral",
     "fetch_coral_comments",
     "merge_coral_into_scrape",
+    "render_comments_to_html",
     "render_to_markdown",
 ]
