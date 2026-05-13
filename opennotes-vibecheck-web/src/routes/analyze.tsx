@@ -20,6 +20,7 @@ import { Title, Meta } from "@solidjs/meta";
 import { deriveOgTitle, deriveOgDescription } from "~/lib/og-meta";
 import { siteUrl } from "~/lib/site-url";
 import CachedBadge from "~/components/CachedBadge";
+import NotifyOnComplete from "~/components/NotifyOnComplete";
 import ExpiredAnalysisCard from "~/components/ExpiredAnalysisCard";
 import JobFailureCard from "~/components/JobFailureCard";
 import LoadingSavedAnalysis from "~/components/LoadingSavedAnalysis";
@@ -40,6 +41,8 @@ import type {
   SectionSlug,
 } from "~/lib/api-client.server";
 import { createPollingResource } from "~/lib/polling";
+import { notify } from "~/lib/notifications";
+import { titleFor, bodyFor } from "./analyze.notifications";
 import { resolveHeadline } from "~/lib/headline-fallback";
 import {
   scrollToUtterance,
@@ -280,6 +283,18 @@ function AnalyzePageContent(props: { initialJobState: JobState | null }) {
   );
   const [archiveProbeState, setArchiveProbeState] =
     createSignal<ArchiveProbeState>("pending");
+
+  const [notifyEnabled, setNotifyEnabled] = createSignal(false);
+  let firedForJobId: string | null = null;
+  createEffect(() => {
+    const status = jobStatus();
+    const id = jobId();
+    if (!id || !notifyEnabled()) return;
+    if (!TERMINAL_JOB_STATUSES.has(status ?? "")) return;
+    if (firedForJobId === id) return;
+    firedForJobId = id;
+    notify(titleFor(status!), { body: bodyFor(status!) });
+  });
 
   let frameCompatRequest = 0;
   let archiveTerminalAt: number | null = null;
@@ -982,6 +997,10 @@ function AnalyzePageContent(props: { initialJobState: JobState | null }) {
                             Status: {jobStatus()}
                           </p>
                         </Show>
+                        <NotifyOnComplete
+                          jobStatus={jobStatus() ?? undefined}
+                          onEnabledChange={setNotifyEnabled}
+                        />
                       </div>
                       <Sidebar
                         sections={jobState()?.sections}
