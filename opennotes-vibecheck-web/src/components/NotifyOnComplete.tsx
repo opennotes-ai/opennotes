@@ -4,8 +4,7 @@ import {
   isSupported,
   requestPermission,
 } from "~/lib/notifications";
-
-const TERMINAL_JOB_STATUSES = new Set(["done", "partial", "failed"]);
+import { TERMINAL_JOB_STATUSES } from "~/routes/analyze.notifications";
 
 export interface NotifyOnCompleteProps {
   jobStatus: string | undefined;

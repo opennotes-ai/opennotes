@@ -42,7 +42,7 @@ import type {
 } from "~/lib/api-client.server";
 import { createPollingResource } from "~/lib/polling";
 import { notify } from "~/lib/notifications";
-import { titleFor, bodyFor } from "./analyze.notifications";
+import { titleFor, bodyFor, TERMINAL_JOB_STATUSES } from "./analyze.notifications";
 import { resolveHeadline } from "~/lib/headline-fallback";
 import {
   scrollToUtterance,
@@ -112,7 +112,6 @@ const ORIGINAL_BLOCKED_TIP_TEXT =
 const ARCHIVE_PROBE_INTERVAL_MS = 5_000;
 const ARCHIVE_PROBE_CAP_MS = 300_000;
 const ARCHIVE_PROBE_TERMINAL_GRACE_MS = 10_000;
-const TERMINAL_JOB_STATUSES = new Set(["done", "partial", "failed"]);
 
 function asErrorCode(raw: string | undefined): PublicErrorCode | null {
   if (!raw) return null;

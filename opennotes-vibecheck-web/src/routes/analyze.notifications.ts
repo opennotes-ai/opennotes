@@ -1,7 +1,7 @@
 import { createEffect } from "solid-js";
 import { notify } from "~/lib/notifications";
 
-const TERMINAL_JOB_STATUSES = new Set(["done", "partial", "failed"]);
+export const TERMINAL_JOB_STATUSES = new Set(["done", "partial", "failed"]);
 
 export function titleFor(status: string): string {
   if (status === "done") return "Vibecheck ready";
