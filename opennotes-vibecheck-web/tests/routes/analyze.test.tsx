@@ -40,6 +40,7 @@ type MockFrameCompat = {
   cspFrameAncestors: string | null;
   screenshotUrl: string | null;
   archivedPreviewUrl: string | null;
+  archiveRenderMode?: "html_full_page" | "html_extracted" | "markdown" | "text" | null;
 };
 
 type MockArchiveProbeResult =
@@ -50,6 +51,7 @@ type MockArchiveProbeResult =
       can_iframe: boolean;
       blocking_header: string | null;
       csp_frame_ancestors: string | null;
+      archive_render_mode?: "html_full_page" | "html_extracted" | "markdown" | "text" | null;
     }
   | { ok: false; kind: "transient_error" | "invalid_url" };
 
@@ -387,6 +389,7 @@ function frameCompatResult(
     cspFrameAncestors: null,
     screenshotUrl: null,
     archivedPreviewUrl: null,
+    archiveRenderMode: null as "html_full_page" | "html_extracted" | "markdown" | "text" | null,
     ...overrides,
   };
   return {
@@ -396,6 +399,7 @@ function frameCompatResult(
     can_iframe: frameCompat.canIframe,
     blocking_header: frameCompat.blockingHeader,
     csp_frame_ancestors: frameCompat.cspFrameAncestors,
+    archive_render_mode: frameCompat.archiveRenderMode ?? null,
   };
 }
 
@@ -1354,6 +1358,29 @@ describe("AnalyzePage route", () => {
     );
 
     expect(screen.queryByTestId("cached-badge")).toBeNull();
+  });
+
+  it("renders the archive render mode banner with the correct label when archive_render_mode is html_full_page (TASK-1636.06)", async () => {
+    const archiveUrl = `/api/archive-preview?url=${encodeURIComponent("https://news.example.com/a")}`;
+    getArchiveProbeMock.mockResolvedValueOnce(
+      frameCompatResult({
+        canIframe: false,
+        blockingHeader: "content-security-policy: frame-ancestors 'none'",
+        cspFrameAncestors: "'none'",
+        archivedPreviewUrl: archiveUrl,
+        archiveRenderMode: "html_full_page",
+      }),
+    );
+
+    renderAt("/analyze?job=job-render-mode-banner&url=https://news.example.com/a");
+
+    await waitFor(() => {
+      expect(screen.queryByTestId("page-frame-archived-mode-banner")).not.toBeNull();
+    });
+
+    expect(screen.getByTestId("page-frame-archived-mode-banner").textContent).toContain(
+      "Full Page HTML",
+    );
   });
 });
 
