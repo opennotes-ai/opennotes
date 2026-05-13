@@ -13,7 +13,7 @@ export interface PageFrameProps {
   blockingHeader?: string | null;
   cspFrameAncestors?: string | null;
   archivedPreviewUrl?: string | null;
-  archivedRenderMode?: "html" | "markdown" | "text" | null;
+  archivedRenderMode?: "html_full_page" | "html_extracted" | "markdown" | "text" | null;
   screenshotUrl: string | null;
   previewMode: PreviewMode;
   previewModeRequestId?: number;
@@ -302,9 +302,11 @@ export default function PageFrame(props: PageFrameProps) {
   );
 
   function archiveRenderModeLabel(
-    mode: "html" | "markdown" | "text" | null | undefined,
+    mode: "html_full_page" | "html_extracted" | "markdown" | "text" | null | undefined,
   ): string | null {
-    if (mode === "html") return "Rendered HTML";
+    if ((mode as string) === "html") return "Snapshot";  // legacy fallback; remove after next deploy
+    if (mode === "html_full_page") return "Full Page HTML";
+    if (mode === "html_extracted") return "Extracted HTML Content";
     if (mode === "markdown") return "Extracted Markdown";
     if (mode === "text") return "Plain Text";
     return null;
@@ -382,7 +384,7 @@ export default function PageFrame(props: PageFrameProps) {
             {(label) => (
               <div
                 data-testid="page-frame-archived-mode-banner"
-                class="text-xs text-muted-foreground px-3 py-1 border-b border-border"
+                class="text-xs text-muted-foreground px-3 py-1"
               >
                 {label()}
               </div>
@@ -392,18 +394,20 @@ export default function PageFrame(props: PageFrameProps) {
             when={isRawMode()}
             fallback={
               <>
-                <iframe
-                  data-testid="page-frame-archived-iframe"
-                  src={props.archivedPreviewUrl ?? ""}
-                  title="Archived page"
-                  sandbox="allow-same-origin"
-                  referrerpolicy="no-referrer"
-                  loading="lazy"
-                  ref={archivedIframeRef}
-                  onLoad={handleArchivedLoad}
-                  onError={handleArchivedError}
-                  class="h-full min-h-[60vh] w-full flex-1 border-0 bg-background"
-                />
+                <div class="flex min-h-[60vh] flex-1 flex-col p-2 sm:p-3">
+                  <iframe
+                    data-testid="page-frame-archived-iframe"
+                    src={props.archivedPreviewUrl ?? ""}
+                    title="Snapshot"
+                    sandbox="allow-same-origin"
+                    referrerpolicy="no-referrer"
+                    loading="lazy"
+                    ref={archivedIframeRef}
+                    onLoad={handleArchivedLoad}
+                    onError={handleArchivedError}
+                    class="h-full min-h-[60vh] w-full flex-1 rounded-md border-0 bg-background"
+                  />
+                </div>
                 <Show when={!archivedLoaded() && !archivedFailed()}>
                   <div
                     data-testid="page-frame-archived-loading"
@@ -432,12 +436,14 @@ export default function PageFrame(props: PageFrameProps) {
                 </div>
               }
             >
-              <pre
-                data-testid="page-frame-archived-pre"
-                class="overflow-auto whitespace-pre-wrap break-words font-mono text-sm bg-muted/40 p-4 min-h-[60vh] flex-1 w-full m-0 rounded-none border-0"
-              >
-                {rawContent() ?? ""}
-              </pre>
+              <div class="flex min-h-[60vh] flex-1 flex-col p-2 sm:p-3">
+                <pre
+                  data-testid="page-frame-archived-pre"
+                  class="overflow-auto whitespace-pre-wrap break-words font-mono text-sm bg-muted/40 p-4 min-h-[60vh] flex-1 w-full m-0 rounded-md border-0"
+                >
+                  {rawContent() ?? ""}
+                </pre>
+              </div>
             </Show>
           </Show>
         </div>
@@ -462,7 +468,7 @@ export default function PageFrame(props: PageFrameProps) {
           class="flex flex-1 flex-col items-center gap-3 pt-6 px-8 text-center"
         >
           <p class="text-sm text-foreground">
-            This page prevents being loaded in a frame. Please select Archived
+            This page prevents being loaded in a frame. Please select Snapshot
             or Screenshot above.
           </p>
           <p class="text-xs text-muted-foreground">Auto-switching in ~15s.</p>

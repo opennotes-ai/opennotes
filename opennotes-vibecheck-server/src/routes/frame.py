@@ -155,7 +155,7 @@ class FrameCompatResponse(BaseModel):
     blocking_header: str | None
     csp_frame_ancestors: str | None = None
     has_archive: bool = False
-    archive_render_mode: Literal["html", "markdown", "text"] | None = None
+    archive_render_mode: Literal["html_full_page", "html_extracted", "markdown", "text"] | None = None
 
 
 class ScreenshotResponse(BaseModel):
@@ -309,23 +309,24 @@ def get_scrape_cache() -> SupabaseScrapeCache:
 
 async def _has_cached_archive(
     url: str, *, request: Request | None = None, job_id: UUID | None = None
-) -> tuple[bool, Literal["html", "markdown", "text"] | None]:
+) -> tuple[bool, Literal["html_full_page", "html_extracted", "markdown", "text"] | None]:
     try:
         scrape_cache = get_scrape_cache()
     except Exception as exc:
         logger.info("archive cache lookup failed for %s: %s", url, exc)
         return False, None
 
-    cached, _ = await _get_cached_archive(
+    cached, tier = await _get_cached_archive(
         url, scrape_cache, request=request, job_id=job_id, require_usable=True
     )
     if not cached:
         return False, None
     if cached.html:
-        return True, "html"
-    # The branches below are not currently reachable: _get_cached_archive only returns
-    # entries where cached.html is truthy (browser_html and tier loops both gate on it).
-    # They are retained for when markdown-only archive entries are supported.
+        render_mode = "html_full_page" if tier == _BROWSER_HTML_ARCHIVE_TIER else "html_extracted"
+        return True, render_mode
+    # NOTE: markdown and text modes are reserved for future use.
+    # _get_cached_archive only returns entries with cached.html today,
+    # making these branches currently unreachable.
     if cached.markdown:
         return True, "markdown"
     return True, "text"

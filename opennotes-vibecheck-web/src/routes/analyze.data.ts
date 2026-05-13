@@ -6,14 +6,8 @@ import type {
   SectionSlug,
 } from "~/lib/api-client.server";
 import { isPdfFile, isPdfTooLarge } from "~/lib/pdf-constraints";
-
-interface FrameCompatResponse {
-  can_iframe: boolean;
-  blocking_header: string | null;
-  csp_frame_ancestors?: string | null;
-  has_archive?: boolean;
-  archive_render_mode?: "html" | "markdown" | "text" | null;
-}
+import type { components } from "~/lib/generated-types";
+type FrameCompatResponse = components["schemas"]["FrameCompatResponse"];
 
 interface ScreenshotResponse {
   screenshot_url: string;
@@ -29,7 +23,7 @@ export interface FrameCompatResult {
   cspFrameAncestors: string | null;
   screenshotUrl: string | null;
   archivedPreviewUrl: string | null;
-  archivedRenderMode: "html" | "markdown" | "text" | null;
+  archivedRenderMode: "html_full_page" | "html_extracted" | "markdown" | "text" | null;
 }
 
 export type FrameCompatQueryResult =
@@ -44,7 +38,7 @@ export type ArchiveProbeResult =
       can_iframe: boolean;
       blocking_header: string | null;
       csp_frame_ancestors: string | null;
-      archive_render_mode: "html" | "markdown" | "text" | null;
+      archive_render_mode: "html_full_page" | "html_extracted" | "markdown" | "text" | null;
     }
   | { ok: false; kind: "transient_error" | "invalid_url" };
 

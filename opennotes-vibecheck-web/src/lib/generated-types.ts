@@ -867,7 +867,7 @@ export interface components {
              */
             has_archive: boolean;
             /** Archive Render Mode */
-            archive_render_mode?: ("html" | "markdown" | "text") | null;
+            archive_render_mode?: ("html_full_page" | "html_extracted" | "markdown" | "text") | null;
         };
         /** HTTPValidationError */
         HTTPValidationError: {

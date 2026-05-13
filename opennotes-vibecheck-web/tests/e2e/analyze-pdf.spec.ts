@@ -565,7 +565,7 @@ test("PDF upload happy path shows Original PDF and Archived annotated HTML", asy
     "Not available for PDFs",
   );
 
-  const archivedButton = page.getByRole("button", { name: "Archived" });
+  const archivedButton = page.getByRole("button", { name: "Snapshot" });
   await expect(archivedButton).toBeEnabled();
   await archivedButton.click();
   await expect(page.getByTestId("page-frame-archived-iframe")).toBeVisible();
@@ -642,7 +642,7 @@ test("PDF utterance ref switches to Archived and targets the cited anchor", asyn
   await page.getByText("Tone/dynamics").click();
   await expect(page.getByTestId("flashpoint-utterance-ref")).toBeVisible();
   await page.getByTestId("flashpoint-utterance-ref").click();
-  await expect(page.getByRole("button", { name: "Archived" })).toHaveAttribute(
+  await expect(page.getByRole("button", { name: "Snapshot" })).toHaveAttribute(
     "aria-pressed",
     "true",
   );

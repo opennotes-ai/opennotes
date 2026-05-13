@@ -284,16 +284,11 @@ class TestFrameCompat:
         assert resp.status_code == 200
         body = resp.json()
         assert body["has_archive"] is True
-        assert body["archive_render_mode"] == "html"
+        assert body["archive_render_mode"] == "html_extracted"
 
     def test_frame_compat_returns_html_render_mode_for_cached_archive_with_both_html_and_markdown(
         self, client: TestClient, httpx_mock: HTTPXMock
     ) -> None:
-        """archive_render_mode is always 'html' when _get_cached_archive returns an entry,
-        because _get_cached_archive requires cached.html to be truthy. This test documents
-        that the 'markdown' and 'text' branches in _has_cached_archive are not currently
-        reachable in production.
-        """
         from src.cache.scrape_cache import CachedScrape
 
         class StubCache:
@@ -320,8 +315,51 @@ class TestFrameCompat:
         assert resp.status_code == 200
         body = resp.json()
         assert body["has_archive"] is True
-        assert body["archive_render_mode"] == "html"
-        assert body["archive_render_mode"] != "markdown"
+        assert body["archive_render_mode"] == "html_extracted"
+
+    def test_frame_compat_returns_html_full_page_for_browser_html_archive(
+        self, client: TestClient, httpx_mock: HTTPXMock
+    ) -> None:
+        from src.cache.scrape_cache import CachedScrape
+
+        job_id = "11111111-1111-1111-1111-111111111111"
+
+        class StubConn:
+            async def fetchrow(self, query: str, *args: object) -> dict[str, object] | None:
+                return {
+                    "url": "https://browser-html.example.com/",
+                    "final_url": "https://browser-html.example.com/",
+                    "page_title": "Browser HTML page",
+                    "markdown": "Browser HTML markdown",
+                    "html": "<main>Browser HTML</main>",
+                    "screenshot_storage_key": None,
+                }
+
+        class StubCache:
+            async def get(self, url: str, *, tier: str = "scrape") -> CachedScrape | None:
+                raise AssertionError("browser_html lookup must be job-scoped")
+
+        httpx_mock.add_response(
+            method="HEAD",
+            url="https://browser-html.example.com/",
+            headers={"x-frame-options": "DENY"},
+        )
+        _client_state(client).db_pool = _FakePool(StubConn())
+        try:
+            with patch("src.routes.frame.get_scrape_cache", return_value=StubCache()):
+                resp = client.get(
+                    "/api/frame-compat",
+                    params={
+                        "url": "https://browser-html.example.com/",
+                        "job_id": job_id,
+                    },
+                )
+        finally:
+            del _client_state(client).db_pool
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["has_archive"] is True
+        assert body["archive_render_mode"] == "html_full_page"
 
     def test_frame_compat_returns_none_render_mode_when_no_archive(
         self, client: TestClient, httpx_mock: HTTPXMock
