@@ -201,7 +201,7 @@ test("extension scrape submission carries screenshot and analyze page renders Ar
   expect(scrapePayload).toMatchObject({ screenshot_base64: screenshotBase64 });
 
   await page.goto(`${webBaseUrl}/analyze?job=${JOB_ID}`);
-  await expect(page.getByRole("button", { name: "Archived" })).toHaveAttribute(
+  await expect(page.getByRole("button", { name: "Snapshot" })).toHaveAttribute(
     "aria-pressed",
     "true",
   );

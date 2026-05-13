@@ -442,7 +442,7 @@ test("utterance refs switch to archive, scroll to five report targets, and move 
   await waitForArchivedFrame(page);
   await expectOnlyRing(page, "comment-1-bbb");
   await expectTargetInViewport(page, "comment-1-bbb");
-  await expect(page.getByRole("button", { name: "Archived" })).toHaveAttribute(
+  await expect(page.getByRole("button", { name: "Snapshot" })).toHaveAttribute(
     "aria-pressed",
     "true",
   );
@@ -481,7 +481,7 @@ test("utterance refs scroll upward when the archived target was already passed",
   page,
 }) => {
   await gotoAnalyze(page);
-  await page.getByRole("button", { name: "Archived" }).click();
+  await page.getByRole("button", { name: "Snapshot" }).click();
   await waitForArchivedFrame(page);
 
   await setIframeScrollY(page, 4_000);
