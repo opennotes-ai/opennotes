@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen } from "@solidjs/testing-library";
-import type { RecentAnalysis } from "~/lib/api-client.server";
+import type { InternalRecentAnalysis } from "~/lib/api-client.server";
 
 const { recentAnalysesMock } = vi.hoisted(() => ({
   recentAnalysesMock: vi.fn(),
@@ -16,9 +16,10 @@ vi.mock("./gallery.data", async () => {
   };
 });
 
-const analyses: RecentAnalysis[] = [
+const analyses: InternalRecentAnalysis[] = [
   {
     job_id: "job-1",
+    source_type: "url",
     source_url: "http://localhost/private",
     page_title: "Private Page",
     screenshot_url: "https://example.com/screenshot.png",
@@ -27,6 +28,30 @@ const analyses: RecentAnalysis[] = [
     weather_report: null,
     safety_recommendation: null,
     completed_at: "2026-05-12T00:00:00Z",
+  },
+  {
+    job_id: "job-pdf",
+    source_type: "pdf",
+    source_url: "https://example.com/report.pdf",
+    page_title: "Quarterly Report",
+    screenshot_url: null,
+    preview_description: null,
+    headline_summary: null,
+    weather_report: null,
+    safety_recommendation: null,
+    completed_at: "2026-05-12T00:00:01Z",
+  },
+  {
+    job_id: "job-html",
+    source_type: "browser_html",
+    source_url: "https://example.com/captured",
+    page_title: null,
+    screenshot_url: null,
+    preview_description: null,
+    headline_summary: null,
+    weather_report: null,
+    safety_recommendation: null,
+    completed_at: "2026-05-12T00:00:02Z",
   },
 ];
 
@@ -111,10 +136,22 @@ describe("<InternalGalleryGrid />", () => {
     render(() => <InternalGalleryGrid analyses={analyses} />);
 
     expect(screen.getByText("Internal gallery")).toBeInTheDocument();
-    expect(screen.getByTestId("internal-gallery-card")).toHaveAttribute(
-      "href",
-      "/analyze?job=job-1",
-    );
+    const cards = screen.getAllByTestId("internal-gallery-card");
+    expect(cards).toHaveLength(3);
+    expect(cards[0]).toHaveAttribute("href", "/analyze?job=job-1");
+    expect(cards[1]).toHaveAttribute("href", "/analyze?job=job-pdf");
+    expect(cards[2]).toHaveAttribute("href", "/analyze?job=job-html");
     expect(screen.queryByText(/filter/i)).toBeNull();
+  });
+
+  it("renders pdf and browser_html cards with null screenshot/preview", async () => {
+    const { InternalGalleryGrid } = await import("./gallery");
+
+    render(() => <InternalGalleryGrid analyses={analyses} />);
+
+    expect(screen.getByText("Quarterly Report")).toBeInTheDocument();
+    expect(screen.getAllByText("https://example.com/captured").length).toBeGreaterThan(0);
+    expect(screen.getByText("pdf")).toBeInTheDocument();
+    expect(screen.getByText("browser_html")).toBeInTheDocument();
   });
 });

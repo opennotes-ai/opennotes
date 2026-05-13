@@ -342,9 +342,7 @@ class JobState(BaseModel):
     )
     utterance_stream_type: UtteranceStreamType | None = Field(
         default=None,
-        description=(
-            "Extracted utterance-stream shape, sourced from vibecheck_jobs."
-        ),
+        description=("Extracted utterance-stream shape, sourced from vibecheck_jobs."),
     )
     utterance_count: int = Field(
         default=0,
@@ -388,10 +386,51 @@ class RecentAnalysis(BaseModel):
     completed_at: datetime
 
 
+class InternalRecentAnalysis(BaseModel):
+    """One row in the internal unfiltered gallery (TASK-1624.05).
+
+    Returned by `GET /api/internal/analyses/recent-unfiltered`. Unlike the
+    public `RecentAnalysis`, this model accepts heterogeneous source types
+    (`url`, `pdf`, `browser_html`) and tolerates missing screenshots and
+    preview descriptions so operators can see every terminal job, not
+    only the URL-and-screenshot-backed subset surfaced to end users.
+    """
+
+    job_id: UUID = Field(
+        description="vibecheck_jobs.job_id; links to /analyze?job=<job_id>.",
+    )
+    source_type: str = Field(
+        description="vibecheck_jobs.source_type: 'url', 'pdf', or 'browser_html'.",
+    )
+    source_url: str
+    page_title: str | None = None
+    screenshot_url: str | None = Field(
+        default=None,
+        description=(
+            "15-min signed GCS URL for the page screenshot, or null when the "
+            "job has no associated scrape (PDFs, browser_html without a "
+            "preview, etc.)."
+        ),
+    )
+    preview_description: str | None = Field(
+        default=None,
+        description=(
+            "Short blurb summarizing the analysis. Nullable at the internal "
+            "boundary so operators can see jobs whose preview hasn't been "
+            "synthesized yet."
+        ),
+    )
+    headline_summary: str | None = None
+    weather_report: WeatherReport | None = None
+    safety_recommendation: SafetyRecommendation | None = None
+    completed_at: datetime
+
+
 __all__ = [
     "ErrorCode",
     "FactsClaimsSection",
     "ImageModerationSection",
+    "InternalRecentAnalysis",
     "JobState",
     "JobStatus",
     "OpinionsSection",

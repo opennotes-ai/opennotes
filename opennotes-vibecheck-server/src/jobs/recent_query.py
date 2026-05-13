@@ -30,6 +30,7 @@ no DNS; non-literal hosts incur one getaddrinfo per row at refresh time
 The configurable host denylist (TASK-1486) layers on top later — those
 filters live in this same function so the denylist sees the same shaped rows.
 """
+
 from __future__ import annotations
 
 import json
@@ -41,7 +42,7 @@ from uuid import UUID
 from pydantic import ValidationError
 
 from src.analyses.safety._schemas import SafetyRecommendation
-from src.analyses.schemas import RecentAnalysis
+from src.analyses.schemas import InternalRecentAnalysis, RecentAnalysis
 from src.analyses.synthesis._weather_schemas import WeatherReport
 from src.utils.url_security import InvalidURL, validate_public_http_url
 
@@ -143,6 +144,7 @@ LIMIT $1
 _RECENT_UNFILTERED_SQL = """
 SELECT
     j.job_id,
+    COALESCE(j.source_type, 'url') AS source_type,
     j.normalized_url,
     j.url AS source_url,
     j.finished_at,
@@ -155,24 +157,41 @@ SELECT
     j.page_title,
     s.screenshot_storage_key
 FROM vibecheck_jobs j
-INNER JOIN (
-    SELECT DISTINCT ON (normalized_url)
-        normalized_url,
-        screenshot_storage_key,
-        expires_at
-    FROM vibecheck_scrapes
-    WHERE screenshot_storage_key IS NOT NULL
-      AND expires_at > now()
-    ORDER BY normalized_url,
-             CASE WHEN tier = 'interact' THEN 0 ELSE 1 END
-) s ON s.normalized_url = j.normalized_url
+LEFT JOIN LATERAL (
+    -- Source-aware screenshot lookup. URL rows reuse the normalized-url
+    -- scrape cache (interact preferred over scrape). browser_html rows
+    -- look up the job-scoped scrape row keyed by (job_id, attempt_id) —
+    -- not by normalized_url, because repeated submissions for the same
+    -- URL produce distinct job-scoped rows. PDF and other non-url, non-
+    -- browser_html sources have no scrape row; the LEFT JOIN preserves
+    -- the job and the column is NULL.
+    SELECT vs.screenshot_storage_key
+    FROM vibecheck_scrapes vs
+    WHERE vs.screenshot_storage_key IS NOT NULL
+      AND vs.expires_at > now()
+      AND (
+        (
+          COALESCE(j.source_type, 'url') = 'url'
+          AND vs.normalized_url = j.normalized_url
+          AND vs.tier IN ('scrape', 'interact')
+        )
+        OR (
+          j.source_type = 'browser_html'
+          AND vs.tier = 'browser_html'
+          AND vs.job_id = j.job_id
+          AND vs.attempt_id = j.attempt_id
+        )
+      )
+    ORDER BY CASE
+                 WHEN vs.tier = 'interact' THEN 0
+                 WHEN vs.tier = 'browser_html' THEN 0
+                 ELSE 1
+             END
+    LIMIT 1
+) s ON TRUE
 WHERE j.status IN ('done', 'partial')
-  AND (j.source_type IS NULL OR j.source_type = 'url')
   AND j.finished_at IS NOT NULL
-  AND j.preview_description IS NOT NULL
   AND j.expired_at IS NULL
-  AND s.screenshot_storage_key IS NOT NULL
-  AND s.expires_at > now()
 ORDER BY j.finished_at DESC
 LIMIT $1
 """
@@ -181,8 +200,7 @@ LIMIT $1
 class ScreenshotSigner(Protocol):
     """Minimal protocol for the dependency the route hands list_recent."""
 
-    def sign_screenshot_key(self, storage_key: str | None) -> str | None:
-        ...
+    def sign_screenshot_key(self, storage_key: str | None) -> str | None: ...
 
 
 def _has_secret_query_param(query: str) -> bool:
@@ -250,17 +268,13 @@ def _passes_partial_threshold(sections_raw: Any, status: str) -> bool:
     if status != "partial":
         return False
     sections = (
-        json.loads(sections_raw)
-        if isinstance(sections_raw, str)
-        else dict(sections_raw or {})
+        json.loads(sections_raw) if isinstance(sections_raw, str) else dict(sections_raw or {})
     )
     total = len(sections)
     if total == 0:
         return False
     done = sum(
-        1
-        for value in sections.values()
-        if isinstance(value, dict) and value.get("state") == "done"
+        1 for value in sections.values() if isinstance(value, dict) and value.get("state") == "done"
     )
     return done * 10 >= total * 9
 
@@ -288,9 +302,7 @@ def _weather_report_from_row(value: Any, *, job_id: UUID) -> WeatherReport | Non
         return None
 
 
-def _safety_recommendation_from_row(
-    value: Any, *, job_id: UUID
-) -> SafetyRecommendation | None:
+def _safety_recommendation_from_row(value: Any, *, job_id: UUID) -> SafetyRecommendation | None:
     """Parse a safety recommendation JSONB column, tolerating schema drift.
 
     Pre-existing rows may carry safety payloads from older label sets. A
@@ -313,9 +325,7 @@ def _safety_recommendation_from_row(
         return None
 
 
-def _recent_analysis_from_row(
-    row: Any, *, signer: ScreenshotSigner
-) -> RecentAnalysis | None:
+def _recent_analysis_from_row(row: Any, *, signer: ScreenshotSigner) -> RecentAnalysis | None:
     signed = signer.sign_screenshot_key(row["screenshot_storage_key"])
     if signed is None:
         return None
@@ -326,9 +336,7 @@ def _recent_analysis_from_row(
         screenshot_url=signed,
         preview_description=row["preview_description"],
         headline_summary=row["headline_summary_text"],
-        weather_report=_weather_report_from_row(
-            row["weather_report_json"], job_id=row["job_id"]
-        ),
+        weather_report=_weather_report_from_row(row["weather_report_json"], job_id=row["job_id"]),
         safety_recommendation=_safety_recommendation_from_row(
             row["safety_recommendation_json"], job_id=row["job_id"]
         ),
@@ -391,24 +399,58 @@ async def list_recent(
     return out
 
 
+def _internal_recent_analysis_from_row(
+    row: Any, *, signer: ScreenshotSigner
+) -> InternalRecentAnalysis:
+    """Map a row from `_RECENT_UNFILTERED_SQL` onto `InternalRecentAnalysis`.
+
+    Tolerates missing screenshots (signer returning None or scrape row
+    absent) and missing preview descriptions — the internal gallery
+    surfaces every terminal job, not only the URL/screenshot subset.
+    """
+    storage_key = row["screenshot_storage_key"]
+    signed_url = signer.sign_screenshot_key(storage_key) if storage_key else None
+    return InternalRecentAnalysis(
+        job_id=row["job_id"],
+        source_type=row["source_type"] or "url",
+        source_url=row["source_url"],
+        page_title=row["page_title"],
+        screenshot_url=signed_url,
+        preview_description=row["preview_description"],
+        headline_summary=row["headline_summary_text"],
+        weather_report=_weather_report_from_row(row["weather_report_json"], job_id=row["job_id"]),
+        safety_recommendation=_safety_recommendation_from_row(
+            row["safety_recommendation_json"], job_id=row["job_id"]
+        ),
+        completed_at=row["finished_at"],
+    )
+
+
 async def list_recent_unfiltered(
     pool: Any,
     *,
     limit: int,
     signer: ScreenshotSigner,
-) -> list[RecentAnalysis]:
-    """Return latest rows for the internal gallery without public filters."""
+) -> list[InternalRecentAnalysis]:
+    """Return latest rows for the internal gallery without public filters.
+
+    Unlike `list_recent`, this helper returns rows of every `source_type`
+    ('url', 'pdf', 'browser_html'), does not require a screenshot to be
+    present, does not require a `preview_description`, applies no privacy
+    filter, and does not dedup by normalized_url. The internal gallery
+    is the operator-facing view of every terminal job.
+
+    Screenshot lookup is source-aware: URL rows reuse the normalized-url
+    scrape cache (preferring `interact` over `scrape`); browser_html rows
+    use the job-scoped scrape row keyed by (job_id, attempt_id); PDF and
+    other non-url, non-browser_html sources expose no screenshot.
+    """
     if limit <= 0:
         return []
     async with pool.acquire() as conn:
         rows = await conn.fetch(_RECENT_UNFILTERED_SQL, limit)
 
-    out: list[RecentAnalysis] = []
-    for row in rows:
-        recent_analysis = _recent_analysis_from_row(row, signer=signer)
-        if recent_analysis is not None:
-            out.append(recent_analysis)
-    return out
+    return [_internal_recent_analysis_from_row(row, signer=signer) for row in rows]
 
 
 __all__ = ["ScreenshotSigner", "list_recent", "list_recent_unfiltered"]

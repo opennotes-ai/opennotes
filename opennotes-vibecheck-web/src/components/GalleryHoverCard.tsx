@@ -12,8 +12,14 @@ type WeatherReport = NonNullable<RecentAnalysis["weather_report"]>;
 type SafetyRecommendation = components["schemas"]["SafetyRecommendation"];
 type WeatherAxis = "truth" | "relevance" | "sentiment";
 
+export interface GalleryHoverCardItem {
+  headline_summary?: string | null;
+  weather_report?: RecentAnalysis["weather_report"];
+  safety_recommendation?: SafetyRecommendation | null;
+}
+
 interface GalleryHoverCardProps {
-  item: RecentAnalysis;
+  item: GalleryHoverCardItem;
   href: string;
   class?: string;
   "data-testid"?: string;

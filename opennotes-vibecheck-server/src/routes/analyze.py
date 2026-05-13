@@ -47,6 +47,7 @@ from slowapi.util import get_remote_address
 
 from src.analyses.safety.web_risk import WebRiskTransientError, check_urls
 from src.analyses.schemas import (
+    InternalRecentAnalysis,
     JobState,
     JobStatus,
     PageKind,
@@ -321,9 +322,7 @@ async def analyze(request: Request, body: AnalyzeRequest) -> Any:  # noqa: PLR09
                         True,
                     )
                 if page_finding is not None and page_finding.threat_types:
-                    existing_unsafe = await submit_job._find_unsafe_url_job(
-                        conn, normalized_url
-                    )
+                    existing_unsafe = await submit_job._find_unsafe_url_job(conn, normalized_url)
                     if existing_unsafe is not None:
                         return (
                             SubmitResult(
@@ -731,20 +730,22 @@ def _row_to_job_state(row: Any) -> JobState:
     page_kind = PageKind(page_kind_raw) if isinstance(page_kind_raw, str) else None
     stream_type_raw = row.get("utterance_stream_type", None)
     utterance_stream_type = (
-        UtteranceStreamType(stream_type_raw)
-        if isinstance(stream_type_raw, str)
-        else None
+        UtteranceStreamType(stream_type_raw) if isinstance(stream_type_raw, str) else None
     )
     utterance_count_raw = row.get("utterance_count", 0)
 
     if is_non_terminal:
         activity_at = row.get("heartbeat_at", None)
         stage = row.get("last_stage", None)
-        if row.get("image_conversion_status", None) in {
-            "awaiting_upload",
-            "submitted",
-            "converting",
-        } and row.get("image_generated_pdf_gcs_key", None) is not None:
+        if (
+            row.get("image_conversion_status", None)
+            in {
+                "awaiting_upload",
+                "submitted",
+                "converting",
+            }
+            and row.get("image_generated_pdf_gcs_key", None) is not None
+        ):
             stage = "converting_images"
         if stage is None and status is JobStatus.EXTRACTING:
             stage = "extracting"
@@ -1100,21 +1101,19 @@ async def list_recent_analyses(request: Request) -> list[RecentAnalysis]:
 
 @router.get(
     "/internal/analyses/recent-unfiltered",
-    response_model=list[RecentAnalysis],
+    response_model=list[InternalRecentAnalysis],
     summary="Internal unfiltered recent analyses gallery",
 )
 async def list_recent_analyses_unfiltered(
     request: Request,
     limit: int = 25,
     x_internal_prefix: str | None = Header(default=None, alias="X-Internal-Prefix"),
-) -> list[RecentAnalysis]:
+) -> list[InternalRecentAnalysis]:
     """Private read path for the prefix-guarded internal gallery."""
     settings = get_settings()
     expected_prefix = settings.VIBECHECK_PRIVATE_PATH_PREFIX
     supplied_prefix = x_internal_prefix or ""
-    if not expected_prefix or not hmac.compare_digest(
-        supplied_prefix, expected_prefix
-    ):
+    if not expected_prefix or not hmac.compare_digest(supplied_prefix, expected_prefix):
         raise HTTPException(status_code=404)
 
     clamped_limit = max(1, min(limit, settings.VIBECHECK_INTERNAL_GALLERY_MAX_LIMIT))

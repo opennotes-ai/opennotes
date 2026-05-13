@@ -13,6 +13,7 @@ export type JobStatus = components["schemas"]["JobStatus"];
 export type ErrorCode = components["schemas"]["ErrorCode"];
 export type RetryResponse = components["schemas"]["RetryResponse"];
 export type RecentAnalysis = components["schemas"]["RecentAnalysis"];
+export type InternalRecentAnalysis = components["schemas"]["InternalRecentAnalysis"];
 export type PublicErrorCode = ErrorCode | "pdf_too_large" | "pdf_extraction_failed" | "upload_key_invalid" | "upload_not_found" | "invalid_pdf_type" | "image_count_too_large" | "image_aggregate_too_large" | "invalid_image_type" | "image_conversion_failed";
 
 export interface UploadPdfResponse {

@@ -21,10 +21,11 @@ describe("getInternalRecentAnalyses", () => {
     const fixture = [
       {
         job_id: "job-1",
+        source_type: "pdf",
         source_url: "http://localhost/private",
         page_title: "Private Page",
-        screenshot_url: "https://cdn.example.com/shot.png",
-        preview_description: "A short preview.",
+        screenshot_url: null,
+        preview_description: null,
         completed_at: "2026-01-01T00:00:00Z",
       },
     ];

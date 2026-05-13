@@ -5,6 +5,7 @@ ON dedup, status filter, expired-scrape exclusion, 90% rule) goes through
 the testcontainers Postgres `db_pool` fixture so partial-with-mostly-done
 sections actually exercise the JSONB key counter.
 """
+
 from __future__ import annotations
 
 import json
@@ -49,6 +50,8 @@ ALTER TABLE vibecheck_jobs
 CREATE TABLE vibecheck_scrapes (
     scrape_id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     normalized_url TEXT NOT NULL,
+    job_id UUID,
+    attempt_id UUID,
     tier TEXT NOT NULL DEFAULT 'scrape'
         CHECK (tier IN ('scrape', 'interact', 'browser_html')),
     url TEXT NOT NULL,
@@ -60,9 +63,14 @@ CREATE TABLE vibecheck_scrapes (
     html TEXT,
     screenshot_storage_key TEXT,
     scraped_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    expires_at TIMESTAMPTZ NOT NULL DEFAULT (now() + INTERVAL '72 hours'),
-    UNIQUE (normalized_url, tier)
+    expires_at TIMESTAMPTZ NOT NULL DEFAULT (now() + INTERVAL '72 hours')
 );
+CREATE UNIQUE INDEX vibecheck_scrapes_normalized_url_tier_idx
+    ON vibecheck_scrapes (normalized_url, tier)
+    WHERE tier IN ('scrape', 'interact');
+CREATE UNIQUE INDEX vibecheck_scrapes_browser_html_job_attempt_idx
+    ON vibecheck_scrapes (job_id, attempt_id)
+    WHERE tier = 'browser_html';
 """
 )
 
@@ -382,6 +390,8 @@ async def _seed_scrape(
     page_title: str | None = "Example Title",
     storage_key: str | None = "abc/screenshot.png",
     expires_in: timedelta = timedelta(hours=72),
+    job_id: UUID | None = None,
+    attempt_id: UUID | None = None,
 ) -> None:
     expires_at = datetime.now(UTC) + expires_in
     async with pool.acquire() as conn:
@@ -389,14 +399,24 @@ async def _seed_scrape(
             """
             INSERT INTO vibecheck_scrapes
                 (normalized_url, tier, url, host, page_title,
-                 screenshot_storage_key, expires_at)
-            VALUES ($1, $2, $1, 'example.com', $3, $4, $5)
+                 screenshot_storage_key, expires_at, job_id, attempt_id)
+            VALUES ($1, $2, $1, 'example.com', $3, $4, $5, $6, $7)
             """,
             url,
             tier,
             page_title,
             storage_key,
             expires_at,
+            job_id,
+            attempt_id,
+        )
+
+
+async def _fetch_attempt_id(pool: Any, job_id: UUID) -> UUID:
+    async with pool.acquire() as conn:
+        return await conn.fetchval(
+            "SELECT attempt_id FROM vibecheck_jobs WHERE job_id = $1",
+            job_id,
         )
 
 
@@ -425,9 +445,7 @@ class TestListRecentDoneJobs:
         assert result[0].page_title == "Job Title"
         assert result[0].screenshot_url.startswith("https://signed.example/")
 
-    async def test_done_job_surfaces_headline_and_weather_report(
-        self, db_pool: Any
-    ) -> None:
+    async def test_done_job_surfaces_headline_and_weather_report(self, db_pool: Any) -> None:
         url = "https://example.com/with-sidebar-payload"
         await _seed_job(
             db_pool,
@@ -506,21 +524,16 @@ class TestListRecentDoneJobs:
 
         assert len(result) == 1
         assert result[0].weather_report is None
-        assert result[0].headline_summary == (
-            "Headline survives malformed weather payload."
-        )
+        assert result[0].headline_summary == ("Headline survives malformed weather payload.")
         warning_records = [
             record
             for record in caplog.records
-            if record.name == "src.jobs.recent_query"
-            and record.levelname == "WARNING"
+            if record.name == "src.jobs.recent_query" and record.levelname == "WARNING"
         ]
         assert warning_records, "expected a structured warning for invalid payload"
         assert any(str(job_id) in record.getMessage() for record in warning_records)
 
-    async def test_done_job_surfaces_safety_recommendation(
-        self, db_pool: Any
-    ) -> None:
+    async def test_done_job_surfaces_safety_recommendation(self, db_pool: Any) -> None:
         url = "https://example.com/with-safety-recommendation"
         await _seed_job(
             db_pool,
@@ -589,8 +602,7 @@ class TestListRecentDoneJobs:
         warning_records = [
             record
             for record in caplog.records
-            if record.name == "src.jobs.recent_query"
-            and record.levelname == "WARNING"
+            if record.name == "src.jobs.recent_query" and record.levelname == "WARNING"
         ]
         assert warning_records, "expected a structured warning for invalid safety payload"
         assert any(str(job_id) in record.getMessage() for record in warning_records)
@@ -703,9 +715,7 @@ class TestListRecentExclusionRules:
         result = await list_recent(db_pool, limit=5, signer=_StubSigner())
         assert result == []
 
-    async def test_excludes_when_screenshot_storage_key_null(
-        self, db_pool: Any
-    ) -> None:
+    async def test_excludes_when_screenshot_storage_key_null(self, db_pool: Any) -> None:
         url = "https://example.com/no-screenshot"
         await _seed_job(db_pool, url=url)
         await _seed_scrape(db_pool, url=url, storage_key=None)
@@ -719,9 +729,7 @@ class TestListRecentExclusionRules:
         result = await list_recent(db_pool, limit=5, signer=_BrokenSigner())
         assert result == []
 
-    async def test_excludes_when_preview_description_null(
-        self, db_pool: Any
-    ) -> None:
+    async def test_excludes_when_preview_description_null(self, db_pool: Any) -> None:
         url = "https://example.com/no-preview"
         await _seed_job(db_pool, url=url, preview=None)
         await _seed_scrape(db_pool, url=url)
@@ -756,9 +764,7 @@ class TestListRecentExclusionRules:
 
 
 class TestListRecentTierPreference:
-    async def test_picks_interact_tier_when_both_tiers_exist(
-        self, db_pool: Any
-    ) -> None:
+    async def test_picks_interact_tier_when_both_tiers_exist(self, db_pool: Any) -> None:
         """Both tier='scrape' and tier='interact' rows exist for the same
         URL — the gallery returns the interact-tier asset but keeps the
         canonical job title.
@@ -784,9 +790,7 @@ class TestListRecentTierPreference:
         assert result[0].page_title == "Job Article Title"
         assert "real-content.png" in result[0].screenshot_url
 
-    async def test_falls_back_to_scrape_tier_when_interact_missing(
-        self, db_pool: Any
-    ) -> None:
+    async def test_falls_back_to_scrape_tier_when_interact_missing(self, db_pool: Any) -> None:
         """Regression: a URL with only a tier='scrape' row (no interact
         row) is still surfaced — the tier preference must not require
         the interact row.
@@ -804,9 +808,7 @@ class TestListRecentTierPreference:
         assert len(result) == 1
         assert result[0].page_title == "Scrape Only Job Title"
 
-    async def test_falls_back_to_scrape_when_interact_expired(
-        self, db_pool: Any
-    ) -> None:
+    async def test_falls_back_to_scrape_when_interact_expired(self, db_pool: Any) -> None:
         """Boundary: a fresh tier='scrape' row beats an expired
         tier='interact' row — the TTL filter applies before the tier
         preference.
@@ -855,9 +857,7 @@ class TestListRecentPrivacyFilters:
         result = await list_recent(db_pool, limit=5, signer=_StubSigner())
         assert result == []
 
-    async def test_blocked_url_does_not_displace_eligible(
-        self, db_pool: Any
-    ) -> None:
+    async def test_blocked_url_does_not_displace_eligible(self, db_pool: Any) -> None:
         """Privacy reject must be applied BEFORE the limit cutoff so eligible
         rows are not silently pushed out by a blocked one."""
         bad = "https://example.com/page?token=secret"
@@ -879,9 +879,7 @@ class TestListRecentPrivacyFilters:
         assert len(result) == 1
         assert result[0].source_url == good
 
-    async def test_many_blocked_rows_do_not_displace_eligible(
-        self, db_pool: Any
-    ) -> None:
+    async def test_many_blocked_rows_do_not_displace_eligible(self, db_pool: Any) -> None:
         """TASK-1485.06 P2.1: large privacy-rejection batches must not
         prevent the gallery from filling when eligible rows exist.
 
@@ -918,9 +916,7 @@ class TestListRecentDedupAfterFilter:
     """TASK-1485.06 P1.1: a newer privacy-rejected duplicate must NOT
     hide an older qualifying duplicate of the same normalized_url."""
 
-    async def test_newer_secret_query_does_not_hide_older_clean(
-        self, db_pool: Any
-    ) -> None:
+    async def test_newer_secret_query_does_not_hide_older_clean(self, db_pool: Any) -> None:
         # Both jobs share the same normalized_url
         # ("https://example.com/dedup-secret") because the scrape cache's
         # normalize_url drops `?utm_*` but keeps `?token=`. Two distinct
@@ -962,9 +958,7 @@ class TestListRecentDedupAfterFilter:
         assert result[0].job_id != new
         assert "?token=" not in result[0].source_url
 
-    async def test_newer_sub_threshold_partial_does_not_hide_older_done(
-        self, db_pool: Any
-    ) -> None:
+    async def test_newer_sub_threshold_partial_does_not_hide_older_done(self, db_pool: Any) -> None:
         # SQL filters out the newer sub-threshold partial entirely (the
         # 90% rule lives in the WHERE clause), so dedup never sees it.
         # The older done job survives and represents this URL.
@@ -997,9 +991,7 @@ class TestListRecentDedupAfterFilter:
 
 
 class TestListRecentUnfiltered:
-    async def test_includes_rows_filtered_by_public_gallery_defaults(
-        self, db_pool: Any
-    ) -> None:
+    async def test_includes_rows_filtered_by_public_gallery_defaults(self, db_pool: Any) -> None:
         clean_url = "https://example.com/internal-gallery-clean"
         clean_job = await _seed_job(
             db_pool,
@@ -1049,9 +1041,7 @@ class TestListRecentUnfiltered:
                 "newer duplicate row",
             )
 
-        result = await list_recent_unfiltered(
-            db_pool, limit=10, signer=_StubSigner()
-        )
+        result = await list_recent_unfiltered(db_pool, limit=10, signer=_StubSigner())
 
         assert [row.job_id for row in result] == [
             newer_duplicate,
@@ -1060,3 +1050,146 @@ class TestListRecentUnfiltered:
             clean_job,
             older_duplicate,
         ]
+
+
+class TestListRecentUnfilteredSourceTypes:
+    """TASK-1624.05.01 — internal gallery must surface every source type."""
+
+    async def test_includes_url_pdf_image_pdf_and_browser_html_rows(self, db_pool: Any) -> None:
+        url_job_url = "https://example.com/url-source"
+        url_job = await _seed_job(
+            db_pool,
+            url=url_job_url,
+            source_type="url",
+            finished_at=datetime.now(UTC) - timedelta(seconds=4),
+        )
+        await _seed_scrape(db_pool, url=url_job_url)
+
+        pdf_job_url = "https://uploads.example/direct.pdf"
+        pdf_job = await _seed_job(
+            db_pool,
+            url=pdf_job_url,
+            source_type="pdf",
+            finished_at=datetime.now(UTC) - timedelta(seconds=3),
+        )
+
+        image_pdf_url = "https://uploads.example/from-images.pdf"
+        image_pdf_job = await _seed_job(
+            db_pool,
+            url=image_pdf_url,
+            source_type="pdf",
+            finished_at=datetime.now(UTC) - timedelta(seconds=2),
+        )
+
+        browser_html_url = "https://news.example/inline-article"
+        browser_html_job = await _seed_job(
+            db_pool,
+            url=browser_html_url,
+            source_type="browser_html",
+            finished_at=datetime.now(UTC) - timedelta(seconds=1),
+        )
+        attempt_id = await _fetch_attempt_id(db_pool, browser_html_job)
+        await _seed_scrape(
+            db_pool,
+            url=browser_html_url,
+            tier="browser_html",
+            storage_key="browser/inline-article.png",
+            job_id=browser_html_job,
+            attempt_id=attempt_id,
+        )
+
+        result = await list_recent_unfiltered(db_pool, limit=10, signer=_StubSigner())
+
+        by_id = {row.job_id: row for row in result}
+        assert set(by_id) == {url_job, pdf_job, image_pdf_job, browser_html_job}
+        assert by_id[url_job].source_type == "url"
+        assert by_id[pdf_job].source_type == "pdf"
+        assert by_id[image_pdf_job].source_type == "pdf"
+        assert by_id[browser_html_job].source_type == "browser_html"
+
+    async def test_pdf_without_screenshot_appears_with_null_screenshot_url(
+        self, db_pool: Any
+    ) -> None:
+        pdf_url = "https://uploads.example/no-screenshot.pdf"
+        pdf_job = await _seed_job(
+            db_pool,
+            url=pdf_url,
+            source_type="pdf",
+        )
+
+        result = await list_recent_unfiltered(db_pool, limit=5, signer=_StubSigner())
+
+        assert len(result) == 1
+        assert result[0].job_id == pdf_job
+        assert result[0].source_type == "pdf"
+        assert result[0].screenshot_url is None
+
+    async def test_browser_html_uses_job_scoped_scrape_row(self, db_pool: Any) -> None:
+        # The browser_html scrape row is keyed by (job_id, attempt_id), NOT
+        # by normalized_url. A normalized-url-only lookup (like the public
+        # gallery uses) would miss this row even though it exists.
+        url = "https://news.example/browser-html-job"
+        job_id = await _seed_job(
+            db_pool,
+            url=url,
+            source_type="browser_html",
+        )
+        attempt_id = await _fetch_attempt_id(db_pool, job_id)
+        await _seed_scrape(
+            db_pool,
+            url=url,
+            tier="browser_html",
+            storage_key="browser/job-scoped.png",
+            job_id=job_id,
+            attempt_id=attempt_id,
+        )
+
+        result = await list_recent_unfiltered(db_pool, limit=5, signer=_StubSigner())
+
+        assert len(result) == 1
+        assert result[0].job_id == job_id
+        assert result[0].source_type == "browser_html"
+        assert result[0].screenshot_url is not None
+        assert "browser/job-scoped.png" in result[0].screenshot_url
+
+    async def test_public_list_recent_still_excludes_non_url_source_types(
+        self, db_pool: Any
+    ) -> None:
+        # Regression guard: AC3 says the public query must remain URL-only.
+        url_job_url = "https://example.com/public-url"
+        url_job = await _seed_job(
+            db_pool,
+            url=url_job_url,
+            source_type="url",
+            finished_at=datetime.now(UTC) - timedelta(seconds=3),
+        )
+        await _seed_scrape(db_pool, url=url_job_url)
+
+        pdf_job_url = "https://uploads.example/public-pdf.pdf"
+        await _seed_job(
+            db_pool,
+            url=pdf_job_url,
+            source_type="pdf",
+            finished_at=datetime.now(UTC) - timedelta(seconds=2),
+        )
+
+        browser_html_url = "https://news.example/public-browser-html"
+        bh_job = await _seed_job(
+            db_pool,
+            url=browser_html_url,
+            source_type="browser_html",
+            finished_at=datetime.now(UTC) - timedelta(seconds=1),
+        )
+        bh_attempt = await _fetch_attempt_id(db_pool, bh_job)
+        await _seed_scrape(
+            db_pool,
+            url=browser_html_url,
+            tier="browser_html",
+            storage_key="browser/public-skip.png",
+            job_id=bh_job,
+            attempt_id=bh_attempt,
+        )
+
+        public = await list_recent(db_pool, limit=10, signer=_StubSigner())
+
+        assert [row.job_id for row in public] == [url_job]

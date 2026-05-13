@@ -990,6 +990,52 @@ export interface components {
             upload_url: string;
         };
         /**
+         * InternalRecentAnalysis
+         * @description One row in the internal unfiltered gallery (TASK-1624.05).
+         *
+         *     Returned by `GET /api/internal/analyses/recent-unfiltered`. Unlike the
+         *     public `RecentAnalysis`, this model accepts heterogeneous source types
+         *     (`url`, `pdf`, `browser_html`) and tolerates missing screenshots and
+         *     preview descriptions so operators can see every terminal job, not
+         *     only the URL-and-screenshot-backed subset surfaced to end users.
+         */
+        InternalRecentAnalysis: {
+            /**
+             * Job Id
+             * Format: uuid
+             * @description vibecheck_jobs.job_id; links to /analyze?job=<job_id>.
+             */
+            job_id: string;
+            /**
+             * Source Type
+             * @description vibecheck_jobs.source_type: 'url', 'pdf', or 'browser_html'.
+             */
+            source_type: string;
+            /** Source Url */
+            source_url: string;
+            /** Page Title */
+            page_title?: string | null;
+            /**
+             * Screenshot Url
+             * @description 15-min signed GCS URL for the page screenshot, or null when the job has no associated scrape (PDFs, browser_html without a preview, etc.).
+             */
+            screenshot_url?: string | null;
+            /**
+             * Preview Description
+             * @description Short blurb summarizing the analysis. Nullable at the internal boundary so operators can see jobs whose preview hasn't been synthesized yet.
+             */
+            preview_description?: string | null;
+            /** Headline Summary */
+            headline_summary?: string | null;
+            weather_report?: components["schemas"]["WeatherReport"] | null;
+            safety_recommendation?: components["schemas"]["SafetyRecommendation"] | null;
+            /**
+             * Completed At
+             * Format: date-time
+             */
+            completed_at: string;
+        };
+        /**
          * JobState
          * @description GET /api/analyze/{job_id} response shape.
          *
@@ -1963,7 +2009,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["RecentAnalysis"][];
+                    "application/json": components["schemas"]["InternalRecentAnalysis"][];
                 };
             };
             /** @description Validation Error */
