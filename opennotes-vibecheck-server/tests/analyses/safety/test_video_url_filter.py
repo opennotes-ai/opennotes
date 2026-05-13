@@ -15,6 +15,12 @@ from src.analyses.safety.video_url_filter import is_potential_video_url
         "ftp://example.com/video.mp4",
         "https://",
         "not a url",
+        "https://exa mple.com/video.mp4",
+        "https://evil.com\\@youtube.com/video.mp4",
+        "http://localhost/video.mp4",
+        "http://127.0.0.1/video.mp4",
+        "http://[::1]/video.mp4",
+        "http://192.168.0.10/video.mp4",
     ],
 )
 def test_rejects_non_fetchable_video_urls(url: str) -> None:
@@ -33,7 +39,9 @@ def test_accepts_video_extension_with_query_and_fragment() -> None:
     "url",
     [
         "https://www.youtube.com/embed/dQw4w9WgXcQ",
+        "https://m.youtube.com/watch?v=dQw4w9WgXcQ",
         "https://youtu.be/dQw4w9WgXcQ",
+        "https://www.vimeo.com/123",
         "https://player.vimeo.com/video/123",
     ],
 )
