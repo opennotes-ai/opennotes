@@ -102,6 +102,7 @@ const DEFAULT_FRAME_COMPAT: FrameCompatResult = {
   cspFrameAncestors: null,
   screenshotUrl: null,
   archivedPreviewUrl: null,
+  archivedRenderMode: null,
 };
 const ORIGINAL_BLOCKED_TIP_ID = "preview-mode-original-tip";
 const ORIGINAL_BLOCKED_TIP_TEXT =
@@ -315,6 +316,7 @@ function AnalyzePageContent(props: { initialJobState: JobState | null }) {
         blockingHeader: result.blocking_header,
         cspFrameAncestors: result.csp_frame_ancestors,
         archivedPreviewUrl: result.archived_preview_url,
+        archivedRenderMode: result.archive_render_mode,
       }));
       if (result.has_archive) {
         setArchiveProbeState("available");
@@ -952,6 +954,7 @@ function AnalyzePageContent(props: { initialJobState: JobState | null }) {
                           blockingHeader={frameCompat().blockingHeader}
                           cspFrameAncestors={frameCompat().cspFrameAncestors}
                           archivedPreviewUrl={frameCompat().archivedPreviewUrl}
+                          archivedRenderMode={frameCompat().archivedRenderMode}
                           screenshotUrl={frameCompat().screenshotUrl}
                           previewMode={previewMode()}
                           previewModeRequestId={previewModeRequestId()}

@@ -13,6 +13,7 @@ export interface PageFrameProps {
   blockingHeader?: string | null;
   cspFrameAncestors?: string | null;
   archivedPreviewUrl?: string | null;
+  archivedRenderMode?: "html" | "markdown" | "text" | null;
   screenshotUrl: string | null;
   previewMode: PreviewMode;
   previewModeRequestId?: number;
