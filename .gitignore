@@ -261,3 +261,5 @@ node_modules/.pnpm/
 .sqry-index/
 .sqry/
 .sqry-cache/
+
+.claude/
