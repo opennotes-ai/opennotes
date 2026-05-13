@@ -13,7 +13,7 @@ export interface PageFrameProps {
   blockingHeader?: string | null;
   cspFrameAncestors?: string | null;
   archivedPreviewUrl?: string | null;
-  archivedRenderMode?: "html" | "markdown" | "text" | null;
+  archivedRenderMode?: "html_full_page" | "html_extracted" | "markdown" | "text" | null;
   screenshotUrl: string | null;
   previewMode: PreviewMode;
   previewModeRequestId?: number;
@@ -302,9 +302,11 @@ export default function PageFrame(props: PageFrameProps) {
   );
 
   function archiveRenderModeLabel(
-    mode: "html" | "markdown" | "text" | null | undefined,
+    mode: "html_full_page" | "html_extracted" | "markdown" | "text" | null | undefined,
   ): string | null {
-    if (mode === "html") return "Rendered HTML";
+    if ((mode as string) === "html") return "Snapshot";  // legacy fallback; remove after next deploy
+    if (mode === "html_full_page") return "Full Page HTML";
+    if (mode === "html_extracted") return "Extracted HTML Content";
     if (mode === "markdown") return "Extracted Markdown";
     if (mode === "text") return "Plain Text";
     return null;
@@ -396,7 +398,7 @@ export default function PageFrame(props: PageFrameProps) {
                   <iframe
                     data-testid="page-frame-archived-iframe"
                     src={props.archivedPreviewUrl ?? ""}
-                    title="Archived page"
+                    title="Snapshot"
                     sandbox="allow-same-origin"
                     referrerpolicy="no-referrer"
                     loading="lazy"

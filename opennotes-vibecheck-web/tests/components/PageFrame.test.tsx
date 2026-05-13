@@ -633,7 +633,7 @@ describe("<PageFrame />", () => {
         archivedPreviewUrl="/api/x"
         screenshotUrl={null}
         previewMode="archived"
-        archivedRenderMode="html"
+        archivedRenderMode="html_full_page"
       />
     ));
 
@@ -655,13 +655,81 @@ describe("<PageFrame />", () => {
         archivedPreviewUrl="/api/x"
         screenshotUrl={null}
         previewMode="archived"
-        archivedRenderMode="html"
+        archivedRenderMode="html_full_page"
       />
     ));
 
     const banner = screen.getByTestId("page-frame-archived-mode-banner");
     const bannerClass = banner.getAttribute("class") ?? "";
     expect(bannerClass).not.toContain("border-b");
+  });
+
+  it("archived banner shows 'Full Page HTML' for html_full_page render mode (TASK-1636.02)", () => {
+    render(() => (
+      <PageFrame
+        url="https://example.com/article"
+        canIframe={false}
+        blockingHeader="content-security-policy: frame-ancestors 'none'"
+        archivedPreviewUrl="/api/x"
+        screenshotUrl={null}
+        previewMode="archived"
+        archivedRenderMode="html_full_page"
+      />
+    ));
+
+    const banner = screen.getByTestId("page-frame-archived-mode-banner");
+    expect(banner.textContent).toBe("Full Page HTML");
+  });
+
+  it("archived banner shows 'Extracted HTML Content' for html_extracted render mode (TASK-1636.02)", () => {
+    render(() => (
+      <PageFrame
+        url="https://example.com/article"
+        canIframe={false}
+        blockingHeader="content-security-policy: frame-ancestors 'none'"
+        archivedPreviewUrl="/api/x"
+        screenshotUrl={null}
+        previewMode="archived"
+        archivedRenderMode="html_extracted"
+      />
+    ));
+
+    const banner = screen.getByTestId("page-frame-archived-mode-banner");
+    expect(banner.textContent).toBe("Extracted HTML Content");
+  });
+
+  it("archived banner shows 'Snapshot' for legacy html render mode (TASK-1636.02 deploy-skew fallback)", () => {
+    render(() => (
+      <PageFrame
+        url="https://example.com/article"
+        canIframe={false}
+        blockingHeader="content-security-policy: frame-ancestors 'none'"
+        archivedPreviewUrl="/api/x"
+        screenshotUrl={null}
+        previewMode="archived"
+        archivedRenderMode={"html" as "html_full_page"}
+      />
+    ));
+
+    const banner = screen.getByTestId("page-frame-archived-mode-banner");
+    expect(banner.textContent).toBe("Snapshot");
+  });
+
+  it("archived iframe title is 'Snapshot' (TASK-1636.02)", () => {
+    render(() => (
+      <PageFrame
+        url="https://example.com/article"
+        canIframe={false}
+        blockingHeader="content-security-policy: frame-ancestors 'none'"
+        archivedPreviewUrl="/api/x"
+        screenshotUrl={null}
+        previewMode="archived"
+        archivedRenderMode="html_full_page"
+      />
+    ));
+
+    const iframe = screen.getByTestId("page-frame-archived-iframe") as HTMLIFrameElement;
+    expect(iframe.getAttribute("title")).toBe("Snapshot");
   });
 
   it("raw markdown/text pre uses the same wrapper and rounded-md (TASK-1636.03)", async () => {

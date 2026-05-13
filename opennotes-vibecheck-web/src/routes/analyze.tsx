@@ -85,7 +85,7 @@ const PREVIEW_MODE_OPTIONS: ReadonlyArray<{
   label: string;
 }> = [
   { value: "original", label: "Original" },
-  { value: "archived", label: "Archived" },
+  { value: "archived", label: "Snapshot" },
   { value: "screenshot", label: "Screenshot" },
 ];
 const PREVIEW_SIZE_OPTIONS: ReadonlyArray<{

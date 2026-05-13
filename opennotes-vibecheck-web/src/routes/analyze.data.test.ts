@@ -766,6 +766,64 @@ describe("getFrameCompat", () => {
     }
   });
 
+  it("maps archive_render_mode html_full_page into archivedRenderMode", async () => {
+    clientGetMock.mockImplementation(async (path: string) => {
+      if (path === "/api/frame-compat") {
+        return {
+          data: {
+            can_iframe: false,
+            blocking_header: "x-frame-options: DENY",
+            csp_frame_ancestors: null,
+            has_archive: true,
+            archive_render_mode: "html_full_page",
+          },
+          error: null,
+        };
+      }
+      if (path === "/api/screenshot") {
+        return { data: { screenshot_url: null }, error: null };
+      }
+      throw new Error(`unexpected path ${path}`);
+    });
+
+    const { getFrameCompat } = await import("./analyze.data");
+    const result = await getFrameCompat("https://news.example.com/article");
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.frameCompat.archivedRenderMode).toBe("html_full_page");
+    }
+  });
+
+  it("maps archive_render_mode html_extracted into archivedRenderMode", async () => {
+    clientGetMock.mockImplementation(async (path: string) => {
+      if (path === "/api/frame-compat") {
+        return {
+          data: {
+            can_iframe: false,
+            blocking_header: "x-frame-options: DENY",
+            csp_frame_ancestors: null,
+            has_archive: true,
+            archive_render_mode: "html_extracted",
+          },
+          error: null,
+        };
+      }
+      if (path === "/api/screenshot") {
+        return { data: { screenshot_url: null }, error: null };
+      }
+      throw new Error(`unexpected path ${path}`);
+    });
+
+    const { getFrameCompat } = await import("./analyze.data");
+    const result = await getFrameCompat("https://news.example.com/article");
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.frameCompat.archivedRenderMode).toBe("html_extracted");
+    }
+  });
+
   it("maps null archive_render_mode when field is absent from backend response", async () => {
     clientGetMock.mockImplementation(async (path: string) => {
       if (path === "/api/frame-compat") {

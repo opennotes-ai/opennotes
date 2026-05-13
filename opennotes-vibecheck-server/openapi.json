@@ -1819,7 +1819,8 @@
               {
                 "type": "string",
                 "enum": [
-                  "html",
+                  "html_full_page",
+                  "html_extracted",
                   "markdown",
                   "text"
                 ]
