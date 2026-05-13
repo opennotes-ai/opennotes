@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from typing import Any, cast
 
 import logfire
+from pydantic_ai.messages import ImageUrl
 
 from src.analyses.safety._schemas import (
     Divergence,
@@ -541,7 +542,12 @@ def _apply_recommendation_guardrail(
 async def run_safety_recommendation(
     inputs: SafetyRecommendationInputs,
     settings: Settings,
+    *,
+    image_urls: list[str] | None = None,
 ) -> SafetyRecommendation:
+    urls = list(image_urls or [])
+    use_vision = bool(urls) and settings.VIBECHECK_SAFETY_IMAGE_VISION_REVIEW_ENABLED
+    image_count = len(urls) if use_vision else 0
     with logfire.span(
         "vibecheck.safety_recommendation.run",
         harmful_input_count=len(inputs.harmful_content_matches),
@@ -550,6 +556,7 @@ async def run_safety_recommendation(
         video_input_count=len(inputs.video_moderation_matches),
         unavailable_input_count=len(inputs.unavailable_inputs),
         source_url_present=inputs.source_url is not None,
+        vision_review_image_count=image_count,
     ) as span:
         agent = cast(
             Any,
@@ -562,7 +569,14 @@ async def run_safety_recommendation(
             ),
         )
         async with vertex_slot(settings):
-            result = await run_vertex_agent_with_retry(agent, _serialize_inputs(inputs))
+            serialized = _serialize_inputs(inputs)
+            if use_vision:
+                image_parts = [ImageUrl(url=url) for url in urls]
+                result = await run_vertex_agent_with_retry(
+                    agent, serialized, *image_parts
+                )
+            else:
+                result = await run_vertex_agent_with_retry(agent, serialized)
         output = cast(SafetyRecommendation, result.output)
 
         sanitized_output = _sanitize_top_signals(output)

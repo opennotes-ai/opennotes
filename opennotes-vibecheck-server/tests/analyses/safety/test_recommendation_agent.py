@@ -32,9 +32,12 @@ class StubAgent:
     def __init__(self, output: SafetyRecommendation) -> None:
         self.output = output
         self.prompts: list[str] = []
+        self.calls: list[tuple[Any, ...]] = []
 
-    async def run(self, user_prompt: str):
-        self.prompts.append(user_prompt)
+    async def run(self, *args: Any) -> Any:
+        self.calls.append(args)
+        if args and isinstance(args[0], str):
+            self.prompts.append(args[0])
         return SimpleNamespace(output=self.output)
 
 
@@ -121,6 +124,150 @@ def test_recommendation_prompt_treats_inconclusive_video_as_incomplete_evidence(
     assert "not a supported video safety signal" in RECOMMENDATION_SYSTEM_PROMPT
     assert "must not by itself justify `caution`" in RECOMMENDATION_SYSTEM_PROMPT
     assert "Treat it as caution unless" not in RECOMMENDATION_SYSTEM_PROMPT
+
+
+async def test_run_safety_recommendation_omits_image_parts_when_no_image_urls(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    agent = StubAgent(
+        SafetyRecommendation(
+            level=SafetyLevel.SAFE,
+            rationale="No images attached.",
+            top_signals=[],
+        )
+    )
+    monkeypatch.setattr(
+        "src.analyses.safety.recommendation_agent.build_agent",
+        lambda *args, **kwargs: agent,
+    )
+
+    await run_safety_recommendation(
+        SafetyRecommendationInputs(
+            harmful_content_matches=[],
+            web_risk_findings=[],
+            image_moderation_matches=[],
+            video_moderation_matches=[],
+            unavailable_inputs=[],
+        ),
+        settings=Settings(VIBECHECK_SAFETY_IMAGE_VISION_REVIEW_ENABLED=True),
+    )
+
+    assert len(agent.calls) == 1
+    assert len(agent.calls[0]) == 1
+    assert isinstance(agent.calls[0][0], str)
+
+
+async def test_run_safety_recommendation_passes_image_urls_as_multimodal_parts(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from pydantic_ai.messages import ImageUrl
+
+    agent = StubAgent(
+        SafetyRecommendation(
+            level=SafetyLevel.SAFE,
+            rationale="Image confirmed benign.",
+            top_signals=[],
+        )
+    )
+    span: dict[str, Any] = {}
+
+    class _RecordingSpan:
+        def __enter__(self) -> _RecordingSpan:
+            return self
+
+        def __exit__(self, *_args: object) -> None:
+            return None
+
+        def set_attribute(self, key: str, value: Any) -> None:
+            span[key] = value
+
+        def set_attributes(self, attributes: dict[str, Any]) -> None:
+            span.update(attributes)
+
+    def _fake_span(name: str, **attrs: Any) -> _RecordingSpan:
+        span.update(attrs)
+        return _RecordingSpan()
+
+    monkeypatch.setattr(recommendation_agent.logfire, "span", _fake_span)
+    monkeypatch.setattr(
+        "src.analyses.safety.recommendation_agent.build_agent",
+        lambda *args, **kwargs: agent,
+    )
+
+    await run_safety_recommendation(
+        SafetyRecommendationInputs(
+            harmful_content_matches=[],
+            web_risk_findings=[],
+            image_moderation_matches=[],
+            video_moderation_matches=[],
+            unavailable_inputs=[],
+        ),
+        settings=Settings(VIBECHECK_SAFETY_IMAGE_VISION_REVIEW_ENABLED=True),
+        image_urls=["https://a/img.jpg", "https://b/img.png"],
+    )
+
+    assert len(agent.calls) == 1
+    call = agent.calls[0]
+    assert len(call) == 3
+    assert isinstance(call[0], str)
+    assert isinstance(call[1], ImageUrl)
+    assert call[1].url == "https://a/img.jpg"
+    assert isinstance(call[2], ImageUrl)
+    assert call[2].url == "https://b/img.png"
+    assert span["vision_review_image_count"] == 2
+
+
+async def test_run_safety_recommendation_omits_image_parts_when_flag_disabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    agent = StubAgent(
+        SafetyRecommendation(
+            level=SafetyLevel.SAFE,
+            rationale="Flag disabled.",
+            top_signals=[],
+        )
+    )
+    span: dict[str, Any] = {}
+
+    class _RecordingSpan:
+        def __enter__(self) -> _RecordingSpan:
+            return self
+
+        def __exit__(self, *_args: object) -> None:
+            return None
+
+        def set_attribute(self, key: str, value: Any) -> None:
+            span[key] = value
+
+        def set_attributes(self, attributes: dict[str, Any]) -> None:
+            span.update(attributes)
+
+    def _fake_span(name: str, **attrs: Any) -> _RecordingSpan:
+        span.update(attrs)
+        return _RecordingSpan()
+
+    monkeypatch.setattr(recommendation_agent.logfire, "span", _fake_span)
+    monkeypatch.setattr(
+        "src.analyses.safety.recommendation_agent.build_agent",
+        lambda *args, **kwargs: agent,
+    )
+
+    await run_safety_recommendation(
+        SafetyRecommendationInputs(
+            harmful_content_matches=[],
+            web_risk_findings=[],
+            image_moderation_matches=[],
+            video_moderation_matches=[],
+            unavailable_inputs=[],
+        ),
+        settings=Settings(VIBECHECK_SAFETY_IMAGE_VISION_REVIEW_ENABLED=False),
+        image_urls=["https://a/img.jpg"],
+    )
+
+    assert len(agent.calls) == 1
+    assert len(agent.calls[0]) == 1
+    assert isinstance(agent.calls[0][0], str)
+    assert span["vision_review_image_count"] == 0
 
 
 async def test_run_safety_recommendation_logfire_attrs_are_set_for_inputs_and_sanitization(
