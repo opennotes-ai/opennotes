@@ -98,7 +98,7 @@ describe("SidebarStoreProvider", () => {
       expect(capturedStore!.isOpen("Safety")).toBe(false);
       expect(capturedStore!.isOpen("Tone/dynamics")).toBe(false);
       expect(capturedStore!.isOpen("Facts/claims")).toBe(false);
-      expect(capturedStore!.isOpen("Opinions/sentiments")).toBe(false);
+      expect(capturedStore!.isOpen("Opinions")).toBe(false);
     });
 
     capturedStore!.setOpen("Safety", true);
@@ -110,7 +110,7 @@ describe("SidebarStoreProvider", () => {
       expect(capturedStore!.isOpen("Safety")).toBe(false);
       expect(capturedStore!.isOpen("Tone/dynamics")).toBe(false);
       expect(capturedStore!.isOpen("Facts/claims")).toBe(false);
-      expect(capturedStore!.isOpen("Opinions/sentiments")).toBe(false);
+      expect(capturedStore!.isOpen("Opinions")).toBe(false);
     });
   });
 
@@ -159,7 +159,7 @@ describe("SidebarStoreProvider", () => {
     expect(capturedStore!.isOpen("Safety")).toBe(true);
     expect(capturedStore!.isOpen("Tone/dynamics")).toBe(true);
     expect(capturedStore!.isOpen("Facts/claims")).toBe(true);
-    expect(capturedStore!.isOpen("Opinions/sentiments")).toBe(true);
+    expect(capturedStore!.isOpen("Opinions")).toBe(true);
 
     setCollapse(true);
 
@@ -167,11 +167,11 @@ describe("SidebarStoreProvider", () => {
       expect(capturedStore!.isOpen("Safety")).toBe(false);
       expect(capturedStore!.isOpen("Tone/dynamics")).toBe(false);
       expect(capturedStore!.isOpen("Facts/claims")).toBe(false);
-      expect(capturedStore!.isOpen("Opinions/sentiments")).toBe(false);
+      expect(capturedStore!.isOpen("Opinions")).toBe(false);
     });
   });
 
-  it("with reactive collapseAllByDefault=true, all groups start closed synchronously", () => {
+  it("with reactive collapseAllByDefault=true, non-sticky groups start closed; Sentiments stays open", () => {
     createRoot((dispose) => {
       const [collapse] = createSignal(true);
       const capturedOpen = new Map<string, boolean | undefined>();
@@ -194,7 +194,8 @@ describe("SidebarStoreProvider", () => {
       });
 
       for (const label of ALL_LABELS) {
-        expect(capturedOpen.get(label)).toBe(false);
+        const expected = label === "Sentiments";
+        expect(capturedOpen.get(label)).toBe(expected);
       }
       dispose();
     });
@@ -223,5 +224,55 @@ describe("SidebarStoreProvider", () => {
     await waitFor(() => {
       expect(capturedStore!.isOpen("Safety")).toBe(false);
     });
+  });
+
+  it("Sentiments stays open when collapseAllByDefault transitions false→true", async () => {
+    const [collapse, setCollapse] = createSignal(false);
+    let capturedStore: ReturnType<typeof useSidebarStore> | undefined;
+
+    const TestConsumer = () => {
+      capturedStore = useSidebarStore();
+      return null;
+    };
+
+    render(() => (
+      <SidebarStoreProvider opts={{ collapseAllByDefault: collapse() }}>
+        <TestConsumer />
+      </SidebarStoreProvider>
+    ));
+
+    expect(capturedStore!.isOpen("Sentiments")).toBe(true);
+
+    setCollapse(true);
+
+    await waitFor(() => {
+      expect(capturedStore!.isOpen("Safety")).toBe(false);
+    });
+    expect(capturedStore!.isOpen("Sentiments")).toBe(true);
+  });
+
+  it("user can manually collapse Sentiments after collapseAllByDefault sticky preserves it", async () => {
+    const [collapse, setCollapse] = createSignal(false);
+    let capturedStore: ReturnType<typeof useSidebarStore> | undefined;
+
+    const TestConsumer = () => {
+      capturedStore = useSidebarStore();
+      return null;
+    };
+
+    render(() => (
+      <SidebarStoreProvider opts={{ collapseAllByDefault: collapse() }}>
+        <TestConsumer />
+      </SidebarStoreProvider>
+    ));
+
+    setCollapse(true);
+    await waitFor(() => {
+      expect(capturedStore!.isOpen("Safety")).toBe(false);
+    });
+    expect(capturedStore!.isOpen("Sentiments")).toBe(true);
+
+    capturedStore!.setOpen("Sentiments", false);
+    expect(capturedStore!.isOpen("Sentiments")).toBe(false);
   });
 });

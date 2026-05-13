@@ -46,7 +46,7 @@ const AXIS_TO_GROUP: Record<AxisType, SectionGroupLabel> = {
   safety: "Safety",
   truth: "Facts/claims",
   relevance: "Tone/dynamics",
-  sentiment: "Opinions/sentiments",
+  sentiment: "Sentiments",
 };
 
 export interface WeatherReportProps {

@@ -1,6 +1,28 @@
 import { describe, it, expect } from "vitest";
 import { createRoot, createSignal } from "solid-js";
-import { createSidebarStore, type SectionGroupLabel } from "./sidebar-store";
+import {
+  ALL_LABELS,
+  createSidebarStore,
+  type SectionGroupLabel,
+} from "./sidebar-store";
+
+describe("ALL_LABELS", () => {
+  it("includes the promoted Sentiments group and renamed Opinions group", () => {
+    expect(ALL_LABELS).toContain("Sentiments");
+    expect(ALL_LABELS).toContain("Opinions");
+    expect(ALL_LABELS).not.toContain("Opinions/sentiments");
+  });
+
+  it("orders groups Safety, Sentiments, Tone/dynamics, Facts/claims, Opinions", () => {
+    expect([...ALL_LABELS]).toEqual([
+      "Safety",
+      "Sentiments",
+      "Tone/dynamics",
+      "Facts/claims",
+      "Opinions",
+    ]);
+  });
+});
 
 describe("createSidebarStore", () => {
   it("all groups start open when defaultOpen is not specified", () => {
@@ -8,9 +30,10 @@ describe("createSidebarStore", () => {
       const store = createSidebarStore();
       const labels: SectionGroupLabel[] = [
         "Safety",
+        "Sentiments",
         "Tone/dynamics",
         "Facts/claims",
-        "Opinions/sentiments",
+        "Opinions",
       ];
       for (const label of labels) {
         expect(store.isOpen(label)).toBe(true);
@@ -19,18 +42,14 @@ describe("createSidebarStore", () => {
     });
   });
 
-  it("all groups start closed when defaultOpen is false", () => {
+  it("non-sticky groups start closed when defaultOpen is false; Sentiments stays open", () => {
     createRoot((dispose) => {
       const store = createSidebarStore({ defaultOpen: () => false });
-      const labels: SectionGroupLabel[] = [
-        "Safety",
-        "Tone/dynamics",
-        "Facts/claims",
-        "Opinions/sentiments",
-      ];
-      for (const label of labels) {
-        expect(store.isOpen(label)).toBe(false);
-      }
+      expect(store.isOpen("Safety")).toBe(false);
+      expect(store.isOpen("Tone/dynamics")).toBe(false);
+      expect(store.isOpen("Facts/claims")).toBe(false);
+      expect(store.isOpen("Opinions")).toBe(false);
+      expect(store.isOpen("Sentiments")).toBe(true);
       dispose();
     });
   });
@@ -40,9 +59,10 @@ describe("createSidebarStore", () => {
       const store = createSidebarStore();
       store.setOpen("Safety", false);
       expect(store.isOpen("Safety")).toBe(false);
+      expect(store.isOpen("Sentiments")).toBe(true);
       expect(store.isOpen("Tone/dynamics")).toBe(true);
       expect(store.isOpen("Facts/claims")).toBe(true);
-      expect(store.isOpen("Opinions/sentiments")).toBe(true);
+      expect(store.isOpen("Opinions")).toBe(true);
       dispose();
     });
   });
@@ -54,7 +74,9 @@ describe("createSidebarStore", () => {
       expect(store.isOpen("Safety")).toBe(true);
       expect(store.isOpen("Tone/dynamics")).toBe(false);
       expect(store.isOpen("Facts/claims")).toBe(false);
-      expect(store.isOpen("Opinions/sentiments")).toBe(false);
+      expect(store.isOpen("Opinions")).toBe(false);
+      // Sentiments is sticky-open regardless of defaultOpen
+      expect(store.isOpen("Sentiments")).toBe(true);
       dispose();
     });
   });
@@ -64,9 +86,10 @@ describe("createSidebarStore", () => {
       const store = createSidebarStore();
       store.isolateGroup("Safety");
       expect(store.isOpen("Safety")).toBe(true);
+      expect(store.isOpen("Sentiments")).toBe(false);
       expect(store.isOpen("Tone/dynamics")).toBe(false);
       expect(store.isOpen("Facts/claims")).toBe(false);
-      expect(store.isOpen("Opinions/sentiments")).toBe(false);
+      expect(store.isOpen("Opinions")).toBe(false);
       dispose();
     });
   });
@@ -77,8 +100,9 @@ describe("createSidebarStore", () => {
       store.isolateGroup("Facts/claims");
       expect(store.isOpen("Facts/claims")).toBe(true);
       expect(store.isOpen("Safety")).toBe(false);
+      expect(store.isOpen("Sentiments")).toBe(false);
       expect(store.isOpen("Tone/dynamics")).toBe(false);
-      expect(store.isOpen("Opinions/sentiments")).toBe(false);
+      expect(store.isOpen("Opinions")).toBe(false);
       dispose();
     });
   });
@@ -130,9 +154,10 @@ describe("createSidebarStore", () => {
       store.reset();
       const labels: SectionGroupLabel[] = [
         "Safety",
+        "Sentiments",
         "Tone/dynamics",
         "Facts/claims",
-        "Opinions/sentiments",
+        "Opinions",
       ];
       for (const label of labels) {
         expect(store.isOpen(label)).toBe(true);
@@ -141,26 +166,28 @@ describe("createSidebarStore", () => {
     });
   });
 
-  it("reset() restores all groups to defaultOpen=false when store was created with collapseAllByDefault", () => {
+  it("reset() restores non-sticky groups to defaultOpen=false; Sentiments stays open", () => {
     createRoot((dispose) => {
       const store = createSidebarStore({ defaultOpen: () => false });
       store.setOpen("Safety", true);
       store.setOpen("Facts/claims", true);
+      store.setOpen("Sentiments", false);
       store.reset();
-      const labels: SectionGroupLabel[] = [
+      const collapsed: SectionGroupLabel[] = [
         "Safety",
         "Tone/dynamics",
         "Facts/claims",
-        "Opinions/sentiments",
+        "Opinions",
       ];
-      for (const label of labels) {
+      for (const label of collapsed) {
         expect(store.isOpen(label)).toBe(false);
       }
+      expect(store.isOpen("Sentiments")).toBe(true);
       dispose();
     });
   });
 
-  it("reset() restores all groups to the latest reactive defaultOpen value", () => {
+  it("reset() applies the latest reactive defaultOpen to non-sticky groups; Sentiments stays open", () => {
     createRoot((dispose) => {
       const [defaultOpen, setDefaultOpen] = createSignal(true);
       const store = createSidebarStore({ defaultOpen });
@@ -169,17 +196,19 @@ describe("createSidebarStore", () => {
       setDefaultOpen(false);
       store.setOpen("Safety", true);
       store.setOpen("Tone/dynamics", true);
+      store.setOpen("Sentiments", false);
       store.reset();
 
-      const labels: SectionGroupLabel[] = [
+      const collapsed: SectionGroupLabel[] = [
         "Safety",
         "Tone/dynamics",
         "Facts/claims",
-        "Opinions/sentiments",
+        "Opinions",
       ];
-      for (const label of labels) {
+      for (const label of collapsed) {
         expect(store.isOpen(label)).toBe(false);
       }
+      expect(store.isOpen("Sentiments")).toBe(true);
       dispose();
     });
   });

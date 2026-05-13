@@ -1382,8 +1382,9 @@ describe("WeatherReport", () => {
 
       expect(capturedStore!.isOpen("Facts/claims")).toBe(true);
       expect(capturedStore!.isOpen("Safety")).toBe(false);
+      expect(capturedStore!.isOpen("Sentiments")).toBe(false);
       expect(capturedStore!.isOpen("Tone/dynamics")).toBe(false);
-      expect(capturedStore!.isOpen("Opinions/sentiments")).toBe(false);
+      expect(capturedStore!.isOpen("Opinions")).toBe(false);
     });
 
     it("clicking Focus button returns focus to the trigger element", async () => {
@@ -1481,7 +1482,7 @@ describe("WeatherReport", () => {
       fireEvent.click(sentimentTrigger);
 
       await waitFor(() => {
-        expect(capturedStore!.highlightedGroup()).toBe("Opinions/sentiments");
+        expect(capturedStore!.highlightedGroup()).toBe("Sentiments");
       });
     });
   });

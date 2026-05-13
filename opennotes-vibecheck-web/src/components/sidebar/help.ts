@@ -10,6 +10,10 @@ const SECTION_HELP: Record<string, SidebarHelpCopy> = {
     looksFor: "Harmful content, risky links, and media safety signals.",
     means: "These results highlight material that may need moderation or extra review.",
   },
+  Sentiments: {
+    looksFor: "Positive, negative, and neutral language across utterances.",
+    means: "Sentiment gives a temperature check on the discussion's emotional tone.",
+  },
   "Tone/dynamics": {
     looksFor: "Conversation heat, speaker dynamics, and signs of derailment.",
     means: "These results explain how the exchange is developing, not whether it is true.",
@@ -18,9 +22,9 @@ const SECTION_HELP: Record<string, SidebarHelpCopy> = {
     looksFor: "Repeated claims, deduped claim clusters, and known misinformation matches.",
     means: "These results show what factual assertions may need evidence or context.",
   },
-  "Opinions/sentiments": {
-    looksFor: "Sentiment balance and subjective claims that rely on personal judgment.",
-    means: "These results separate tone and opinion from verifiable factual claims.",
+  Opinions: {
+    looksFor: "Subjective claims and recurring opinion patterns that rely on personal judgment.",
+    means: "These results separate opinion from verifiable factual claims.",
   },
 };
 

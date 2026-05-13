@@ -1,5 +1,10 @@
 import { createContext, createEffect, useContext, type JSX } from "solid-js";
-import { createSidebarStore, ALL_LABELS, type SidebarStore } from "./sidebar-store";
+import {
+  ALL_LABELS,
+  STICKY_OPEN_LABELS,
+  createSidebarStore,
+  type SidebarStore,
+} from "./sidebar-store";
 
 export interface SidebarStoreProviderOpts {
   collapseAllByDefault?: boolean;
@@ -28,6 +33,7 @@ export function SidebarStoreProvider(props: {
     const current = props.opts?.collapseAllByDefault;
     if (current === true && prev !== true) {
       for (const label of ALL_LABELS) {
+        if (STICKY_OPEN_LABELS.has(label)) continue;
         store.setOpen(label, false);
       }
     }
