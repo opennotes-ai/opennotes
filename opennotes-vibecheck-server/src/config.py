@@ -27,6 +27,9 @@ class Settings(BaseSettings):
     VERTEX_LEASE_ACQUIRE_TIMEOUT_MS: int = 30_000
     VERTEX_LEASE_RETRY_MIN_MS: int = 25
     VERTEX_LEASE_RETRY_MAX_MS: int = 250
+    # Saturation retries wrap full Redis lease acquisition attempts. Worst-case
+    # wait is roughly (1 + ATTEMPTS) * VERTEX_LEASE_ACQUIRE_TIMEOUT_MS plus the
+    # configured exponential backoff and jitter sleeps below.
     VERTEX_SATURATION_RETRY_ATTEMPTS: int = 2
     VERTEX_SATURATION_RETRY_BASE_MS: int = 500
     VERTEX_SATURATION_RETRY_MAX_MS: int = 4000
