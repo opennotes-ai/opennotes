@@ -1008,7 +1008,7 @@ describe("AnalyzePage route", () => {
 
     await checkSegmentGroupingAndPressedState("preview-mode-selector", [
       "Original",
-      "Archived",
+      "Snapshot",
       "Screenshot",
     ]);
     await checkSegmentGroupingAndPressedState(
@@ -1092,7 +1092,7 @@ describe("AnalyzePage route", () => {
     expect(screen.getByTestId("preview-mode-selector")).not.toBeNull();
     expect(screen.getByTestId("preview-size-selector")).not.toBeNull();
     expect(screen.getByRole("button", { name: "Original" })).not.toBeNull();
-    expect(screen.getByRole("button", { name: "Archived" })).not.toBeNull();
+    expect(screen.getByRole("button", { name: "Snapshot" })).not.toBeNull();
     expect(screen.getByRole("button", { name: "Screenshot" })).not.toBeNull();
   });
 
