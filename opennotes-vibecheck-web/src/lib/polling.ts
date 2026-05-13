@@ -184,8 +184,9 @@ export function createPollingResource(
     clearTimer();
     setError(null);
     const gen = generation;
-    const seed =
+    const candidateSeed =
       seedConsumedForJobId === id ? null : (options.initialState ?? null);
+    const seed = candidateSeed?.job_id === id ? candidateSeed : null;
     seedConsumedForJobId = id;
     if (seed) {
       setState(seed);
