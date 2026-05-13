@@ -20,6 +20,7 @@ import { Title, Meta } from "@solidjs/meta";
 import { deriveOgTitle, deriveOgDescription } from "~/lib/og-meta";
 import { siteUrl } from "~/lib/site-url";
 import CachedBadge from "~/components/CachedBadge";
+import NotifyOnComplete from "~/components/NotifyOnComplete";
 import ExpiredAnalysisCard from "~/components/ExpiredAnalysisCard";
 import JobFailureCard from "~/components/JobFailureCard";
 import LoadingSavedAnalysis from "~/components/LoadingSavedAnalysis";
@@ -40,6 +41,7 @@ import type {
   SectionSlug,
 } from "~/lib/api-client.server";
 import { createPollingResource } from "~/lib/polling";
+import { buildNotifyEffect, TERMINAL_JOB_STATUSES } from "./analyze.notifications";
 import { resolveHeadline } from "~/lib/headline-fallback";
 import {
   scrollToUtterance,
@@ -109,7 +111,6 @@ const ORIGINAL_BLOCKED_TIP_TEXT =
 const ARCHIVE_PROBE_INTERVAL_MS = 5_000;
 const ARCHIVE_PROBE_CAP_MS = 300_000;
 const ARCHIVE_PROBE_TERMINAL_GRACE_MS = 10_000;
-const TERMINAL_JOB_STATUSES = new Set(["done", "partial", "failed"]);
 
 function asErrorCode(raw: string | undefined): PublicErrorCode | null {
   if (!raw) return null;
@@ -280,6 +281,9 @@ function AnalyzePageContent(props: { initialJobState: JobState | null }) {
   );
   const [archiveProbeState, setArchiveProbeState] =
     createSignal<ArchiveProbeState>("pending");
+
+  const [notifyEnabled, setNotifyEnabled] = createSignal(false);
+  buildNotifyEffect({ jobStatus: () => jobStatus() ?? null, jobId, notifyEnabled });
 
   let frameCompatRequest = 0;
   let archiveTerminalAt: number | null = null;
@@ -983,6 +987,10 @@ function AnalyzePageContent(props: { initialJobState: JobState | null }) {
                             Status: {jobStatus()}
                           </p>
                         </Show>
+                        <NotifyOnComplete
+                          jobStatus={jobStatus() ?? undefined}
+                          onEnabledChange={setNotifyEnabled}
+                        />
                       </div>
                       <Sidebar
                         sections={jobState()?.sections}
