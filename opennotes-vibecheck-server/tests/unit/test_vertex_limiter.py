@@ -175,6 +175,56 @@ class _BadAcquireResultRedis:
         return None
 
 
+def _successful_redis_lease(token: str = "redis-lease") -> vertex_limiter._LimiterLease:
+    return vertex_limiter._LimiterLease(
+        token=token,
+        backend="redis",
+        max_concurrency=1,
+        active=1,
+        pending=0,
+    )
+
+
+class _ScriptedRedisLimiterBackend:
+    backend_name = "redis"
+
+    def __init__(
+        self,
+        outcomes: list[vertex_limiter._LimiterLease | BaseException],
+    ) -> None:
+        self._outcomes = outcomes
+        self.acquire_calls = 0
+
+    async def acquire(self, settings: Settings) -> vertex_limiter._LimiterLease:
+        assert settings
+        self.acquire_calls += 1
+        if not self._outcomes:
+            raise AssertionError("unexpected acquire call")
+        outcome = self._outcomes.pop(0)
+        if isinstance(outcome, BaseException):
+            raise outcome
+        return outcome
+
+    async def release(self, lease: vertex_limiter._LimiterLease) -> None:
+        assert lease
+
+    async def probe(self) -> None:
+        return None
+
+    async def aclose(self) -> None:
+        return None
+
+
+class _FixedRng:
+    def __init__(self, value: float) -> None:
+        self._value = value
+
+    def uniform(self, a: float, b: float) -> float:
+        assert a == 0
+        assert b >= 0
+        return self._value
+
+
 @pytest.fixture(autouse=True)
 def reset_vertex_limiter_state() -> None:
     vertex_limiter._reset_for_tests()
@@ -870,6 +920,191 @@ async def test_vertex_limiter_fallback_engages_on_consecutive_redis_failures(
         assert fallback_logs[0][1]["vibecheck_max_instances"] == 3
     finally:
         await backend.release(lease)
+
+
+async def test_fallbacking_backend_retries_saturation_until_success(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    successful_lease = _successful_redis_lease()
+    redis_backend = _ScriptedRedisLimiterBackend(
+        [
+            vertex_limiter.VertexLimiterSaturationError("saturated once"),
+            vertex_limiter.VertexLimiterSaturationError("saturated twice"),
+            successful_lease,
+        ]
+    )
+    sleep_calls: list[float] = []
+    warnings: list[tuple[str, dict[str, Any]]] = []
+
+    async def _sleep(duration: float) -> None:
+        sleep_calls.append(duration)
+
+    def _record_warning(message: str, **kwargs: Any) -> None:
+        warnings.append((message, kwargs))
+
+    monkeypatch.setattr(vertex_limiter.logfire, "warning", _record_warning)
+    backend = vertex_limiter._FallbackingBackend(
+        redis_backend,
+        vertex_limiter._LocalLimiterBackend(),
+        sleep=_sleep,
+        rng=_FixedRng(0),
+    )
+
+    lease = await backend.acquire(
+        Settings(
+            VERTEX_SATURATION_RETRY_ATTEMPTS=2,
+            VERTEX_SATURATION_RETRY_JITTER_MS=0,
+        )
+    )
+
+    assert lease is successful_lease
+    assert redis_backend.acquire_calls == 3
+    assert sleep_calls == [0.5, 1.0]
+    assert warnings == [
+        (
+            "vertex_limiter saturation retry",
+            {
+                "attempt": 1,
+                "attempts_remaining": 1,
+                "elapsed_ms": warnings[0][1]["elapsed_ms"],
+                "backend": "redis",
+            },
+        ),
+        (
+            "vertex_limiter saturation retry",
+            {
+                "attempt": 2,
+                "attempts_remaining": 0,
+                "elapsed_ms": warnings[1][1]["elapsed_ms"],
+                "backend": "redis",
+            },
+        ),
+    ]
+    assert warnings[0][1]["elapsed_ms"] >= 0
+    assert warnings[1][1]["elapsed_ms"] >= 0
+
+
+async def test_fallbacking_backend_reraises_after_retry_budget() -> None:
+    redis_backend = _ScriptedRedisLimiterBackend(
+        [
+            vertex_limiter.VertexLimiterSaturationError("saturated one"),
+            vertex_limiter.VertexLimiterSaturationError("saturated two"),
+            vertex_limiter.VertexLimiterSaturationError("saturated three"),
+        ]
+    )
+    sleep_calls: list[float] = []
+
+    async def _sleep(duration: float) -> None:
+        sleep_calls.append(duration)
+
+    backend = vertex_limiter._FallbackingBackend(
+        redis_backend,
+        vertex_limiter._LocalLimiterBackend(),
+        sleep=_sleep,
+        rng=_FixedRng(0),
+    )
+
+    with pytest.raises(vertex_limiter.VertexLimiterSaturationError, match="saturated three"):
+        await backend.acquire(
+            Settings(
+                VERTEX_SATURATION_RETRY_ATTEMPTS=2,
+                VERTEX_SATURATION_RETRY_JITTER_MS=0,
+            )
+        )
+
+    assert redis_backend.acquire_calls == 3
+    assert sleep_calls == [0.5, 1.0]
+
+
+async def test_fallbacking_backend_zero_attempts_disables_retry() -> None:
+    redis_backend = _ScriptedRedisLimiterBackend(
+        [vertex_limiter.VertexLimiterSaturationError("saturated")]
+    )
+    sleep_calls: list[float] = []
+
+    async def _sleep(duration: float) -> None:
+        sleep_calls.append(duration)
+
+    backend = vertex_limiter._FallbackingBackend(
+        redis_backend,
+        vertex_limiter._LocalLimiterBackend(),
+        sleep=_sleep,
+        rng=_FixedRng(0),
+    )
+
+    with pytest.raises(vertex_limiter.VertexLimiterSaturationError, match="saturated"):
+        await backend.acquire(Settings(VERTEX_SATURATION_RETRY_ATTEMPTS=0))
+
+    assert redis_backend.acquire_calls == 1
+    assert sleep_calls == []
+
+
+async def test_fallbacking_backend_backend_unavailable_preserves_fallback_threshold() -> None:
+    redis_backend = _ScriptedRedisLimiterBackend(
+        [
+            vertex_limiter.VertexLimiterBackendUnavailableError("backend unavailable"),
+            vertex_limiter.VertexLimiterBackendUnavailableError("backend unavailable"),
+        ]
+    )
+    sleep_calls: list[float] = []
+
+    async def _sleep(duration: float) -> None:
+        sleep_calls.append(duration)
+
+    backend = vertex_limiter._FallbackingBackend(
+        redis_backend,
+        vertex_limiter._LocalLimiterBackend(),
+        sleep=_sleep,
+        rng=_FixedRng(0),
+    )
+
+    with pytest.raises(vertex_limiter.VertexLimiterBackendUnavailableError):
+        await backend.acquire(Settings())
+
+    lease = await backend.acquire(Settings())
+    try:
+        assert lease.backend == "local"
+        assert redis_backend.acquire_calls == 2
+        assert sleep_calls == []
+    finally:
+        await backend.release(lease)
+
+
+async def test_fallbacking_backend_sleep_schedule_is_exponential() -> None:
+    redis_backend = _ScriptedRedisLimiterBackend(
+        [
+            vertex_limiter.VertexLimiterSaturationError("saturated one"),
+            vertex_limiter.VertexLimiterSaturationError("saturated two"),
+            vertex_limiter.VertexLimiterSaturationError("saturated three"),
+            vertex_limiter.VertexLimiterSaturationError("saturated four"),
+            vertex_limiter.VertexLimiterSaturationError("saturated five"),
+            vertex_limiter.VertexLimiterSaturationError("saturated six"),
+        ]
+    )
+    sleep_calls: list[float] = []
+
+    async def _sleep(duration: float) -> None:
+        sleep_calls.append(duration)
+
+    backend = vertex_limiter._FallbackingBackend(
+        redis_backend,
+        vertex_limiter._LocalLimiterBackend(),
+        sleep=_sleep,
+        rng=_FixedRng(0),
+    )
+
+    with pytest.raises(vertex_limiter.VertexLimiterSaturationError, match="saturated six"):
+        await backend.acquire(
+            Settings(
+                VERTEX_SATURATION_RETRY_ATTEMPTS=5,
+                VERTEX_SATURATION_RETRY_BASE_MS=500,
+                VERTEX_SATURATION_RETRY_MAX_MS=4000,
+                VERTEX_SATURATION_RETRY_JITTER_MS=0,
+            )
+        )
+
+    assert redis_backend.acquire_calls == 6
+    assert sleep_calls == [0.5, 1.0, 2.0, 4.0, 4.0]
 
 
 async def test_vertex_limiter_fallback_local_cap_is_bounded_per_instance(

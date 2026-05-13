@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+import random
 import secrets
 import socket
 import threading
@@ -121,6 +122,14 @@ class _LimiterBackend(Protocol):
     async def release(self, lease: _LimiterLease) -> None: ...
 
     async def aclose(self) -> None: ...
+
+
+class _ProbeableLimiterBackend(_LimiterBackend, Protocol):
+    async def probe(self) -> None: ...
+
+
+class _RandomSource(Protocol):
+    def uniform(self, a: float, b: float) -> float: ...
 
 
 _state: _LimiterState | None = None
@@ -622,9 +631,18 @@ def _log_backend_fallback_engaged(settings: Settings) -> None:
 class _FallbackingBackend:
     backend_name = "fallbacking"
 
-    def __init__(self, redis_backend: _RedisLimiterBackend, local_backend: _LocalLimiterBackend) -> None:
+    def __init__(
+        self,
+        redis_backend: _ProbeableLimiterBackend,
+        local_backend: _LocalLimiterBackend,
+        *,
+        sleep: Callable[[float], Awaitable[Any]] = asyncio.sleep,
+        rng: _RandomSource = random,
+    ) -> None:
         self._redis_backend = redis_backend
         self._local_backend = local_backend
+        self._sleep = sleep
+        self._rng = rng
         self._state_lock = threading.Lock()
         self._backend_failures = 0
         self._fallback_active = False
@@ -632,6 +650,28 @@ class _FallbackingBackend:
         self._probe_in_progress = False
 
     async def acquire(self, settings: Settings) -> _LimiterLease:
+        retry_budget = settings.VERTEX_SATURATION_RETRY_ATTEMPTS
+        retry_index = 0
+        started = time.monotonic()
+
+        while True:
+            try:
+                return await self._acquire_once(settings)
+            except VertexLimiterSaturationError:
+                if retry_index >= retry_budget:
+                    raise
+                retry_index += 1
+                sleep_ms = self._saturation_retry_sleep_ms(settings, retry_index)
+                logfire.warning(
+                    "vertex_limiter saturation retry",
+                    attempt=retry_index,
+                    attempts_remaining=retry_budget - retry_index,
+                    elapsed_ms=(time.monotonic() - started) * 1000,
+                    backend=self._redis_backend.backend_name,
+                )
+                await self._sleep(sleep_ms / 1000)
+
+    async def _acquire_once(self, settings: Settings) -> _LimiterLease:
         if await self._probe_recovery_if_needed(settings):
             try:
                 lease = await self._acquire_with_redis_backend(settings)
@@ -654,6 +694,12 @@ class _FallbackingBackend:
 
         self._on_redis_success(settings)
         return lease
+
+    def _saturation_retry_sleep_ms(self, settings: Settings, retry_index: int) -> float:
+        exponential_ms = settings.VERTEX_SATURATION_RETRY_BASE_MS * (2 ** (retry_index - 1))
+        capped_ms = min(exponential_ms, settings.VERTEX_SATURATION_RETRY_MAX_MS)
+        jitter_ms = self._rng.uniform(0, settings.VERTEX_SATURATION_RETRY_JITTER_MS)
+        return capped_ms + jitter_ms
 
     async def release(self, lease: _LimiterLease) -> None:
         if lease.backend == self._redis_backend.backend_name:

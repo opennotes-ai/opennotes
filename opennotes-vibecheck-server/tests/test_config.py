@@ -7,6 +7,8 @@ validator is what enforces this invariant — these tests prove it bites.
 """
 from __future__ import annotations
 
+from typing import Any
+
 import pytest
 from pydantic import ValidationError
 
@@ -110,8 +112,10 @@ class TestVertexSaturationRetrySettings:
         ],
     )
     def test_rejects_negative_retry_counts(self, field: str) -> None:
+        invalid_settings: dict[str, Any] = {field: -1}
+
         with pytest.raises(ValidationError, match="must be >= 0"):
-            Settings(**{field: -1})
+            Settings(**invalid_settings)
 
     @pytest.mark.parametrize(
         "field",
@@ -121,8 +125,10 @@ class TestVertexSaturationRetrySettings:
         ],
     )
     def test_rejects_non_positive_retry_intervals(self, field: str) -> None:
+        invalid_settings: dict[str, Any] = {field: 0}
+
         with pytest.raises(ValidationError, match="must be > 0"):
-            Settings(**{field: 0})
+            Settings(**invalid_settings)
 
     def test_rejects_max_below_base(self) -> None:
         with pytest.raises(ValidationError, match="MAX_MS must be >= BASE_MS"):
