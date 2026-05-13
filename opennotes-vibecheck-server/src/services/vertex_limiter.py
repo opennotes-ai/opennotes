@@ -40,7 +40,7 @@ redis.call("ZREMRANGEBYSCORE", slots_key, "-inf", now_ms)
 local active = redis.call("ZCARD", slots_key)
 
 if active < limit then
-  redis.call("SET", lease_key, token, "PX", lease_ttl_ms, "NX")
+  redis.call("SET", lease_key, token, "PX", lease_ttl_ms)
   redis.call("ZADD", slots_key, expires_at, token)
   redis.call("PEXPIRE", slots_key, lease_ttl_ms)
   return {1, active + 1, limit, lease_ttl_ms, 0, "acquired"}
@@ -738,7 +738,6 @@ class _FallbackingBackend:
                     _log_backend_fallback_engaged(settings)
 
                 self._fallback_cooldown_until = now + _FALLBACK_COOLDOWN_SECONDS
-                self._fallback_active = True
 
         return became_fallback or self._fallback_active
 
