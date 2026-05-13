@@ -7,6 +7,7 @@ import { Button, buttonVariants } from "@opennotes/ui/components/ui/button";
 import { NavBar } from "@opennotes/ui/components/nav-bar";
 import ModeToggle from "@opennotes/ui/components/mode-toggle";
 import { Logo } from "@opennotes/ui/components/logo";
+import { Footer } from "@opennotes/ui/components/footer";
 import { createClient } from "~/lib/supabase-browser";
 import { getUser } from "~/lib/supabase-server";
 
@@ -86,6 +87,7 @@ export function RootLayout(props: { children?: JSX.Element }): JSX.Element {
       >
         <Suspense>{props.children}</Suspense>
       </ErrorBoundary>
+      <Footer />
     </MetaProvider>
   );
 }

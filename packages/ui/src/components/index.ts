@@ -30,6 +30,7 @@ export * from "./ui/tooltip";
 
 export { AudienceCard, type AudienceCardProps } from "./audience-card";
 export { default as FontToggle } from "./font-toggle";
+export { Footer, type FooterProps } from "./footer";
 export { Logo, type LogoProps } from "./logo";
 export { MarketingHero, type MarketingHeroProps } from "./marketing-hero";
 export { default as ModeToggle } from "./mode-toggle";

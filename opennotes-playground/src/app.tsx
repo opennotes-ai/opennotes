@@ -7,6 +7,7 @@ import AuthStatus from "~/components/AuthStatus";
 import { NavBar } from "@opennotes/ui/components/nav-bar";
 import ModeToggle from "@opennotes/ui/components/mode-toggle";
 import { Logo } from "@opennotes/ui/components/logo";
+import { Footer } from "@opennotes/ui/components/footer";
 import EmptyState from "@opennotes/ui/components/ui/empty-state";
 import { AlertCircle } from "@opennotes/ui/components/ui/icons";
 
@@ -51,6 +52,7 @@ export default function App() {
           >
             <Suspense>{props.children}</Suspense>
           </ErrorBoundary>
+          <Footer />
         </MetaProvider>
       )}
     >
