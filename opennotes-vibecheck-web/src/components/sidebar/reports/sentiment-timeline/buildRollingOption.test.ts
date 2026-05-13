@@ -23,6 +23,23 @@ function getFormatter(option: EChartsOption): (value: number) => string {
 }
 
 describe("buildRollingOption", () => {
+  describe("grid alignment", () => {
+    it("hides y-axis labels and uses left margin of 64 to align with punch card chart", () => {
+      const start = new Date("2026-05-06T10:00:00Z").getTime();
+      const end = new Date("2026-05-06T14:00:00Z").getTime();
+      const option = buildRollingOption([makeBucket(start, end)]);
+
+      const grid = Array.isArray(option.grid) ? option.grid[0] : option.grid;
+      expect((grid as { left?: number })?.left).toBe(64);
+
+      const yAxis = Array.isArray(option.yAxis) ? option.yAxis[0] : option.yAxis;
+      const yConfig = yAxis as { axisLabel?: { show?: boolean }; axisTick?: { show?: boolean }; axisLine?: { show?: boolean } };
+      expect(yConfig?.axisLabel?.show).toBe(false);
+      expect(yConfig?.axisTick?.show).toBe(false);
+      expect(yConfig?.axisLine?.show).toBe(false);
+    });
+  });
+
   describe("single-day job", () => {
     it("formats x-axis ticks as HH:MM only", () => {
       const dayStart = new Date("2026-05-06T10:00:00Z").getTime();
