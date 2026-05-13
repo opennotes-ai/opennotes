@@ -28,7 +28,7 @@ from contextlib import contextmanager
 from contextvars import ContextVar, Token
 from dataclasses import dataclass
 from time import perf_counter
-from typing import Any
+from typing import Any, Final
 
 import httpx
 
@@ -279,6 +279,31 @@ _LOGFIRE_EXTRA_PATTERNS: tuple[str, ...] = (
     r"bearer",
 )
 
+_PYDANTIC_AI_INSTRUMENTATION_VERSION: Final = 3
+
+
+def _instrument_pydantic_ai(logfire_module: Any) -> None:
+    """Enable native pydantic-ai spans without exporting page/user content."""
+    from pydantic_ai import Embedder  # noqa: PLC0415
+    from pydantic_ai.models.instrumented import InstrumentationSettings  # noqa: PLC0415
+
+    logfire_module.instrument_pydantic_ai(
+        include_content=False,
+        include_binary_content=False,
+        version=_PYDANTIC_AI_INSTRUMENTATION_VERSION,
+    )
+    config = logfire_module.DEFAULT_LOGFIRE_INSTANCE.config
+    Embedder.instrument_all(
+        InstrumentationSettings(
+            tracer_provider=config.get_tracer_provider(),
+            meter_provider=config.get_meter_provider(),
+            logger_provider=config.get_logger_provider(),
+            include_content=False,
+            include_binary_content=False,
+            version=_PYDANTIC_AI_INSTRUMENTATION_VERSION,
+        )
+    )
+
 
 def configure_logfire(**configure_kwargs: Any) -> None:
     """Configure Logfire with `_sanitize`-based span attribute scrubbing.
@@ -310,4 +335,5 @@ def configure_logfire(**configure_kwargs: Any) -> None:
     )
     configure_kwargs.setdefault("send_to_logfire", "if-token-present")
     logfire.configure(scrubbing=scrubbing, **configure_kwargs)
+    _instrument_pydantic_ai(logfire)
     _logfire_configured = True
