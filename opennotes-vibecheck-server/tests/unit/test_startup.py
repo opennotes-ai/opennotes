@@ -70,8 +70,11 @@ def test_configure_logfire_installs_extra_patterns(_reset_logfire_flag: None) ->
     def _stub_configure(**_kwargs: object) -> None:
         return None
 
-    with patch("logfire.ScrubbingOptions", _StubScrubbing), patch(
-        "logfire.configure", _stub_configure
+    with (
+        patch("logfire.ScrubbingOptions", _StubScrubbing),
+        patch("logfire.configure", _stub_configure),
+        patch("logfire.instrument_pydantic_ai"),
+        patch("pydantic_ai.Embedder.instrument_all"),
     ):
         configure_logfire()
 
@@ -90,6 +93,45 @@ def test_configure_logfire_installs_extra_patterns(_reset_logfire_flag: None) ->
     assert any("sig=" in p for p in pattern_strs), (
         "extra_patterns must include a literal 'sig=' token"
     )
+
+
+def test_configure_logfire_enables_safe_pydantic_ai_instrumentation(
+    _reset_logfire_flag: None,
+) -> None:
+    """Native pydantic-ai spans must be enabled without prompt/binary capture."""
+    from pydantic_ai.models.instrumented import InstrumentationSettings
+
+    from src.monitoring import configure_logfire
+
+    class _StubScrubbing:
+        def __init__(
+            self,
+            callback: object = None,
+            extra_patterns: object = None,
+        ) -> None:
+            return None
+
+    def _stub_configure(**_kwargs: object) -> None:
+        return None
+
+    with (
+        patch("logfire.ScrubbingOptions", _StubScrubbing),
+        patch("logfire.configure", _stub_configure),
+        patch("logfire.instrument_pydantic_ai") as mock_instrument_agents,
+        patch("pydantic_ai.Embedder.instrument_all") as mock_instrument_embedders,
+    ):
+        configure_logfire()
+
+    mock_instrument_agents.assert_called_once_with(
+        include_content=False,
+        include_binary_content=False,
+        version=3,
+    )
+    embedder_settings = mock_instrument_embedders.call_args.args[0]
+    assert isinstance(embedder_settings, InstrumentationSettings)
+    assert embedder_settings.include_content is False
+    assert embedder_settings.include_binary_content is False
+    assert embedder_settings.version == 3
 
 
 def test_metrics_endpoint_rejects_unauthenticated(
