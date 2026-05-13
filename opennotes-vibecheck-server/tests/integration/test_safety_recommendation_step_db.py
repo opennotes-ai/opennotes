@@ -130,8 +130,10 @@ async def test_run_safety_recommendation_step_writes_db_prefilter_and_merges_div
     )
     monkeypatch.setattr(orchestrator.logfire, "info", fake_logfire_info)
 
+    settings = MagicMock()
+    settings.VIBECHECK_SAFETY_IMAGE_VISION_REVIEW_ENABLED = False
     await orchestrator._run_safety_recommendation_step(
-        db_pool, job_id, task_attempt, MagicMock()
+        db_pool, job_id, task_attempt, settings
     )
 
     row = await read_job(db_pool, job_id)
