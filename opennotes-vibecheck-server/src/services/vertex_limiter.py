@@ -794,7 +794,7 @@ def _new_redis_client(settings: Settings) -> _RedisClient:
         "socket_connect_timeout": 2.0,
         "health_check_interval": 30,
         "retry_on_timeout": True,
-        "retry_on_error": (RedisConnectionError, RedisTimeoutError),
+        "retry_on_error": [RedisConnectionError, RedisTimeoutError],
         "socket_keepalive": True,
     }
     keepalive_options = _redis_keepalive_options()
