@@ -1,5 +1,5 @@
 import { query } from "@solidjs/router";
-import type { RecentAnalysis } from "~/lib/api-client.server";
+import type { InternalRecentAnalysis } from "~/lib/api-client.server";
 
 function normalizeLimit(limit: number): number {
   if (!Number.isFinite(limit)) return 25;
@@ -29,7 +29,7 @@ export async function assertValidInternalPrefix(supplied: string): Promise<void>
 }
 
 export const getInternalRecentAnalyses = query(
-  async (prefix: string, limit: number): Promise<RecentAnalysis[]> => {
+  async (prefix: string, limit: number): Promise<InternalRecentAnalysis[]> => {
     "use server";
     try {
       const { getClient } = await import("~/lib/api-client.server");

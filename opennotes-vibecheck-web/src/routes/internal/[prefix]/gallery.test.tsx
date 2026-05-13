@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen } from "@solidjs/testing-library";
-import type { RecentAnalysis } from "~/lib/api-client.server";
+import type { InternalRecentAnalysis } from "~/lib/api-client.server";
 
 const { recentAnalysesMock } = vi.hoisted(() => ({
   recentAnalysesMock: vi.fn(),
@@ -16,9 +16,10 @@ vi.mock("./gallery.data", async () => {
   };
 });
 
-const analyses: RecentAnalysis[] = [
+const analyses: InternalRecentAnalysis[] = [
   {
     job_id: "job-1",
+    source_type: "url",
     source_url: "http://localhost/private",
     page_title: "Private Page",
     screenshot_url: "https://example.com/screenshot.png",

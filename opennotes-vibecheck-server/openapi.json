@@ -213,7 +213,7 @@
                 "schema": {
                   "type": "array",
                   "items": {
-                    "$ref": "#/components/schemas/RecentAnalysis"
+                    "$ref": "#/components/schemas/InternalRecentAnalysis"
                   },
                   "title": "Response List Recent Analyses Unfiltered Api Internal Analyses Recent Unfiltered Get"
                 }
@@ -2053,6 +2053,105 @@
           "upload_url"
         ],
         "title": "ImageUploadUrl"
+      },
+      "InternalRecentAnalysis": {
+        "properties": {
+          "job_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Job Id",
+            "description": "vibecheck_jobs.job_id; links to /analyze?job=<job_id>."
+          },
+          "source_type": {
+            "type": "string",
+            "title": "Source Type",
+            "description": "vibecheck_jobs.source_type: 'url', 'pdf', or 'browser_html'."
+          },
+          "source_url": {
+            "type": "string",
+            "title": "Source Url"
+          },
+          "page_title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Page Title"
+          },
+          "screenshot_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Screenshot Url",
+            "description": "15-min signed GCS URL for the page screenshot, or null when the job has no associated scrape (PDFs, browser_html without a preview, etc.)."
+          },
+          "preview_description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Preview Description",
+            "description": "Short blurb summarizing the analysis. Nullable at the internal boundary so operators can see jobs whose preview hasn't been synthesized yet."
+          },
+          "headline_summary": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Headline Summary"
+          },
+          "weather_report": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WeatherReport"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "safety_recommendation": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SafetyRecommendation"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "completed_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Completed At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "job_id",
+          "source_type",
+          "source_url",
+          "completed_at"
+        ],
+        "title": "InternalRecentAnalysis",
+        "description": "One row in the internal unfiltered gallery (TASK-1624.05).\n\nReturned by `GET /api/internal/analyses/recent-unfiltered`. Unlike the\npublic `RecentAnalysis`, this model accepts heterogeneous source types\n(`url`, `pdf`, `browser_html`) and tolerates missing screenshots and\npreview descriptions so operators can see every terminal job, not\nonly the URL-and-screenshot-backed subset surfaced to end users."
       },
       "JobState": {
         "properties": {

@@ -2,7 +2,7 @@ import { For, Show, Suspense } from "solid-js";
 import { createAsync, useParams, useSearchParams } from "@solidjs/router";
 import { Meta, Title } from "@solidjs/meta";
 import GalleryHoverCard from "~/components/GalleryHoverCard";
-import type { RecentAnalysis } from "~/lib/api-client.server";
+import type { InternalRecentAnalysis } from "~/lib/api-client.server";
 import { formatWeatherReadout } from "~/lib/weather-labels";
 import {
   assertValidInternalPrefix,
@@ -22,7 +22,7 @@ export function clampInternalGalleryLimit(raw: string | undefined): number {
 export async function loadInternalGalleryData(
   prefix: string,
   rawLimit: string | undefined,
-): Promise<RecentAnalysis[]> {
+): Promise<InternalRecentAnalysis[]> {
   "use server";
   await assertValidInternalPrefix(prefix);
   return getInternalRecentAnalyses(
@@ -31,7 +31,7 @@ export async function loadInternalGalleryData(
   );
 }
 
-export function InternalGalleryGrid(props: { analyses: RecentAnalysis[] }) {
+export function InternalGalleryGrid(props: { analyses: InternalRecentAnalysis[] }) {
   return (
     <main class="mx-auto flex min-h-screen max-w-5xl flex-col gap-6 px-4 py-8">
       <header class="space-y-1">
@@ -48,7 +48,11 @@ export function InternalGalleryGrid(props: { analyses: RecentAnalysis[] }) {
           <For each={props.analyses}>
             {(item) => (
               <GalleryHoverCard
-                item={item}
+                item={{
+                  ...item,
+                  screenshot_url: item.screenshot_url ?? "",
+                  preview_description: item.preview_description ?? "",
+                }}
                 data-testid="internal-gallery-card"
                 href={`/analyze?job=${item.job_id}`}
                 class="group block overflow-hidden rounded-lg border border-border transition-colors hover:border-foreground/30"
@@ -58,7 +62,7 @@ export function InternalGalleryGrid(props: { analyses: RecentAnalysis[] }) {
                   aria-label={item.page_title ?? item.source_url}
                   class="h-36 w-full"
                   style={{
-                    "background-image": `url(${item.screenshot_url})`,
+                    "background-image": `url(${item.screenshot_url ?? ""})`,
                     "background-size": "200%",
                     "background-position": "top center",
                     "background-repeat": "no-repeat",
@@ -69,7 +73,7 @@ export function InternalGalleryGrid(props: { analyses: RecentAnalysis[] }) {
                     {item.page_title ?? item.source_url}
                   </p>
                   <p class="line-clamp-2 text-xs text-muted-foreground">
-                    {item.preview_description}
+                    {item.preview_description ?? ""}
                   </p>
                   <Show when={item.weather_report}>
                     {(weatherReport) => (
