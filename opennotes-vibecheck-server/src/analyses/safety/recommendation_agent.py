@@ -38,9 +38,8 @@ Use these levels:
   a topic-match-only moderation hit, one isolated Web Risk
   POTENTIALLY_HARMFUL_APPLICATION finding, or one low image/video
   max_likelihood score from verified frames.
-- caution: partial data, unavailable inputs, inconclusive sampling, or multiple
-  low-severity signals together when at least one remains supported after
-  context review.
+- caution: partial data, unavailable inputs, or multiple low-severity signals
+  together when at least one remains supported after context review.
 - unsafe: verified high-risk signals such as Web Risk MALWARE, multiple
   high-score text flags, or high image/video max_likelihood scores from real
   frames.
@@ -73,10 +72,11 @@ Important caveats:
 - Vision SafeSearch enum labels are not available downstream. Describe image/video signals
   in rationale with float scores only, such as "adult max_likelihood 0.91";
   never mention enum labels like VERY_LIKELY.
-- A video match with max_likelihood=1.0 and no segment_findings means sampling was
-  inconclusive, not verified unsafe visual content. Treat it as caution unless other
-  verified signals justify unsafe, and describe it with a human-readable top signal
-  such as "Video sampling inconclusive."
+- A video match with sampling_inconclusive=true means sampling failed or returned
+  no segment-level findings. This is incomplete evidence. It is not a supported video safety signal,
+  and it must not by itself justify `caution` or `unsafe`. If no other
+  supported safety signal remains, return `safe` and explain that video analysis
+  was inconclusive.
 - Echo the unavailable_inputs list exactly in the output.
 - Use the `divergences` field to record how your final verdict differs from the raw
   signals in inputs:
@@ -421,16 +421,22 @@ def _has_guardrail_downgrade_blocker(
         return True
     if any(divergence.direction == "escalated" for divergence in recommendation.divergences):
         return True
-    if any(match.segment_findings for match in inputs.video_moderation_matches):
-        return True
-    if any(
-        match.max_likelihood == 1.0 and not match.segment_findings
-        for match in inputs.video_moderation_matches
-    ):
+    if any(_has_verified_video_signal(match) for match in inputs.video_moderation_matches):
         return True
     return any(
         match.flagged or match.max_likelihood >= FLAG_THRESHOLD
         for match in inputs.image_moderation_matches
+    )
+
+
+def _is_inconclusive_video_match(match: VideoModerationMatch) -> bool:
+    return match.max_likelihood == 1.0 and not match.segment_findings
+
+
+def _has_verified_video_signal(match: VideoModerationMatch) -> bool:
+    return any(
+        finding.flagged or finding.max_likelihood >= FLAG_THRESHOLD
+        for finding in match.segment_findings
     )
 
 
@@ -459,12 +465,32 @@ def _apply_recommendation_guardrail(
     recommendation: SafetyRecommendation,
     inputs: SafetyRecommendationInputs,
 ) -> tuple[SafetyRecommendation, str | None]:
-    if recommendation.level is not SafetyLevel.CAUTION:
+    if (
+        recommendation.level is not SafetyLevel.CAUTION
+        or _has_guardrail_downgrade_blocker(recommendation, inputs)
+    ):
         return recommendation, None
+
+    has_inconclusive_video = any(
+        _is_inconclusive_video_match(match)
+        for match in inputs.video_moderation_matches
+    )
     if not inputs.harmful_content_matches:
-        return recommendation, None
-    if _has_guardrail_downgrade_blocker(recommendation, inputs):
-        return recommendation, None
+        if not has_inconclusive_video:
+            return recommendation, None
+        return (
+            recommendation.model_copy(
+                update={
+                    "level": SafetyLevel.SAFE,
+                    "rationale": (
+                        "Video analysis was inconclusive; no verified safety "
+                        "concern remains."
+                    ),
+                    "top_signals": [],
+                }
+            ),
+            "only_video_sampling_inconclusive",
+        )
 
     discounted_text_signals = _discounted_text_signal_count(recommendation, inputs)
     supported_text_signals = len(inputs.harmful_content_matches) - discounted_text_signals

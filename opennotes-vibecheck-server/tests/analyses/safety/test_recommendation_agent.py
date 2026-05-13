@@ -106,6 +106,14 @@ def test_recommendation_prompt_downgrades_all_discounted_complete_coverage() -> 
     assert "MUST emit a corresponding direction=\"discounted\" divergence" in RECOMMENDATION_SYSTEM_PROMPT
 
 
+def test_recommendation_prompt_treats_inconclusive_video_as_incomplete_evidence() -> None:
+    assert "sampling_inconclusive" in RECOMMENDATION_SYSTEM_PROMPT
+    assert "incomplete evidence" in RECOMMENDATION_SYSTEM_PROMPT
+    assert "not a supported video safety signal" in RECOMMENDATION_SYSTEM_PROMPT
+    assert "must not by itself justify `caution`" in RECOMMENDATION_SYSTEM_PROMPT
+    assert "Treat it as caution unless" not in RECOMMENDATION_SYSTEM_PROMPT
+
+
 async def test_run_safety_recommendation_logfire_attrs_are_set_for_inputs_and_sanitization(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -250,7 +258,7 @@ async def test_video_sampling_sentinel_is_marked_inconclusive(monkeypatch):
         SafetyRecommendation(
             level=SafetyLevel.CAUTION,
             rationale="Video sampling was inconclusive.",
-            top_signals=["inconclusive: https://cdn.example/video.mp4"],
+            top_signals=["Video sampling inconclusive."],
         )
     )
     monkeypatch.setattr(
@@ -280,8 +288,9 @@ async def test_video_sampling_sentinel_is_marked_inconclusive(monkeypatch):
 
     payload = json.loads(agent.prompts[0])
     assert payload["video_moderation_matches"][0]["sampling_inconclusive"]
-    assert result.level != SafetyLevel.UNSAFE
-    assert result.top_signals == ["inconclusive: https://cdn.example/video.mp4"]
+    assert result.level == SafetyLevel.SAFE
+    assert result.top_signals == []
+    assert "inconclusive" in result.rationale.lower()
 
 
 async def test_run_safety_recommendation_defaults_source_url_to_none(monkeypatch):
@@ -706,21 +715,6 @@ async def test_guardrail_keeps_caution_when_multiple_text_signals_remain(
         SafetyRecommendationInputs(
             harmful_content_matches=[_text_match("u1")],
             web_risk_findings=[],
-            image_moderation_matches=[],
-            video_moderation_matches=[
-                VideoModerationMatch(
-                    utterance_id="u-video",
-                    video_url="https://cdn.example/video.mp4",
-                    segment_findings=[],
-                    flagged=True,
-                    max_likelihood=1.0,
-                )
-            ],
-            unavailable_inputs=[],
-        ),
-        SafetyRecommendationInputs(
-            harmful_content_matches=[_text_match("u1")],
-            web_risk_findings=[],
             image_moderation_matches=[
                 ImageModerationMatch(
                     utterance_id="u-image",
@@ -752,6 +746,37 @@ async def test_guardrail_preserves_caution_when_downgrade_blockers_remain(
     result = await run_safety_recommendation(inputs, settings=Settings())
 
     assert result.level == SafetyLevel.CAUTION
+
+
+async def test_guardrail_allows_downgrade_when_video_sampling_is_inconclusive(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    agent = StubAgent(_caution_recommendation(divergences=[_text_discount("u1")]))
+    monkeypatch.setattr(
+        "src.analyses.safety.recommendation_agent.build_agent",
+        lambda *args, **kwargs: agent,
+    )
+
+    result = await run_safety_recommendation(
+        SafetyRecommendationInputs(
+            harmful_content_matches=[_text_match("u1")],
+            web_risk_findings=[],
+            image_moderation_matches=[],
+            video_moderation_matches=[
+                VideoModerationMatch(
+                    utterance_id="u-video",
+                    video_url="https://cdn.example/video.mp4",
+                    segment_findings=[],
+                    flagged=True,
+                    max_likelihood=1.0,
+                )
+            ],
+            unavailable_inputs=[],
+        ),
+        settings=Settings(),
+    )
+
+    assert result.level == SafetyLevel.SAFE
 
 
 async def test_guardrail_preserves_caution_when_divergence_escalates(
