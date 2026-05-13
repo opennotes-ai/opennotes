@@ -500,7 +500,7 @@ def _discounted_text_signal_count(
     return min(discounted, len(inputs.harmful_content_matches))
 
 
-def _apply_recommendation_guardrail(
+def _apply_recommendation_guardrail(  # noqa: PLR0911
     recommendation: SafetyRecommendation,
     inputs: SafetyRecommendationInputs,
 ) -> tuple[SafetyRecommendation, str | None]:
