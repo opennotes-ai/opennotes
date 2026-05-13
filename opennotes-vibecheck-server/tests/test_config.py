@@ -136,3 +136,22 @@ class TestVertexSaturationRetrySettings:
                 VERTEX_SATURATION_RETRY_BASE_MS=1000,
                 VERTEX_SATURATION_RETRY_MAX_MS=999,
             )
+
+
+class TestImageVisionReviewFlag:
+    """TASK-1639.02: opt-in flag for image vision review pipeline."""
+
+    def test_default_is_false(self) -> None:
+        s = Settings()
+
+        assert s.VIBECHECK_SAFETY_IMAGE_VISION_REVIEW_ENABLED is False
+
+    def test_env_override_enables_flag(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.setenv("VIBECHECK_SAFETY_IMAGE_VISION_REVIEW_ENABLED", "true")
+
+        s = Settings()
+
+        assert s.VIBECHECK_SAFETY_IMAGE_VISION_REVIEW_ENABLED is True
