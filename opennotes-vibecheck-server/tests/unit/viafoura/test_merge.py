@@ -59,3 +59,25 @@ def test_merge_viafoura_into_scrape_is_noop_for_empty_comments() -> None:
     )
 
     assert merge_viafoura_into_scrape(scrape, comments) == scrape
+
+
+def test_merge_viafoura_preserves_article_html_when_comment_nodes_are_empty() -> None:
+    scrape = ScrapeResult(
+        markdown="Article body.",
+        html="<article>Article body.</article>",
+    )
+    comments = ViafouraComments(
+        comments_markdown="## Comments\n- [abc] author=alice created_at=2026-05-08T12:00:00+00:00 parent=null\n  Useful comment.",
+        nodes=[],
+        raw_count=0,
+        fetched_at=datetime(2026, 5, 8, 12, 1, tzinfo=UTC),
+        more_available=False,
+    )
+
+    merged = merge_viafoura_into_scrape(scrape, comments)
+
+    assert (
+        merged.markdown
+        == "Article body.\n\n## Comments\n- [abc] author=alice created_at=2026-05-08T12:00:00+00:00 parent=null\n  Useful comment."
+    )
+    assert merged.html == "<article>Article body.</article>"

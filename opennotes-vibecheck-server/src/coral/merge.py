@@ -32,7 +32,9 @@ def merge_coral_into_scrape(scrape: ScrapeResult, comments: CoralComments) -> Sc
     comments_html = render_comments_to_html(comments.nodes)
     merged_html = (
         None
-        if scrape.html is None or not comments_html
+        if scrape.html is None
+        else scrape.html
+        if not comments_html
         else (
             f'{scrape.html}<div data-platform-comments data-platform="coral" '
             f'data-platform-status="copied" data-coral-comments="true">{comments_html}</div>'

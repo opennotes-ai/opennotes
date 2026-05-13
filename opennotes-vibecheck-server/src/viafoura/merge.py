@@ -35,7 +35,9 @@ def merge_viafoura_into_scrape(
     comments_html = render_comments_to_html(comments.nodes)
     merged_html = (
         None
-        if scrape.html is None or not comments_html
+        if scrape.html is None
+        else scrape.html
+        if not comments_html
         else (
             f'{scrape.html}<div data-platform-comments data-platform="viafoura" '
             f'data-platform-status="copied">{comments_html}</div>'

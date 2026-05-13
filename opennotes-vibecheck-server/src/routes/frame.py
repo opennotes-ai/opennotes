@@ -72,6 +72,8 @@ _ARCHIVE_DISPLAY_STYLES = (
     "font-family:system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;line-height:1.5}"
     "[data-platform-comments] .opennotes-comments{list-style:none;margin:0;padding:0}"
     "[data-platform-comments] .opennotes-comments>li{margin:0 0 1rem;padding:0}"
+    "[data-platform-comments] .opennotes-comment__replies{list-style:none;margin:.75rem 0 0;padding:0}"
+    "[data-platform-comments] .opennotes-comment__replies>li{margin:0;padding:0}"
     "[data-platform-comments] article{margin:.75rem 0;padding:.75rem;border:1px solid #d8dee4;"
     "border-radius:6px;background:#fff}"
     "[data-platform-comments] article article{margin-left:1.25rem;border-left:3px solid #8c959f}"

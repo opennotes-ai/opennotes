@@ -49,7 +49,7 @@ _COMMENT_BODY_TAGS = frozenset(
     }
 )
 _COMMENT_BODY_ATTRIBUTES = {
-    "a": ["href", "rel", "target"],
+    "a": ["href", "rel"],
 }
 _COMMENT_BODY_PROTOCOLS = ["http", "https", "mailto"]
 
@@ -96,11 +96,8 @@ def _body_html_to_markdown_text(body: str) -> str:
 
 
 def _sanitize_comment_body_html(body: str) -> str:
-    soup = BeautifulSoup(body or "", "html.parser")
-    for unsafe in soup.find_all(["script", "style"]):
-        unsafe.decompose()
     return bleach.clean(
-        str(soup),
+        body or "",
         tags=_COMMENT_BODY_TAGS,
         attributes=_COMMENT_BODY_ATTRIBUTES,
         protocols=_COMMENT_BODY_PROTOCOLS,
@@ -184,7 +181,12 @@ def render_comments_to_html(nodes: Sequence[_CommentLike]) -> str:
             else ""
         )
         body = _sanitize_comment_body_html(node.body or "")
-        replies = "".join(render_article(child) for child in children.get(node.id, []))
+        replies = "".join(
+            f"<li>{render_article(child)}</li>" for child in children.get(node.id, [])
+        )
+        replies_list = (
+            f'<ol class="opennotes-comment__replies">{replies}</ol>' if replies else ""
+        )
         return (
             f'<article id="cmt-{comment_id}" data-utterance-id="{comment_id}" '
             'class="opennotes-comment">'
@@ -194,7 +196,7 @@ def render_comments_to_html(nodes: Sequence[_CommentLike]) -> str:
             f"{parent_ref}"
             "</header>"
             f'<div class="opennotes-comment__body">{body}</div>'
-            f"{replies}"
+            f"{replies_list}"
             "</article>"
         )
 

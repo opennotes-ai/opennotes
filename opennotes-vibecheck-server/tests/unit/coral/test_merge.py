@@ -93,6 +93,25 @@ def test_merge_preserves_html_when_markdown_only_comments() -> None:
     assert merged.html is None
 
 
+def test_merge_preserves_article_html_when_comment_nodes_are_empty() -> None:
+    scrape = ScrapeResult(
+        markdown="Article body.",
+        html="<article>Article body.</article>",
+    )
+    comments = _comments(
+        "## Comments\n- [abc] author=bob created_at=2026-04-29T12:00:00+00:00 parent=null\n  Nice.",
+        nodes=[],
+    )
+
+    merged = merge_coral_into_scrape(scrape, comments)
+
+    assert (
+        merged.markdown
+        == "Article body.\n\n## Comments\n- [abc] author=bob created_at=2026-04-29T12:00:00+00:00 parent=null\n  Nice."
+    )
+    assert merged.html == "<article>Article body.</article>"
+
+
 def test_merge_keeps_html_when_markdown_is_none() -> None:
     """If markdown is missing, output is just the comment block."""
     scrape = ScrapeResult(markdown=None, html="<article>Comments-only page?</article>")

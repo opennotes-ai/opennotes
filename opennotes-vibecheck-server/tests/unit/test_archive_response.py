@@ -25,7 +25,9 @@ def test_archive_response_headers() -> None:
 
     assert response.headers["content-type"] == "text/html; charset=utf-8"
     assert response.headers["cache-control"] == "no-store, private"
-    assert "default-src 'none'" in response.headers["content-security-policy"]
+    content_security_policy = response.headers["content-security-policy"]
+    assert "default-src 'none'" in content_security_policy
+    assert "style-src 'unsafe-inline' https:" in content_security_policy
 
 
 def test_archive_response_stylesheet_is_wrapped_in_style_tag() -> None:
