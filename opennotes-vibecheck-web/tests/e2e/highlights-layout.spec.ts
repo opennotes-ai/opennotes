@@ -313,11 +313,11 @@ test("AC3 no-weather: HeadlineSummary+HighlightsCard in single column, no empty 
 
   await expect(page.getByTestId("headline-summary-chrome")).toBeVisible({ timeout: 10_000 });
   await expect(page.getByTestId("highlights-card")).toBeVisible({ timeout: 10_000 });
-  await expect(page.getByTestId("weather-report")).not.toBeVisible();
+  await expect(page.getByTestId("weather-report")).not.toBeAttached();
 
   const leadIn = page.getByTestId("headline-lead-in");
-  const leadInClass = await leadIn.getAttribute("class") ?? "";
-  expect(leadInClass).not.toMatch(/lg:grid-cols-\[fit-content/);
+  const leadInBB = await leadIn.boundingBox();
+  expect(leadInBB!.width).toBeCloseTo(1440, -1);
 
   const screenshotPath = testInfo.outputPath("ac3-no-weather-single-col.png");
   await page.screenshot({ path: screenshotPath, fullPage: false });
@@ -336,7 +336,7 @@ test("AC4 empty highlights: right column collapses to HeadlineSummary only", asy
 
   await expect(page.getByTestId("headline-summary-chrome")).toBeVisible({ timeout: 10_000 });
   await expect(page.getByTestId("weather-report")).toBeVisible({ timeout: 10_000 });
-  await expect(page.getByTestId("highlights-card")).not.toBeVisible();
+  await expect(page.getByTestId("highlights-card")).not.toBeAttached();
 
   const screenshotPath = testInfo.outputPath("ac4-empty-highlights-no-card.png");
   await page.screenshot({ path: screenshotPath, fullPage: false });

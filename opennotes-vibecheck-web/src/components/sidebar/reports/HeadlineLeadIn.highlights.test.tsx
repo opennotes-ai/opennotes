@@ -1,6 +1,6 @@
 import { vi, describe, it, expect, afterEach } from "vitest";
 import { cleanup, render, screen } from "@solidjs/testing-library";
-import type { JSX } from "solid-js";
+import { createEffect, type JSX } from "solid-js";
 import type { components } from "~/lib/generated-types";
 import type { ResolvedHeadline } from "~/lib/headline-fallback";
 import {
@@ -72,7 +72,9 @@ function makeItem(id: string, title: string): HighlightItem {
 
 function WithHighlights(props: { items: HighlightItem[]; children: JSX.Element }): JSX.Element {
   const store = useHighlights();
-  if (props.items.length > 0) store.push("test", props.items);
+  createEffect(() => {
+    if (props.items.length > 0) store.push("test", props.items);
+  });
   return <>{props.children}</>;
 }
 
