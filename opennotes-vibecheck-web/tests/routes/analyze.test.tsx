@@ -58,7 +58,10 @@ type GetArchiveProbeMock = (
   jobId?: string,
 ) => Promise<MockArchiveProbeResult>;
 
-type GetScreenshotMock = (url: string) => Promise<string | null>;
+type GetScreenshotMock = (
+  url: string,
+  jobId?: string,
+) => Promise<string | null>;
 type GetJobStateMock = (jobId: string) => Promise<JobState | null>;
 
 const LONG_SERVER_HEADLINE_TEXT =
@@ -141,7 +144,8 @@ vi.mock("~/routes/analyze.data", () => {
     key: "vibecheck-archive-probe",
   });
   const getScreenshotStub = Object.assign(getScreenshotMock, {
-    keyFor: (url: string) => `vibecheck-screenshot:${url}`,
+    keyFor: (url: string, jobId?: string) =>
+      `vibecheck-screenshot:${url}:${jobId ?? ""}`,
     key: "vibecheck-screenshot",
   });
   const getJobStateStub = Object.assign(getJobStateMock, {
@@ -1445,6 +1449,17 @@ describe("AnalyzePage archiveProbeState re-probe loop (TASK-1483.15.01)", () => 
       revalidateMock.mock.invocationCallOrder[1],
     ).toBeLessThan(getArchiveProbeMock.mock.invocationCallOrder[1]);
     expect(getScreenshotMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("passes the current job id to the screenshot probe for non-PDF jobs", async () => {
+    renderAt(`/analyze?job=job-extension-shot&url=${encodeURIComponent(url)}`);
+    await flushMicrotasks();
+
+    expect(getScreenshotMock).toHaveBeenCalledTimes(1);
+    expect(getScreenshotMock).toHaveBeenCalledWith(
+      url,
+      "job-extension-shot",
+    );
   });
 
   it("does not probe archive availability on pending-error failure pages", async () => {
