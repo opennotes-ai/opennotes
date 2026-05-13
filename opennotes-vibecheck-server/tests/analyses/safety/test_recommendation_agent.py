@@ -10,9 +10,11 @@ from src.analyses.safety import recommendation_agent
 from src.analyses.safety._schemas import (
     Divergence,
     HarmfulContentMatch,
+    ImageModerationMatch,
     SafetyLevel,
     SafetyRecommendation,
     VideoModerationMatch,
+    VideoSegmentFinding,
     WebRiskFinding,
 )
 from src.analyses.safety.recommendation_agent import (
@@ -22,6 +24,7 @@ from src.analyses.safety.recommendation_agent import (
     _sanitize_top_signals,
     run_safety_recommendation,
 )
+from src.analyses.safety.vision_client import FLAG_THRESHOLD
 from src.config import Settings
 
 
@@ -33,6 +36,41 @@ class StubAgent:
     async def run(self, user_prompt: str):
         self.prompts.append(user_prompt)
         return SimpleNamespace(output=self.output)
+
+
+def _text_match(utterance_id: str, *, max_score: float = 0.62) -> HarmfulContentMatch:
+    return HarmfulContentMatch(
+        utterance_id=utterance_id,
+        utterance_text=f"comment {utterance_id}",
+        max_score=max_score,
+        categories={"harassment": True},
+        scores={"harassment": max_score},
+        flagged_categories=["harassment"],
+        source="gcp",
+    )
+
+
+def _text_discount(utterance_id: str) -> Divergence:
+    return Divergence(
+        direction="discounted",
+        signal_source="Text moderation",
+        signal_detail=f"Text moderation signal {utterance_id}",
+        reason="Context shows the signal is a false positive.",
+    )
+
+
+def _caution_recommendation(
+    *,
+    divergences: list[Divergence] | None = None,
+    top_signals: list[str] | None = None,
+) -> SafetyRecommendation:
+    return SafetyRecommendation(
+        level=SafetyLevel.CAUTION,
+        rationale="Raw text moderation signals require review.",
+        top_signals=top_signals or ["Low-severity text moderation signals"],
+        divergences=divergences or [],
+        unavailable_inputs=[],
+    )
 
 
 def test_recommendation_prompt_defines_all_four_levels() -> None:
@@ -57,6 +95,15 @@ def test_recommendation_prompt_has_divergence_hierarchy_and_sanitization_rules()
     assert "If you discount a raw signal" in RECOMMENDATION_SYSTEM_PROMPT
     assert "If you escalate beyond the weakest raw signals" in RECOMMENDATION_SYSTEM_PROMPT
     assert "directly supported by inputs" in RECOMMENDATION_SYSTEM_PROMPT
+
+
+def test_recommendation_prompt_downgrades_all_discounted_complete_coverage() -> None:
+    assert "at least one remains supported after context review" in RECOMMENDATION_SYSTEM_PROMPT
+    assert "every raw signal is judged a false positive" in RECOMMENDATION_SYSTEM_PROMPT
+    assert "return `safe`" in RECOMMENDATION_SYSTEM_PROMPT
+    assert "Exactly one supported low-severity signal can be `mild`" in RECOMMENDATION_SYSTEM_PROMPT
+    assert "Multiple supported low-severity signals can still justify `caution`" in RECOMMENDATION_SYSTEM_PROMPT
+    assert "MUST emit a corresponding direction=\"discounted\" divergence" in RECOMMENDATION_SYSTEM_PROMPT
 
 
 async def test_run_safety_recommendation_logfire_attrs_are_set_for_inputs_and_sanitization(
@@ -525,6 +572,341 @@ async def test_run_safety_recommendation_preserves_empty_divergences(monkeypatch
     result = await run_safety_recommendation(inputs, settings=Settings())
 
     assert result.divergences == []
+
+
+async def test_guardrail_downgrades_all_discounted_text_signals_to_safe(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    agent = StubAgent(
+        _caution_recommendation(
+            divergences=[_text_discount("u1"), _text_discount("u2")]
+        )
+    )
+    monkeypatch.setattr(
+        "src.analyses.safety.recommendation_agent.build_agent",
+        lambda *args, **kwargs: agent,
+    )
+
+    result = await run_safety_recommendation(
+        SafetyRecommendationInputs(
+            harmful_content_matches=[_text_match("u1"), _text_match("u2")],
+            web_risk_findings=[],
+            image_moderation_matches=[],
+            video_moderation_matches=[],
+            unavailable_inputs=[],
+        ),
+        settings=Settings(),
+    )
+
+    assert result.level == SafetyLevel.SAFE
+    assert result.top_signals == []
+    assert result.divergences == [_text_discount("u1"), _text_discount("u2")]
+
+
+async def test_guardrail_downgrades_one_remaining_text_signal_to_mild(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    agent = StubAgent(_caution_recommendation(divergences=[_text_discount("u1")]))
+    monkeypatch.setattr(
+        "src.analyses.safety.recommendation_agent.build_agent",
+        lambda *args, **kwargs: agent,
+    )
+
+    result = await run_safety_recommendation(
+        SafetyRecommendationInputs(
+            harmful_content_matches=[_text_match("u1"), _text_match("u2")],
+            web_risk_findings=[],
+            image_moderation_matches=[],
+            video_moderation_matches=[],
+            unavailable_inputs=[],
+        ),
+        settings=Settings(),
+    )
+
+    assert result.level == SafetyLevel.MILD
+    assert result.top_signals == ["Low-severity text moderation signals"]
+
+
+async def test_guardrail_keeps_caution_when_multiple_text_signals_remain(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    agent = StubAgent(_caution_recommendation(divergences=[_text_discount("u1")]))
+    monkeypatch.setattr(
+        "src.analyses.safety.recommendation_agent.build_agent",
+        lambda *args, **kwargs: agent,
+    )
+
+    result = await run_safety_recommendation(
+        SafetyRecommendationInputs(
+            harmful_content_matches=[
+                _text_match("u1"),
+                _text_match("u2"),
+                _text_match("u3"),
+            ],
+            web_risk_findings=[],
+            image_moderation_matches=[],
+            video_moderation_matches=[],
+            unavailable_inputs=[],
+        ),
+        settings=Settings(),
+    )
+
+    assert result.level == SafetyLevel.CAUTION
+
+
+@pytest.mark.parametrize(
+    "inputs",
+    [
+        SafetyRecommendationInputs(
+            harmful_content_matches=[_text_match("u1")],
+            web_risk_findings=[],
+            image_moderation_matches=[],
+            video_moderation_matches=[],
+            unavailable_inputs=["web_risk"],
+        ),
+        SafetyRecommendationInputs(
+            harmful_content_matches=[_text_match("u1")],
+            web_risk_findings=[
+                WebRiskFinding(
+                    url="https://download.example/tool",
+                    threat_types=["POTENTIALLY_HARMFUL_APPLICATION"],
+                )
+            ],
+            image_moderation_matches=[],
+            video_moderation_matches=[],
+            unavailable_inputs=[],
+        ),
+        SafetyRecommendationInputs(
+            harmful_content_matches=[_text_match("u1")],
+            web_risk_findings=[],
+            image_moderation_matches=[],
+            video_moderation_matches=[
+                VideoModerationMatch(
+                    utterance_id="u-video",
+                    video_url="https://cdn.example/video.mp4",
+                    segment_findings=[
+                        VideoSegmentFinding(
+                            start_offset_ms=0,
+                            end_offset_ms=1000,
+                            adult=0.0,
+                            violence=0.8,
+                            racy=0.0,
+                            medical=0.0,
+                            spoof=0.0,
+                            flagged=True,
+                            max_likelihood=0.8,
+                        )
+                    ],
+                    flagged=True,
+                    max_likelihood=0.8,
+                )
+            ],
+            unavailable_inputs=[],
+        ),
+        SafetyRecommendationInputs(
+            harmful_content_matches=[_text_match("u1")],
+            web_risk_findings=[],
+            image_moderation_matches=[],
+            video_moderation_matches=[
+                VideoModerationMatch(
+                    utterance_id="u-video",
+                    video_url="https://cdn.example/video.mp4",
+                    segment_findings=[],
+                    flagged=True,
+                    max_likelihood=1.0,
+                )
+            ],
+            unavailable_inputs=[],
+        ),
+        SafetyRecommendationInputs(
+            harmful_content_matches=[_text_match("u1")],
+            web_risk_findings=[],
+            image_moderation_matches=[
+                ImageModerationMatch(
+                    utterance_id="u-image",
+                    image_url="https://cdn.example/image.jpg",
+                    adult=0.0,
+                    violence=FLAG_THRESHOLD,
+                    racy=0.0,
+                    medical=0.0,
+                    spoof=0.0,
+                    flagged=False,
+                    max_likelihood=FLAG_THRESHOLD,
+                )
+            ],
+            video_moderation_matches=[],
+            unavailable_inputs=[],
+        ),
+    ],
+)
+async def test_guardrail_preserves_caution_when_downgrade_blockers_remain(
+    inputs: SafetyRecommendationInputs,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    agent = StubAgent(_caution_recommendation(divergences=[_text_discount("u1")]))
+    monkeypatch.setattr(
+        "src.analyses.safety.recommendation_agent.build_agent",
+        lambda *args, **kwargs: agent,
+    )
+
+    result = await run_safety_recommendation(inputs, settings=Settings())
+
+    assert result.level == SafetyLevel.CAUTION
+
+
+async def test_guardrail_preserves_caution_when_divergence_escalates(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    agent = StubAgent(
+        _caution_recommendation(
+            divergences=[
+                _text_discount("u1"),
+                Divergence(
+                    direction="escalated",
+                    signal_source="Combined signals",
+                    signal_detail="Weak signals align",
+                    reason="Combined signals warrant review.",
+                ),
+            ]
+        )
+    )
+    monkeypatch.setattr(
+        "src.analyses.safety.recommendation_agent.build_agent",
+        lambda *args, **kwargs: agent,
+    )
+
+    result = await run_safety_recommendation(
+        SafetyRecommendationInputs(
+            harmful_content_matches=[_text_match("u1")],
+            web_risk_findings=[],
+            image_moderation_matches=[],
+            video_moderation_matches=[],
+            unavailable_inputs=[],
+        ),
+        settings=Settings(),
+    )
+
+    assert result.level == SafetyLevel.CAUTION
+
+
+async def test_guardrail_uses_narrow_missing_divergence_false_positive_fallback(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Reproduces job 63105466-4d10-4972-a8b9-1926fe1def4a: the model explained
+    # that every raw text signal was a false positive but emitted no divergences.
+    agent = StubAgent(
+        _caution_recommendation(
+            top_signals=[
+                "Text moderation flags triggered, but judged to be false positives."
+            ]
+        )
+    )
+    monkeypatch.setattr(
+        "src.analyses.safety.recommendation_agent.build_agent",
+        lambda *args, **kwargs: agent,
+    )
+
+    result = await run_safety_recommendation(
+        SafetyRecommendationInputs(
+            harmful_content_matches=[_text_match("u1"), _text_match("u2")],
+            web_risk_findings=[],
+            image_moderation_matches=[],
+            video_moderation_matches=[],
+            unavailable_inputs=[],
+        ),
+        settings=Settings(),
+    )
+
+    assert result.level == SafetyLevel.SAFE
+
+
+async def test_guardrail_can_be_disabled(monkeypatch: pytest.MonkeyPatch) -> None:
+    agent = StubAgent(_caution_recommendation(divergences=[_text_discount("u1")]))
+    monkeypatch.setattr(
+        "src.analyses.safety.recommendation_agent.build_agent",
+        lambda *args, **kwargs: agent,
+    )
+
+    result = await run_safety_recommendation(
+        SafetyRecommendationInputs(
+            harmful_content_matches=[_text_match("u1")],
+            web_risk_findings=[],
+            image_moderation_matches=[],
+            video_moderation_matches=[],
+            unavailable_inputs=[],
+        ),
+        settings=Settings(VIBECHECK_SAFETY_RECOMMENDATION_GUARDRAIL_ENABLED=False),
+    )
+
+    assert result.level == SafetyLevel.CAUTION
+
+
+async def test_guardrail_logs_downgrade(monkeypatch: pytest.MonkeyPatch) -> None:
+    warnings: list[tuple[str, dict[str, Any]]] = []
+    agent = StubAgent(_caution_recommendation(divergences=[_text_discount("u1")]))
+
+    def _warn(message: str, **kwargs: Any) -> None:
+        warnings.append((message, kwargs))
+
+    monkeypatch.setattr(recommendation_agent.logfire, "warning", _warn)
+    monkeypatch.setattr(
+        "src.analyses.safety.recommendation_agent.build_agent",
+        lambda *args, **kwargs: agent,
+    )
+
+    await run_safety_recommendation(
+        SafetyRecommendationInputs(
+            harmful_content_matches=[_text_match("u1")],
+            web_risk_findings=[],
+            image_moderation_matches=[],
+            video_moderation_matches=[],
+            unavailable_inputs=[],
+        ),
+        settings=Settings(),
+    )
+
+    assert warnings == [
+        (
+            "safety_recommendation_guardrail_downgrade",
+            {
+                "original_level": "caution",
+                "downgraded_level": "safe",
+                "reason": "all_text_signals_discounted",
+            },
+        )
+    ]
+
+
+@pytest.mark.parametrize(
+    "level",
+    [SafetyLevel.SAFE, SafetyLevel.MILD, SafetyLevel.UNSAFE],
+)
+async def test_guardrail_only_changes_caution(level, monkeypatch: pytest.MonkeyPatch) -> None:
+    agent = StubAgent(
+        SafetyRecommendation(
+            level=level,
+            rationale="Model returned a non-caution level.",
+            top_signals=["Model signal"],
+            divergences=[_text_discount("u1")],
+        )
+    )
+    monkeypatch.setattr(
+        "src.analyses.safety.recommendation_agent.build_agent",
+        lambda *args, **kwargs: agent,
+    )
+
+    result = await run_safety_recommendation(
+        SafetyRecommendationInputs(
+            harmful_content_matches=[_text_match("u1")],
+            web_risk_findings=[],
+            image_moderation_matches=[],
+            video_moderation_matches=[],
+            unavailable_inputs=[],
+        ),
+        settings=Settings(),
+    )
+
+    assert result.level == level
 
 
 async def test_multiple_low_severity_flags_do_not_return_mild(monkeypatch):

@@ -19,6 +19,7 @@ from src.analyses.safety._schemas import (
     VideoModerationMatch,
     WebRiskFinding,
 )
+from src.analyses.safety.vision_client import FLAG_THRESHOLD
 from src.config import Settings
 from src.services.gemini_agent import build_agent, run_vertex_agent_with_retry
 from src.services.vertex_limiter import vertex_slot
@@ -33,14 +34,24 @@ Web Risk, image SafeSearch, and video SafeSearch. Return one SafetyRecommendatio
 
 Use these levels:
 - safe: all available inputs are clear.
-- mild: one verified low-severity signal, such as a topic-match-only moderation
-  hit, one isolated Web Risk POTENTIALLY_HARMFUL_APPLICATION finding, or one
-  low image/video max_likelihood score from verified frames.
+- mild: exactly one supported low-severity signal after context review, such as
+  a topic-match-only moderation hit, one isolated Web Risk
+  POTENTIALLY_HARMFUL_APPLICATION finding, or one low image/video
+  max_likelihood score from verified frames.
 - caution: partial data, unavailable inputs, inconclusive sampling, or multiple
-  low-severity signals together.
+  low-severity signals together when at least one remains supported after
+  context review.
 - unsafe: verified high-risk signals such as Web Risk MALWARE, multiple
   high-score text flags, or high image/video max_likelihood scores from real
   frames.
+
+Tier-selection rules:
+- If every raw signal is judged a false positive or otherwise discounted by
+  context, unavailable_inputs is empty, and there are no Web Risk findings or
+  verified visual findings, return `safe`.
+- Multiple low-severity signals together requires at least one remains supported after context review.
+- Exactly one supported low-severity signal can be `mild`.
+- Multiple supported low-severity signals can still justify `caution`.
 
 Important caveats:
 - top_signals entries must be short human-readable noun phrases or sentences;
@@ -71,7 +82,7 @@ Important caveats:
   signals in inputs:
   - If your final level and rationale align with the raw signals, set
     `divergences: []`.
-  - If you discount a raw signal due to context, add direction="discounted" and include:
+  - If you discount a raw signal due to context, you MUST emit a corresponding direction="discounted" divergence and include:
     - discounted sensitive-topic signal when the text is a sensitive topic that is
       the page subject or intended educational framing (ex: public-health article),
     - discounted external Web Risk finding when surrounding context makes the
@@ -183,21 +194,17 @@ _SOURCE_LABELS: dict[str, str] = {
     "combined signals": "Combined signals",
 }
 _KNOWN_SOURCE_LABELS = frozenset(_SOURCE_LABELS.values())
-_SANITIZED_DIV_TARGET = {
-    "source": {
-        "fallback": "Safety signal",
-        "provider_to_label": {"openai": "Text moderation", "gcp": "Text moderation"},
-    },
-    "detail": {
-        "fallback": "Signal detail adjusted",
-    },
-    "reason": {
-        "discounted_fallback": "Signal context discounted",
-        "escalated_fallback": "Signal context escalated",
-    },
+_SANITIZED_SOURCE_FALLBACK = "Safety signal"
+_SANITIZED_DETAIL_FALLBACK = "Signal detail adjusted"
+_SANITIZED_REASON_FALLBACKS = {
+    "discounted": "Signal context discounted",
+    "escalated": "Signal context escalated",
 }
 _SANITIZER_PLACEHOLDER = "Verified concern requires review"
 _PLACEHOLDER_LEVELS = {SafetyLevel.CAUTION, SafetyLevel.UNSAFE}
+_FALSE_POSITIVE_TOP_SIGNAL = (
+    "Text moderation flags triggered, but judged to be false positives."
+)
 
 
 def _is_raw_signal(value: str) -> bool:
@@ -248,17 +255,17 @@ def _normalize_divergence_field(value: str, fallback: str) -> tuple[str, bool]:
 def _sanitize_divergence_source(value: str) -> tuple[str, bool]:
     raw = value.strip()
     if not raw:
-        return _SANITIZED_DIV_TARGET["source"]["fallback"], True
+        return _SANITIZED_SOURCE_FALLBACK, True
 
     mapped = _SOURCE_LABELS.get(raw.lower())
     if mapped is not None:
         return mapped, False
 
     if "/" in raw:
-        return _SANITIZED_DIV_TARGET["source"]["fallback"], True
+        return _SANITIZED_SOURCE_FALLBACK, True
 
     if _contains_raw_divergence_token(raw):
-        return _SANITIZED_DIV_TARGET["source"]["fallback"], True
+        return _SANITIZED_SOURCE_FALLBACK, True
 
     return re.sub(r"\s+", " ", raw), False
 
@@ -272,12 +279,12 @@ def _sanitize_divergence(divergence: Divergence) -> tuple[Divergence, int]:
 
     detail, detail_replaced = _normalize_divergence_field(
         divergence.signal_detail,
-        _SANITIZED_DIV_TARGET["detail"]["fallback"],
+        _SANITIZED_DETAIL_FALLBACK,
     )
     if detail_replaced:
         replacement_count += 1
 
-    fallback = _SANITIZED_DIV_TARGET["reason"][f"{divergence.direction}_fallback"]
+    fallback = _SANITIZED_REASON_FALLBACKS[divergence.direction]
     reason_text = re.sub(
         r"^\s*(?:escalated|discounted)\s*:?\s*",
         "",
@@ -404,6 +411,95 @@ def _sanitize_top_signals(recommendation: SafetyRecommendation) -> SafetyRecomme
     return recommendation.model_copy(update={"top_signals": kept})
 
 
+def _has_guardrail_downgrade_blocker(
+    recommendation: SafetyRecommendation,
+    inputs: SafetyRecommendationInputs,
+) -> bool:
+    if inputs.unavailable_inputs:
+        return True
+    if inputs.web_risk_findings:
+        return True
+    if any(divergence.direction == "escalated" for divergence in recommendation.divergences):
+        return True
+    if any(match.segment_findings for match in inputs.video_moderation_matches):
+        return True
+    if any(
+        match.max_likelihood == 1.0 and not match.segment_findings
+        for match in inputs.video_moderation_matches
+    ):
+        return True
+    return any(
+        match.flagged or match.max_likelihood >= FLAG_THRESHOLD
+        for match in inputs.image_moderation_matches
+    )
+
+
+def _discounted_text_signal_count(
+    recommendation: SafetyRecommendation,
+    inputs: SafetyRecommendationInputs,
+) -> int:
+    if not inputs.harmful_content_matches:
+        return 0
+    if (
+        not recommendation.divergences
+        and recommendation.top_signals == [_FALSE_POSITIVE_TOP_SIGNAL]
+    ):
+        return len(inputs.harmful_content_matches)
+
+    discounted = sum(
+        1
+        for divergence in recommendation.divergences
+        if divergence.direction == "discounted"
+        and divergence.signal_source == "Text moderation"
+    )
+    return min(discounted, len(inputs.harmful_content_matches))
+
+
+def _apply_recommendation_guardrail(
+    recommendation: SafetyRecommendation,
+    inputs: SafetyRecommendationInputs,
+) -> tuple[SafetyRecommendation, str | None]:
+    if recommendation.level is not SafetyLevel.CAUTION:
+        return recommendation, None
+    if not inputs.harmful_content_matches:
+        return recommendation, None
+    if _has_guardrail_downgrade_blocker(recommendation, inputs):
+        return recommendation, None
+
+    discounted_text_signals = _discounted_text_signal_count(recommendation, inputs)
+    supported_text_signals = len(inputs.harmful_content_matches) - discounted_text_signals
+
+    if supported_text_signals == 0:
+        return (
+            recommendation.model_copy(
+                update={
+                    "level": SafetyLevel.SAFE,
+                    "rationale": (
+                        "Raw safety signals were discounted by context; no supported "
+                        "safety concern remains."
+                    ),
+                    "top_signals": [],
+                }
+            ),
+            "all_text_signals_discounted",
+        )
+
+    if supported_text_signals == 1:
+        return (
+            recommendation.model_copy(
+                update={
+                    "level": SafetyLevel.MILD,
+                    "rationale": (
+                        "One low-severity safety signal remains after context review."
+                    ),
+                }
+            ),
+            "one_supported_low_severity_signal",
+        )
+
+    return recommendation, None
+
+
 async def run_safety_recommendation(
     inputs: SafetyRecommendationInputs,
     settings: Settings,
@@ -438,6 +534,20 @@ async def run_safety_recommendation(
             _direction_distribution,
             _source_distribution,
         ) = _sanitize_divergences(sanitized_output)
+
+        if settings.VIBECHECK_SAFETY_RECOMMENDATION_GUARDRAIL_ENABLED:
+            original_level = sanitized_output.level
+            sanitized_output, guardrail_reason = _apply_recommendation_guardrail(
+                sanitized_output,
+                inputs,
+            )
+            if guardrail_reason is not None:
+                logfire.warning(
+                    "safety_recommendation_guardrail_downgrade",
+                    original_level=original_level.value,
+                    downgraded_level=sanitized_output.level.value,
+                    reason=guardrail_reason,
+                )
 
         span.set_attributes(
             safety_recommendation_divergence_attrs(

@@ -818,6 +818,32 @@ def test_all_inputs_clear_true_for_coverage_only_mild():
     assert all_inputs_clear(inputs) is True
 
 
+def test_all_inputs_clear_true_for_downgraded_safe_recommendation():
+    inputs = replace(
+        _empty_inputs(),
+        safety_recommendation=SafetyRecommendation(
+            level=SafetyLevel.SAFE,
+            rationale="Raw safety signals were discounted by context.",
+            top_signals=[],
+        ),
+        unavailable_inputs=[],
+    )
+    assert all_inputs_clear(inputs) is True
+
+
+def test_all_inputs_clear_false_for_downgraded_mild_recommendation():
+    inputs = replace(
+        _empty_inputs(),
+        safety_recommendation=SafetyRecommendation(
+            level=SafetyLevel.MILD,
+            rationale="One low-severity safety signal remains after context review.",
+            top_signals=["Low-severity text moderation signals"],
+        ),
+        unavailable_inputs=[],
+    )
+    assert all_inputs_clear(inputs) is False
+
+
 def test_all_inputs_clear_false_for_caution_with_top_signals():
     # CAUTION with concrete top_signals must always count as a signal,
     # regardless of unavailable_inputs.

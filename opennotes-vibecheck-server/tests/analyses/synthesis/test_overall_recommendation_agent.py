@@ -150,6 +150,33 @@ async def test_safety_level_sets_base_verdict(level, expected, monkeypatch) -> N
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
+    "level",
+    [
+        SafetyLevel.SAFE,
+        SafetyLevel.MILD,
+    ],
+)
+async def test_downgraded_safety_levels_keep_overall_verdict_pass(
+    level: SafetyLevel,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    result, _ = await _evaluate_with_rule_candidate(
+        _inputs(
+            safety_recommendation=_recommendation(
+                level,
+                rationale="All raw text moderation signals were context-discounted.",
+            )
+        ),
+        monkeypatch,
+    )
+
+    assert result is not None
+    assert result.verdict == "pass"
+    assert result.reason == "All raw text moderation signals were context-discounted"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
     "risk_level",
     [RiskLevel.HEATED, RiskLevel.HOSTILE, RiskLevel.DANGEROUS],
 )
