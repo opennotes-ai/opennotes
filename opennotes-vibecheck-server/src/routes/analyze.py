@@ -32,13 +32,14 @@ or rolls back, so nothing leaks on error.
 from __future__ import annotations
 
 import asyncio
+import hmac
 import json
 import time
 from typing import Any
 from uuid import UUID
 
 import httpx
-from fastapi import APIRouter, Request, Response
+from fastapi import APIRouter, Header, HTTPException, Request, Response
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, ValidationError
 from slowapi import Limiter
@@ -63,7 +64,7 @@ from src.config import Settings, get_settings
 from src.jobs import submit as submit_job
 from src.jobs.enqueue import enqueue_job, enqueue_section_retry
 from src.jobs.recent_cache import _AsyncTTLCache, cache_key, is_cache_disabled
-from src.jobs.recent_query import ScreenshotSigner, list_recent
+from src.jobs.recent_query import ScreenshotSigner, list_recent, list_recent_unfiltered
 from src.jobs.sidebar_payload import assemble_sidebar_payload
 from src.jobs.slots import retry_claim_slot
 from src.jobs.submit_schemas import SubmitResult
@@ -1095,6 +1096,37 @@ async def list_recent_analyses(request: Request) -> list[RecentAnalysis]:
 
     cache = _get_recent_cache(settings)
     return await cache.get_or_load(cache_key(limit), _load)
+
+
+@router.get(
+    "/internal/analyses/recent-unfiltered",
+    response_model=list[RecentAnalysis],
+    summary="Internal unfiltered recent analyses gallery",
+)
+async def list_recent_analyses_unfiltered(
+    request: Request,
+    limit: int = 25,
+    x_internal_prefix: str | None = Header(default=None, alias="X-Internal-Prefix"),
+) -> list[RecentAnalysis]:
+    """Private read path for the prefix-guarded internal gallery."""
+    settings = get_settings()
+    expected_prefix = settings.VIBECHECK_PRIVATE_PATH_PREFIX
+    supplied_prefix = x_internal_prefix or ""
+    if not expected_prefix or not hmac.compare_digest(
+        supplied_prefix, expected_prefix
+    ):
+        raise HTTPException(status_code=404)
+
+    clamped_limit = max(1, min(limit, settings.VIBECHECK_INTERNAL_GALLERY_MAX_LIMIT))
+    pool = _get_db_pool(request)
+    signer: ScreenshotSigner = (
+        getattr(request.app.state, "recent_signer", None) or _build_recent_signer()
+    )
+    return await list_recent_unfiltered(
+        pool,
+        limit=clamped_limit,
+        signer=signer,
+    )
 
 
 __all__ = [

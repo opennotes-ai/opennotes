@@ -124,6 +124,10 @@ class Settings(BaseSettings):
     # the 3-column gallery layout (2 rows x 3) while leaving headroom to
     # dial up via env var without a deploy.
     VIBECHECK_RECENT_ANALYSES_LIMIT: int = 6
+    # Server-side shared prefix for the private internal gallery route. Empty
+    # disables the route with 404s.
+    VIBECHECK_PRIVATE_PATH_PREFIX: str = ""
+    VIBECHECK_INTERNAL_GALLERY_MAX_LIMIT: int = 200
     # Cache TTL must be < 900s (signed screenshot URLs are valid for 15min;
     # cached signed URLs cannot outlive their signature). Field validator
     # asserts < 900 — picking the cache-stores-signed-urls path keeps
