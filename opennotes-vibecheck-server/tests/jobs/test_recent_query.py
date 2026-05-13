@@ -49,6 +49,8 @@ ALTER TABLE vibecheck_jobs
 CREATE TABLE vibecheck_scrapes (
     scrape_id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     normalized_url TEXT NOT NULL,
+    job_id UUID,
+    attempt_id UUID,
     tier TEXT NOT NULL DEFAULT 'scrape'
         CHECK (tier IN ('scrape', 'interact', 'browser_html')),
     url TEXT NOT NULL,
@@ -60,9 +62,14 @@ CREATE TABLE vibecheck_scrapes (
     html TEXT,
     screenshot_storage_key TEXT,
     scraped_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    expires_at TIMESTAMPTZ NOT NULL DEFAULT (now() + INTERVAL '72 hours'),
-    UNIQUE (normalized_url, tier)
+    expires_at TIMESTAMPTZ NOT NULL DEFAULT (now() + INTERVAL '72 hours')
 );
+CREATE UNIQUE INDEX vibecheck_scrapes_normalized_url_tier_idx
+    ON vibecheck_scrapes (normalized_url, tier)
+    WHERE tier IN ('scrape', 'interact');
+CREATE UNIQUE INDEX vibecheck_scrapes_browser_html_job_attempt_idx
+    ON vibecheck_scrapes (job_id, attempt_id)
+    WHERE tier = 'browser_html';
 """
 )
 
@@ -382,6 +389,8 @@ async def _seed_scrape(
     page_title: str | None = "Example Title",
     storage_key: str | None = "abc/screenshot.png",
     expires_in: timedelta = timedelta(hours=72),
+    job_id: UUID | None = None,
+    attempt_id: UUID | None = None,
 ) -> None:
     expires_at = datetime.now(UTC) + expires_in
     async with pool.acquire() as conn:
@@ -389,14 +398,24 @@ async def _seed_scrape(
             """
             INSERT INTO vibecheck_scrapes
                 (normalized_url, tier, url, host, page_title,
-                 screenshot_storage_key, expires_at)
-            VALUES ($1, $2, $1, 'example.com', $3, $4, $5)
+                 screenshot_storage_key, expires_at, job_id, attempt_id)
+            VALUES ($1, $2, $1, 'example.com', $3, $4, $5, $6, $7)
             """,
             url,
             tier,
             page_title,
             storage_key,
             expires_at,
+            job_id,
+            attempt_id,
+        )
+
+
+async def _fetch_attempt_id(pool: Any, job_id: UUID) -> UUID:
+    async with pool.acquire() as conn:
+        return await conn.fetchval(
+            "SELECT attempt_id FROM vibecheck_jobs WHERE job_id = $1",
+            job_id,
         )
 
 
@@ -1060,3 +1079,156 @@ class TestListRecentUnfiltered:
             clean_job,
             older_duplicate,
         ]
+
+
+class TestListRecentUnfilteredSourceTypes:
+    """TASK-1624.05.01 — internal gallery must surface every source type."""
+
+    async def test_includes_url_pdf_image_pdf_and_browser_html_rows(
+        self, db_pool: Any
+    ) -> None:
+        url_job_url = "https://example.com/url-source"
+        url_job = await _seed_job(
+            db_pool,
+            url=url_job_url,
+            source_type="url",
+            finished_at=datetime.now(UTC) - timedelta(seconds=4),
+        )
+        await _seed_scrape(db_pool, url=url_job_url)
+
+        pdf_job_url = "https://uploads.example/direct.pdf"
+        pdf_job = await _seed_job(
+            db_pool,
+            url=pdf_job_url,
+            source_type="pdf",
+            finished_at=datetime.now(UTC) - timedelta(seconds=3),
+        )
+
+        image_pdf_url = "https://uploads.example/from-images.pdf"
+        image_pdf_job = await _seed_job(
+            db_pool,
+            url=image_pdf_url,
+            source_type="pdf",
+            finished_at=datetime.now(UTC) - timedelta(seconds=2),
+        )
+
+        browser_html_url = "https://news.example/inline-article"
+        browser_html_job = await _seed_job(
+            db_pool,
+            url=browser_html_url,
+            source_type="browser_html",
+            finished_at=datetime.now(UTC) - timedelta(seconds=1),
+        )
+        attempt_id = await _fetch_attempt_id(db_pool, browser_html_job)
+        await _seed_scrape(
+            db_pool,
+            url=browser_html_url,
+            tier="browser_html",
+            storage_key="browser/inline-article.png",
+            job_id=browser_html_job,
+            attempt_id=attempt_id,
+        )
+
+        result = await list_recent_unfiltered(
+            db_pool, limit=10, signer=_StubSigner()
+        )
+
+        by_id = {row.job_id: row for row in result}
+        assert set(by_id) == {url_job, pdf_job, image_pdf_job, browser_html_job}
+        assert by_id[url_job].source_type == "url"
+        assert by_id[pdf_job].source_type == "pdf"
+        assert by_id[image_pdf_job].source_type == "pdf"
+        assert by_id[browser_html_job].source_type == "browser_html"
+
+    async def test_pdf_without_screenshot_appears_with_null_screenshot_url(
+        self, db_pool: Any
+    ) -> None:
+        pdf_url = "https://uploads.example/no-screenshot.pdf"
+        pdf_job = await _seed_job(
+            db_pool,
+            url=pdf_url,
+            source_type="pdf",
+        )
+
+        result = await list_recent_unfiltered(
+            db_pool, limit=5, signer=_StubSigner()
+        )
+
+        assert len(result) == 1
+        assert result[0].job_id == pdf_job
+        assert result[0].source_type == "pdf"
+        assert result[0].screenshot_url is None
+
+    async def test_browser_html_uses_job_scoped_scrape_row(
+        self, db_pool: Any
+    ) -> None:
+        # The browser_html scrape row is keyed by (job_id, attempt_id), NOT
+        # by normalized_url. A normalized-url-only lookup (like the public
+        # gallery uses) would miss this row even though it exists.
+        url = "https://news.example/browser-html-job"
+        job_id = await _seed_job(
+            db_pool,
+            url=url,
+            source_type="browser_html",
+        )
+        attempt_id = await _fetch_attempt_id(db_pool, job_id)
+        await _seed_scrape(
+            db_pool,
+            url=url,
+            tier="browser_html",
+            storage_key="browser/job-scoped.png",
+            job_id=job_id,
+            attempt_id=attempt_id,
+        )
+
+        result = await list_recent_unfiltered(
+            db_pool, limit=5, signer=_StubSigner()
+        )
+
+        assert len(result) == 1
+        assert result[0].job_id == job_id
+        assert result[0].source_type == "browser_html"
+        assert result[0].screenshot_url is not None
+        assert "browser/job-scoped.png" in result[0].screenshot_url
+
+    async def test_public_list_recent_still_excludes_non_url_source_types(
+        self, db_pool: Any
+    ) -> None:
+        # Regression guard: AC3 says the public query must remain URL-only.
+        url_job_url = "https://example.com/public-url"
+        url_job = await _seed_job(
+            db_pool,
+            url=url_job_url,
+            source_type="url",
+            finished_at=datetime.now(UTC) - timedelta(seconds=3),
+        )
+        await _seed_scrape(db_pool, url=url_job_url)
+
+        pdf_job_url = "https://uploads.example/public-pdf.pdf"
+        await _seed_job(
+            db_pool,
+            url=pdf_job_url,
+            source_type="pdf",
+            finished_at=datetime.now(UTC) - timedelta(seconds=2),
+        )
+
+        browser_html_url = "https://news.example/public-browser-html"
+        bh_job = await _seed_job(
+            db_pool,
+            url=browser_html_url,
+            source_type="browser_html",
+            finished_at=datetime.now(UTC) - timedelta(seconds=1),
+        )
+        bh_attempt = await _fetch_attempt_id(db_pool, bh_job)
+        await _seed_scrape(
+            db_pool,
+            url=browser_html_url,
+            tier="browser_html",
+            storage_key="browser/public-skip.png",
+            job_id=bh_job,
+            attempt_id=bh_attempt,
+        )
+
+        public = await list_recent(db_pool, limit=10, signer=_StubSigner())
+
+        assert [row.job_id for row in public] == [url_job]

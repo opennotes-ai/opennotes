@@ -50,6 +50,7 @@ from src.analyses.schemas import (
     JobState,
     JobStatus,
     PageKind,
+    InternalRecentAnalysis,
     RecentAnalysis,
     SectionSlot,
     SectionSlug,
@@ -1100,14 +1101,14 @@ async def list_recent_analyses(request: Request) -> list[RecentAnalysis]:
 
 @router.get(
     "/internal/analyses/recent-unfiltered",
-    response_model=list[RecentAnalysis],
+    response_model=list[InternalRecentAnalysis],
     summary="Internal unfiltered recent analyses gallery",
 )
 async def list_recent_analyses_unfiltered(
     request: Request,
     limit: int = 25,
     x_internal_prefix: str | None = Header(default=None, alias="X-Internal-Prefix"),
-) -> list[RecentAnalysis]:
+) -> list[InternalRecentAnalysis]:
     """Private read path for the prefix-guarded internal gallery."""
     settings = get_settings()
     expected_prefix = settings.VIBECHECK_PRIVATE_PATH_PREFIX

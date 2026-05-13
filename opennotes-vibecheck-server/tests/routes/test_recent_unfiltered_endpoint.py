@@ -27,6 +27,8 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 CREATE TABLE vibecheck_scrapes (
     scrape_id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     normalized_url TEXT NOT NULL,
+    job_id UUID,
+    attempt_id UUID,
     url TEXT NOT NULL,
     host TEXT NOT NULL,
     page_kind TEXT NOT NULL DEFAULT 'other',
@@ -40,7 +42,11 @@ CREATE TABLE vibecheck_scrapes (
     expires_at TIMESTAMPTZ NOT NULL DEFAULT (now() + INTERVAL '72 hours')
 );
 CREATE UNIQUE INDEX vibecheck_scrapes_normalized_url_tier_idx
-    ON vibecheck_scrapes (normalized_url, tier);
+    ON vibecheck_scrapes (normalized_url, tier)
+    WHERE tier IN ('scrape', 'interact');
+CREATE UNIQUE INDEX vibecheck_scrapes_browser_html_job_attempt_idx
+    ON vibecheck_scrapes (job_id, attempt_id)
+    WHERE tier = 'browser_html';
 """
 )
 
@@ -186,6 +192,86 @@ class TestInternalRecentUnfilteredAuth:
         )
 
         assert resp.status_code == 404
+
+
+class TestInternalRecentUnfilteredShape:
+    """TASK-1624.05.01 — endpoint surfaces source_type and nullable fields."""
+
+    async def test_pdf_job_serializes_with_null_screenshot_and_source_type(
+        self, client: httpx.AsyncClient, db_pool: Any
+    ) -> None:
+        async with db_pool.acquire() as conn:
+            await conn.execute(
+                """
+                INSERT INTO vibecheck_jobs
+                    (url, normalized_url, host, status, source_type,
+                     sections, finished_at, preview_description, page_title)
+                VALUES ($1, $1, 'uploads.example', 'done', 'pdf',
+                        $2::jsonb, $3, NULL, 'Direct PDF')
+                """,
+                "https://uploads.example/internal-pdf.pdf",
+                json.dumps(_sections()),
+                datetime.now(UTC),
+            )
+
+        resp = await client.get(
+            "/api/internal/analyses/recent-unfiltered",
+            headers={"X-Internal-Prefix": "internal-prefix-for-tests"},
+        )
+
+        assert resp.status_code == 200
+        body = resp.json()
+        assert len(body) == 1
+        row = body[0]
+        assert row["source_type"] == "pdf"
+        assert row["screenshot_url"] is None
+        assert row["preview_description"] is None
+        assert row["source_url"] == "https://uploads.example/internal-pdf.pdf"
+
+    async def test_browser_html_job_serializes_with_job_scoped_screenshot(
+        self, client: httpx.AsyncClient, db_pool: Any
+    ) -> None:
+        url = "https://news.example/browser-html-endpoint"
+        async with db_pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """
+                INSERT INTO vibecheck_jobs
+                    (url, normalized_url, host, status, source_type,
+                     sections, finished_at, preview_description, page_title)
+                VALUES ($1, $1, 'news.example', 'done', 'browser_html',
+                        $2::jsonb, $3, 'inline preview', 'Inline')
+                RETURNING job_id, attempt_id
+                """,
+                url,
+                json.dumps(_sections()),
+                datetime.now(UTC),
+            )
+            await conn.execute(
+                """
+                INSERT INTO vibecheck_scrapes
+                    (normalized_url, job_id, attempt_id, tier, url, host,
+                     page_title, screenshot_storage_key, expires_at)
+                VALUES ($1, $2, $3, 'browser_html', $1, 'news.example',
+                        'Inline', 'browser/endpoint.png',
+                        now() + INTERVAL '72 hours')
+                """,
+                url,
+                row["job_id"],
+                row["attempt_id"],
+            )
+
+        resp = await client.get(
+            "/api/internal/analyses/recent-unfiltered",
+            headers={"X-Internal-Prefix": "internal-prefix-for-tests"},
+        )
+
+        assert resp.status_code == 200
+        body = resp.json()
+        assert len(body) == 1
+        item = body[0]
+        assert item["source_type"] == "browser_html"
+        assert item["screenshot_url"] is not None
+        assert "browser/endpoint.png" in item["screenshot_url"]
 
 
 class TestInternalRecentUnfilteredLimit:
