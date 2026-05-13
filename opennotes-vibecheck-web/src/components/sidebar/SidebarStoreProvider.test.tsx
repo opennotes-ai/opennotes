@@ -276,7 +276,11 @@ describe("SidebarStoreProvider", () => {
     expect(capturedStore!.isOpen("Sentiments")).toBe(false);
   });
 
-  it("user-collapsed Sentiments survives a subsequent collapseAllByDefault false→true transition", async () => {
+  it("collapseAllByDefault false→true skips STICKY_OPEN_LABELS so Sentiments stays open", async () => {
+    // Load-bearing for the `if (STICKY_OPEN_LABELS.has(label)) continue` skip
+    // in SidebarStoreProvider's collapse-all effect: Sentiments starts open
+    // (default) and must STILL be open after the transition fires. Removing
+    // the skip would call setOpen("Sentiments", false) and fail this test.
     const [collapse, setCollapse] = createSignal(false);
     let capturedStore: ReturnType<typeof useSidebarStore> | undefined;
 
@@ -291,7 +295,35 @@ describe("SidebarStoreProvider", () => {
       </SidebarStoreProvider>
     ));
 
-    // User manually collapses Sentiments BEFORE the transition fires.
+    expect(capturedStore!.isOpen("Sentiments")).toBe(true);
+
+    setCollapse(true);
+
+    await waitFor(() => {
+      expect(capturedStore!.isOpen("Safety")).toBe(false);
+    });
+    expect(capturedStore!.isOpen("Sentiments")).toBe(true);
+  });
+
+  it("user-collapsed Sentiments stays closed across a subsequent collapseAllByDefault false→true transition", async () => {
+    // Distinct from the load-bearing test above: this pins user intent — once
+    // the user explicitly collapses Sentiments, the auto-collapse effect must
+    // not re-open it (the STICKY-skip means the effect doesn't touch sticky
+    // labels in either direction).
+    const [collapse, setCollapse] = createSignal(false);
+    let capturedStore: ReturnType<typeof useSidebarStore> | undefined;
+
+    const TestConsumer = () => {
+      capturedStore = useSidebarStore();
+      return null;
+    };
+
+    render(() => (
+      <SidebarStoreProvider opts={{ collapseAllByDefault: collapse() }}>
+        <TestConsumer />
+      </SidebarStoreProvider>
+    ));
+
     capturedStore!.setOpen("Sentiments", false);
     expect(capturedStore!.isOpen("Sentiments")).toBe(false);
 
@@ -300,8 +332,6 @@ describe("SidebarStoreProvider", () => {
     await waitFor(() => {
       expect(capturedStore!.isOpen("Safety")).toBe(false);
     });
-    // Sentiments stays closed — the false→true effect skips STICKY labels and
-    // therefore must not re-open them either.
     expect(capturedStore!.isOpen("Sentiments")).toBe(false);
   });
 

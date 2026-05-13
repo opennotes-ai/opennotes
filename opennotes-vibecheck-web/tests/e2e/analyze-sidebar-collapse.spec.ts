@@ -105,9 +105,9 @@ function sectionData(slug: string): Record<string, unknown> {
     return {
       sentiment_stats: {
         per_utterance: [
-          { id: "u-1", valence: 0.6, label: "positive" },
-          { id: "u-2", valence: -0.4, label: "negative" },
-          { id: "u-3", valence: 0.0, label: "neutral" },
+          { utterance_id: "u-1", valence: 0.6, label: "positive" },
+          { utterance_id: "u-2", valence: -0.4, label: "negative" },
+          { utterance_id: "u-3", valence: 0.0, label: "neutral" },
         ],
         positive_pct: 33,
         negative_pct: 33,
