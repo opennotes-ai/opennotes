@@ -18,11 +18,11 @@ export interface SidebarStore {
   setHighlightedGroup: (label: SectionGroupLabel | null) => void;
 }
 
-export function createSidebarStore(opts?: { defaultOpen?: boolean }): SidebarStore {
-  const defaultOpen = opts?.defaultOpen !== false;
+export function createSidebarStore(opts?: { defaultOpen?: () => boolean }): SidebarStore {
+  const defaultOpen = () => opts?.defaultOpen?.() ?? true;
 
   const signals = new Map<SectionGroupLabel, ReturnType<typeof createSignal<boolean>>>(
-    ALL_LABELS.map((label) => [label, createSignal(defaultOpen)]),
+    ALL_LABELS.map((label) => [label, createSignal(defaultOpen())]),
   );
 
   const [highlightedGroup, setHighlightedGroup] = createSignal<SectionGroupLabel | null>(null);
@@ -43,7 +43,7 @@ export function createSidebarStore(opts?: { defaultOpen?: boolean }): SidebarSto
 
   function reset(): void {
     for (const label of ALL_LABELS) {
-      signals.get(label)![1](defaultOpen);
+      signals.get(label)![1](defaultOpen());
     }
   }
 

@@ -13,7 +13,7 @@ export function SidebarStoreProvider(props: {
   children: JSX.Element;
 }) {
   const store = createSidebarStore({
-    defaultOpen: props.opts?.collapseAllByDefault !== true,
+    defaultOpen: () => props.opts?.collapseAllByDefault !== true,
   });
 
   createEffect<string | undefined>((prevJobId) => {
@@ -26,7 +26,7 @@ export function SidebarStoreProvider(props: {
 
   createEffect<boolean | undefined>((prev) => {
     const current = props.opts?.collapseAllByDefault;
-    if (prev !== undefined && current === true && prev !== true) {
+    if (current === true && prev !== true) {
       for (const label of ALL_LABELS) {
         store.setOpen(label, false);
       }
