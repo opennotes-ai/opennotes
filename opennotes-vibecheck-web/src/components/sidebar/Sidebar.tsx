@@ -35,6 +35,7 @@ import {
   EMPTY_TRENDS_OPPOSITIONS_REPORT,
   HighlightsReport,
 } from "./reports";
+import { hasVerifiedVideoFinding } from "./video-moderation";
 
 type HarmfulContentMatch = components["schemas"]["HarmfulContentMatch"];
 type SafetyRecommendation = components["schemas"]["SafetyRecommendation"];
@@ -379,7 +380,7 @@ const SAFETY_COUNTS: Partial<
   safety__video_moderation: (data) => {
     const matches = extractVideoModerationMatches(data);
     return {
-      flagged: matches.filter((match) => match.flagged).length,
+      flagged: matches.filter(hasVerifiedVideoFinding).length,
       total: matches.length,
       kind: "flagged",
     };

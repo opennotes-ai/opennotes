@@ -41,10 +41,12 @@ afterEach(() => {
 });
 
 describe("VideoModerationReport", () => {
-  it("shows a destructive error when flagged with zero segments", () => {
+  it("shows an inconclusive analysis error when flagged with zero segments", () => {
     render(() => (
       <VideoModerationReport
-        matches={[videoMatch({ flagged: true, segment_findings: [] })]}
+        matches={[
+          videoMatch({ flagged: true, max_likelihood: 1, segment_findings: [] }),
+        ]}
       />
     ));
 
@@ -53,7 +55,8 @@ describe("VideoModerationReport", () => {
     ).toBeDefined();
     const el = screen.getByTestId("video-moderation-no-segments-error");
     expect(el.textContent).toContain("Analysis error:");
-    expect(el.textContent).toContain("No video segments returned.");
+    expect(el.textContent).toContain("inconclusive");
+    expect(el.textContent).not.toContain("video was flagged");
   });
 
   it("shows muted fallback text when non-flagged with zero segments", () => {

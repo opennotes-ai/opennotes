@@ -2,16 +2,14 @@ import { For, Show, type JSX } from "solid-js";
 import type { components } from "~/lib/generated-types";
 import { categoryColor, categoryColorClasses } from "~/lib/category-colors";
 import { FeedbackBell } from "../../feedback/FeedbackBell";
+import {
+  hasVerifiedVideoFinding,
+  isInconclusiveVideoMatch,
+  segmentFindings,
+} from "../video-moderation";
 
 type VideoSegmentFinding = components["schemas"]["VideoSegmentFinding"];
 type VideoModerationMatch = components["schemas"]["VideoModerationMatch"];
-type LegacyVideoModerationMatch = Omit<
-  VideoModerationMatch,
-  "segment_findings"
-> & {
-  segment_findings?: VideoSegmentFinding[];
-  frame_findings?: VideoSegmentFinding[];
-};
 
 const SAFESEARCH_FIELDS = [
   "adult",
@@ -48,17 +46,6 @@ function flaggedCategories(frame: VideoSegmentFinding): SafeSearchField[] {
   return SAFESEARCH_FIELDS.filter((field) => frame[field] >= 0.75);
 }
 
-function segmentFindings(match: VideoModerationMatch): VideoSegmentFinding[] {
-  const legacyMatch = match as LegacyVideoModerationMatch;
-  if (Array.isArray(legacyMatch.segment_findings)) {
-    return legacyMatch.segment_findings;
-  }
-  if (Array.isArray(legacyMatch.frame_findings)) {
-    return legacyMatch.frame_findings;
-  }
-  return [];
-}
-
 export default function VideoModerationReport(
   props: VideoModerationReportProps,
 ): JSX.Element {
@@ -81,12 +68,14 @@ export default function VideoModerationReport(
           <For each={matches()}>
             {(match) => {
               const findings = () => segmentFindings(match);
+              const isInconclusive = () => isInconclusiveVideoMatch(match);
+              const hasVerifiedFinding = () => hasVerifiedVideoFinding(match);
               return (
                 <li
                   data-testid="video-moderation-match"
-                  data-flagged={match.flagged ? "true" : "false"}
+                  data-flagged={hasVerifiedFinding() ? "true" : "false"}
                   class={
-                    match.flagged
+                    hasVerifiedFinding()
                       ? "rounded-md border border-destructive/40 bg-background p-3 text-xs"
                       : "rounded-md border border-border bg-background p-3 text-xs"
                   }
@@ -99,13 +88,13 @@ export default function VideoModerationReport(
                   <Show
                     when={findings().length > 0}
                     fallback={
-                      match.flagged ? (
+                      isInconclusive() ? (
                         <div
                           data-testid="video-moderation-no-segments-error"
                           class="mt-2 flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/10 p-2 text-[11px] text-destructive"
                         >
                           <span class="font-medium">Analysis error:</span>
-                          <span>No video segments returned. The video was flagged but the analyzer didn't produce segment-level findings.</span>
+                          <span>Video analysis inconclusive. The analyzer didn't produce segment-level findings.</span>
                         </div>
                       ) : (
                         <p class="mt-2 text-[11px] text-muted-foreground">
