@@ -32,7 +32,6 @@ import Sidebar from "~/components/sidebar/Sidebar";
 import { HeadlineLeadIn } from "~/components/sidebar/reports";
 import { SidebarStoreProvider } from "~/components/sidebar/SidebarStoreProvider";
 import { HighlightsStoreProvider } from "~/components/highlights/HighlightsStoreProvider";
-import { HighlightsCard } from "~/components/highlights/HighlightsCard";
 import { SafetyHighlightsBridge } from "~/components/highlights/SafetyHighlightsBridge";
 import { OverallRecommendationCard } from "~/components/overall/OverallRecommendationCard";
 import type {
@@ -787,7 +786,6 @@ function AnalyzePageContent(props: { initialJobState: JobState | null }) {
                           class="mb-0"
                         />
                       </Show>
-                      <HighlightsCard />
                       <SafetyHighlightsBridge
                         recommendation={sidebarPayload()?.safety?.recommendation ?? null}
                       />
