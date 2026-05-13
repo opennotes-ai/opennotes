@@ -390,8 +390,13 @@ test("AC3: clicking weather-safety-focus collapses the other 3 SectionGroups, Sa
   const factsToggle = page.locator('[data-testid="section-toggle-Facts/claims"]');
   await expect(factsToggle).toHaveAttribute("aria-expanded", "false");
 
-  const opinionsToggle = page.locator('[data-testid="section-toggle-Opinions/sentiments"]');
+  const opinionsToggle = page.locator('[data-testid="section-toggle-Opinions"]');
   await expect(opinionsToggle).toHaveAttribute("aria-expanded", "false");
+
+  // Sentiments is sticky-open and must remain expanded through isolateGroup
+  // (parent TASK-1633 AC #2).
+  const sentimentsToggle = page.locator('[data-testid="section-toggle-Sentiments"]');
+  await expect(sentimentsToggle).toHaveAttribute("aria-expanded", "true");
 });
 
 test("AC4: clicking weather-truth-focus collapses other 3 SectionGroups, Facts/claims stays expanded", async ({
@@ -415,8 +420,13 @@ test("AC4: clicking weather-truth-focus collapses other 3 SectionGroups, Facts/c
   const toneToggle = page.locator('[data-testid="section-toggle-Tone/dynamics"]');
   await expect(toneToggle).toHaveAttribute("aria-expanded", "false");
 
-  const opinionsToggle = page.locator('[data-testid="section-toggle-Opinions/sentiments"]');
+  const opinionsToggle = page.locator('[data-testid="section-toggle-Opinions"]');
   await expect(opinionsToggle).toHaveAttribute("aria-expanded", "false");
+
+  // Sentiments is sticky-open and must remain expanded through isolateGroup
+  // (parent TASK-1633 AC #2).
+  const sentimentsToggle = page.locator('[data-testid="section-toggle-Sentiments"]');
+  await expect(sentimentsToggle).toHaveAttribute("aria-expanded", "true");
 });
 
 test("AC5: reduced-motion passthrough — safety popover open still sets data-highlighted=true and changes computed bg-color", async ({

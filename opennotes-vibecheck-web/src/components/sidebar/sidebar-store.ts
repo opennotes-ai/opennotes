@@ -43,7 +43,8 @@ export function createSidebarStore(opts?: { defaultOpen?: () => boolean }): Side
 
   function isolateGroup(target: SectionGroupLabel): void {
     for (const label of ALL_LABELS) {
-      signals.get(label)![1](label === target);
+      const open = label === target || STICKY_OPEN_LABELS.has(label);
+      signals.get(label)![1](open);
     }
   }
 

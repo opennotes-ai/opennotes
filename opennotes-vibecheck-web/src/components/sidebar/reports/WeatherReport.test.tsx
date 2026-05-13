@@ -1382,9 +1382,10 @@ describe("WeatherReport", () => {
 
       expect(capturedStore!.isOpen("Facts/claims")).toBe(true);
       expect(capturedStore!.isOpen("Safety")).toBe(false);
-      expect(capturedStore!.isOpen("Sentiments")).toBe(false);
       expect(capturedStore!.isOpen("Tone/dynamics")).toBe(false);
       expect(capturedStore!.isOpen("Opinions")).toBe(false);
+      // Sentiments is sticky-open: isolateGroup must preserve it (TASK-1633 AC #2)
+      expect(capturedStore!.isOpen("Sentiments")).toBe(true);
     });
 
     it("clicking Focus button returns focus to the trigger element", async () => {

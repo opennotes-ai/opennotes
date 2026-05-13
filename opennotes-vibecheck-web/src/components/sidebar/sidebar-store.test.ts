@@ -81,12 +81,15 @@ describe("createSidebarStore", () => {
     });
   });
 
-  it("isolateGroup closes all non-target groups and leaves target open", () => {
+  it("isolateGroup closes non-sticky non-target groups, keeps target open, preserves STICKY_OPEN_LABELS", () => {
     createRoot((dispose) => {
       const store = createSidebarStore();
       store.isolateGroup("Safety");
       expect(store.isOpen("Safety")).toBe(true);
-      expect(store.isOpen("Sentiments")).toBe(false);
+      // Sentiments is sticky-open: isolating another group must NOT close it
+      // (parent TASK-1633 AC #2 — Sentiment stays visible when Opinions/other
+      // top-level cards collapse, including via WeatherReport focus actions).
+      expect(store.isOpen("Sentiments")).toBe(true);
       expect(store.isOpen("Tone/dynamics")).toBe(false);
       expect(store.isOpen("Facts/claims")).toBe(false);
       expect(store.isOpen("Opinions")).toBe(false);
@@ -94,15 +97,29 @@ describe("createSidebarStore", () => {
     });
   });
 
-  it("isolateGroup works when target group was previously closed", () => {
+  it("isolateGroup(\"Sentiments\") still closes the other four groups", () => {
+    createRoot((dispose) => {
+      const store = createSidebarStore();
+      store.isolateGroup("Sentiments");
+      expect(store.isOpen("Sentiments")).toBe(true);
+      expect(store.isOpen("Safety")).toBe(false);
+      expect(store.isOpen("Tone/dynamics")).toBe(false);
+      expect(store.isOpen("Facts/claims")).toBe(false);
+      expect(store.isOpen("Opinions")).toBe(false);
+      dispose();
+    });
+  });
+
+  it("isolateGroup works when target group was previously closed (Sentiments still sticky-open)", () => {
     createRoot((dispose) => {
       const store = createSidebarStore({ defaultOpen: () => false });
       store.isolateGroup("Facts/claims");
       expect(store.isOpen("Facts/claims")).toBe(true);
       expect(store.isOpen("Safety")).toBe(false);
-      expect(store.isOpen("Sentiments")).toBe(false);
       expect(store.isOpen("Tone/dynamics")).toBe(false);
       expect(store.isOpen("Opinions")).toBe(false);
+      // Sentiments stays open through isolateGroup (sticky)
+      expect(store.isOpen("Sentiments")).toBe(true);
       dispose();
     });
   });
