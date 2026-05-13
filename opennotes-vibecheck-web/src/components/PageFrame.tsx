@@ -1,4 +1,4 @@
-import { Show, createEffect, createSignal, onCleanup, onMount } from "solid-js";
+import { Show, createEffect, createResource, createSignal, onCleanup, onMount } from "solid-js";
 import { ExternalLink } from "lucide-solid";
 
 export type PreviewMode = "original" | "archived" | "screenshot";
@@ -13,6 +13,7 @@ export interface PageFrameProps {
   blockingHeader?: string | null;
   cspFrameAncestors?: string | null;
   archivedPreviewUrl?: string | null;
+  archivedRenderMode?: "html" | "markdown" | "text" | null;
   screenshotUrl: string | null;
   previewMode: PreviewMode;
   previewModeRequestId?: number;
@@ -104,6 +105,8 @@ export default function PageFrame(props: PageFrameProps) {
   const showScreenshot = () => activePreview() === "screenshot";
   const showDeciding = () => activePreview() === "deciding";
   const showLoading = () => activePreview() === "loading";
+  const isRawMode = () =>
+    props.archivedRenderMode === "markdown" || props.archivedRenderMode === "text";
 
   let timeoutId: ReturnType<typeof setTimeout> | null = null;
   let iframeRef: HTMLIFrameElement | undefined;
@@ -157,7 +160,7 @@ export default function PageFrame(props: PageFrameProps) {
   });
 
   createEffect(() => {
-    if (showArchived() && !archivedLoaded()) {
+    if (showArchived() && !archivedLoaded() && !isRawMode()) {
       const archiveTimeoutId = setTimeout(() => {
         if (!archivedLoaded()) {
           setArchivedFailed(true);
@@ -279,6 +282,34 @@ export default function PageFrame(props: PageFrameProps) {
     setArchivedFailed(true);
   };
 
+  const [rawContent] = createResource(
+    () => (showArchived() && isRawMode() ? props.archivedPreviewUrl : null),
+    async (url) => {
+      if (!url) return null;
+      const textUrl = url.includes("?") ? `${url}&format=text` : `${url}?format=text`;
+      try {
+        const res = await fetch(textUrl);
+        if (!res.ok) {
+          setArchivedFailed(true);
+          return null;
+        }
+        return await res.text();
+      } catch {
+        setArchivedFailed(true);
+        return null;
+      }
+    },
+  );
+
+  function archiveRenderModeLabel(
+    mode: "html" | "markdown" | "text" | null | undefined,
+  ): string | null {
+    if (mode === "html") return "Rendered HTML";
+    if (mode === "markdown") return "Extracted Markdown";
+    if (mode === "text") return "Plain Text";
+    return null;
+  }
+
   return (
     <section
       aria-label="Page preview"
@@ -337,7 +368,7 @@ export default function PageFrame(props: PageFrameProps) {
           data-testid="page-frame-loading"
           role="status"
           aria-live="polite"
-          class="flex min-h-[60vh] flex-1 items-center justify-center p-8 text-center"
+          class="flex min-h-[60vh] flex-1 items-start justify-start pt-6 px-8 text-center"
         >
           <p class="text-sm text-muted-foreground">
             Preparing analysis&hellip;
@@ -347,27 +378,67 @@ export default function PageFrame(props: PageFrameProps) {
 
       <Show when={showArchived()}>
         <div class="relative flex h-full min-h-[60vh] w-full min-w-0 flex-1 flex-col">
-          <iframe
-            data-testid="page-frame-archived-iframe"
-            src={props.archivedPreviewUrl ?? ""}
-            title="Archived page"
-            sandbox="allow-same-origin"
-            referrerpolicy="no-referrer"
-            loading="lazy"
-            ref={archivedIframeRef}
-            onLoad={handleArchivedLoad}
-            onError={handleArchivedError}
-            class="h-full min-h-[60vh] w-full flex-1 border-0 bg-background"
-          />
-          <Show when={!archivedLoaded() && !archivedFailed()}>
-            <div
-              data-testid="page-frame-archived-loading"
-              role="status"
-              aria-live="polite"
-              class="absolute inset-0 flex items-center justify-center bg-background/80 backdrop-blur-sm"
+          <Show when={archiveRenderModeLabel(props.archivedRenderMode)}>
+            {(label) => (
+              <div
+                data-testid="page-frame-archived-mode-banner"
+                class="text-xs text-muted-foreground px-3 py-1 border-b border-border"
+              >
+                {label()}
+              </div>
+            )}
+          </Show>
+          <Show
+            when={isRawMode()}
+            fallback={
+              <>
+                <iframe
+                  data-testid="page-frame-archived-iframe"
+                  src={props.archivedPreviewUrl ?? ""}
+                  title="Archived page"
+                  sandbox="allow-same-origin"
+                  referrerpolicy="no-referrer"
+                  loading="lazy"
+                  ref={archivedIframeRef}
+                  onLoad={handleArchivedLoad}
+                  onError={handleArchivedError}
+                  class="h-full min-h-[60vh] w-full flex-1 border-0 bg-background"
+                />
+                <Show when={!archivedLoaded() && !archivedFailed()}>
+                  <div
+                    data-testid="page-frame-archived-loading"
+                    role="status"
+                    aria-live="polite"
+                    class="absolute inset-0 flex items-center justify-center bg-background/80 backdrop-blur-sm"
+                  >
+                    <p class="text-sm text-muted-foreground">Loading archived version&hellip;</p>
+                  </div>
+                </Show>
+              </>
+            }
+          >
+            <Show
+              when={rawContent() != null}
+              fallback={
+                <div
+                  data-testid={rawContent.loading ? "page-frame-archived-raw-loading" : "page-frame-archived-raw-error"}
+                  role="status"
+                  aria-live="polite"
+                  class="flex flex-1 items-start pt-6 px-8 text-center"
+                >
+                  <p class="text-sm text-muted-foreground">
+                    {rawContent.loading ? <>Loading archived version&hellip;</> : <>Archived content unavailable.</>}
+                  </p>
+                </div>
+              }
             >
-              <p class="text-sm text-muted-foreground">Loading archived version&hellip;</p>
-            </div>
+              <pre
+                data-testid="page-frame-archived-pre"
+                class="overflow-auto whitespace-pre-wrap break-words font-mono text-sm bg-muted/40 p-4 min-h-[60vh] flex-1 w-full m-0 rounded-none border-0"
+              >
+                {rawContent() ?? ""}
+              </pre>
+            </Show>
           </Show>
         </div>
       </Show>
@@ -388,7 +459,7 @@ export default function PageFrame(props: PageFrameProps) {
           data-testid="page-frame-deciding"
           role="status"
           aria-live="polite"
-          class="flex flex-1 flex-col items-center justify-center gap-3 p-8 text-center"
+          class="flex flex-1 flex-col items-center gap-3 pt-6 px-8 text-center"
         >
           <p class="text-sm text-foreground">
             This page prevents being loaded in a frame. Please select Archived
@@ -413,7 +484,7 @@ export default function PageFrame(props: PageFrameProps) {
       <Show when={activePreview() === "unavailable"}>
         <div
           data-testid="page-frame-unavailable"
-          class="flex flex-1 items-center justify-center p-8 text-center"
+          class="flex flex-1 items-start justify-start pt-6 px-8 text-center"
         >
           <p class="text-sm text-muted-foreground">
             Preview unavailable for this page.

@@ -866,6 +866,8 @@ export interface components {
              * @default false
              */
             has_archive: boolean;
+            /** Archive Render Mode */
+            archive_render_mode?: ("html" | "markdown" | "text") | null;
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -2251,6 +2253,7 @@ export interface operations {
                 job_id?: string | null;
                 generate?: boolean;
                 source_type?: string;
+                format?: string | null;
             };
             header?: never;
             path?: never;

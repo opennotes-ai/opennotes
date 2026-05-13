@@ -601,6 +601,22 @@
               "default": "url",
               "title": "Source Type"
             }
+          },
+          {
+            "name": "format",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Format"
+            }
           }
         ],
         "responses": {
@@ -1797,6 +1813,22 @@
             "type": "boolean",
             "title": "Has Archive",
             "default": false
+          },
+          "archive_render_mode": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "html",
+                  "markdown",
+                  "text"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Archive Render Mode"
           }
         },
         "type": "object",

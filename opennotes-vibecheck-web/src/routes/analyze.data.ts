@@ -12,6 +12,7 @@ interface FrameCompatResponse {
   blocking_header: string | null;
   csp_frame_ancestors?: string | null;
   has_archive?: boolean;
+  archive_render_mode?: "html" | "markdown" | "text" | null;
 }
 
 interface ScreenshotResponse {
@@ -28,6 +29,7 @@ export interface FrameCompatResult {
   cspFrameAncestors: string | null;
   screenshotUrl: string | null;
   archivedPreviewUrl: string | null;
+  archivedRenderMode: "html" | "markdown" | "text" | null;
 }
 
 export type FrameCompatQueryResult =
@@ -42,6 +44,7 @@ export type ArchiveProbeResult =
       can_iframe: boolean;
       blocking_header: string | null;
       csp_frame_ancestors: string | null;
+      archive_render_mode: "html" | "markdown" | "text" | null;
     }
   | { ok: false; kind: "transient_error" | "invalid_url" };
 
@@ -86,7 +89,7 @@ async function fetchArchiveProbe(
     if (!isFrameCompatResponse(data)) {
       return { ok: false, kind: "transient_error" };
     }
-    const frameProbe = data;
+    const frameProbe = data as FrameCompatResponse;
     const hasArchive = Boolean(frameProbe.has_archive);
     const archiveParams = new URLSearchParams({ url: targetUrl });
     if (jobId) archiveParams.set("job_id", jobId);
@@ -99,6 +102,7 @@ async function fetchArchiveProbe(
       can_iframe: frameProbe.can_iframe,
       blocking_header: frameProbe.blocking_header,
       csp_frame_ancestors: frameProbe.csp_frame_ancestors ?? null,
+      archive_render_mode: frameProbe.archive_render_mode ?? null,
     };
   } catch (err: unknown) {
     console.warn("vibecheck frame-compat probe failed:", err);
@@ -185,6 +189,7 @@ const getFrameCompatQuery = query(
             blocking_header: null,
             csp_frame_ancestors: null,
             archived_preview_url: null,
+            archive_render_mode: null,
           };
     return {
       ok: true,
@@ -194,6 +199,7 @@ const getFrameCompatQuery = query(
         cspFrameAncestors: frameProbe.csp_frame_ancestors,
         screenshotUrl,
         archivedPreviewUrl: frameProbe.archived_preview_url,
+        archivedRenderMode: frameProbe.archive_render_mode,
       },
     };
   },

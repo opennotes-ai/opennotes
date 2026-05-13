@@ -655,6 +655,7 @@ describe("getFrameCompat", () => {
         screenshotUrl: "https://cdn.example.com/shot.png",
         archivedPreviewUrl:
           "/api/archive-preview?url=https%3A%2F%2Fnews.example.com%2Fa%3Fx%3D1&job_id=11111111-1111-1111-1111-111111111111",
+        archivedRenderMode: null,
       },
     });
     expect(clientGetMock).toHaveBeenCalledWith("/api/screenshot", {
@@ -735,6 +736,63 @@ describe("getFrameCompat", () => {
     expect(result).toEqual({ ok: false, message: "invalid url" });
     expect(clientGetMock).not.toHaveBeenCalled();
   });
+
+  it("maps archive_render_mode from backend into archivedRenderMode", async () => {
+    clientGetMock.mockImplementation(async (path: string) => {
+      if (path === "/api/frame-compat") {
+        return {
+          data: {
+            can_iframe: false,
+            blocking_header: "x-frame-options: DENY",
+            csp_frame_ancestors: null,
+            has_archive: true,
+            archive_render_mode: "markdown",
+          },
+          error: null,
+        };
+      }
+      if (path === "/api/screenshot") {
+        return { data: { screenshot_url: null }, error: null };
+      }
+      throw new Error(`unexpected path ${path}`);
+    });
+
+    const { getFrameCompat } = await import("./analyze.data");
+    const result = await getFrameCompat("https://news.example.com/article");
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.frameCompat.archivedRenderMode).toBe("markdown");
+    }
+  });
+
+  it("maps null archive_render_mode when field is absent from backend response", async () => {
+    clientGetMock.mockImplementation(async (path: string) => {
+      if (path === "/api/frame-compat") {
+        return {
+          data: {
+            can_iframe: true,
+            blocking_header: null,
+            csp_frame_ancestors: null,
+            has_archive: false,
+          },
+          error: null,
+        };
+      }
+      if (path === "/api/screenshot") {
+        return { data: { screenshot_url: null }, error: null };
+      }
+      throw new Error(`unexpected path ${path}`);
+    });
+
+    const { getFrameCompat } = await import("./analyze.data");
+    const result = await getFrameCompat("https://news.example.com/no-archive");
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.frameCompat.archivedRenderMode).toBeNull();
+    }
+  });
 });
 
 describe("getArchiveProbe and getScreenshot split queries", () => {
@@ -775,6 +833,7 @@ describe("getArchiveProbe and getScreenshot split queries", () => {
       can_iframe: false,
       blocking_header: "x-frame-options: DENY",
       csp_frame_ancestors: null,
+      archive_render_mode: null,
     });
     expect(clientGetMock).toHaveBeenCalledTimes(1);
     expect(clientGetMock).toHaveBeenCalledWith("/api/frame-compat", {
@@ -861,6 +920,7 @@ describe("getArchiveProbe and getScreenshot split queries", () => {
       can_iframe: true,
       blocking_header: null,
       csp_frame_ancestors: null,
+      archive_render_mode: null,
     });
   });
 
