@@ -105,6 +105,8 @@ export default function PageFrame(props: PageFrameProps) {
   const showScreenshot = () => activePreview() === "screenshot";
   const showDeciding = () => activePreview() === "deciding";
   const showLoading = () => activePreview() === "loading";
+  const isRawMode = () =>
+    props.archivedRenderMode === "markdown" || props.archivedRenderMode === "text";
 
   let timeoutId: ReturnType<typeof setTimeout> | null = null;
   let iframeRef: HTMLIFrameElement | undefined;
@@ -158,7 +160,7 @@ export default function PageFrame(props: PageFrameProps) {
   });
 
   createEffect(() => {
-    if (showArchived() && !archivedLoaded()) {
+    if (showArchived() && !archivedLoaded() && !isRawMode()) {
       const archiveTimeoutId = setTimeout(() => {
         if (!archivedLoaded()) {
           setArchivedFailed(true);
@@ -279,9 +281,6 @@ export default function PageFrame(props: PageFrameProps) {
   const handleArchivedError = () => {
     setArchivedFailed(true);
   };
-
-  const isRawMode = () =>
-    props.archivedRenderMode === "markdown" || props.archivedRenderMode === "text";
 
   const [rawContent] = createResource(
     () => (showArchived() && isRawMode() ? props.archivedPreviewUrl : null),
@@ -415,15 +414,17 @@ export default function PageFrame(props: PageFrameProps) {
             }
           >
             <Show
-              when={rawContent() !== undefined && rawContent() !== null}
+              when={rawContent() != null}
               fallback={
                 <div
-                  data-testid="page-frame-archived-raw-loading"
+                  data-testid={rawContent.loading ? "page-frame-archived-raw-loading" : "page-frame-archived-raw-error"}
                   role="status"
                   aria-live="polite"
                   class="flex flex-1 items-start pt-6 px-8 text-center"
                 >
-                  <p class="text-sm text-muted-foreground">Loading archived version&hellip;</p>
+                  <p class="text-sm text-muted-foreground">
+                    {rawContent.loading ? <>Loading archived version&hellip;</> : <>Archived content unavailable.</>}
+                  </p>
                 </div>
               }
             >
