@@ -8,6 +8,7 @@ import pytest
 from src.config import Settings
 from src.services import embeddings
 from src.services.embeddings import VERTEX_EMBEDDING_MAX_BATCH, embed_texts
+from src.services.vertex_limiter import vertex_slot
 
 
 @pytest.fixture(autouse=True)
@@ -65,6 +66,28 @@ class _RecordingEmbedder:
         return _FakeEmbeddingResult(embeddings=[[float(int(t))] for t in texts])
 
 
+class _FairnessEmbedder:
+    def __init__(self, competing_entered: asyncio.Event) -> None:
+        self.call_sizes: list[int] = []
+        self.first_chunk_started = asyncio.Event()
+        self.release_first_chunk = asyncio.Event()
+        self.competing_entered = competing_entered
+        self.competing_entered_before_second_chunk = False
+
+    async def embed_documents(self, texts: list[str]) -> _FakeEmbeddingResult:
+        self.call_sizes.append(len(texts))
+        if len(self.call_sizes) == 1:
+            self.first_chunk_started.set()
+            await self.release_first_chunk.wait()
+        elif len(self.call_sizes) == 2:
+            self.competing_entered_before_second_chunk = self.competing_entered.is_set()
+
+        offset = len(self.call_sizes) * 1000
+        return _FakeEmbeddingResult(
+            embeddings=[[float(offset + index)] for index, _text in enumerate(texts)]
+        )
+
+
 class _ExplodingEmbedder:
     async def embed_documents(self, texts: list[str]) -> _FakeEmbeddingResult:
         raise AssertionError("embedder should not be called for empty input")
@@ -103,6 +126,37 @@ async def test_embed_texts_chunks_over_limit(monkeypatch: pytest.MonkeyPatch) ->
     assert embedder.call_sizes == [250, 11]
     assert len(result) == 261
     assert result == [[float(i)] for i in range(261)]
+
+
+async def test_embed_texts_releases_vertex_slot_between_chunks(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = Settings(VERTEX_MAX_CONCURRENCY=1)
+    competing_attempted = asyncio.Event()
+    competing_entered = asyncio.Event()
+    embedder = _FairnessEmbedder(competing_entered)
+    monkeypatch.setattr(embeddings, "get_embedder", lambda _settings: embedder)
+
+    async def competing_vertex_call() -> None:
+        competing_attempted.set()
+        async with vertex_slot(settings):
+            competing_entered.set()
+
+    embedding_task = asyncio.create_task(
+        embed_texts([str(i) for i in range(1000)], settings)
+    )
+    await embedder.first_chunk_started.wait()
+
+    competing_task = asyncio.create_task(competing_vertex_call())
+    await competing_attempted.wait()
+
+    embedder.release_first_chunk.set()
+    vectors = await embedding_task
+    await competing_task
+
+    assert embedder.call_sizes == [250, 250, 250, 250]
+    assert len(vectors) == 1000
+    assert embedder.competing_entered_before_second_chunk
 
 
 async def test_embed_texts_preserves_order_across_three_chunks(

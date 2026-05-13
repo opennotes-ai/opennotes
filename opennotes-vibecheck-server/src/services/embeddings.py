@@ -34,16 +34,17 @@ async def embed_texts(texts: list[str], settings: Settings) -> list[list[float]]
     """Convenience: embed a batch of texts, return vectors in input order.
 
     Empty input -> empty list; does not call the API. Inputs larger than
-    VERTEX_EMBEDDING_MAX_BATCH are split into successive sub-batches inside a
-    single vertex_slot acquisition; results are concatenated in input order.
+    VERTEX_EMBEDDING_MAX_BATCH are split into successive sub-batches, with each
+    sub-batch acquiring its own vertex_slot so other Vertex callers can
+    interleave between chunks; results are concatenated in input order.
     """
     if not texts:
         return []
     embedder = get_embedder(settings)
     out: list[list[float]] = []
-    async with vertex_slot(settings):
-        for start in range(0, len(texts), VERTEX_EMBEDDING_MAX_BATCH):
-            chunk = texts[start : start + VERTEX_EMBEDDING_MAX_BATCH]
+    for start in range(0, len(texts), VERTEX_EMBEDDING_MAX_BATCH):
+        chunk = texts[start : start + VERTEX_EMBEDDING_MAX_BATCH]
+        async with vertex_slot(settings):
             result = await embedder.embed_documents(chunk)
-            out.extend(list(v) for v in result.embeddings)
+        out.extend(list(v) for v in result.embeddings)
     return out
