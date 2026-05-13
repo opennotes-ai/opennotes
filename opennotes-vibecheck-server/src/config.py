@@ -1,5 +1,6 @@
 from functools import lru_cache
 from typing import Literal
+from urllib.parse import urlparse
 
 from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -14,6 +15,14 @@ class Settings(BaseSettings):
     VERTEXAI_EMBEDDING_MODEL: str = "google-vertex:gemini-embedding-001"
     # Conservative global cap for Vertex/Gemini calls.
     VERTEX_MAX_CONCURRENCY: int = 4
+    # TASK-1483.16.08: max number of vibecheck-server instances expected to
+    # process jobs concurrently in a region. The fallback per-instance cap is
+    # computed from VERTEX_MAX_CONCURRENCY divided by VIBECHECK_MAX_INSTANCES,
+    # with a floor of one.
+    # When max_instances is above the global Vertex cap the floor-to-one rule keeps
+    # fallback bounded while still allowing any work to proceed. TASK-1483.16.08.17
+    # wires this through deploy-time environment configuration.
+    VIBECHECK_MAX_INSTANCES: int = 1
     VERTEX_LEASE_TTL_MS: int = 300_000
     VERTEX_LEASE_ACQUIRE_TIMEOUT_MS: int = 30_000
     VERTEX_LEASE_RETRY_MIN_MS: int = 25
@@ -182,6 +191,7 @@ class Settings(BaseSettings):
         "VERTEX_LEASE_RETRY_MIN_MS",
         "VERTEX_LEASE_RETRY_MAX_MS",
         "VIBECHECK_LIMITER_REDIS_MAX_CONNECTIONS",
+        "VIBECHECK_MAX_INSTANCES",
     )
     @classmethod
     def _positive_vertex_limiter_numbers(cls, value: int) -> int:
@@ -225,8 +235,18 @@ class Settings(BaseSettings):
 
         if not self.VIBECHECK_LIMITER_REDIS_URL:
             raise ValueError("VIBECHECK_LIMITER_REDIS_URL is required in production")
-        if not self.VIBECHECK_LIMITER_REDIS_URL.startswith("rediss://"):
+        parsed = urlparse(self.VIBECHECK_LIMITER_REDIS_URL)
+
+        if parsed.scheme != "rediss":
             raise ValueError("VIBECHECK_LIMITER_REDIS_URL must use rediss:// in production")
+        if parsed.password is None:
+            raise ValueError(
+                "VIBECHECK_LIMITER_REDIS_URL must include a Redis AUTH password in production"
+            )
+        if parsed.password == "":
+            raise ValueError(
+                "VIBECHECK_LIMITER_REDIS_URL password cannot be empty in production"
+            )
         if not self.VIBECHECK_LIMITER_REDIS_CA_CERT_PATH:
             raise ValueError("VIBECHECK_LIMITER_REDIS_CA_CERT_PATH is required in production")
         return self
