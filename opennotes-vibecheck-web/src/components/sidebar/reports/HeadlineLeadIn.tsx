@@ -3,6 +3,8 @@ import { Card } from "@opennotes/ui/components/ui/card";
 import { Skeleton } from "@opennotes/ui/components/ui/skeleton";
 import type { components } from "~/lib/generated-types";
 import type { ResolvedHeadline } from "~/lib/headline-fallback";
+import { HighlightsCard } from "~/components/highlights/HighlightsCard";
+import { tryUseHighlights } from "~/components/highlights/HighlightsStoreProvider";
 import HeadlineSummaryReport from "./HeadlineSummaryReport";
 import WeatherReport from "./WeatherReport";
 
@@ -38,6 +40,9 @@ function HeadlineSummarySkeleton(): JSX.Element {
 }
 
 export default function HeadlineLeadIn(props: HeadlineLeadInProps): JSX.Element {
+  const highlightsStore = tryUseHighlights();
+  const hasHighlights = () => (highlightsStore?.items().length ?? 0) > 0;
+
   const weatherSlotVisible = () =>
     props.weatherReport !== null || props.showWeatherSkeleton === true;
   const hasHeadline = () =>
@@ -66,19 +71,24 @@ export default function HeadlineLeadIn(props: HeadlineLeadInProps): JSX.Element 
         />
       </Show>
       <Show when={hasHeadline()}>
-        <Show
-          when={props.headline}
-          fallback={<HeadlineSummarySkeleton />}
-        >
-          {(headline) => (
-            <Card
-              data-testid="headline-summary-chrome"
-              class="relative rounded-md border border-border/50 bg-card p-3 pb-8 pr-8"
-            >
-              <HeadlineSummaryReport headline={headline()} />
-            </Card>
-          )}
-        </Show>
+        <div class="flex min-w-0 flex-col gap-3">
+          <Show
+            when={props.headline}
+            fallback={<HeadlineSummarySkeleton />}
+          >
+            {(headline) => (
+              <Card
+                data-testid="headline-summary-chrome"
+                class="relative rounded-md border border-border/50 bg-card p-3 pb-8 pr-8"
+              >
+                <HeadlineSummaryReport headline={headline()} />
+              </Card>
+            )}
+          </Show>
+          <Show when={hasHighlights()}>
+            <HighlightsCard />
+          </Show>
+        </div>
       </Show>
     </section>
   );

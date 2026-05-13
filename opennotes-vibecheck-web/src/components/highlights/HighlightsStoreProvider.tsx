@@ -20,3 +20,7 @@ export function useHighlights(): HighlightsStore {
   }
   return store;
 }
+
+export function tryUseHighlights(): HighlightsStore | null {
+  return useContext(HighlightsStoreContext);
+}
