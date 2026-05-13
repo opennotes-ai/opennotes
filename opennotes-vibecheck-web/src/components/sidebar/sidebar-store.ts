@@ -10,7 +10,9 @@ export const ALL_LABELS = [
 
 export type SectionGroupLabel = (typeof ALL_LABELS)[number];
 
-export const STICKY_OPEN_LABELS = new Set<SectionGroupLabel>(["Sentiments"]);
+export const STICKY_OPEN_LABELS: ReadonlySet<SectionGroupLabel> = Object.freeze(
+  new Set<SectionGroupLabel>(["Sentiments"]),
+);
 
 export interface SidebarStore {
   isOpen: (label: SectionGroupLabel) => boolean;

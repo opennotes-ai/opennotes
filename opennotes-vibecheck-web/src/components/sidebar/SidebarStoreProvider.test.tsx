@@ -275,4 +275,61 @@ describe("SidebarStoreProvider", () => {
     capturedStore!.setOpen("Sentiments", false);
     expect(capturedStore!.isOpen("Sentiments")).toBe(false);
   });
+
+  it("user-collapsed Sentiments survives a subsequent collapseAllByDefault false→true transition", async () => {
+    const [collapse, setCollapse] = createSignal(false);
+    let capturedStore: ReturnType<typeof useSidebarStore> | undefined;
+
+    const TestConsumer = () => {
+      capturedStore = useSidebarStore();
+      return null;
+    };
+
+    render(() => (
+      <SidebarStoreProvider opts={{ collapseAllByDefault: collapse() }}>
+        <TestConsumer />
+      </SidebarStoreProvider>
+    ));
+
+    // User manually collapses Sentiments BEFORE the transition fires.
+    capturedStore!.setOpen("Sentiments", false);
+    expect(capturedStore!.isOpen("Sentiments")).toBe(false);
+
+    setCollapse(true);
+
+    await waitFor(() => {
+      expect(capturedStore!.isOpen("Safety")).toBe(false);
+    });
+    // Sentiments stays closed — the false→true effect skips STICKY labels and
+    // therefore must not re-open them either.
+    expect(capturedStore!.isOpen("Sentiments")).toBe(false);
+  });
+
+  it("reset() on jobId change re-opens Sentiments even if the user had collapsed it (sticky reset wins)", async () => {
+    // Policy: each new vibecheck job starts with the sentiment summary visible,
+    // since it is the only top-level "always-on" temperature read. If the user
+    // collapsed it on the previous job, the next job still gets a fresh view.
+    const [jobId, setJobId] = createSignal("job-aaa");
+    let capturedStore: ReturnType<typeof useSidebarStore> | undefined;
+
+    const TestConsumer = () => {
+      capturedStore = useSidebarStore();
+      return null;
+    };
+
+    render(() => (
+      <SidebarStoreProvider opts={{ collapseAllByDefault: false, jobId: jobId() }}>
+        <TestConsumer />
+      </SidebarStoreProvider>
+    ));
+
+    capturedStore!.setOpen("Sentiments", false);
+    expect(capturedStore!.isOpen("Sentiments")).toBe(false);
+
+    setJobId("job-bbb");
+
+    await waitFor(() => {
+      expect(capturedStore!.isOpen("Sentiments")).toBe(true);
+    });
+  });
 });

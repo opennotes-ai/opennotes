@@ -42,13 +42,20 @@ describe("createSidebarStore", () => {
     });
   });
 
-  it("non-sticky groups start closed when defaultOpen is false; Sentiments stays open", () => {
+  it("non-sticky groups start closed when defaultOpen is false", () => {
     createRoot((dispose) => {
       const store = createSidebarStore({ defaultOpen: () => false });
       expect(store.isOpen("Safety")).toBe(false);
       expect(store.isOpen("Tone/dynamics")).toBe(false);
       expect(store.isOpen("Facts/claims")).toBe(false);
       expect(store.isOpen("Opinions")).toBe(false);
+      dispose();
+    });
+  });
+
+  it("Sentiments ignores defaultOpen=false and stays open at init", () => {
+    createRoot((dispose) => {
+      const store = createSidebarStore({ defaultOpen: () => false });
       expect(store.isOpen("Sentiments")).toBe(true);
       dispose();
     });
@@ -137,6 +144,15 @@ describe("createSidebarStore", () => {
       const store = createSidebarStore();
       store.setHighlightedGroup("Safety");
       expect(store.highlightedGroup()).toBe("Safety");
+      dispose();
+    });
+  });
+
+  it("setHighlightedGroup accepts the promoted Sentiments label", () => {
+    createRoot((dispose) => {
+      const store = createSidebarStore();
+      store.setHighlightedGroup("Sentiments");
+      expect(store.highlightedGroup()).toBe("Sentiments");
       dispose();
     });
   });

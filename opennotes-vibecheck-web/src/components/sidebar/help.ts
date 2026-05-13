@@ -11,8 +11,8 @@ const SECTION_HELP: Record<string, SidebarHelpCopy> = {
     means: "These results highlight material that may need moderation or extra review.",
   },
   Sentiments: {
-    looksFor: "Positive, negative, and neutral language across utterances.",
-    means: "Sentiment gives a temperature check on the discussion's emotional tone.",
+    looksFor: "Top-level read on emotional tone across the whole conversation.",
+    means: "This card stays open by default so the overall sentiment temperature is always visible.",
   },
   "Tone/dynamics": {
     looksFor: "Conversation heat, speaker dynamics, and signs of derailment.",

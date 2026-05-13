@@ -1556,7 +1556,7 @@ describe("SectionGroup", () => {
 });
 
 describe("Sidebar", () => {
-  it("renders all four named clusters with counters when sections is empty", () => {
+  it("renders all five named clusters with counters when sections is empty", () => {
     render(() => <Sidebar sections={{}} />);
 
     const aside = screen.getByTestId("analysis-sidebar");
