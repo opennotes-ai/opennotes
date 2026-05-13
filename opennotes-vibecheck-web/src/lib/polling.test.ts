@@ -519,7 +519,11 @@ describe("createPollingResource", () => {
   });
 
   it("uses a terminal done seed without firing an immediate poll", async () => {
-    const seed = makeJobState({ status: "done", next_poll_ms: 500 });
+    const seed = makeJobState({
+      job_id: "job-seeded-done",
+      status: "done",
+      next_poll_ms: 500,
+    });
 
     const { createPollingResource } = await import("./polling");
 
@@ -537,7 +541,11 @@ describe("createPollingResource", () => {
   });
 
   it("uses a terminal partial seed without firing an immediate poll", async () => {
-    const seed = makeJobState({ status: "partial", next_poll_ms: 500 });
+    const seed = makeJobState({
+      job_id: "job-seeded-partial",
+      status: "partial",
+      next_poll_ms: 500,
+    });
 
     const { createPollingResource } = await import("./polling");
 
@@ -554,7 +562,11 @@ describe("createPollingResource", () => {
   });
 
   it("schedules the first poll from a non-terminal seed cadence", async () => {
-    const seed = makeJobState({ status: "analyzing", next_poll_ms: 500 });
+    const seed = makeJobState({
+      job_id: "job-seeded-running",
+      status: "analyzing",
+      next_poll_ms: 500,
+    });
     const next = makeJobState({ status: "done", next_poll_ms: 500 });
     mockPollJob.mockResolvedValueOnce(next);
 
@@ -581,7 +593,11 @@ describe("createPollingResource", () => {
   });
 
   it("refetch ignores a seed and forces a fresh poll", async () => {
-    const seed = makeJobState({ status: "done", next_poll_ms: 500 });
+    const seed = makeJobState({
+      job_id: "job-seeded-refetch",
+      status: "done",
+      next_poll_ms: 500,
+    });
     const refreshed = makeJobState({ status: "analyzing", next_poll_ms: 500 });
     mockPollJob.mockResolvedValueOnce(refreshed);
 
@@ -601,6 +617,39 @@ describe("createPollingResource", () => {
 
       expect(mockPollJob).toHaveBeenCalledTimes(1);
       expect(state()).toEqual(refreshed);
+      dispose();
+    });
+  });
+
+  it("does not reuse the initial seed after jobId changes to a different job", async () => {
+    const seed = makeJobState({
+      job_id: "job-seeded-a",
+      status: "done",
+      next_poll_ms: 500,
+    });
+    const next = makeJobState({
+      job_id: "job-seeded-b",
+      status: "done",
+      next_poll_ms: 500,
+    });
+    mockPollJob.mockResolvedValueOnce(next);
+
+    const { createPollingResource } = await import("./polling");
+
+    await createRoot(async (dispose) => {
+      const [id, setId] = createSignal("job-seeded-a");
+      const { state } = createPollingResource(id, { initialState: seed });
+      await flushMicrotasks();
+
+      expect(state()).toEqual(seed);
+      expect(mockPollJob).not.toHaveBeenCalled();
+
+      setId("job-seeded-b");
+      await flushMicrotasks();
+
+      expect(mockPollJob).toHaveBeenCalledTimes(1);
+      expect(mockPollJob).toHaveBeenCalledWith("job-seeded-b");
+      expect(state()).toEqual(next);
       dispose();
     });
   });

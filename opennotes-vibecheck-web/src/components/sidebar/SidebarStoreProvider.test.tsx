@@ -2,6 +2,7 @@ import { afterEach, describe, it, expect } from "vitest";
 import { cleanup, render, waitFor } from "@solidjs/testing-library";
 import { createRoot, createSignal } from "solid-js";
 import { SidebarStoreProvider, useSidebarStore } from "./SidebarStoreProvider";
+import { ALL_LABELS } from "./sidebar-store";
 
 afterEach(cleanup);
 
@@ -71,6 +72,48 @@ describe("SidebarStoreProvider", () => {
     });
   });
 
+  it("when jobId changes after collapseAllByDefault becomes true, groups reset closed", async () => {
+    const [collapse, setCollapse] = createSignal(false);
+    const [jobId, setJobId] = createSignal("job-aaa");
+    let capturedStore: ReturnType<typeof useSidebarStore> | undefined;
+
+    const TestConsumer = () => {
+      capturedStore = useSidebarStore();
+      return null;
+    };
+
+    render(() => (
+      <SidebarStoreProvider
+        opts={{ collapseAllByDefault: collapse(), jobId: jobId() }}
+      >
+        <TestConsumer />
+      </SidebarStoreProvider>
+    ));
+
+    expect(capturedStore!.isOpen("Safety")).toBe(true);
+
+    setCollapse(true);
+
+    await waitFor(() => {
+      expect(capturedStore!.isOpen("Safety")).toBe(false);
+      expect(capturedStore!.isOpen("Tone/dynamics")).toBe(false);
+      expect(capturedStore!.isOpen("Facts/claims")).toBe(false);
+      expect(capturedStore!.isOpen("Opinions/sentiments")).toBe(false);
+    });
+
+    capturedStore!.setOpen("Safety", true);
+    expect(capturedStore!.isOpen("Safety")).toBe(true);
+
+    setJobId("job-bbb");
+
+    await waitFor(() => {
+      expect(capturedStore!.isOpen("Safety")).toBe(false);
+      expect(capturedStore!.isOpen("Tone/dynamics")).toBe(false);
+      expect(capturedStore!.isOpen("Facts/claims")).toBe(false);
+      expect(capturedStore!.isOpen("Opinions/sentiments")).toBe(false);
+    });
+  });
+
   it("when jobId changes, group state resets to default (collapseAllByDefault=false)", async () => {
     const [jobId, setJobId] = createSignal("job-aaa");
     let capturedStore: ReturnType<typeof useSidebarStore> | undefined;
@@ -125,6 +168,35 @@ describe("SidebarStoreProvider", () => {
       expect(capturedStore!.isOpen("Tone/dynamics")).toBe(false);
       expect(capturedStore!.isOpen("Facts/claims")).toBe(false);
       expect(capturedStore!.isOpen("Opinions/sentiments")).toBe(false);
+    });
+  });
+
+  it("with reactive collapseAllByDefault=true, all groups start closed synchronously", () => {
+    createRoot((dispose) => {
+      const [collapse] = createSignal(true);
+      const capturedOpen = new Map<string, boolean | undefined>();
+
+      const TestConsumer = () => {
+        const store = useSidebarStore();
+        for (const label of ALL_LABELS) {
+          capturedOpen.set(label, store?.isOpen(label));
+        }
+        return null;
+      };
+
+      SidebarStoreProvider({
+        get opts() {
+          return { collapseAllByDefault: collapse() };
+        },
+        get children() {
+          return TestConsumer();
+        },
+      });
+
+      for (const label of ALL_LABELS) {
+        expect(capturedOpen.get(label)).toBe(false);
+      }
+      dispose();
     });
   });
 

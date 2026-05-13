@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { createRoot } from "solid-js";
+import { createRoot, createSignal } from "solid-js";
 import { createSidebarStore, type SectionGroupLabel } from "./sidebar-store";
 
 describe("createSidebarStore", () => {
@@ -21,7 +21,7 @@ describe("createSidebarStore", () => {
 
   it("all groups start closed when defaultOpen is false", () => {
     createRoot((dispose) => {
-      const store = createSidebarStore({ defaultOpen: false });
+      const store = createSidebarStore({ defaultOpen: () => false });
       const labels: SectionGroupLabel[] = [
         "Safety",
         "Tone/dynamics",
@@ -49,7 +49,7 @@ describe("createSidebarStore", () => {
 
   it("setOpen(label, true) opens only the targeted group", () => {
     createRoot((dispose) => {
-      const store = createSidebarStore({ defaultOpen: false });
+      const store = createSidebarStore({ defaultOpen: () => false });
       store.setOpen("Safety", true);
       expect(store.isOpen("Safety")).toBe(true);
       expect(store.isOpen("Tone/dynamics")).toBe(false);
@@ -73,7 +73,7 @@ describe("createSidebarStore", () => {
 
   it("isolateGroup works when target group was previously closed", () => {
     createRoot((dispose) => {
-      const store = createSidebarStore({ defaultOpen: false });
+      const store = createSidebarStore({ defaultOpen: () => false });
       store.isolateGroup("Facts/claims");
       expect(store.isOpen("Facts/claims")).toBe(true);
       expect(store.isOpen("Safety")).toBe(false);
@@ -143,10 +143,34 @@ describe("createSidebarStore", () => {
 
   it("reset() restores all groups to defaultOpen=false when store was created with collapseAllByDefault", () => {
     createRoot((dispose) => {
-      const store = createSidebarStore({ defaultOpen: false });
+      const store = createSidebarStore({ defaultOpen: () => false });
       store.setOpen("Safety", true);
       store.setOpen("Facts/claims", true);
       store.reset();
+      const labels: SectionGroupLabel[] = [
+        "Safety",
+        "Tone/dynamics",
+        "Facts/claims",
+        "Opinions/sentiments",
+      ];
+      for (const label of labels) {
+        expect(store.isOpen(label)).toBe(false);
+      }
+      dispose();
+    });
+  });
+
+  it("reset() restores all groups to the latest reactive defaultOpen value", () => {
+    createRoot((dispose) => {
+      const [defaultOpen, setDefaultOpen] = createSignal(true);
+      const store = createSidebarStore({ defaultOpen });
+      expect(store.isOpen("Safety")).toBe(true);
+
+      setDefaultOpen(false);
+      store.setOpen("Safety", true);
+      store.setOpen("Tone/dynamics", true);
+      store.reset();
+
       const labels: SectionGroupLabel[] = [
         "Safety",
         "Tone/dynamics",
