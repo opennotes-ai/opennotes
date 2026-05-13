@@ -197,7 +197,7 @@ def test_new_redis_client_timeout_values(monkeypatch: pytest.MonkeyPatch) -> Non
     assert captured["socket_timeout"] == 1.5
     assert captured["socket_connect_timeout"] == 2.0
     assert captured["retry_on_timeout"] is True
-    assert captured["retry_on_error"] == (RedisConnectionError, RedisTimeoutError)
+    assert captured["retry_on_error"] == [RedisConnectionError, RedisTimeoutError]
     assert captured["socket_keepalive"] is True
 
     expected_keepalive_options = {
@@ -213,6 +213,29 @@ def test_new_redis_client_timeout_values(monkeypatch: pytest.MonkeyPatch) -> Non
         assert captured["socket_keepalive_options"] == expected_keepalive_options
     else:
         assert captured.get("socket_keepalive_options") is None
+
+
+def test_new_redis_client_retry_on_error_is_accepted_by_redis_connection(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = Settings(VIBECHECK_LIMITER_REDIS_URL="redis://localhost:6379/0")
+    captured: dict[str, Any] = {}
+
+    def _fake_from_url(url: str, **kwargs: Any) -> object:
+        captured.update(kwargs)
+        captured["retry_on_error_before_connection"] = list(kwargs["retry_on_error"])
+        pool = vertex_limiter.redis_asyncio.ConnectionPool.from_url(url, **kwargs)
+        pool.make_connection()
+        return object()
+
+    monkeypatch.setattr(vertex_limiter.redis_asyncio, "from_url", _fake_from_url)
+    vertex_limiter._new_redis_client(settings)
+
+    assert captured["retry_on_error_before_connection"] == [
+        RedisConnectionError,
+        RedisTimeoutError,
+    ]
+    assert RedisTimeoutError in captured["retry_on_error"]
 
 
 async def test_vertex_slot_waits_for_single_global_slot(monkeypatch: pytest.MonkeyPatch) -> None:
