@@ -1,19 +1,33 @@
-import { describe, it, expect, vi, afterEach } from "vitest";
+import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
 import { render, screen, cleanup } from "@solidjs/testing-library";
 import { HighlightsStoreProvider, useHighlights } from "./HighlightsStoreProvider";
 import { HighlightsCard, HIGHLIGHTS_AUTOPLAY_MS } from "./HighlightsCard";
 import type { HighlightItem } from "./highlights-store";
 import type { JSX } from "solid-js";
 
-const { mockAutoplayPlay, mockAutoplayPlugin } = vi.hoisted(() => {
+const {
+  mockAutoplayIsPlaying,
+  mockAutoplayPlay,
+  mockAutoplayTimeUntilNext,
+  mockAutoplayPlugin,
+} = vi.hoisted(() => {
+  const mockAutoplayIsPlaying = vi.fn(() => false);
   const mockAutoplayPlay = vi.fn();
+  const mockAutoplayTimeUntilNext = vi.fn<() => number | null | undefined>(
+    () => null,
+  );
   const mockAutoplayPlugin = {
     name: "autoplay",
-    isPlaying: () => false,
+    isPlaying: mockAutoplayIsPlaying,
     play: mockAutoplayPlay,
-    timeUntilNext: () => null,
+    timeUntilNext: mockAutoplayTimeUntilNext,
   };
-  return { mockAutoplayPlay, mockAutoplayPlugin };
+  return {
+    mockAutoplayIsPlaying,
+    mockAutoplayPlay,
+    mockAutoplayTimeUntilNext,
+    mockAutoplayPlugin,
+  };
 });
 
 vi.mock("embla-carousel-autoplay", () => ({
@@ -157,7 +171,16 @@ function renderWithItems(items: HighlightItem[]) {
 }
 
 describe("HighlightsCard", () => {
-  afterEach(cleanup);
+  beforeEach(() => {
+    mockAutoplayIsPlaying.mockReturnValue(false);
+    mockAutoplayPlay.mockClear();
+    mockAutoplayTimeUntilNext.mockReturnValue(null);
+  });
+
+  afterEach(() => {
+    cleanup();
+    vi.restoreAllMocks();
+  });
 
   describe("empty store", () => {
     it("renders null when no items", () => {
@@ -224,6 +247,45 @@ describe("HighlightsCard", () => {
       renderWithItems([makeItem("1", "A"), makeItem("2", "B")]);
       const ring = screen.getByTestId("highlights-progress");
       expect(ring.getAttribute("data-value")).toBe("0");
+    });
+
+    it("stays rendered when autoplay remaining time throws during a frame", () => {
+      let frameCallback: FrameRequestCallback | undefined;
+      vi.spyOn(window, "requestAnimationFrame").mockImplementation((callback) => {
+        frameCallback = callback;
+        return 1;
+      });
+      vi.spyOn(window, "cancelAnimationFrame").mockImplementation(() => {});
+      mockAutoplayIsPlaying.mockReturnValue(true);
+      mockAutoplayTimeUntilNext.mockImplementation(() => {
+        throw new TypeError("selectedSnap delay unavailable");
+      });
+
+      renderWithItems([makeItem("1", "A"), makeItem("2", "B")]);
+
+      expect(() => frameCallback?.(16)).not.toThrow();
+      expect(screen.getByTestId("highlights-card")).toBeTruthy();
+      expect(
+        screen.getByTestId("highlights-progress").getAttribute("data-value"),
+      ).toBe("0");
+    });
+
+    it("resets progress when autoplay remaining time is unavailable", () => {
+      let frameCallback: FrameRequestCallback | undefined;
+      vi.spyOn(window, "requestAnimationFrame").mockImplementation((callback) => {
+        frameCallback = callback;
+        return 1;
+      });
+      vi.spyOn(window, "cancelAnimationFrame").mockImplementation(() => {});
+      mockAutoplayIsPlaying.mockReturnValue(true);
+      mockAutoplayTimeUntilNext.mockReturnValue(undefined);
+
+      renderWithItems([makeItem("1", "A"), makeItem("2", "B")]);
+
+      expect(() => frameCallback?.(16)).not.toThrow();
+      expect(
+        screen.getByTestId("highlights-progress").getAttribute("data-value"),
+      ).toBe("0");
     });
   });
 
