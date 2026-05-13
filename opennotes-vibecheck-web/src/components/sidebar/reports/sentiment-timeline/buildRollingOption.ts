@@ -132,7 +132,7 @@ export function buildRollingOption(buckets: SentimentBucket[]): EChartsOption {
       type: "bar" as const,
       stack: "sentiment",
       itemStyle: { color },
-      emphasis: { focus: "series" as const },
+      emphasis: { disabled: true },
       data: buckets.map((bucket) => [bucket.startMs, bucket.runningPct[key]]),
     })),
   };
