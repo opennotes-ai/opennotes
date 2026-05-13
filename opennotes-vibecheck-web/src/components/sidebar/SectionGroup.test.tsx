@@ -104,6 +104,16 @@ function imageModerationSections(matches: unknown[]): SlugToSlots {
   };
 }
 
+function videoModerationSections(matches: unknown[]): SlugToSlots {
+  return {
+    safety__video_moderation: {
+      state: "done",
+      attempt_id: "s-video",
+      data: { matches },
+    },
+  };
+}
+
 function clearImageMatch(id: string) {
   return {
     utterance_id: id,
@@ -124,6 +134,38 @@ function flaggedImageMatch(id: string) {
     flagged: true,
     adult: 0.82,
     max_likelihood: 0.82,
+  };
+}
+
+function inconclusiveVideoMatch(id: string) {
+  return {
+    utterance_id: id,
+    video_url: `https://cdn.example.test/${id}.mp4`,
+    segment_findings: [],
+    flagged: true,
+    max_likelihood: 1,
+  };
+}
+
+function flaggedVideoMatch(id: string) {
+  return {
+    utterance_id: id,
+    video_url: `https://cdn.example.test/${id}.mp4`,
+    segment_findings: [
+      {
+        start_offset_ms: 1000,
+        end_offset_ms: 1000,
+        adult: 0.85,
+        violence: 0,
+        racy: 0,
+        medical: 0,
+        spoof: 0,
+        flagged: true,
+        max_likelihood: 0.85,
+      },
+    ],
+    flagged: true,
+    max_likelihood: 0.85,
   };
 }
 
@@ -1678,6 +1720,21 @@ describe("Sidebar", () => {
     expect(screen.getByTestId("report-safety__image_moderation")).toBeDefined();
     expect(
       screen.getByTestId("slot-count-safety__image_moderation").textContent,
+    ).toBe("1 (of 2) flagged");
+  });
+
+  it("counts inconclusive video analysis separately from verified flagged videos", () => {
+    render(() => (
+      <Sidebar
+        sections={videoModerationSections([
+          inconclusiveVideoMatch("inconclusive"),
+          flaggedVideoMatch("verified"),
+        ])}
+      />
+    ));
+
+    expect(
+      screen.getByTestId("slot-count-safety__video_moderation").textContent,
     ).toBe("1 (of 2) flagged");
   });
 

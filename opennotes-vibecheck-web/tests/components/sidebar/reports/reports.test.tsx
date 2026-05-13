@@ -435,6 +435,24 @@ describe("<VideoModerationReport />", () => {
     );
   });
 
+  it("renders flagged videos with no segments as inconclusive analysis", () => {
+    const matches: VideoModerationMatch[] = [
+      {
+        utterance_id: "utt-inconclusive",
+        video_url: "https://video.example.test/inconclusive.mp4",
+        flagged: true,
+        max_likelihood: 1,
+        segment_findings: [],
+      },
+    ];
+
+    render(() => <VideoModerationReport matches={matches} />);
+
+    const error = screen.getByTestId("video-moderation-no-segments-error");
+    expect(error.textContent).toContain("inconclusive");
+    expect(error.textContent).not.toContain("video was flagged");
+  });
+
   it("colors video frame SafeSearch categories by harm and sensitive rules", () => {
     const matches: VideoModerationMatch[] = [
       {
