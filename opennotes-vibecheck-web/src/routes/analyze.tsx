@@ -473,7 +473,8 @@ function AnalyzePageContent(props: { initialJobState: JobState | null }) {
       }
     }
 
-    void getScreenshot(url)
+    const screenshotJobId = jobId() || undefined;
+    void getScreenshot(url, screenshotJobId)
       .then((screenshotUrl) => {
         if (stopped || request !== frameCompatRequest) return;
         setFrameCompat((current) => ({ ...current, screenshotUrl }));
