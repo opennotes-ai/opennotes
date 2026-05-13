@@ -337,7 +337,7 @@ export default function PageFrame(props: PageFrameProps) {
           data-testid="page-frame-loading"
           role="status"
           aria-live="polite"
-          class="flex min-h-[60vh] flex-1 items-center justify-center p-8 text-center"
+          class="flex min-h-[60vh] flex-1 items-start justify-start pt-6 px-8 text-center"
         >
           <p class="text-sm text-muted-foreground">
             Preparing analysis&hellip;
@@ -388,7 +388,7 @@ export default function PageFrame(props: PageFrameProps) {
           data-testid="page-frame-deciding"
           role="status"
           aria-live="polite"
-          class="flex flex-1 flex-col items-center justify-center gap-3 p-8 text-center"
+          class="flex flex-1 flex-col items-center gap-3 pt-6 px-8 text-center"
         >
           <p class="text-sm text-foreground">
             This page prevents being loaded in a frame. Please select Archived
@@ -413,7 +413,7 @@ export default function PageFrame(props: PageFrameProps) {
       <Show when={activePreview() === "unavailable"}>
         <div
           data-testid="page-frame-unavailable"
-          class="flex flex-1 items-center justify-center p-8 text-center"
+          class="flex flex-1 items-start justify-start pt-6 px-8 text-center"
         >
           <p class="text-sm text-muted-foreground">
             Preview unavailable for this page.
