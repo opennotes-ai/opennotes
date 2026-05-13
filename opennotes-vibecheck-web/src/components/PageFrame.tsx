@@ -297,6 +297,12 @@ export default function PageFrame(props: PageFrameProps) {
     },
   );
 
+  createEffect(() => {
+    if (showArchived() && isRawMode() && !rawContent.loading && rawContent() === null) {
+      setArchivedFailed(true);
+    }
+  });
+
   function archiveRenderModeLabel(
     mode: "html" | "markdown" | "text" | null | undefined,
   ): string | null {
