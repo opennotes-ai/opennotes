@@ -18,6 +18,7 @@ from src.analyses.safety.video_intelligence_client import (
     VITransientError,
     submit_explicit_content_annotation,
 )
+from src.analyses.safety.video_url_filter import is_potential_video_url
 from src.config import Settings
 from src.monitoring_metrics import SECTION_MEDIA_DROPPED
 from src.services.gcp_adc import CLOUD_PLATFORM_SCOPE, get_access_token
@@ -37,12 +38,22 @@ async def run_video_intelligence(
     for utterance in getattr(payload, "utterances", []) or []:
         for video_url in getattr(utterance, "mentioned_videos", []) or []:
             pairs.append((utterance.utterance_id or "", video_url))
-    capped = pairs[: settings.MAX_VIDEOS_MODERATED]
-    dropped = len(pairs) - len(capped)
+    eligible_pairs: list[tuple[str, str]] = []
+    for utterance_id, video_url in pairs:
+        if is_potential_video_url(video_url):
+            eligible_pairs.append((utterance_id, video_url))
+            continue
+        logger.debug(
+            "skipping ineligible video url=%s utterance_id=%s",
+            video_url,
+            utterance_id,
+        )
+    capped = eligible_pairs[: settings.MAX_VIDEOS_MODERATED]
+    dropped = len(eligible_pairs) - len(capped)
     if dropped > 0:
         SECTION_MEDIA_DROPPED.labels(media_type="video").inc(dropped)
     if not capped:
-        return {"matches": []}
+        return {"status": "empty", "matches": []}
 
     token = get_access_token(CLOUD_PLATFORM_SCOPE)
     if not token:

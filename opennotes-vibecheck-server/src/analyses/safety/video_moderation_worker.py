@@ -11,6 +11,7 @@ import logfire
 from src.analyses.safety._schemas import VideoModerationMatch, VideoSegmentFinding
 from src.analyses.safety._vision_likelihood import likelihood_to_score
 from src.analyses.safety.video_sampler import FrameBytes, VideoSamplingError, sample_video
+from src.analyses.safety.video_url_filter import is_potential_video_url
 from src.analyses.safety.vision_client import ANNOTATE_URL, VisionTransientError
 from src.cache import video_analysis_cache
 from src.config import Settings
@@ -32,8 +33,14 @@ async def run_video_moderation(  # noqa: PLR0912
     for utt in getattr(payload, "utterances", []) or []:
         for vid in getattr(utt, "mentioned_videos", []) or []:
             pairs.append((utt.utterance_id or "", vid))
-    capped = pairs[: settings.MAX_VIDEOS_MODERATED]
-    dropped = len(pairs) - len(capped)
+    eligible_pairs: list[tuple[str, str]] = []
+    for uid, vurl in pairs:
+        if is_potential_video_url(vurl):
+            eligible_pairs.append((uid, vurl))
+            continue
+        logger.debug("skipping ineligible video url=%s utterance_id=%s", vurl, uid)
+    capped = eligible_pairs[: settings.MAX_VIDEOS_MODERATED]
+    dropped = len(eligible_pairs) - len(capped)
     if dropped > 0:
         logger.info("video moderation cap: processing=%d dropped=%d", len(capped), dropped)
         SECTION_MEDIA_DROPPED.labels(media_type="video").inc(dropped)
@@ -70,12 +77,15 @@ async def run_video_moderation(  # noqa: PLR0912
                         default=0.0,
                     )
                     flagged = any(ff.flagged for ff in segment_findings)
-                    matches.append(VideoModerationMatch(
-                        utterance_id=uid, video_url=vurl,
-                        segment_findings=segment_findings,
-                        flagged=flagged,
-                        max_likelihood=max_likelihood,
-                    ))
+                    matches.append(
+                        VideoModerationMatch(
+                            utterance_id=uid,
+                            video_url=vurl,
+                            segment_findings=segment_findings,
+                            flagged=flagged,
+                            max_likelihood=max_likelihood,
+                        )
+                    )
                     continue
                 try:
                     frames = await sample_video(vurl)
@@ -85,10 +95,15 @@ async def run_video_moderation(  # noqa: PLR0912
                     # rather than silently presenting it as safe (codex P1.3).
                     # Do NOT cache: failure should retry next run.
                     logger.warning("video sampling failed for %s: %s", vurl, exc)
-                    matches.append(VideoModerationMatch(
-                        utterance_id=uid, video_url=vurl,
-                        segment_findings=[], flagged=True, max_likelihood=1.0,
-                    ))
+                    matches.append(
+                        VideoModerationMatch(
+                            utterance_id=uid,
+                            video_url=vurl,
+                            segment_findings=[],
+                            flagged=True,
+                            max_likelihood=1.0,
+                        )
+                    )
                     continue
                 if token is None:
                     raise VisionTransientError("ADC token unavailable")
@@ -103,16 +118,20 @@ async def run_video_moderation(  # noqa: PLR0912
                     default=0.0,
                 )
                 flagged = any(ff.flagged for ff in segment_findings)
-                matches.append(VideoModerationMatch(
-                    utterance_id=uid, video_url=vurl,
-                    segment_findings=segment_findings,
-                    flagged=flagged,
-                    max_likelihood=max_likelihood,
-                ))
+                matches.append(
+                    VideoModerationMatch(
+                        utterance_id=uid,
+                        video_url=vurl,
+                        segment_findings=segment_findings,
+                        flagged=flagged,
+                        max_likelihood=max_likelihood,
+                    )
+                )
         if fresh_to_persist:
             try:
                 await video_analysis_cache.upsert_cached(
-                    pool, fresh_to_persist,
+                    pool,
+                    fresh_to_persist,
                     ttl_hours=settings.VISION_VIDEO_CACHE_TTL_HOURS,
                 )
             except Exception:
@@ -131,14 +150,18 @@ async def _annotate_frames(
     """
     if not frames:
         return [], False
-    requests_body = {"requests": [
-        {
-            "image": {"content": base64.b64encode(fb.png_bytes).decode("ascii")},
-            "features": [{"type": "SAFE_SEARCH_DETECTION"}],
-        }
-        for fb in frames
-    ]}
-    with external_api_span("vision", "images.annotate_video_frames", request_count=len(frames)) as obs:
+    requests_body = {
+        "requests": [
+            {
+                "image": {"content": base64.b64encode(fb.png_bytes).decode("ascii")},
+                "features": [{"type": "SAFE_SEARCH_DETECTION"}],
+            }
+            for fb in frames
+        ]
+    }
+    with external_api_span(
+        "vision", "images.annotate_video_frames", request_count=len(frames)
+    ) as obs:
         try:
             r = await hx.post(
                 ANNOTATE_URL,
@@ -172,12 +195,14 @@ async def _annotate_frames(
             max_likelihood = max(scores.values())
             flagged = max_likelihood >= 0.75
             flagged_count += 1 if flagged else 0
-            out.append(VideoSegmentFinding(
-                start_offset_ms=fb.frame_offset_ms,
-                end_offset_ms=fb.frame_offset_ms,
-                **scores,
-                flagged=flagged,
-                max_likelihood=max_likelihood,
-            ))
+            out.append(
+                VideoSegmentFinding(
+                    start_offset_ms=fb.frame_offset_ms,
+                    end_offset_ms=fb.frame_offset_ms,
+                    **scores,
+                    flagged=flagged,
+                    max_likelihood=max_likelihood,
+                )
+            )
         obs.add_flagged(flagged_count)
         return out, had_errors
