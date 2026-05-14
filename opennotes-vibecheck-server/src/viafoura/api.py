@@ -41,6 +41,7 @@ class ViafouraCommentNode(BaseModel):
 
 class ViafouraComments(BaseModel):
     comments_markdown: str
+    nodes: list[ViafouraCommentNode] = Field(default_factory=list)
     raw_count: int
     fetched_at: datetime
     more_available: bool
@@ -281,6 +282,7 @@ async def fetch_viafoura_comments(
 
     return ViafouraComments(
         comments_markdown=markdown,
+        nodes=nodes,
         raw_count=len(nodes),
         fetched_at=datetime.now(UTC),
         more_available=parsed_comments.more_available,

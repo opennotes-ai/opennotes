@@ -65,7 +65,29 @@ _ARCHIVE_CSP = (
     "font-src https: data:; frame-src 'none'; form-action 'none'; base-uri 'none'; "
     "frame-ancestors 'self'"
 )
-_ARCHIVE_DISPLAY_STYLES = "<style>img{max-width:100%!important;height:auto!important}</style>"
+_ARCHIVE_DISPLAY_STYLES = (
+    "<style>"
+    "img{max-width:100%!important;height:auto!important}"
+    "[data-platform-comments]{margin:2rem 0;padding-top:1rem;border-top:1px solid #d8dee4;"
+    "font-family:system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;line-height:1.5}"
+    "[data-platform-comments] .opennotes-comments{list-style:none;margin:0;padding:0}"
+    "[data-platform-comments] .opennotes-comments>li{margin:0 0 1rem;padding:0}"
+    "[data-platform-comments] .opennotes-comment__replies{list-style:none;margin:.75rem 0 0;padding:0}"
+    "[data-platform-comments] .opennotes-comment__replies>li{margin:0;padding:0}"
+    "[data-platform-comments] article{margin:.75rem 0;padding:.75rem;border:1px solid #d8dee4;"
+    "border-radius:6px;background:#fff}"
+    "[data-platform-comments] article article{margin-left:1.25rem;border-left:3px solid #8c959f}"
+    "[data-platform-comments] header{display:flex;gap:.5rem;align-items:center;flex-wrap:wrap;"
+    "margin-bottom:.5rem;color:#57606a;font-size:.875rem}"
+    "[data-platform-comments] .opennotes-comment__author{font-weight:600;color:#24292f}"
+    "[data-platform-comments] time{font-variant-numeric:tabular-nums}"
+    "[data-platform-comments] .opennotes-comment__parent{font-size:.8125rem}"
+    "[data-platform-comments] .opennotes-comment__body p{margin:.5rem 0}"
+    "[data-platform-comments] .opennotes-comment__body>:first-child{margin-top:0}"
+    "[data-platform-comments] .opennotes-comment__body>:last-child{margin-bottom:0}"
+    "[data-platform-comments] article:target{outline:3px solid #0969da;outline-offset:2px}"
+    "</style>"
+)
 _DOCTYPE_RE = re.compile(r"^(<!doctype[^>]*>)", re.IGNORECASE | re.DOTALL)
 
 _SELECT_PDF_ARCHIVE_SQL = """

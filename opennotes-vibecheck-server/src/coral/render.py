@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import html
 from collections import defaultdict
 from collections.abc import Sequence
 from datetime import datetime
 from typing import Protocol
 
+import bleach
 from bs4 import BeautifulSoup
 from bs4.element import Tag
 
@@ -31,6 +33,25 @@ _BLOCK_TAGS = {
     "section",
     "ul",
 }
+
+_COMMENT_BODY_TAGS = frozenset(
+    {
+        "a",
+        "blockquote",
+        "br",
+        "code",
+        "em",
+        "li",
+        "ol",
+        "p",
+        "strong",
+        "ul",
+    }
+)
+_COMMENT_BODY_ATTRIBUTES = {
+    "a": ["href", "rel"],
+}
+_COMMENT_BODY_PROTOCOLS = ["http", "https", "mailto"]
 
 
 def _collapse_inline_whitespace(text: str) -> str:
@@ -74,6 +95,16 @@ def _body_html_to_markdown_text(body: str) -> str:
     return "\n".join(lines)
 
 
+def _sanitize_comment_body_html(body: str) -> str:
+    return bleach.clean(
+        body or "",
+        tags=_COMMENT_BODY_TAGS,
+        attributes=_COMMENT_BODY_ATTRIBUTES,
+        protocols=_COMMENT_BODY_PROTOCOLS,
+        strip=True,
+    )
+
+
 def _indent_lines(text: str, prefix: str) -> str:
     return "\n".join(f"{prefix}{line}" for line in text.splitlines() or [""])
 
@@ -111,6 +142,66 @@ def _to_markdown_lines(nodes: Sequence[_CommentLike]) -> list[str]:
         walk(root, 0)
 
     return lines
+
+
+def _comment_tree(
+    nodes: Sequence[_CommentLike],
+) -> tuple[dict[str | None, list[_CommentLike]], list[_CommentLike]]:
+    by_id: dict[str, _CommentLike] = {node.id: node for node in nodes}
+    children: dict[str | None, list[_CommentLike]] = defaultdict(list)
+
+    for node in nodes:
+        parent_id = node.parent_id
+        if parent_id is not None and parent_id not in by_id:
+            parent_id = None
+        children[parent_id].append(node)
+
+    for group in children.values():
+        group.sort(key=lambda comment: comment.created_at)
+
+    return children, children.get(None, [])
+
+
+def render_comments_to_html(nodes: Sequence[_CommentLike]) -> str:
+    """Render comment nodes as semantic, sanitized HTML for archive display."""
+    children, roots = _comment_tree(nodes)
+    if not roots:
+        return ""
+
+    def render_article(node: _CommentLike) -> str:
+        comment_id = html.escape(node.id, quote=True)
+        author = html.escape(node.author_username or "anonymous")
+        created_at = html.escape(node.created_at.isoformat(), quote=True)
+        parent_id = node.parent_id or ""
+        parent_ref = (
+            '<span class="opennotes-comment__parent">'
+            f'in reply to <a href="#cmt-{html.escape(parent_id, quote=True)}">'
+            f"{html.escape(parent_id)}</a></span>"
+            if parent_id
+            else ""
+        )
+        body = _sanitize_comment_body_html(node.body or "")
+        replies = "".join(
+            f"<li>{render_article(child)}</li>" for child in children.get(node.id, [])
+        )
+        replies_list = (
+            f'<ol class="opennotes-comment__replies">{replies}</ol>' if replies else ""
+        )
+        return (
+            f'<article id="cmt-{comment_id}" data-utterance-id="{comment_id}" '
+            'class="opennotes-comment">'
+            '<header class="opennotes-comment__header">'
+            f'<span class="opennotes-comment__author">{author}</span>'
+            f'<time datetime="{created_at}">{created_at}</time>'
+            f"{parent_ref}"
+            "</header>"
+            f'<div class="opennotes-comment__body">{body}</div>'
+            f"{replies_list}"
+            "</article>"
+        )
+
+    items = "".join(f"<li>{render_article(root)}</li>" for root in roots)
+    return f'<ol class="opennotes-comments">{items}</ol>'
 
 
 def render_to_markdown(nodes: Sequence[_CommentLike]) -> str:

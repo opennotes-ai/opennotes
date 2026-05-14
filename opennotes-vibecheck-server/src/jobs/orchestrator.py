@@ -59,6 +59,7 @@ import json
 import logging
 import time
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import Any, Final, Literal, NoReturn, cast
 from urllib.parse import urlparse
 from uuid import UUID, uuid4
@@ -134,6 +135,7 @@ from src.cache.scrape_cache import (
 )
 from src.config import Settings
 from src.coral import (
+    CoralComments,
     CoralFetchError,
     CoralSignal,
     CoralUnsupportedError,
@@ -1297,7 +1299,7 @@ async def _run_tier1(  # noqa: PLR0911, PLR0912
                     platform_outcome="viafoura_api_failed",
                 )
 
-            merged = merge_viafoura_into_scrape(fresh, comments.comments_markdown)
+            merged = merge_viafoura_into_scrape(fresh, comments)
             cached_t1 = await _cache_put_or_keyless(
                 scrape_cache, url, merged, tier="scrape"
             )
@@ -1376,7 +1378,15 @@ async def _run_tier1(  # noqa: PLR0911, PLR0912
                                 iframe_markdown = iframe_scrape.markdown
 
             if iframe_markdown is not None:
-                merged = merge_coral_into_scrape(fresh, iframe_markdown)
+                merged = merge_coral_into_scrape(
+                    fresh,
+                    CoralComments(
+                        comments_markdown=iframe_markdown,
+                        nodes=[],
+                        raw_count=0,
+                        fetched_at=datetime.now(UTC),
+                    ),
+                )
                 cached_t1 = await _cache_put_or_keyless(
                     scrape_cache, url, merged, tier="scrape"
                 )
@@ -1401,7 +1411,7 @@ async def _run_tier1(  # noqa: PLR0911, PLR0912
                 platform_outcome="coral_graphql_failed",
             )
 
-        merged = merge_coral_into_scrape(fresh, comments.comments_markdown)
+        merged = merge_coral_into_scrape(fresh, comments)
         cached_t1 = await _cache_put_or_keyless(
             scrape_cache, url, merged, tier="scrape"
         )

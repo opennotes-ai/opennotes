@@ -2,15 +2,17 @@
 
 from __future__ import annotations
 
-import html
-
 from src.firecrawl_client import ScrapeResult
+
+from .graphql import CoralComments
+from .render import render_comments_to_html
 
 _COMMENTS_HEADER = "## Comments"
 
 
-def merge_coral_into_scrape(scrape: ScrapeResult, comments_markdown: str) -> ScrapeResult:
+def merge_coral_into_scrape(scrape: ScrapeResult, comments: CoralComments) -> ScrapeResult:
     """Return a ScrapeResult with rendered Coral comments appended after article content."""
+    comments_markdown = comments.comments_markdown
     if not comments_markdown or not comments_markdown.strip():
         return scrape
 
@@ -23,12 +25,20 @@ def merge_coral_into_scrape(scrape: ScrapeResult, comments_markdown: str) -> Scr
     merged_markdown = (
         comments_block
         if scrape.markdown is None
-        else f"{scrape.markdown}\n\n{comments_block}" if scrape.markdown else comments_block
+        else f"{scrape.markdown}\n\n{comments_block}"
+        if scrape.markdown
+        else comments_block
     )
+    comments_html = render_comments_to_html(comments.nodes)
     merged_html = (
         None
         if scrape.html is None
-        else f"{scrape.html}<div data-coral-comments>{html.escape(comments_block)}</div>"
+        else scrape.html
+        if not comments_html
+        else (
+            f'{scrape.html}<div data-platform-comments data-platform="coral" '
+            f'data-platform-status="copied" data-coral-comments="true">{comments_html}</div>'
+        )
     )
 
     return scrape.model_copy(update={"markdown": merged_markdown, "html": merged_html})

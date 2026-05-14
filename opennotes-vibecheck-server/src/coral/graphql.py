@@ -63,6 +63,7 @@ class CoralComments(BaseModel):
     """Output contract for `/api/graphql` comment fetches."""
 
     comments_markdown: str
+    nodes: list[CoralCommentNode] = Field(default_factory=list)
     raw_count: int
     fetched_at: datetime
     model_config = ConfigDict(extra="ignore")
@@ -276,6 +277,7 @@ async def fetch_coral_comments(
 
     return CoralComments(
         comments_markdown=comments_markdown,
+        nodes=nodes,
         raw_count=len(nodes),
         fetched_at=datetime.now(UTC),
     )
