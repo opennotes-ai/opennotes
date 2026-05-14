@@ -223,7 +223,7 @@ def test_as_public_returns_none_username_when_actor_author_and_actor_uuid_all_ab
 
 
 def test_as_public_prefers_actor_name_and_propagates_actor_uuid() -> None:
-    from src.viafoura.api import _ViafouraContent, _ViafouraActor
+    from src.viafoura.api import _ViafouraActor, _ViafouraContent
 
     content = _ViafouraContent(
         content_uuid="aabbccdd-0000-0000-0000-000000000003",

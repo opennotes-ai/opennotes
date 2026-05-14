@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup, Tag
 
 from src.firecrawl_client import ScrapeResult
 
@@ -20,12 +20,14 @@ def _normalize_text(text: str) -> str:
     return " ".join(text.split()).lower()
 
 
-def _extract_vf3_body(element: BeautifulSoup) -> str:
-    content = element.find(class_=lambda c: c and (
-        "comment-body" in c or "vf3-comment-content" in c
-    ))
-    if content:
-        return content.get_text(" ", strip=True)
+def _extract_vf3_body(element: Tag) -> str:
+    for descendant in element.find_all(True):
+        descendant_classes = descendant.get("class") or []
+        if any(
+            "comment-body" in c or "vf3-comment-content" in c
+            for c in descendant_classes
+        ):
+            return descendant.get_text(" ", strip=True)
     return element.get_text(" ", strip=True)
 
 
@@ -35,8 +37,10 @@ def _build_body_to_author(soup: BeautifulSoup) -> dict[str, str]:
         classes = article.get("class") or []
         if not any("vf3-comment" in c for c in classes):
             continue
-        label = article.get("aria-label", "")
-        match = _ARIA_LABEL_RE.search(label.strip())
+        label_attr = article.get("aria-label")
+        if not isinstance(label_attr, str):
+            continue
+        match = _ARIA_LABEL_RE.search(label_attr.strip())
         if not match:
             continue
         username = match.group(1)
