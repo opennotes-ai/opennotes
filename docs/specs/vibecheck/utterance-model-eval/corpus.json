@@ -1,0 +1,226 @@
+{
+  "_meta": {
+    "bucket_thresholds": {
+      "short_max": 5000,
+      "medium_max": 25000,
+      "description": "short < 5000 chars; medium 5000-25000; long > 25000"
+    },
+    "total": 26,
+    "by_bucket": {
+      "short": 7,
+      "medium": 5,
+      "long": 14
+    },
+    "generated_at": "2026-05-14T18:53:38.099718+00:00"
+  },
+  "entries": [
+    {
+      "scrape_id": "41022f80-1b9f-4f49-9137-4a6805fbc482",
+      "normalized_url": "https://quizlet.com/blog/pride-month-2021",
+      "page_kind": "other",
+      "markdown_length": 9771,
+      "html_length": 541190,
+      "bucket": "medium"
+    },
+    {
+      "scrape_id": "3cbeb606-25d5-4bef-8f03-ebf0720c3b04",
+      "normalized_url": "image-uploads/1d2a45fc-0774-4bf2-87a7-fdf8265a6549/generated.pdf",
+      "page_kind": "other",
+      "markdown_length": 3417,
+      "html_length": 3690,
+      "bucket": "short"
+    },
+    {
+      "scrape_id": "3632b20e-8192-49fb-90d8-c80dc8b226d7",
+      "normalized_url": "https://en.wikipedia.org/wiki/Talk:Section_sign",
+      "page_kind": "other",
+      "markdown_length": 82628,
+      "html_length": 211446,
+      "bucket": "long"
+    },
+    {
+      "scrape_id": "b0a29f98-7991-467b-ae2a-22f359d5c76f",
+      "normalized_url": "https://www.linkedin.com/posts/jai-bhatia-_for-every-1-spent-on-software-6-is-spent-share-7457848163769483266-GhGL",
+      "page_kind": "other",
+      "markdown_length": 644144,
+      "html_length": 1436049,
+      "bucket": "long"
+    },
+    {
+      "scrape_id": "a10e18f6-f9f8-47a2-8bf4-86b881fae967",
+      "normalized_url": "https://apnews.com/article/inflation-consumers-iran-energy-trump-3cbd24e5e977c8d5f4518ece41ac61d8",
+      "page_kind": "other",
+      "markdown_length": 103619,
+      "html_length": 526074,
+      "bucket": "long"
+    },
+    {
+      "scrape_id": "828b7e07-18b4-42be-b31b-2fa7543c7a87",
+      "normalized_url": "https://apnews.com/article/senate-pay-shutdown-withhold-government-face16eac3196ad4c3bedf3d699be87f",
+      "page_kind": "other",
+      "markdown_length": 94380,
+      "html_length": 399052,
+      "bucket": "long"
+    },
+    {
+      "scrape_id": "78d2cbb3-3f31-4704-a8c5-cb4e5e2fe31f",
+      "normalized_url": "https://news.ycombinator.com/item?id=48096692",
+      "page_kind": "other",
+      "markdown_length": 86330,
+      "html_length": 193464,
+      "bucket": "long"
+    },
+    {
+      "scrape_id": "b5dc10c4-1274-4687-ac75-120a824b20d5",
+      "normalized_url": "https://vibecheck.opennotes.ai/analyze?job=9c9dafb1-0b35-47db-887e-892490c28cac%3Fn",
+      "page_kind": "other",
+      "markdown_length": 89,
+      "html_length": 3602,
+      "bucket": "short"
+    },
+    {
+      "scrape_id": "0f0df2b3-9591-4016-b278-6c139ab124d0",
+      "normalized_url": "https://news.ycombinator.com/item?id=48096692%3Fn",
+      "page_kind": "other",
+      "markdown_length": 13,
+      "html_length": 39,
+      "bucket": "short"
+    },
+    {
+      "scrape_id": "01b0c070-4f57-49be-b185-878318b9ba31",
+      "normalized_url": "https://news.ycombinator.com/item?id=48111896",
+      "page_kind": "other",
+      "markdown_length": 68249,
+      "html_length": 161421,
+      "bucket": "long"
+    },
+    {
+      "scrape_id": "fcb30027-2ff5-4604-9e23-cef3c4fc3a25",
+      "normalized_url": "https://news.ycombinator.com/item?id=48122635",
+      "page_kind": "other",
+      "markdown_length": 21297,
+      "html_length": 49644,
+      "bucket": "medium"
+    },
+    {
+      "scrape_id": "a21482a2-8716-4f57-be11-a4a998fbd608",
+      "normalized_url": "https://www.reddit.com/r/discordbots/comments/1t5xp3v/anyone_a_marketing_expert",
+      "page_kind": "other",
+      "markdown_length": 27669,
+      "html_length": 994851,
+      "bucket": "long"
+    },
+    {
+      "scrape_id": "596eb35e-e512-4f06-bc4f-733c8943ce32",
+      "normalized_url": "image-uploads/11b980ee-ba92-45b3-b361-b35a45609c8d/generated.pdf",
+      "page_kind": "other",
+      "markdown_length": 3404,
+      "html_length": 3671,
+      "bucket": "short"
+    },
+    {
+      "scrape_id": "35ef3bf7-1bf3-4a03-8b84-e169cd4f0e46",
+      "normalized_url": "https://community.fandom.com/f/p/2508348419211266309",
+      "page_kind": "other",
+      "markdown_length": 10549,
+      "html_length": 409075,
+      "bucket": "medium"
+    },
+    {
+      "scrape_id": "9af0ce2e-adfe-4362-8c6c-a901a1111834",
+      "normalized_url": "image-uploads/adcce398-0ae2-4717-8588-86e8690e5f05/generated.pdf",
+      "page_kind": "other",
+      "markdown_length": 3404,
+      "html_length": 3671,
+      "bucket": "short"
+    },
+    {
+      "scrape_id": "2722385e-8756-4a03-8537-db5ee76afd3e",
+      "normalized_url": "https://www.linkedin.com/posts/katmurray_lyft-researchers-alumni-and-friends-of-share-7459727515436290048-AKOR?rcm=ACoAAADKvbkB6wJOaDD-l3BmzlXn7W3XWo98Psg",
+      "page_kind": "other",
+      "markdown_length": 751283,
+      "html_length": 1590684,
+      "bucket": "long"
+    },
+    {
+      "scrape_id": "d14f4009-2cdc-4eed-acea-007615e4a913",
+      "normalized_url": "https://www.linkedin.com/feed/update/urn:li:activity:7460069171444469760",
+      "page_kind": "other",
+      "markdown_length": 732762,
+      "html_length": 1677964,
+      "bucket": "long"
+    },
+    {
+      "scrape_id": "8a528f70-f13a-4aa7-91c9-e5fd8bdd2462",
+      "normalized_url": "https://www.linkedin.com/posts/jai-bhatia-_for-every-1-spent-on-software-6-is-spent-share-7457848163769483266-GhGL",
+      "page_kind": "other",
+      "markdown_length": 644122,
+      "html_length": 1434793,
+      "bucket": "long"
+    },
+    {
+      "scrape_id": "3e1b4f30-d1e7-4ee6-97d2-ce1e8445dd49",
+      "normalized_url": "https://www.reddit.com/r/discordbots/comments/1t5xp3v/anyone_a_marketing_expert",
+      "page_kind": "other",
+      "markdown_length": 26850,
+      "html_length": 976839,
+      "bucket": "long"
+    },
+    {
+      "scrape_id": "ac7a8d59-ba29-419b-aa4f-5e59b3facae9",
+      "normalized_url": "https://news.ycombinator.com/item?id=48100706",
+      "page_kind": "other",
+      "markdown_length": 154507,
+      "html_length": 340727,
+      "bucket": "long"
+    },
+    {
+      "scrape_id": "de948a26-a37e-47b4-ba77-85224dd165a0",
+      "normalized_url": "https://vibecheck.opennotes.ai/analyze?job=996a8717-92a8-4a37-b210-316851ed3906",
+      "page_kind": "other",
+      "markdown_length": 20268,
+      "html_length": 1098793,
+      "bucket": "medium"
+    },
+    {
+      "scrape_id": "393219f4-a6dc-456d-a1ab-f1b2fb9779d6",
+      "normalized_url": "https://quizlet.com/blog/pride-month-2021?adjusted=",
+      "page_kind": "other",
+      "markdown_length": 9771,
+      "html_length": 541208,
+      "bucket": "medium"
+    },
+    {
+      "scrape_id": "54dd37ca-f1ea-450b-af5e-acf7b5f22cff",
+      "normalized_url": "https://www.linkedin.com/posts/malwaretech_my-endless-struggle-is-i-keep-getting-asked-share-7459799925921316864-9RBq?rcm=ACoAAADKvbkB6wJOaDD-l3BmzlXn7W3XWo98Psg",
+      "page_kind": "other",
+      "markdown_length": 650728,
+      "html_length": 1443056,
+      "bucket": "long"
+    },
+    {
+      "scrape_id": "732e2643-c8d1-406a-bfa9-6f48eac5aba8",
+      "normalized_url": "https://www.linkedin.com/posts/malwaretech_my-endless-struggle-is-i-keep-getting-asked-share-7459799925921316864-9RBq",
+      "page_kind": "other",
+      "markdown_length": 660750,
+      "html_length": 1578199,
+      "bucket": "long"
+    },
+    {
+      "scrape_id": "f31f9b21-6dae-4b8b-af29-1171ffca0155",
+      "normalized_url": "https://x.com/joshhart/status/2001183434962821435",
+      "page_kind": "other",
+      "markdown_length": 4211,
+      "html_length": 197686,
+      "bucket": "short"
+    },
+    {
+      "scrape_id": "9b1d170c-56d7-4e05-be16-4e5ca813a28d",
+      "normalized_url": "image-uploads/3265793d-604d-4fa7-952e-05c2c5539b2f/generated.pdf",
+      "page_kind": "other",
+      "markdown_length": 4106,
+      "html_length": 4285,
+      "bucket": "short"
+    }
+  ]
+}
