@@ -82,7 +82,7 @@ def test_configure_logfire_installs_extra_patterns(_reset_logfire_flag: None) ->
     assert patterns is not None, "extra_patterns must be passed to ScrubbingOptions"
     pattern_strs: list[str] = [str(p) for p in patterns]  # pyright: ignore[reportGeneralTypeIssues]
     joined = " ".join(pattern_strs)
-    assert "token" in joined.lower()
+    assert "token=" in joined.lower()
     assert "x-amz-signature" in joined.lower()
     assert "x-goog-signature" in joined.lower()
     assert "sign" in joined.lower()
@@ -123,13 +123,13 @@ def test_configure_logfire_enables_safe_pydantic_ai_instrumentation(
         configure_logfire()
 
     mock_instrument_agents.assert_called_once_with(
-        include_content=False,
+        include_content=True,
         include_binary_content=False,
         version=3,
     )
     embedder_settings = mock_instrument_embedders.call_args.args[0]
     assert isinstance(embedder_settings, InstrumentationSettings)
-    assert embedder_settings.include_content is False
+    assert embedder_settings.include_content is True
     assert embedder_settings.include_binary_content is False
     assert embedder_settings.version == 3
 
