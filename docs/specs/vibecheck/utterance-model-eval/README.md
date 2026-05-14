@@ -1,7 +1,9 @@
 # Utterance Extractor Model Bake-off (TASK-1644)
 
-Benchmarks `gemini-3.1-flash` vs `gemini-3.1-flash-lite` for utterance extraction
-across a representative sample of short, medium, and long documents from production.
+Benchmarks `gemini-3-flash-preview` vs `gemini-3-flash-lite-preview` for
+utterance extraction across short, medium, and long documents from production.
+Model IDs are constants at the top of the script — edit them to compare other
+pairs without changing the framework.
 
 ## Phases
 
@@ -30,7 +32,12 @@ WHERE tier = 'scrape'
 LIMIT 100;
 ```
 
-Save as `~/Downloads/vibecheck_scrapes_rows.json` (never committed — contains raw markdown).
+Save as either:
+- `.csv` (preferred — Supabase Studio's "Download CSV" from the SQL snippet view, no row-level truncation)
+- `.json` (only safe for short rows — Studio's JSON row-view export silently truncates long text columns at 10243 chars)
+
+The `corpus` and `run` subcommands accept either extension via `--input`.
+Never commit the input file — it contains raw scraped markdown.
 
 ## Re-running
 

@@ -24,10 +24,12 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import csv
 import hashlib
 import json
 import random
 import statistics
+import sys
 import time
 from datetime import UTC, datetime
 from pathlib import Path
@@ -63,8 +65,8 @@ JUDGE_PROMPT_PATH = EVAL_DIR / "_judge_prompt.txt"
 SHORT_MAX = 5_000
 MEDIUM_MAX = 25_000
 
-MODEL_FLASH = "google-vertex:gemini-2.5-flash"
-MODEL_FLASH_LITE = "google-vertex:gemini-2.5-flash-lite-preview-06-17"
+MODEL_FLASH = "google-vertex:gemini-3-flash-preview"
+MODEL_FLASH_LITE = "google-vertex:gemini-3-flash-lite-preview"
 
 MODEL_KEYS: list[Literal["flash", "flash_lite"]] = ["flash", "flash_lite"]
 MODEL_DISPLAY: dict[str, str] = {
@@ -85,13 +87,30 @@ def _sha256_hex(text: str) -> str:
     return hashlib.sha256(text.encode()).hexdigest()
 
 
+def _load_rows(input_path: Path) -> list[dict[str, Any]]:
+    """Load exported scrape rows from JSON or CSV.
+
+    Supabase Studio's row-display JSON export truncates long text columns at
+    10243 chars; the SQL-snippet CSV export does not. Prefer CSV exports for
+    long-text comparisons.
+    """
+    suffix = input_path.suffix.lower()
+    if suffix == ".json":
+        return json.loads(input_path.read_text(encoding="utf-8"))
+    if suffix == ".csv":
+        csv.field_size_limit(sys.maxsize)
+        with input_path.open(newline="", encoding="utf-8") as f:
+            return list(csv.DictReader(f))
+    raise SystemExit(f"Unsupported input extension {suffix!r}: expected .json or .csv")
+
+
 def cmd_corpus(args: argparse.Namespace) -> None:
     """Phase 1: build bucketed manifest from exported rows."""
     input_path = Path(args.input).expanduser()
     if not input_path.exists():
         raise SystemExit(f"Input file not found: {input_path}")
 
-    rows: list[dict[str, Any]] = json.loads(input_path.read_text(encoding="utf-8"))
+    rows = _load_rows(input_path)
     print(f"Loaded {len(rows)} rows from {input_path}")
 
     entries: list[dict[str, Any]] = []
@@ -300,7 +319,7 @@ def cmd_run(args: argparse.Namespace) -> None:
         raise SystemExit(f"corpus.json not found at {CORPUS_PATH} -- run `corpus` first")
 
     rows_by_id: dict[str, dict[str, Any]] = {
-        row["scrape_id"]: row for row in json.loads(input_path.read_text(encoding="utf-8"))
+        row["scrape_id"]: row for row in _load_rows(input_path)
     }
 
     corpus = json.loads(CORPUS_PATH.read_text(encoding="utf-8"))
