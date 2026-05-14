@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import re
+import unicodedata
+from dataclasses import dataclass, field
 
+import logfire
 from bs4 import BeautifulSoup, Tag
 
 from src.firecrawl_client import ScrapeResult
@@ -17,7 +20,8 @@ _TRUNCATION_MARKER = "[comments truncated]"
 
 
 def _normalize_text(text: str) -> str:
-    return " ".join(text.split()).lower()
+    normalized = unicodedata.normalize("NFKC", text)
+    return " ".join(normalized.split()).lower()
 
 
 def _extract_vf3_body(element: Tag) -> str:
@@ -31,8 +35,8 @@ def _extract_vf3_body(element: Tag) -> str:
     return element.get_text(" ", strip=True)
 
 
-def _build_body_to_author(soup: BeautifulSoup) -> dict[str, str]:
-    body_to_author: dict[str, str] = {}
+def _build_body_to_authors(soup: BeautifulSoup) -> dict[str, list[tuple[str, Tag]]]:
+    body_to_authors: dict[str, list[tuple[str, Tag]]] = {}
     for article in soup.select("article[aria-label^='Comment by ']"):
         classes = article.get("class") or []
         if not any("vf3-comment" in c for c in classes):
@@ -46,14 +50,77 @@ def _build_body_to_author(soup: BeautifulSoup) -> dict[str, str]:
         username = match.group(1)
         body_text = _extract_vf3_body(article)
         key = _normalize_text(body_text)
-        if key and key not in body_to_author:
-            body_to_author[key] = username
-    return body_to_author
+        if key:
+            body_to_authors.setdefault(key, []).append((username, article))
+    return body_to_authors
 
 
 def _node_body_key(node: ViafouraCommentNode) -> str:
     soup = BeautifulSoup(node.body or "", "html.parser")
     return _normalize_text(soup.get_text(" ", strip=True))
+
+
+def _strip_matched_paragraphs(markdown: str, matched_keys: set[str]) -> str:
+    paragraphs = re.split(r"\n\n+", markdown)
+    kept = [p for p in paragraphs if _normalize_text(p) not in matched_keys]
+    return "\n\n".join(kept)
+
+
+@dataclass
+class _DeduplicateResult:
+    nodes: list[ViafouraCommentNode]
+    matched_keys: set[str] = field(default_factory=set)
+    updated_html: str | None = None
+    nodes_matched: int = 0
+    articles_decomposed: int = 0
+
+
+def _deduplicate_against_scrape_html(
+    nodes: list[ViafouraCommentNode],
+    soup: BeautifulSoup,
+    body_to_authors: dict[str, list[tuple[str, Tag]]],
+) -> _DeduplicateResult:
+    api_nodes_per_key: dict[str, int] = {}
+    for node in nodes:
+        key = _node_body_key(node)
+        if key in body_to_authors:
+            api_nodes_per_key[key] = api_nodes_per_key.get(key, 0) + 1
+
+    consumed: dict[str, int] = {}
+    updated_nodes: list[ViafouraCommentNode] = []
+    matched_keys: set[str] = set()
+    nodes_matched = 0
+
+    for node in nodes:
+        key = _node_body_key(node)
+        if key not in body_to_authors:
+            updated_nodes.append(node)
+            continue
+        authors_list = body_to_authors[key]
+        if api_nodes_per_key.get(key, 0) != len(authors_list):
+            updated_nodes.append(node)
+            continue
+        idx = consumed.get(key, 0)
+        username, _ = authors_list[idx]
+        consumed[key] = idx + 1
+        updated_nodes.append(node.model_copy(update={"author_username": username}))
+        matched_keys.add(key)
+        nodes_matched += 1
+
+    articles_decomposed = 0
+    if matched_keys:
+        for key in matched_keys:
+            for _username, article in body_to_authors[key]:
+                article.decompose()
+                articles_decomposed += 1
+
+    return _DeduplicateResult(
+        nodes=updated_nodes,
+        matched_keys=matched_keys,
+        updated_html=str(soup) if matched_keys else None,
+        nodes_matched=nodes_matched,
+        articles_decomposed=articles_decomposed,
+    )
 
 
 def merge_viafoura_into_scrape(
@@ -68,37 +135,33 @@ def merge_viafoura_into_scrape(
     nodes = comments.nodes
     scrape_html_for_concat = scrape.html
     nodes_modified = False
+    articles_found = 0
+    nodes_matched = 0
+    articles_decomposed = 0
+    matched_body_keys: set[str] = set()
 
     if scrape.html is not None:
         soup = BeautifulSoup(scrape.html, "html.parser")
-        body_to_author = _build_body_to_author(soup)
+        body_to_authors = _build_body_to_authors(soup)
+        articles_found = sum(len(v) for v in body_to_authors.values())
 
-        if body_to_author:
-            matched_keys: set[str] = set()
-            updated_nodes: list[ViafouraCommentNode] = []
-            for node in nodes:
-                key = _node_body_key(node)
-                if key in body_to_author:
-                    updated_nodes.append(
-                        node.model_copy(update={"author_username": body_to_author[key]})
-                    )
-                    matched_keys.add(key)
-                    nodes_modified = True
-                else:
-                    updated_nodes.append(node)
+        if body_to_authors:
+            result = _deduplicate_against_scrape_html(nodes, soup, body_to_authors)
+            nodes = result.nodes
+            matched_body_keys = result.matched_keys
+            nodes_matched = result.nodes_matched
+            articles_decomposed = result.articles_decomposed
+            nodes_modified = nodes_matched > 0
+            if result.updated_html is not None:
+                scrape_html_for_concat = result.updated_html
 
-            if matched_keys:
-                for article in soup.select("article[aria-label^='Comment by ']"):
-                    classes = article.get("class") or []
-                    if not any("vf3-comment" in c for c in classes):
-                        continue
-                    body_text = _extract_vf3_body(article)
-                    key = _normalize_text(body_text)
-                    if key in matched_keys:
-                        article.decompose()
-                scrape_html_for_concat = str(soup)
-
-            nodes = updated_nodes
+    logfire.info(
+        "viafoura.merge.dedup",
+        articles_found=articles_found,
+        nodes_matched=nodes_matched,
+        articles_decomposed=articles_decomposed,
+        parse_failed=0,
+    )
 
     if nodes_modified:
         was_truncated = comments_markdown.rstrip().endswith(_TRUNCATION_MARKER)
@@ -112,27 +175,37 @@ def merge_viafoura_into_scrape(
         else f"{_COMMENTS_HEADER}\n{comments_markdown}"
     )
 
+    source_markdown = scrape.markdown
+    if source_markdown and matched_body_keys:
+        source_markdown = _strip_matched_paragraphs(source_markdown, matched_body_keys)
+
     merged_markdown = (
         comments_block
-        if scrape.markdown is None
-        else f"{scrape.markdown}\n\n{comments_block}"
-        if scrape.markdown
+        if source_markdown is None
+        else f"{source_markdown}\n\n{comments_block}"
+        if source_markdown
         else comments_block
     )
 
     comments_html = render_comments_to_html(nodes)
-    merged_html = (
-        None
-        if scrape.html is None
-        else scrape_html_for_concat
-        if not comments_html
-        else (
-            f'{scrape_html_for_concat}<div data-platform-comments data-platform="viafoura" '
-            f'data-platform-status="copied">{comments_html}</div>'
-        )
-    )
+    merged_html = _build_merged_html(scrape.html, scrape_html_for_concat, comments_html)
 
     return scrape.model_copy(update={"markdown": merged_markdown, "html": merged_html})
+
+
+def _build_merged_html(
+    original_html: str | None,
+    scrape_html_for_concat: str | None,
+    comments_html: str,
+) -> str | None:
+    if original_html is None:
+        return None
+    if not comments_html:
+        return scrape_html_for_concat
+    return (
+        f'{scrape_html_for_concat}<div data-platform-comments data-platform="viafoura" '
+        f'data-platform-status="copied">{comments_html}</div>'
+    )
 
 
 __all__ = ["merge_viafoura_into_scrape"]
