@@ -37,7 +37,7 @@ class ViafouraCommentNode(BaseModel):
     author_username: str | None
     parent_id: str | None
     created_at: datetime
-    actor_uuid: str | None
+    actor_uuid: str | None = None
 
 
 class ViafouraComments(BaseModel):
