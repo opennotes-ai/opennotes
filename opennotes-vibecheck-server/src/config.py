@@ -137,6 +137,8 @@ class Settings(BaseSettings):
     VIBECHECK_LIMITER_REDIS_URL: str = ""
     VIBECHECK_LIMITER_REDIS_CA_CERT_PATH: str = ""
     VIBECHECK_LIMITER_REDIS_MAX_CONNECTIONS: int = 10
+    VIBECHECK_LIMITER_REDIS_REQUEST_SOCKET_TIMEOUT_SECONDS: float = 1.5
+    VIBECHECK_LIMITER_REDIS_REQUEST_CONNECT_TIMEOUT_SECONDS: float = 2.0
     VIBECHECK_LIMITER_KEY_SALT: str = ""
 
     # TASK-1473.35: when set + the public POST carries
@@ -260,6 +262,16 @@ class Settings(BaseSettings):
     def _trends_oppositions_max_clusters_nonnegative(cls, value: int) -> int:
         if value < 0:
             raise ValueError("trends/oppositions max clusters must be >= 0")
+        return value
+
+    @field_validator(
+        "VIBECHECK_LIMITER_REDIS_REQUEST_SOCKET_TIMEOUT_SECONDS",
+        "VIBECHECK_LIMITER_REDIS_REQUEST_CONNECT_TIMEOUT_SECONDS",
+    )
+    @classmethod
+    def _limiter_redis_request_timeouts_positive(cls, value: float) -> float:
+        if value <= 0:
+            raise ValueError("request-bucket Redis timeout settings must be > 0")
         return value
 
     @model_validator(mode="after")

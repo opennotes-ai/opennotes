@@ -4,6 +4,7 @@ import pytest
 from limits.aio.storage import MemoryStorage
 from prometheus_client import REGISTRY
 from redis.exceptions import ConnectionError as RedisConnectionError
+from redis.exceptions import TimeoutError as RedisTimeoutError
 
 from src.config import Settings
 from src.services import limiter_storage
@@ -154,3 +155,71 @@ def test_build_limiter_storage_uses_redis_wrapper_when_url_is_set(monkeypatch):
         get_settings.cache_clear()
 
     assert isinstance(storage, limiter_storage.FailOpenRedisStorage)
+
+
+def test_redis_storage_options_uses_configured_socket_timeout():
+    """Verify socket_timeout comes from settings, not hardcoded 0.01."""
+    settings = Settings(
+        VIBECHECK_LIMITER_REDIS_URL="redis://localhost:6379/0",
+        VIBECHECK_LIMITER_REDIS_REQUEST_SOCKET_TIMEOUT_SECONDS=1.5,
+    )
+    options = limiter_storage._redis_storage_options(settings)
+    assert options["socket_timeout"] == 1.5
+    assert options["socket_timeout"] != 0.01
+
+
+def test_redis_storage_options_uses_configured_connect_timeout():
+    """Verify socket_connect_timeout comes from settings, not hardcoded 0.01."""
+    settings = Settings(
+        VIBECHECK_LIMITER_REDIS_URL="redis://localhost:6379/0",
+        VIBECHECK_LIMITER_REDIS_REQUEST_CONNECT_TIMEOUT_SECONDS=2.0,
+    )
+    options = limiter_storage._redis_storage_options(settings)
+    assert options["socket_connect_timeout"] == 2.0
+    assert options["socket_connect_timeout"] != 0.01
+
+
+def test_redis_storage_options_preserves_other_settings():
+    """Verify that other Redis storage options are preserved."""
+    settings = Settings(
+        VIBECHECK_LIMITER_REDIS_URL="redis://localhost:6379/0",
+        VIBECHECK_LIMITER_REDIS_MAX_CONNECTIONS=50,
+        VIBECHECK_LIMITER_REDIS_REQUEST_SOCKET_TIMEOUT_SECONDS=1.5,
+        VIBECHECK_LIMITER_REDIS_REQUEST_CONNECT_TIMEOUT_SECONDS=2.0,
+    )
+    options = limiter_storage._redis_storage_options(settings)
+    assert options["retry_on_timeout"] is True
+    assert options["retry_on_error"] == [RedisConnectionError, RedisTimeoutError]
+    assert options["max_connections"] == 50
+    assert options["key_prefix"] == ""
+
+
+def test_redis_storage_options_with_rediss_includes_ca_certs():
+    """Verify CA certs are included for rediss:// URLs."""
+    settings = Settings(
+        VIBECHECK_LIMITER_REDIS_URL="rediss://localhost:6379/0",
+        VIBECHECK_LIMITER_REDIS_CA_CERT_PATH="/path/to/ca.pem",
+        VIBECHECK_LIMITER_REDIS_REQUEST_SOCKET_TIMEOUT_SECONDS=1.5,
+        VIBECHECK_LIMITER_REDIS_REQUEST_CONNECT_TIMEOUT_SECONDS=2.0,
+    )
+    options = limiter_storage._redis_storage_options(settings)
+    assert options["ssl_ca_certs"] == "/path/to/ca.pem"
+
+
+def test_build_slowapi_limiter_uses_configured_timeouts(monkeypatch):
+    """Verify build_slowapi_limiter passes configured timeouts to storage_options."""
+    monkeypatch.setenv("VIBECHECK_LIMITER_REDIS_URL", "redis://localhost:6379/0")
+    monkeypatch.setenv("VIBECHECK_LIMITER_REDIS_REQUEST_SOCKET_TIMEOUT_SECONDS", "1.5")
+    monkeypatch.setenv("VIBECHECK_LIMITER_REDIS_REQUEST_CONNECT_TIMEOUT_SECONDS", "2.0")
+    from src.config import get_settings
+
+    get_settings.cache_clear()
+    try:
+        limiter = limiter_storage.build_slowapi_limiter(
+            key_func=lambda: "test",
+            consumer_label="test_limiter",
+        )
+        assert limiter._storage_options["socket_timeout"] == 1.5
+        assert limiter._storage_options["socket_connect_timeout"] == 2.0
+    finally:
+        get_settings.cache_clear()

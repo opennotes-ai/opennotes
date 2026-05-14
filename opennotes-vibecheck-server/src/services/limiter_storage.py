@@ -15,7 +15,6 @@ from src.config import Settings, get_settings
 from src.monitoring_metrics import LIMITER_FAILOPEN_COUNT
 
 _T = TypeVar("_T")
-_REDIS_COMMAND_TIMEOUT_SECONDS = 0.01
 _REDIS_TRANSPORT_ERRORS = (
     RedisConnectionError,
     RedisTimeoutError,
@@ -210,8 +209,8 @@ def _build_redis_storage(settings: Settings) -> RedisStorage:
 
 def _redis_storage_options(settings: Settings) -> dict[str, Any]:
     options: dict[str, Any] = {
-        "socket_timeout": _REDIS_COMMAND_TIMEOUT_SECONDS,
-        "socket_connect_timeout": _REDIS_COMMAND_TIMEOUT_SECONDS,
+        "socket_timeout": settings.VIBECHECK_LIMITER_REDIS_REQUEST_SOCKET_TIMEOUT_SECONDS,
+        "socket_connect_timeout": settings.VIBECHECK_LIMITER_REDIS_REQUEST_CONNECT_TIMEOUT_SECONDS,
         "retry_on_timeout": True,
         "retry_on_error": [RedisConnectionError, RedisTimeoutError],
         "max_connections": settings.VIBECHECK_LIMITER_REDIS_MAX_CONNECTIONS,
