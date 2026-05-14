@@ -6,6 +6,8 @@ making post-Gemini traces correlatable per analysis.
 """
 
 from __future__ import annotations
+
+import warnings
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -137,5 +139,14 @@ def test_build_agent_omits_instrument_when_unspecified(settings: Settings) -> No
 
 
 def test_build_agent_does_not_emit_deprecation_warnings(settings: Settings) -> None:
-    agent = build_agent(settings, output_type=_Out, system_prompt="test", name="vibecheck.unit_test")
+    instrument = InstrumentationSettings(include_content=True, version=3)
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", DeprecationWarning)
+        agent = build_agent(
+            settings,
+            output_type=_Out,
+            system_prompt="test",
+            name="vibecheck.unit_test",
+            instrument=instrument,
+        )
     assert agent.name == "vibecheck.unit_test"
