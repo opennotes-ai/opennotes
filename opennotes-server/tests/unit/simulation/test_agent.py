@@ -1,8 +1,9 @@
-import importlib
 import inspect
 import logging
-import warnings
+import subprocess
+import sys
 from dataclasses import fields
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import UUID, uuid4
 
@@ -38,6 +39,7 @@ from src.simulation.schemas import RatedNoteEntry, SimActionType, SimAgentAction
 
 _TEST_MODEL_ID = ModelId.from_pydantic_ai("openai:gpt-4o-mini")
 _GENERIC_MODEL_ID = ModelId.from_pydantic_ai("test:model")
+_SERVER_ROOT = Path(__file__).resolve().parents[3]
 
 
 def _make_nested_ctx():
@@ -120,16 +122,34 @@ class TestAgentClassExists:
         assert agent._model == _TEST_MODEL_ID
 
     def test_module_reload_avoids_pydantic_ai_deprecation_warnings(self):
-        import src.simulation.agent as agent_module
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-c",
+                (
+                    "import warnings\n"
+                    "from pydantic_ai._warnings import PydanticAIDeprecationWarning\n"
+                    "warnings.filterwarnings(\n"
+                    '    "ignore",\n'
+                    '    message=r"pythonjsonlogger\\\\.jsonlogger has been moved.*",\n'
+                    "    category=DeprecationWarning,\n"
+                    ")\n"
+                    "warnings.filterwarnings(\n"
+                    '    "error",\n'
+                    "    category=PydanticAIDeprecationWarning,\n"
+                    ")\n"
+                    "import importlib\n"
+                    "import src.simulation.agent as agent_module\n"
+                    "importlib.reload(agent_module)\n"
+                ),
+            ],
+            cwd=_SERVER_ROOT,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
 
-        with warnings.catch_warnings(record=True) as caught:
-            warnings.simplefilter("always")
-            importlib.reload(agent_module)
-
-        deprecations = [
-            warning for warning in caught if issubclass(warning.category, DeprecationWarning)
-        ]
-        assert deprecations == []
+        assert result.returncode == 0, result.stderr
 
 
 class TestToolsRegistered:
