@@ -231,6 +231,7 @@ async def extract_utterances(
                 include_content=(
                     random.random() < settings.LOGFIRE_EXTRACTOR_CONTENT_SAMPLE_RATE
                 ),
+                include_binary_content=False,
                 version=_PYDANTIC_AI_INSTRUMENTATION_VERSION,
             ),
         )

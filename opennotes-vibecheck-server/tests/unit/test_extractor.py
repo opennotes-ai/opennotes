@@ -1406,6 +1406,7 @@ async def test_extract_utterances_includes_content_when_sampled_in(
     instrument = captured.get("instrument")
     assert isinstance(instrument, InstrumentationSettings)
     assert instrument.include_content is True
+    assert instrument.include_binary_content is False
 
 
 @pytest.mark.asyncio
@@ -1425,6 +1426,7 @@ async def test_extract_utterances_excludes_content_when_sampled_out(
     instrument = captured.get("instrument")
     assert isinstance(instrument, InstrumentationSettings)
     assert instrument.include_content is False
+    assert instrument.include_binary_content is False
 
 
 @pytest.mark.asyncio
@@ -1445,6 +1447,7 @@ async def test_extract_utterances_sample_rate_zero_always_excludes_content(
     instrument = captured.get("instrument")
     assert isinstance(instrument, InstrumentationSettings)
     assert instrument.include_content is False
+    assert instrument.include_binary_content is False
 
 
 @pytest.mark.asyncio
@@ -1465,3 +1468,4 @@ async def test_extract_utterances_sample_rate_one_always_includes_content(
     instrument = captured.get("instrument")
     assert isinstance(instrument, InstrumentationSettings)
     assert instrument.include_content is True
+    assert instrument.include_binary_content is False
