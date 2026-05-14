@@ -262,7 +262,7 @@ def _stub_agent(monkeypatch: pytest.MonkeyPatch, payload: UtterancesPayload) -> 
     fake = _FakeAgent(payload=payload)
     monkeypatch.setattr(
         "src.utterances.extractor.build_agent",
-        lambda settings, output_type=None, system_prompt=None, name=None, tier="fast": fake,
+        lambda settings, output_type=None, system_prompt=None, name=None, tier="fast", **_kwargs: fake,
     )
     return fake
 
@@ -537,7 +537,7 @@ async def test_cache_miss_then_get_screenshot_returns_signed_url(
     fake_agent.run = capturing_run  # pyright: ignore[reportAttributeAccessIssue]
     monkeypatch.setattr(
         "src.utterances.extractor.build_agent",
-        lambda settings, output_type=None, system_prompt=None, name=None: fake_agent,
+        lambda settings, output_type=None, system_prompt=None, name=None, **_kwargs: fake_agent,
     )
 
     await _call(TARGET_URL, client, cache, settings)
@@ -577,7 +577,7 @@ async def test_cache_hit_preserves_storage_key_through_tool_call(
     fake_agent.run = capturing_run  # pyright: ignore[reportAttributeAccessIssue]
     monkeypatch.setattr(
         "src.utterances.extractor.build_agent",
-        lambda settings, output_type=None, system_prompt=None, name=None: fake_agent,
+        lambda settings, output_type=None, system_prompt=None, name=None, **_kwargs: fake_agent,
     )
 
     await _call(TARGET_URL, client, cache, settings)
@@ -934,7 +934,7 @@ def _stub_agent_raising(monkeypatch: pytest.MonkeyPatch, exc: BaseException) -> 
 
     monkeypatch.setattr(
         "src.utterances.extractor.build_agent",
-        lambda settings, output_type=None, system_prompt=None, name=None, tier="fast": (
+        lambda settings, output_type=None, system_prompt=None, name=None, tier="fast", **_kwargs: (
             _RaisingAgent()
         ),
     )
@@ -1096,7 +1096,7 @@ async def test_extract_utterances_still_raises_extraction_error_on_agent_excepti
 
     monkeypatch.setattr(
         "src.utterances.extractor.build_agent",
-        lambda settings, output_type=None, system_prompt=None, name=None, tier="fast": (
+        lambda settings, output_type=None, system_prompt=None, name=None, tier="fast", **_kwargs: (
             _ExplodingAgent()
         ),
     )
@@ -1342,3 +1342,126 @@ async def test_extract_utterances_succeeds_when_payload_has_one_or_more_utteranc
 
     assert len(payload.utterances) == 1
     assert payload.utterances[0].text == "present"
+
+
+# ---------------------------------------------------------------------------
+# TASK-1642.02 — LOGFIRE_EXTRACTOR_CONTENT_SAMPLE_RATE validation + sampling
+# ---------------------------------------------------------------------------
+
+
+from pydantic import ValidationError
+from pydantic_ai.models.instrumented import InstrumentationSettings
+
+
+def test_settings_rejects_extractor_sample_rate_below_zero() -> None:
+    with pytest.raises(ValidationError):
+        Settings(LOGFIRE_EXTRACTOR_CONTENT_SAMPLE_RATE=-0.01)
+
+
+def test_settings_rejects_extractor_sample_rate_above_one() -> None:
+    with pytest.raises(ValidationError):
+        Settings(LOGFIRE_EXTRACTOR_CONTENT_SAMPLE_RATE=1.01)
+
+
+def test_settings_accepts_extractor_sample_rate_boundaries() -> None:
+    s0 = Settings(LOGFIRE_EXTRACTOR_CONTENT_SAMPLE_RATE=0.0)
+    assert s0.LOGFIRE_EXTRACTOR_CONTENT_SAMPLE_RATE == 0.0
+    s1 = Settings(LOGFIRE_EXTRACTOR_CONTENT_SAMPLE_RATE=1.0)
+    assert s1.LOGFIRE_EXTRACTOR_CONTENT_SAMPLE_RATE == 1.0
+
+
+def _stub_build_agent_capturing(
+    monkeypatch: pytest.MonkeyPatch, payload: UtterancesPayload
+) -> dict[str, Any]:
+    """Replace `build_agent` with a fake that records the kwargs it received.
+
+    Returns the shared dict mutated by the stub so tests can assert on
+    `instrument=` (or any other forwarded kwarg).
+    """
+    captured: dict[str, Any] = {}
+    fake = _FakeAgent(payload=payload)
+
+    def _build(*args: Any, **kwargs: Any) -> _FakeAgent:
+        captured.update(kwargs)
+        return fake
+
+    monkeypatch.setattr("src.utterances.extractor.build_agent", _build)
+    return captured
+
+
+@pytest.mark.asyncio
+async def test_extract_utterances_includes_content_when_sampled_in(
+    monkeypatch: pytest.MonkeyPatch, settings: Settings
+) -> None:
+    """When random.random() < sample_rate, instrument.include_content=True."""
+    client = _FakeFirecrawlClient(result=_scrape())
+    cache = _FakeScrapeCache()
+    captured = _stub_build_agent_capturing(monkeypatch, _payload())
+
+    # Default sample rate is 0.05; 0.04 < 0.05 → sampled in.
+    monkeypatch.setattr("src.utterances.extractor.random.random", lambda: 0.04)
+
+    await _call(TARGET_URL, client, cache, settings)
+
+    instrument = captured.get("instrument")
+    assert isinstance(instrument, InstrumentationSettings)
+    assert instrument.include_content is True
+
+
+@pytest.mark.asyncio
+async def test_extract_utterances_excludes_content_when_sampled_out(
+    monkeypatch: pytest.MonkeyPatch, settings: Settings
+) -> None:
+    """When random.random() >= sample_rate, instrument.include_content=False."""
+    client = _FakeFirecrawlClient(result=_scrape())
+    cache = _FakeScrapeCache()
+    captured = _stub_build_agent_capturing(monkeypatch, _payload())
+
+    # Default sample rate is 0.05; 0.06 >= 0.05 → sampled out.
+    monkeypatch.setattr("src.utterances.extractor.random.random", lambda: 0.06)
+
+    await _call(TARGET_URL, client, cache, settings)
+
+    instrument = captured.get("instrument")
+    assert isinstance(instrument, InstrumentationSettings)
+    assert instrument.include_content is False
+
+
+@pytest.mark.asyncio
+async def test_extract_utterances_sample_rate_zero_always_excludes_content(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """sample_rate=0.0 → content always excluded regardless of random draw."""
+    settings = Settings(LOGFIRE_EXTRACTOR_CONTENT_SAMPLE_RATE=0.0)
+    client = _FakeFirecrawlClient(result=_scrape())
+    cache = _FakeScrapeCache()
+    captured = _stub_build_agent_capturing(monkeypatch, _payload())
+
+    # Even random.random() returning 0.0 must be < 0.0 == False.
+    monkeypatch.setattr("src.utterances.extractor.random.random", lambda: 0.0)
+
+    await _call(TARGET_URL, client, cache, settings)
+
+    instrument = captured.get("instrument")
+    assert isinstance(instrument, InstrumentationSettings)
+    assert instrument.include_content is False
+
+
+@pytest.mark.asyncio
+async def test_extract_utterances_sample_rate_one_always_includes_content(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """sample_rate=1.0 → content always included regardless of random draw."""
+    settings = Settings(LOGFIRE_EXTRACTOR_CONTENT_SAMPLE_RATE=1.0)
+    client = _FakeFirecrawlClient(result=_scrape())
+    cache = _FakeScrapeCache()
+    captured = _stub_build_agent_capturing(monkeypatch, _payload())
+
+    # 0.999 < 1.0 → True. random.random() never returns 1.0.
+    monkeypatch.setattr("src.utterances.extractor.random.random", lambda: 0.999)
+
+    await _call(TARGET_URL, client, cache, settings)
+
+    instrument = captured.get("instrument")
+    assert isinstance(instrument, InstrumentationSettings)
+    assert instrument.include_content is True
