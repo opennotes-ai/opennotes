@@ -79,7 +79,7 @@ export function buildPunchCardOption(buckets: SentimentBucket[]): EChartsOption 
 
   return {
     animation: false,
-    grid: { top: 8, right: 8, bottom: 24, left: 64 },
+    grid: { top: 8, right: 8, bottom: 24, left: 8 },
     xAxis: {
       type: "time",
       min: buckets[0]?.startMs,
@@ -89,6 +89,9 @@ export function buildPunchCardOption(buckets: SentimentBucket[]): EChartsOption 
       type: "category",
       inverse: true,
       data: SENTIMENTS.map((entry) => entry.label),
+      axisLabel: { show: false },
+      axisTick: { show: false },
+      axisLine: { show: false },
     },
     tooltip: {
       trigger: "item",

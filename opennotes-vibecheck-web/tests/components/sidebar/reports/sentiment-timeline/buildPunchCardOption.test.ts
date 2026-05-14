@@ -40,11 +40,17 @@ describe("buildPunchCardOption", () => {
       type?: string;
       data?: string[];
       inverse?: boolean;
+      axisLabel?: { show?: boolean };
+      axisTick?: { show?: boolean };
+      axisLine?: { show?: boolean };
     };
 
     expect(yAxis.type).toBe("category");
     expect(yAxis.inverse).toBe(true);
     expect(yAxis.data).toEqual(["Positive", "Neutral", "Negative"]);
+    expect(yAxis.axisLabel?.show).toBe(false);
+    expect(yAxis.axisTick?.show).toBe(false);
+    expect(yAxis.axisLine?.show).toBe(false);
     expect(series).toHaveLength(3);
     expect(series.map((entry) => entry.type)).toEqual([
       "scatter",
@@ -77,6 +83,12 @@ describe("buildPunchCardOption", () => {
     expect(positiveSize).toBeGreaterThan(0);
     expect(positiveSize).toBeLessThanOrEqual(24);
     expect(series[1]?.itemStyle?.color).toBe("oklch(0.50 0.01 160 / 0.4)");
+  });
+
+  it("uses a compact grid with left=8 so the chart occupies full width", () => {
+    const option = asOption();
+    const grid = option.grid as { left?: number };
+    expect(grid.left).toBe(8);
   });
 
   it("formats the tooltip with bucket window and per-sentiment counts", () => {

@@ -75,7 +75,7 @@ export function buildRollingOption(buckets: SentimentBucket[]): EChartsOption {
   });
 
   return {
-    grid: { top: 8, right: 8, bottom: 24, left: 64 },
+    grid: { top: 8, right: 8, bottom: 24, left: 8 },
     tooltip: {
       trigger: "axis",
       formatter: (rawParams) => {
