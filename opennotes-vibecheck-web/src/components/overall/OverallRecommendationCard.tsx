@@ -272,6 +272,17 @@ export function decideOverall(
   );
 }
 
+export function resolveOverallDecision(
+  input: OverallRecommendationCardProps,
+): OverallDecision | null {
+  if (input.overall != null) return input.overall;
+  return decideOverall({
+    safetyRecommendation: input.recommendation,
+    flashpointMatches: input.flashpointMatches,
+    utility: { weatherReport: input.weatherReport },
+  });
+}
+
 const VERDICT_CLASSES: Record<OverallVerdict, string> = {
   pass: "bg-muted text-muted-foreground border-border",
   flag: "bg-destructive/5 text-destructive border-destructive/40",
@@ -280,14 +291,7 @@ const VERDICT_CLASSES: Record<OverallVerdict, string> = {
 export function OverallRecommendationCard(
   props: OverallRecommendationCardProps,
 ): JSX.Element | null {
-  const resolved = (): OverallDecision | null => {
-    if (props.overall != null) return props.overall;
-    return decideOverall({
-      safetyRecommendation: props.recommendation,
-      flashpointMatches: props.flashpointMatches,
-      utility: { weatherReport: props.weatherReport },
-    });
-  };
+  const resolved = (): OverallDecision | null => resolveOverallDecision(props);
 
   return (
     <Show when={resolved()}>

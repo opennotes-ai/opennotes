@@ -34,7 +34,10 @@ import { HeadlineLeadIn } from "~/components/sidebar/reports";
 import { SidebarStoreProvider } from "~/components/sidebar/SidebarStoreProvider";
 import { HighlightsStoreProvider } from "~/components/highlights/HighlightsStoreProvider";
 import { SafetyHighlightsBridge } from "~/components/highlights/SafetyHighlightsBridge";
-import { OverallRecommendationCard } from "~/components/overall/OverallRecommendationCard";
+import {
+  OverallRecommendationCard,
+  resolveOverallDecision,
+} from "~/components/overall/OverallRecommendationCard";
 import type {
   JobState,
   PublicErrorCode,
@@ -54,6 +57,7 @@ import {
   type ArchiveProbeResult,
   type FrameCompatResult,
 } from "./analyze.data";
+import { formatAnalyzeDocumentTitle } from "./analyze-title";
 
 const ALL_ERROR_CODES: readonly PublicErrorCode[] = [
   "invalid_url",
@@ -111,6 +115,16 @@ const ORIGINAL_BLOCKED_TIP_TEXT =
 const ARCHIVE_PROBE_INTERVAL_MS = 5_000;
 const ARCHIVE_PROBE_CAP_MS = 300_000;
 const ARCHIVE_PROBE_TERMINAL_GRACE_MS = 10_000;
+
+function BrowserDocumentTitle(props: { value: string }) {
+  createEffect(() => {
+    if (typeof document !== "undefined") {
+      document.title = props.value;
+    }
+  });
+
+  return <Title>{props.value}</Title>;
+}
 
 function asErrorCode(raw: string | undefined): PublicErrorCode | null {
   if (!raw) return null;
@@ -183,7 +197,7 @@ export default function AnalyzePage() {
 
   return (
     <>
-      <Title>vibecheck — analyzing</Title>
+      <BrowserDocumentTitle value="vibecheck - analyzing" />
       <Meta property="og:title" content={`${ogTitle()} — vibecheck`} />
       <Meta property="og:description" content={ogDescription()} />
       <Meta property="og:url" content={ogUrl()} />
@@ -595,6 +609,22 @@ function AnalyzePageContent(props: { initialJobState: JobState | null }) {
       : null;
   const weatherReport = () =>
     sidebarPayload()?.weather_report ?? null;
+  const resolvedOverallDecision = createMemo(() =>
+    resolveOverallDecision({
+      recommendation: sidebarPayload()?.safety?.recommendation ?? null,
+      overall: sidebarPayload()?.overall ?? null,
+      flashpointMatches:
+        sidebarPayload()?.tone_dynamics?.flashpoint_matches ?? null,
+      weatherReport: weatherReport(),
+    }),
+  );
+  const documentTitle = createMemo(() =>
+    formatAnalyzeDocumentTitle({
+      job: jobState(),
+      overallDecision: resolvedOverallDecision(),
+      url: jobUrl(),
+    }),
+  );
   const showHeadlineLeadIn = () => {
     if (isExpired() || showFailure()) return false;
     if (hasHeadlineLeadInValue() || hasWeatherPayload()) return true;
@@ -734,6 +764,7 @@ function AnalyzePageContent(props: { initialJobState: JobState | null }) {
 
   return (
     <>
+      <BrowserDocumentTitle value={documentTitle()} />
       <main
         data-testid="analyze-main"
         data-archive-probe-state={archiveProbeState()}
