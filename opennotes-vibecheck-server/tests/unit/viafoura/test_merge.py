@@ -5,7 +5,6 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from unittest.mock import patch
 
-import pytest
 from bs4 import BeautifulSoup
 
 from src.firecrawl_client import ScrapeResult
@@ -125,8 +124,9 @@ def test_merge_single_vf3_comment_overwrites_author_and_removes_article() -> Non
     assert author_span.get_text() == "Mikeee"
 
     article_body_html = merged.html or ""
-    before_platform = article_body_html.split('<div data-platform-comments')[0]
-    assert 'vf3-comment' not in before_platform
+    before_platform_html = article_body_html.split('<div data-platform-comments')[0]
+    before_platform_soup = BeautifulSoup(before_platform_html, "html.parser")
+    assert before_platform_soup.select("article.vf3-comment") == []
 
 
 def test_merge_unmatched_vf3_comment_preserves_pseudonym_and_article() -> None:
@@ -242,8 +242,9 @@ def test_merge_multiple_vf3_comments_all_matched_dedup_all() -> None:
     assert "user-dddd4444" not in merged.markdown
 
     article_body_html = merged.html or ""
-    before_platform = article_body_html.split('<div data-platform-comments')[0]
-    assert 'vf3-comment' not in before_platform
+    before_platform_html = article_body_html.split('<div data-platform-comments')[0]
+    before_platform_soup = BeautifulSoup(before_platform_html, "html.parser")
+    assert before_platform_soup.select("article.vf3-comment") == []
 
 
 def test_merge_vf3_comment_with_scrape_html_none_unchanged() -> None:
@@ -428,12 +429,11 @@ def test_two_api_nodes_same_body_one_vf3_article_ambiguous_does_not_overdecompos
 
     merged = merge_viafoura_into_scrape(scrape, comments)
 
-    soup = BeautifulSoup(merged.html or "", "html.parser")
     before_platform_html = merged.html or ""
     if '<div data-platform-comments' in before_platform_html:
         before_platform_html = before_platform_html.split('<div data-platform-comments')[0]
-    vf3_articles_remaining = before_platform_html.count("vf3-comment")
-    assert vf3_articles_remaining >= 1
+    before_platform_soup = BeautifulSoup(before_platform_html, "html.parser")
+    assert len(before_platform_soup.select("article.vf3-comment")) >= 1
 
 
 # ── TASK-1645.06: Normalization + pseudonym hardening ────────────────────────

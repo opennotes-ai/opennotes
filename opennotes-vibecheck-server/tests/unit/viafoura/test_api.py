@@ -182,64 +182,120 @@ def _comments_payload_with_actor_uuid() -> dict[str, object]:
     }
 
 
-def test_as_public_returns_pseudonym_from_actor_uuid_when_actor_and_author_absent() -> None:
-    from src.viafoura.api import _ViafouraContent
-
-    content = _ViafouraContent(
-        content_uuid="aabbccdd-0000-0000-0000-000000000001",
-        parent_uuid=None,
-        content="Hello",
-        date_created=1778282641870,
-        state="visible",
-        actor=None,
-        author=None,
-        actor_uuid="a1b2c3d4-e5f6-7890-abcd-ef1234567890",
-    )
-    node = content.as_public(container_uuid="different-uuid")
-
-    assert node is not None
-    assert node.author_username == "user-a1b2c3d4"
-    assert node.actor_uuid == "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
-
-
-def test_as_public_returns_none_username_when_actor_author_and_actor_uuid_all_absent() -> None:
-    from src.viafoura.api import _ViafouraContent
-
-    content = _ViafouraContent(
-        content_uuid="aabbccdd-0000-0000-0000-000000000002",
-        parent_uuid=None,
-        content="Hello",
-        date_created=1778282641870,
-        state="visible",
-        actor=None,
-        author=None,
-        actor_uuid=None,
-    )
-    node = content.as_public(container_uuid="different-uuid")
-
-    assert node is not None
-    assert node.author_username is None
-    assert node.actor_uuid is None
+def _comments_payload_no_actor_no_uuid() -> dict[str, object]:
+    return {
+        "more_available": False,
+        "contents": [
+            {
+                "content_uuid": "aabbccdd-0000-0000-0000-000000000002",
+                "parent_uuid": "fe897d9b-8fcf-411a-b9d6-97325116ed98",
+                "content": "Anonymous comment.",
+                "date_created": 1778282641870,
+                "state": "visible",
+                "actor": None,
+                "actor_uuid": None,
+                "total_likes": 0,
+                "total_replies": 0,
+            }
+        ],
+    }
 
 
-def test_as_public_prefers_actor_name_and_propagates_actor_uuid() -> None:
-    from src.viafoura.api import _ViafouraActor, _ViafouraContent
+def _comments_payload_actor_name_whitespace_falls_to_username() -> dict[str, object]:
+    return {
+        "more_available": False,
+        "contents": [
+            {
+                "content_uuid": "aabbccdd-0000-0000-0000-000000000010",
+                "parent_uuid": "fe897d9b-8fcf-411a-b9d6-97325116ed98",
+                "content": "Whitespace name, real username.",
+                "date_created": 1778282641870,
+                "state": "visible",
+                "actor": {"name": "   ", "username": "real_username"},
+                "actor_uuid": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+                "total_likes": 0,
+                "total_replies": 0,
+            }
+        ],
+    }
 
-    content = _ViafouraContent(
-        content_uuid="aabbccdd-0000-0000-0000-000000000003",
-        parent_uuid=None,
-        content="Hello",
-        date_created=1778282641870,
-        state="visible",
-        actor=_ViafouraActor(name="apreader", username="apreader_user"),
-        author=None,
-        actor_uuid="a1b2c3d4-e5f6-7890-abcd-ef1234567890",
-    )
-    node = content.as_public(container_uuid="different-uuid")
 
-    assert node is not None
-    assert node.author_username == "apreader"
-    assert node.actor_uuid == "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+def _comments_payload_actor_name_and_username_whitespace_falls_to_pseudonym() -> dict[str, object]:
+    return {
+        "more_available": False,
+        "contents": [
+            {
+                "content_uuid": "aabbccdd-0000-0000-0000-000000000011",
+                "parent_uuid": "fe897d9b-8fcf-411a-b9d6-97325116ed98",
+                "content": "Both name and username whitespace.",
+                "date_created": 1778282641870,
+                "state": "visible",
+                "actor": {"name": "  ", "username": "  "},
+                "actor_uuid": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+                "total_likes": 0,
+                "total_replies": 0,
+            }
+        ],
+    }
+
+
+def _comments_payload_actor_name_prefers_actor_and_propagates_uuid() -> dict[str, object]:
+    return {
+        "more_available": False,
+        "contents": [
+            {
+                "content_uuid": "aabbccdd-0000-0000-0000-000000000003",
+                "parent_uuid": "fe897d9b-8fcf-411a-b9d6-97325116ed98",
+                "content": "Named actor comment.",
+                "date_created": 1778282641870,
+                "state": "visible",
+                "actor": {"name": "apreader", "username": "apreader_user"},
+                "actor_uuid": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+                "total_likes": 0,
+                "total_replies": 0,
+            }
+        ],
+    }
+
+
+def _comments_payload_empty_actor_falls_to_author_username() -> dict[str, object]:
+    return {
+        "more_available": False,
+        "contents": [
+            {
+                "content_uuid": "aabbccdd-0000-0000-0000-000000000012",
+                "parent_uuid": "fe897d9b-8fcf-411a-b9d6-97325116ed98",
+                "content": "Author username fallback.",
+                "date_created": 1778282641870,
+                "state": "visible",
+                "actor": {"name": None, "username": None},
+                "author": {"name": None, "username": "real_author_username"},
+                "actor_uuid": None,
+                "total_likes": 0,
+                "total_replies": 0,
+            }
+        ],
+    }
+
+
+def _comments_payload_empty_actor_falls_to_author_name() -> dict[str, object]:
+    return {
+        "more_available": False,
+        "contents": [
+            {
+                "content_uuid": "aabbccdd-0000-0000-0000-000000000013",
+                "parent_uuid": "fe897d9b-8fcf-411a-b9d6-97325116ed98",
+                "content": "Author name fallback.",
+                "date_created": 1778282641870,
+                "state": "visible",
+                "actor": {"name": None, "username": None},
+                "author": {"name": "AuthorDisplayName", "username": None},
+                "actor_uuid": None,
+                "total_likes": 0,
+                "total_replies": 0,
+            }
+        ],
+    }
 
 
 async def test_fetch_viafoura_comments_derives_pseudonym_from_actor_uuid(
@@ -267,61 +323,156 @@ async def test_fetch_viafoura_comments_derives_pseudonym_from_actor_uuid(
     assert node.actor_uuid == "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
 
 
+async def test_fetch_viafoura_comments_returns_none_username_when_actor_and_uuid_absent(
+    httpx_mock: HTTPXMock,
+) -> None:
+    httpx_mock.add_response(url=BOOTSTRAP_URL, method="POST", json=_bootstrap_payload())
+    httpx_mock.add_response(url=CONTAINER_URL, method="GET", json=_container_payload())
+    httpx_mock.add_response(
+        url=COMMENTS_URL, method="GET", json=_comments_payload_no_actor_no_uuid()
+    )
+
+    async with httpx.AsyncClient() as client:
+        result = await fetch_viafoura_comments(
+            _signal(),
+            STORY_URL,
+            client=client,
+            limit=5,
+            reply_limit=2,
+        )
+
+    assert result.raw_count == 1
+    assert len(result.nodes) == 1
+    node = result.nodes[0]
+    assert node.author_username is None
+    assert node.actor_uuid is None
+
+
+async def test_fetch_viafoura_comments_prefers_actor_name_and_propagates_uuid(
+    httpx_mock: HTTPXMock,
+) -> None:
+    httpx_mock.add_response(url=BOOTSTRAP_URL, method="POST", json=_bootstrap_payload())
+    httpx_mock.add_response(url=CONTAINER_URL, method="GET", json=_container_payload())
+    httpx_mock.add_response(
+        url=COMMENTS_URL,
+        method="GET",
+        json=_comments_payload_actor_name_prefers_actor_and_propagates_uuid(),
+    )
+
+    async with httpx.AsyncClient() as client:
+        result = await fetch_viafoura_comments(
+            _signal(),
+            STORY_URL,
+            client=client,
+            limit=5,
+            reply_limit=2,
+        )
+
+    assert result.raw_count == 1
+    assert len(result.nodes) == 1
+    node = result.nodes[0]
+    assert node.author_username == "apreader"
+    assert node.actor_uuid == "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+
+
 # ── TASK-1645.06: Pseudonym hardening ────────────────────────────────────────
 
 
-def test_as_public_whitespace_only_actor_name_falls_through_to_actor_username() -> None:
-    from src.viafoura.api import _ViafouraActor, _ViafouraContent
-
-    content = _ViafouraContent(
-        content_uuid="aabbccdd-0000-0000-0000-000000000010",
-        parent_uuid=None,
-        content="Hello",
-        date_created=1778282641870,
-        state="visible",
-        actor=_ViafouraActor(name="   ", username="real_username"),
-        author=None,
-        actor_uuid="a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+async def test_fetch_viafoura_comments_whitespace_actor_name_falls_through_to_username(
+    httpx_mock: HTTPXMock,
+) -> None:
+    httpx_mock.add_response(url=BOOTSTRAP_URL, method="POST", json=_bootstrap_payload())
+    httpx_mock.add_response(url=CONTAINER_URL, method="GET", json=_container_payload())
+    httpx_mock.add_response(
+        url=COMMENTS_URL,
+        method="GET",
+        json=_comments_payload_actor_name_whitespace_falls_to_username(),
     )
-    node = content.as_public(container_uuid="different-uuid")
 
-    assert node is not None
+    async with httpx.AsyncClient() as client:
+        result = await fetch_viafoura_comments(
+            _signal(),
+            STORY_URL,
+            client=client,
+            limit=5,
+            reply_limit=2,
+        )
+
+    assert result.raw_count == 1
+    node = result.nodes[0]
     assert node.author_username == "real_username"
 
 
-def test_as_public_whitespace_only_actor_name_and_username_falls_through_to_pseudonym() -> None:
-    from src.viafoura.api import _ViafouraActor, _ViafouraContent
-
-    content = _ViafouraContent(
-        content_uuid="aabbccdd-0000-0000-0000-000000000011",
-        parent_uuid=None,
-        content="Hello",
-        date_created=1778282641870,
-        state="visible",
-        actor=_ViafouraActor(name="  ", username="  "),
-        author=None,
-        actor_uuid="a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+async def test_fetch_viafoura_comments_whitespace_name_and_username_falls_to_pseudonym(
+    httpx_mock: HTTPXMock,
+) -> None:
+    httpx_mock.add_response(url=BOOTSTRAP_URL, method="POST", json=_bootstrap_payload())
+    httpx_mock.add_response(url=CONTAINER_URL, method="GET", json=_container_payload())
+    httpx_mock.add_response(
+        url=COMMENTS_URL,
+        method="GET",
+        json=_comments_payload_actor_name_and_username_whitespace_falls_to_pseudonym(),
     )
-    node = content.as_public(container_uuid="different-uuid")
 
-    assert node is not None
+    async with httpx.AsyncClient() as client:
+        result = await fetch_viafoura_comments(
+            _signal(),
+            STORY_URL,
+            client=client,
+            limit=5,
+            reply_limit=2,
+        )
+
+    assert result.raw_count == 1
+    node = result.nodes[0]
     assert node.author_username == "user-a1b2c3d4"
 
 
-def test_as_public_empty_actor_object_falls_through_to_author_username() -> None:
-    from src.viafoura.api import _ViafouraActor, _ViafouraContent
-
-    content = _ViafouraContent(
-        content_uuid="aabbccdd-0000-0000-0000-000000000012",
-        parent_uuid=None,
-        content="Hello",
-        date_created=1778282641870,
-        state="visible",
-        actor=_ViafouraActor(name=None, username=None),
-        author=_ViafouraActor(name=None, username="real_author_username"),
-        actor_uuid=None,
+async def test_fetch_viafoura_comments_empty_actor_falls_through_to_author_username(
+    httpx_mock: HTTPXMock,
+) -> None:
+    httpx_mock.add_response(url=BOOTSTRAP_URL, method="POST", json=_bootstrap_payload())
+    httpx_mock.add_response(url=CONTAINER_URL, method="GET", json=_container_payload())
+    httpx_mock.add_response(
+        url=COMMENTS_URL,
+        method="GET",
+        json=_comments_payload_empty_actor_falls_to_author_username(),
     )
-    node = content.as_public(container_uuid="different-uuid")
 
-    assert node is not None
+    async with httpx.AsyncClient() as client:
+        result = await fetch_viafoura_comments(
+            _signal(),
+            STORY_URL,
+            client=client,
+            limit=5,
+            reply_limit=2,
+        )
+
+    assert result.raw_count == 1
+    node = result.nodes[0]
     assert node.author_username == "real_author_username"
+
+
+async def test_fetch_viafoura_comments_empty_actor_falls_through_to_author_name(
+    httpx_mock: HTTPXMock,
+) -> None:
+    httpx_mock.add_response(url=BOOTSTRAP_URL, method="POST", json=_bootstrap_payload())
+    httpx_mock.add_response(url=CONTAINER_URL, method="GET", json=_container_payload())
+    httpx_mock.add_response(
+        url=COMMENTS_URL,
+        method="GET",
+        json=_comments_payload_empty_actor_falls_to_author_name(),
+    )
+
+    async with httpx.AsyncClient() as client:
+        result = await fetch_viafoura_comments(
+            _signal(),
+            STORY_URL,
+            client=client,
+            limit=5,
+            reply_limit=2,
+        )
+
+    assert result.raw_count == 1
+    node = result.nodes[0]
+    assert node.author_username == "AuthorDisplayName"
