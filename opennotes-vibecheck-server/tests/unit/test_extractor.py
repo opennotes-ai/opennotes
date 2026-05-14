@@ -22,8 +22,10 @@ from datetime import UTC, datetime
 from typing import Any, cast
 
 import pytest
+from pydantic import ValidationError
 from pydantic_ai.exceptions import ModelHTTPError, UnexpectedModelBehavior
 from pydantic_ai.messages import ImageUrl
+from pydantic_ai.models.instrumented import InstrumentationSettings
 
 from src.analyses.schemas import PageKind
 from src.cache.scrape_cache import CachedScrape, SupabaseScrapeCache
@@ -1347,10 +1349,6 @@ async def test_extract_utterances_succeeds_when_payload_has_one_or_more_utteranc
 # ---------------------------------------------------------------------------
 # TASK-1642.02 — LOGFIRE_EXTRACTOR_CONTENT_SAMPLE_RATE validation + sampling
 # ---------------------------------------------------------------------------
-
-
-from pydantic import ValidationError
-from pydantic_ai.models.instrumented import InstrumentationSettings
 
 
 def test_settings_rejects_extractor_sample_rate_below_zero() -> None:

@@ -45,12 +45,11 @@ from pydantic_ai import Agent, RunContext
 from pydantic_ai.messages import ImageUrl
 from pydantic_ai.models.instrumented import InstrumentationSettings
 
-from src.monitoring import _PYDANTIC_AI_INSTRUMENTATION_VERSION
-
 from src.analyses.schemas import PageKind, UtteranceStreamType
 from src.cache.scrape_cache import CachedScrape, SupabaseScrapeCache
 from src.config import Settings, get_settings
 from src.firecrawl_client import FirecrawlClient
+from src.monitoring import _PYDANTIC_AI_INSTRUMENTATION_VERSION
 from src.services.gemini_agent import (
     build_agent,
     google_vertex_model_name,
