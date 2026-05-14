@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 import sys
 from collections.abc import Generator
 from types import ModuleType
@@ -49,6 +50,18 @@ class TestPatchIdempotency:
         assert getattr(ToolManager._validate_tool_args, "_repaired", False), (
             "_repaired sentinel must be True after patching"
         )
+
+    def test_patched_validate_tool_args_preserves_original_signature(self) -> None:
+        from pydantic_ai.tool_manager import ToolManager
+
+        from src.services.pydantic_patches import apply_all_patches
+
+        original_signature = inspect.signature(ToolManager._validate_tool_args)
+
+        apply_all_patches()
+
+        patched_signature = inspect.signature(ToolManager._validate_tool_args)
+        assert patched_signature == original_signature
 
 
 class TestImportErrorSilentNoop:
@@ -176,3 +189,47 @@ class TestValidJsonPassesThrough:
         assert received_args[0] == valid, (
             f"Structurally valid JSON must pass through unchanged, got: {received_args[0]!r}"
         )
+
+    def test_args_override_is_forwarded_unchanged(self) -> None:
+        from pydantic_ai.tool_manager import ToolManager
+
+        from src.services.pydantic_patches import apply_all_patches
+
+        apply_all_patches()
+
+        captured_args_override: list[object] = []
+
+        async def _capture_original(
+            self: object,
+            call: object,
+            tool: object,
+            ctx: object,
+            *,
+            allow_partial: bool,
+            args_override: object = None,
+        ) -> dict[str, Any]:
+            captured_args_override.append(args_override)
+            return {}
+
+        import asyncio
+
+        call = MagicMock()
+        call.args = '{"foo":"bar",}'
+
+        with patch.object(
+            ToolManager,
+            "__validate_tool_args_original__",
+            new=_capture_original,
+        ):
+            asyncio.run(
+                ToolManager._validate_tool_args(
+                    MagicMock(),
+                    call,
+                    MagicMock(),
+                    MagicMock(),
+                    allow_partial=False,
+                    args_override={"foo": "override"},
+                )
+            )
+
+        assert captured_args_override == [{"foo": "override"}]

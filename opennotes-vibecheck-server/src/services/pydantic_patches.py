@@ -11,6 +11,9 @@ pydantic-ai retries=3 in build_agent (TASK-1527.01), not this patch.
 
 from __future__ import annotations
 
+import inspect
+from functools import wraps
+
 
 def patch_tool_call_json_repair() -> None:
     try:
@@ -25,6 +28,7 @@ def patch_tool_call_json_repair() -> None:
     _original = ToolManager._validate_tool_args
     ToolManager.__validate_tool_args_original__ = _original  # pyright: ignore[reportAttributeAccessIssue]
 
+    @wraps(_original)
     async def _patched(
         self,
         call,
@@ -52,6 +56,7 @@ def patch_tool_call_json_repair() -> None:
         )
 
     _patched._repaired = True  # pyright: ignore[reportFunctionMemberAccess]
+    _patched.__signature__ = inspect.signature(_original)  # type: ignore[attr-defined]
     ToolManager._validate_tool_args = _patched  # type: ignore[method-assign]
 
 

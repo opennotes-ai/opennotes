@@ -1,7 +1,7 @@
 """Unit tests for LLMService retry behavior on complete, generate_embedding and describe_image."""
 
 from dataclasses import dataclass
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 import pytest
@@ -34,6 +34,29 @@ def _make_embedder_mock(**overrides: object) -> MagicMock:
     mock.embed_documents = AsyncMock(**overrides)
     mock.embed_query = AsyncMock(**overrides)
     return mock
+
+
+def test_chunk_embedding_embedder_uses_explicit_196_constructor_shape() -> None:
+    from src.services import chunk_embedding
+
+    settings = MagicMock()
+    settings.EMBEDDING_MODEL.to_pydantic_ai.return_value = "google-gla:gemini-embedding-001"
+
+    chunk_embedding.reset_chunk_embedding_services()
+    try:
+        with (
+            patch.object(chunk_embedding, "get_settings", return_value=settings),
+            patch.object(chunk_embedding, "Embedder") as mock_embedder,
+        ):
+            embedder = chunk_embedding._get_embedder()
+
+        assert embedder is mock_embedder.return_value
+        mock_embedder.assert_called_once_with(
+            "google-gla:gemini-embedding-001",
+            defer_model_check=True,
+        )
+    finally:
+        chunk_embedding.reset_chunk_embedding_services()
 
 
 class TestLLMServiceCompleteRetry:
