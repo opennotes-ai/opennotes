@@ -42,8 +42,6 @@ import httpx
 from fastapi import APIRouter, Header, HTTPException, Request, Response
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, ValidationError
-from slowapi import Limiter
-from slowapi.util import get_remote_address
 
 from src.analyses.safety.web_risk import WebRiskTransientError, check_urls
 from src.analyses.schemas import (
@@ -71,13 +69,26 @@ from src.jobs.slots import retry_claim_slot
 from src.jobs.submit_schemas import SubmitResult
 from src.monitoring import get_logger
 from src.monitoring_metrics import SINGLE_FLIGHT_LOCK_WAITS
+from src.routes._rate_limit_keys import (
+    server_poll_rate_key,
+    server_retry_rate_key,
+    server_submit_rate_key,
+)
+from src.services.limiter_storage import (
+    build_limiter_storage,
+    build_slowapi_limiter,
+    clear_memory_storage_state,
+)
 from src.utils.url_security import InvalidURL
 
 logger = get_logger(__name__)
 
 router = APIRouter(prefix="/api", tags=["analyze"])
 
-limiter = Limiter(key_func=get_remote_address)
+limiter = build_slowapi_limiter(
+    key_func=server_submit_rate_key,
+    consumer_label="vibecheck_server_submit",
+)
 SUBMIT_RATE_LIMIT_SCOPE = "vibecheck-submit"
 
 
@@ -402,31 +413,26 @@ async def analyze(request: Request, body: AnalyzeRequest) -> Any:  # noqa: PLR09
 # polling never produces writes that could race the sweeper.
 
 
-def _ip_and_job_id_key(request: Request) -> str:
-    """Composite slowapi key so the burst budget scopes to (ip, job_id)."""
-    raw_job = request.path_params.get("job_id", "")
-    return f"{get_remote_address(request)}:{raw_job}"
-
-
 # A dedicated Limiter instance so the POST limiter's storage does not
-# cross-contaminate the GET budget. Storage defaults to in-process memory,
-# which matches slowapi's single-process Cloud Run deployment model.
+# cross-contaminate the GET budget.
 #
-# We construct our own `MovingWindowRateLimiter` backed by an in-memory
+# We construct our own `MovingWindowRateLimiter` backed by a storage object
 # storage so the poll handler can emit a Retry-After header on reject
 # without tangling with slowapi's header-injection path (which assumes a
 # Response-typed handler return and conflicts with pydantic response
 # models). The Limiter wrapper is retained only for ergonomic storage
 # construction — the actual check happens inline via `_poll_rate_check`.
-poll_limiter = Limiter(key_func=_ip_and_job_id_key)
+poll_limiter = build_slowapi_limiter(
+    key_func=server_poll_rate_key,
+    consumer_label="vibecheck_server_poll",
+)
 
 from limits import parse as _parse_limit  # noqa: E402  — kept near the consumers
-from limits.aio.storage import MemoryStorage as _AsyncMemoryStorage  # noqa: E402
 from limits.aio.strategies import (  # noqa: E402
     MovingWindowRateLimiter as _AsyncMovingWindowRateLimiter,
 )
 
-_poll_storage = _AsyncMemoryStorage()
+_poll_storage = build_limiter_storage(consumer_label="vibecheck_server_poll")
 _poll_strategy = _AsyncMovingWindowRateLimiter(_poll_storage)
 
 
@@ -460,7 +466,7 @@ async def _poll_rate_check(request: Request) -> None:
     `Retry-After: 0`; cap at the limit's window size so clock skew can't
     return a hostile value.
     """
-    key = _ip_and_job_id_key(request)
+    key = server_poll_rate_key(request)
     for limit_str in (_poll_burst_limit_str(), _poll_sustained_limit_str()):
         item = _parse_limit(limit_str)
         allowed = await _poll_strategy.hit(item, key)
@@ -489,14 +495,7 @@ async def _poll_rate_check(request: Request) -> None:
 
 def poll_rate_reset() -> None:
     """Drop all in-process poll rate state. Used by tests between cases."""
-    try:
-        _poll_storage.storage.clear()  # type: ignore[attr-defined]
-    except AttributeError:
-        pass
-    try:
-        _poll_storage.events.clear()  # type: ignore[attr-defined]
-    except AttributeError:
-        pass
+    clear_memory_storage_state(_poll_storage)
 
 
 # next_poll_ms ladder (spec AC#4):
@@ -852,7 +851,7 @@ async def poll(job_id: UUID, request: Request, response: Response) -> JobState |
 # Rate limiting shares the poll endpoint's composite (ip, job_id) key so
 # a client that mashes Retry doesn't starve its own poll budget on a
 # different job. We use slowapi's `@limiter.limit` decorator with the
-# same `_ip_and_job_id_key` key function as the GET poll bucket — both
+# same hashed-IP/job-id key shape as the GET poll bucket — both
 # limits are per-hour with the configured POST budget so retry clicks
 # count against the same bucket as fresh submits.
 #
@@ -931,7 +930,7 @@ async def _revert_slot_after_enqueue_failure(
     status_code=202,
     response_model=RetryResponse,
 )
-@limiter.limit(_rate_limit_value, key_func=_ip_and_job_id_key)
+@limiter.limit(_rate_limit_value, key_func=server_retry_rate_key)
 async def retry_section(  # noqa: PLR0911
     request: Request, job_id: UUID, slug: SectionSlug
 ) -> Any:

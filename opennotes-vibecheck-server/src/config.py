@@ -136,6 +136,7 @@ class Settings(BaseSettings):
     VIBECHECK_LIMITER_REDIS_URL: str = ""
     VIBECHECK_LIMITER_REDIS_CA_CERT_PATH: str = ""
     VIBECHECK_LIMITER_REDIS_MAX_CONNECTIONS: int = 10
+    VIBECHECK_LIMITER_KEY_SALT: str = ""
 
     # TASK-1473.35: when set + the public POST carries
     # `X-Vibecheck-Test-Fail-Slug: <slug>`, the orchestrator forces a
@@ -288,6 +289,8 @@ class Settings(BaseSettings):
             )
         if not self.VIBECHECK_LIMITER_REDIS_CA_CERT_PATH:
             raise ValueError("VIBECHECK_LIMITER_REDIS_CA_CERT_PATH is required in production")
+        if not self.VIBECHECK_LIMITER_KEY_SALT:
+            raise ValueError("VIBECHECK_LIMITER_KEY_SALT is required in production")
         return self
 
 
