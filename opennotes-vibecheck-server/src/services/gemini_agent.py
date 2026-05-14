@@ -27,7 +27,7 @@ from pydantic_ai.providers.google import GoogleProvider
 from src.config import Settings
 
 T = TypeVar("T", bound=BaseModel)
-GeminiTier = Literal["fast", "synthesis"]
+GeminiTier = Literal["fast", "synthesis", "extractor"]
 
 MAX_VERTEX_429_ATTEMPTS: Final[int] = 3
 OUTPUT_VALIDATION_RETRIES: Final[int] = 3
@@ -53,6 +53,9 @@ def _model_from_settings(settings: Settings, tier: GeminiTier) -> GoogleModel:
     elif tier == "synthesis":
         setting_name = "VERTEXAI_MODEL"
         setting_value = settings.VERTEXAI_MODEL
+    elif tier == "extractor":
+        setting_name = "VERTEXAI_EXTRACTOR_MODEL"
+        setting_value = settings.VERTEXAI_EXTRACTOR_MODEL
     else:
         raise ValueError(f"unknown Gemini tier: {tier!r}")
 

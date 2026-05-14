@@ -1268,8 +1268,8 @@ async def test_extract_utterances_sets_upstream_attrs_on_vertex_transient(
     assert set_attrs.get("upstream_status_code") == 503
     assert set_attrs.get("upstream_status") == "UNAVAILABLE"
     assert set_attrs.get("model_name") == google_vertex_model_name(
-        settings.VERTEXAI_FAST_MODEL,
-        setting_name="VERTEXAI_FAST_MODEL",
+        settings.VERTEXAI_EXTRACTOR_MODEL,
+        setting_name="VERTEXAI_EXTRACTOR_MODEL",
     )
     # Vertex-arm legacy compat — saved Logfire searches keyed on these.
     assert set_attrs.get("vertex_status_code") == 503

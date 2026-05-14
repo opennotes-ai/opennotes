@@ -204,7 +204,7 @@ async def _run_single_model(
     stub_cache = _StubScrapeCache()
 
     model_string = MODEL_DISPLAY[model_key]
-    patched_settings = settings.model_copy(update={"VERTEXAI_FAST_MODEL": model_string})
+    patched_settings = settings.model_copy(update={"VERTEXAI_EXTRACTOR_MODEL": model_string})
 
     markdown = scrape.markdown or ""
     if not markdown.strip():

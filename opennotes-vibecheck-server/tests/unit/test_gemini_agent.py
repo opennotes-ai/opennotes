@@ -69,6 +69,18 @@ def test_build_agent_synthesis_tier_uses_pro_model(settings: Settings) -> None:
     assert agent.model.model_name == "gemini-3.1-pro-preview"
 
 
+def test_build_agent_extractor_tier_uses_extractor_model(settings: Settings) -> None:
+    agent = build_agent(
+        settings,
+        output_type=_Out,
+        system_prompt="ignored",
+        tier="extractor",
+    )
+
+    assert isinstance(agent.model, GoogleModel)
+    assert agent.model.model_name == "gemini-3.1-flash-lite-preview"
+
+
 def test_google_vertex_model_name_strips_vertex_prefix() -> None:
     assert (
         google_vertex_model_name(

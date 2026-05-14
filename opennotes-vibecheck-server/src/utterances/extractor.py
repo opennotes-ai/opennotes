@@ -226,6 +226,7 @@ async def extract_utterances(
             output_type=UtterancesPayload,
             system_prompt=EXTRACTOR_SYSTEM_PROMPT,
             name="vibecheck.utterance_extractor",
+            tier="extractor",
             instrument=InstrumentationSettings(
                 include_content=(
                     random.random() < settings.LOGFIRE_EXTRACTOR_CONTENT_SAMPLE_RATE
@@ -238,8 +239,8 @@ async def extract_utterances(
         deps = ExtractorDeps(scrape=scrape, scrape_cache=scrape_cache)
 
         model_name = google_vertex_model_name(
-            settings.VERTEXAI_FAST_MODEL,
-            setting_name="VERTEXAI_FAST_MODEL",
+            settings.VERTEXAI_EXTRACTOR_MODEL,
+            setting_name="VERTEXAI_EXTRACTOR_MODEL",
         )
         try:
             async with vertex_slot(settings):
