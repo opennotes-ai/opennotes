@@ -141,10 +141,59 @@ Failure behavior:
 - `vibecheck_max_instances` must remain `1` until the shared lease client is
   implemented, deployed, and production-verified.
 
+## Server Request Bucket Primitive
+
+Consumer: `vibecheck-server` inbound analyze, poll, and retry rate limits.
+
+Keys:
+
+- Submit bucket: `vibecheck:rl:server:submit:<hashed-ip>`
+- Poll bucket: `vibecheck:rl:server:poll:<hashed-ip>:<job-id>`
+- Retry bucket: `vibecheck:rl:server:retry:<hashed-ip>:<job-id>`
+
+The `<hashed-ip>` value is an HMAC-SHA256 digest of
+`slowapi.util.get_remote_address(request)` using the
+`VIBECHECK_LIMITER_KEY_SALT` Secret Manager value. Implementations truncate the
+hex digest to 16 characters for compact keys. Raw IP addresses must never enter
+Redis keys or limiter-related structured logs. `job-id` remains plain because it
+is already a UUID-style public identifier, not PII.
+
+Behavior:
+
+- Moving-window bucket using the Python `limits`/`slowapi` storage contract.
+- This intentionally diverges from the web fixed-window Lua primitive so the
+  server can keep slowapi compatibility and ship the horizontal-scale unlock
+  quickly. A custom Lua implementation may replace it later if production
+  telemetry shows slowapi moving-window overhead or key shape is too loose.
+- Redis command timeout target: 10 ms. One retry is allowed only for transport
+  errors before the failure behavior below runs.
+- Added p99 latency budget: less than 20 ms per limiter decision in the
+  request path for submit, poll, and retry.
+- `VIBECHECK_LIMITER_KEY_SALT` is required in production startup validation.
+
+Failure behavior:
+
+- Backend unavailability fails open with a per-instance in-memory moving-window
+  fallback. This degraded mode preserves availability but does not provide
+  exact cross-replica enforcement while Redis is unavailable.
+- Fail-open decisions must emit a warning log with
+  `alert_type="ratelimit_backend_unavailable"`,
+  `limiter_consumer="vibecheck_server_submit"`,
+  `limiter_consumer="vibecheck_server_poll"`, or
+  `limiter_consumer="vibecheck_server_retry"`,
+  `limiter_primitive="moving_window_bucket"`,
+  `limiter_result="degraded_local_fallback"`, and `fail_open=true`.
+- Emit a metric sample for backend unavailability. The metric must be suitable
+  for an alert keyed by `alert_type=ratelimit_backend_unavailable` and bounded
+  by the abstract consumer name, not raw IP or job data.
+- Do not fail open for malformed production configuration, missing TLS CA, or a
+  missing `VIBECHECK_LIMITER_KEY_SALT`.
+
 ## Implementation Notes
 
 - The infrastructure task that provides this backend is `TASK-1483.31.01`.
 - The web client implementation is `TASK-1483.12.02`.
 - The Vertex/Gemini migration is `TASK-1483.16.08`.
+- The server request bucket migration is `TASK-1483.32`.
 - Operators should verify clients read `VIBECHECK_LIMITER_REDIS_URL` and never
   fall back to generic `REDIS_URL` for these primitives.

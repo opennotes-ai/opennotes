@@ -12,6 +12,7 @@ def test_defaults():
     assert s.VIBECHECK_MAX_INSTANCES == 1
     assert s.VIBECHECK_LIMITER_REDIS_URL == ""
     assert s.VIBECHECK_LIMITER_REDIS_CA_CERT_PATH == ""
+    assert s.VIBECHECK_LIMITER_KEY_SALT == ""
     assert s.VERTEX_LEASE_ACQUIRE_TIMEOUT_MS == 30_000
     assert s.VERTEX_LEASE_TTL_MS == 300_000
     assert s.MAX_IMAGES_MODERATED == 30
@@ -57,6 +58,7 @@ def test_nonproduction_does_not_require_limiter_redis_auth(environment: str):
         ENVIRONMENT=environment,
         VIBECHECK_LIMITER_REDIS_URL="",
         VIBECHECK_LIMITER_REDIS_CA_CERT_PATH="",
+        VIBECHECK_LIMITER_KEY_SALT="",
     )
 
 
@@ -70,11 +72,13 @@ def test_production_limiter_redis_requires_tls_and_ca_path():
         ENVIRONMENT="production",
         VIBECHECK_LIMITER_REDIS_URL="rediss://:secret@10.0.0.1:6379",
         VIBECHECK_LIMITER_REDIS_CA_CERT_PATH="/etc/ssl/vibecheck-limiter-redis/ca.crt",
+        VIBECHECK_LIMITER_KEY_SALT="a" * 64,
     )
     assert Settings(
         ENVIRONMENT="production",
         VIBECHECK_LIMITER_REDIS_URL="rediss://redis-user:secret@10.0.0.1:6379",
         VIBECHECK_LIMITER_REDIS_CA_CERT_PATH="/etc/ssl/vibecheck-limiter-redis/ca.crt",
+        VIBECHECK_LIMITER_KEY_SALT="a" * 64,
     )
 
     with pytest.raises(ValueError, match="rediss://"):
@@ -82,6 +86,7 @@ def test_production_limiter_redis_requires_tls_and_ca_path():
             ENVIRONMENT="production",
             VIBECHECK_LIMITER_REDIS_URL="redis://:secret@10.0.0.1:6379",
             VIBECHECK_LIMITER_REDIS_CA_CERT_PATH="/etc/ssl/vibecheck-limiter-redis/ca.crt",
+            VIBECHECK_LIMITER_KEY_SALT="a" * 64,
         )
 
     with pytest.raises(ValueError, match="VIBECHECK_LIMITER_REDIS_CA_CERT_PATH"):
@@ -95,6 +100,7 @@ def test_production_limiter_redis_requires_tls_and_ca_path():
             ENVIRONMENT="production",
             VIBECHECK_LIMITER_REDIS_URL="rediss://10.0.0.1:6379",
             VIBECHECK_LIMITER_REDIS_CA_CERT_PATH="/etc/ssl/vibecheck-limiter-redis/ca.crt",
+            VIBECHECK_LIMITER_KEY_SALT="a" * 64,
         )
 
     with pytest.raises(ValueError, match="AUTH password"):
@@ -102,6 +108,7 @@ def test_production_limiter_redis_requires_tls_and_ca_path():
             ENVIRONMENT="production",
             VIBECHECK_LIMITER_REDIS_URL="rediss://alice@10.0.0.1:6379",
             VIBECHECK_LIMITER_REDIS_CA_CERT_PATH="/etc/ssl/vibecheck-limiter-redis/ca.crt",
+            VIBECHECK_LIMITER_KEY_SALT="a" * 64,
         )
 
     with pytest.raises(ValueError, match="cannot be empty"):
@@ -109,6 +116,17 @@ def test_production_limiter_redis_requires_tls_and_ca_path():
             ENVIRONMENT="production",
             VIBECHECK_LIMITER_REDIS_URL="rediss://:@10.0.0.1:6379",
             VIBECHECK_LIMITER_REDIS_CA_CERT_PATH="/etc/ssl/vibecheck-limiter-redis/ca.crt",
+            VIBECHECK_LIMITER_KEY_SALT="a" * 64,
+        )
+
+
+def test_production_limiter_redis_requires_key_salt():
+    with pytest.raises(ValueError, match="VIBECHECK_LIMITER_KEY_SALT"):
+        Settings(
+            ENVIRONMENT="production",
+            VIBECHECK_LIMITER_REDIS_URL="rediss://:secret@10.0.0.1:6379",
+            VIBECHECK_LIMITER_REDIS_CA_CERT_PATH="/etc/ssl/vibecheck-limiter-redis/ca.crt",
+            VIBECHECK_LIMITER_KEY_SALT="",
         )
 
 

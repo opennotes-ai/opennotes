@@ -37,6 +37,7 @@ __all__ = [
     "EXTERNAL_API_FLAGGED",
     "EXTERNAL_API_LATENCY",
     "JOB_DURATION",
+    "LIMITER_FAILOPEN_COUNT",
     "ORPHAN_SWEEPS",
     "SECTION_DURATION",
     "SECTION_FAILURES",
@@ -109,6 +110,12 @@ ORPHAN_SWEEPS = Counter(
 SINGLE_FLIGHT_LOCK_WAITS = Counter(
     "vibecheck_single_flight_lock_waits_total",
     "Times the POST /api/analyze advisory lock was contended on first attempt.",
+)
+
+LIMITER_FAILOPEN_COUNT = Counter(
+    "vibecheck_limiter_failopen_total",
+    "Limiter backend failures that degraded to a local fail-open fallback.",
+    labelnames=("consumer",),
 )
 
 EXTERNAL_API_CALLS = Counter(
