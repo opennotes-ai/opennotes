@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import pytest
+from pydantic_ai.models.google import GoogleModel
 
-from src.llm_config.local_models import OpenNotesGoogleModel
 from src.llm_config.model_factory import infer_model_with_overrides
 from src.llm_config.model_id import ModelFlavor, ModelId
 
@@ -53,9 +53,9 @@ def _disable_httpx_env_proxy(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 class TestInferModelWithOverrides:
-    def test_returns_opennotes_google_model_for_google_vertex(self):
+    def test_returns_upstream_google_model_for_google_vertex(self):
         model = infer_model_with_overrides("google-vertex:gemini-3.1-pro-preview")
-        assert isinstance(model, OpenNotesGoogleModel)
+        assert type(model) is GoogleModel
         assert model.model_name == "gemini-3.1-pro-preview"
 
     def test_infer_model_with_overrides_passes_global_location(
@@ -79,7 +79,7 @@ class TestInferModelWithOverrides:
         monkeypatch.setattr(mf.settings, "VERTEXAI_PROJECT", "test-project")
 
         model = infer_model_with_overrides("google-vertex:gemini-3-flash")
-        assert isinstance(model, OpenNotesGoogleModel)
+        assert type(model) is GoogleModel
         assert captured.get("location") == "global"
         assert captured.get("project") == "test-project"
 
@@ -98,14 +98,14 @@ class TestInferModelWithOverrides:
     def test_memoizes_google_vertex_model_per_identity(self) -> None:
         first = infer_model_with_overrides("google-vertex:gemini-3.1-pro-preview")
         second = infer_model_with_overrides("google-vertex:gemini-3.1-pro-preview")
-        assert isinstance(first, OpenNotesGoogleModel)
+        assert type(first) is GoogleModel
         assert first is second
 
     def test_memoization_distinguishes_by_model_name(self) -> None:
         first = infer_model_with_overrides("google-vertex:gemini-3.1-pro-preview")
         second = infer_model_with_overrides("google-vertex:gemini-3-flash")
-        assert isinstance(first, OpenNotesGoogleModel)
-        assert isinstance(second, OpenNotesGoogleModel)
+        assert type(first) is GoogleModel
+        assert type(second) is GoogleModel
         assert first is not second
 
     def test_fails_fast_when_vertexai_project_is_none(
@@ -135,7 +135,7 @@ class TestToPydanticAiModelRoundTrip:
             flavor=ModelFlavor.PYDANTIC_AI,
         )
         result = m.to_pydantic_ai_model()
-        assert isinstance(result, OpenNotesGoogleModel)
+        assert type(result) is GoogleModel
         assert result.model_name == "gemini-3.1-pro-preview"
 
     def test_to_pydantic_ai_model_for_openai_returns_string(self):

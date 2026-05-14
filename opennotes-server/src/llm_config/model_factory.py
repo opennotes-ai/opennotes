@@ -3,18 +3,16 @@ from __future__ import annotations
 from functools import lru_cache
 
 from pydantic_ai.models import Model
+from pydantic_ai.models.google import GoogleModel
 from pydantic_ai.providers.google import GoogleProvider
 
 from src.config import settings
-from src.llm_config.local_models import OpenNotesGoogleModel
 
 
 @lru_cache(maxsize=32)
-def _build_google_vertex_model(
-    model_name: str, project: str, location: str
-) -> OpenNotesGoogleModel:
+def _build_google_vertex_model(model_name: str, project: str, location: str) -> GoogleModel:
     provider = GoogleProvider(project=project, location=location)
-    return OpenNotesGoogleModel(model_name=model_name, provider=provider)
+    return GoogleModel(model_name=model_name, provider=provider)
 
 
 def infer_model_with_overrides(model_str: str) -> Model | str:
