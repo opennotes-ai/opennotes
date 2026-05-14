@@ -94,9 +94,19 @@ class _ViafouraContent(BaseModel):
     def as_public(self, *, container_uuid: str) -> ViafouraCommentNode | None:
         if self.state is not None and self.state.lower() != "visible":
             return None
-        author = self.actor or self.author
         parent_id = self.parent_uuid if self.parent_uuid != container_uuid else None
-        resolved_username = (author.name or author.username) if author else None
+
+        resolved_username: str | None = None
+        for candidate in (
+            self.actor.name if self.actor else None,
+            self.actor.username if self.actor else None,
+            self.author.name if self.author else None,
+            self.author.username if self.author else None,
+        ):
+            if candidate is not None and candidate.strip():
+                resolved_username = candidate
+                break
+
         if not resolved_username and self.actor_uuid:
             cleaned = self.actor_uuid.replace("-", "")
             resolved_username = f"user-{cleaned[:8]}"

@@ -265,3 +265,63 @@ async def test_fetch_viafoura_comments_derives_pseudonym_from_actor_uuid(
     node = result.nodes[0]
     assert node.author_username == "user-a1b2c3d4"
     assert node.actor_uuid == "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+
+
+# ── TASK-1645.06: Pseudonym hardening ────────────────────────────────────────
+
+
+def test_as_public_whitespace_only_actor_name_falls_through_to_actor_username() -> None:
+    from src.viafoura.api import _ViafouraActor, _ViafouraContent
+
+    content = _ViafouraContent(
+        content_uuid="aabbccdd-0000-0000-0000-000000000010",
+        parent_uuid=None,
+        content="Hello",
+        date_created=1778282641870,
+        state="visible",
+        actor=_ViafouraActor(name="   ", username="real_username"),
+        author=None,
+        actor_uuid="a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+    )
+    node = content.as_public(container_uuid="different-uuid")
+
+    assert node is not None
+    assert node.author_username == "real_username"
+
+
+def test_as_public_whitespace_only_actor_name_and_username_falls_through_to_pseudonym() -> None:
+    from src.viafoura.api import _ViafouraActor, _ViafouraContent
+
+    content = _ViafouraContent(
+        content_uuid="aabbccdd-0000-0000-0000-000000000011",
+        parent_uuid=None,
+        content="Hello",
+        date_created=1778282641870,
+        state="visible",
+        actor=_ViafouraActor(name="  ", username="  "),
+        author=None,
+        actor_uuid="a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+    )
+    node = content.as_public(container_uuid="different-uuid")
+
+    assert node is not None
+    assert node.author_username == "user-a1b2c3d4"
+
+
+def test_as_public_empty_actor_object_falls_through_to_author_username() -> None:
+    from src.viafoura.api import _ViafouraActor, _ViafouraContent
+
+    content = _ViafouraContent(
+        content_uuid="aabbccdd-0000-0000-0000-000000000012",
+        parent_uuid=None,
+        content="Hello",
+        date_created=1778282641870,
+        state="visible",
+        actor=_ViafouraActor(name=None, username=None),
+        author=_ViafouraActor(name=None, username="real_author_username"),
+        actor_uuid=None,
+    )
+    node = content.as_public(container_uuid="different-uuid")
+
+    assert node is not None
+    assert node.author_username == "real_author_username"
