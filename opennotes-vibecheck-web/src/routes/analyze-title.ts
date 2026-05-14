@@ -31,6 +31,7 @@ function lifecycleFromStatus(
   status: JobState["status"] | undefined,
 ): AnalyzeTitleLifecycle {
   if (status === "extracting") return "extracting";
+  if (status === "done") return "partial analysis";
   if (status === "partial") return "partial analysis";
   if (status === "failed") return "failed analysis";
   return "analyzing";
@@ -61,7 +62,6 @@ export function lifecycleLabelForJob(
   job: JobState | null,
 ): AnalyzeTitleLifecycle {
   if (job === null) return "analyzing";
-  if (job.status === "done") return "analyzing";
   const activityLabel = job.activity_label?.trim();
   if (activityLabel) {
     return ACTIVITY_LIFECYCLES[activityLabel] ?? "analyzing";
@@ -78,8 +78,13 @@ export function formatAnalyzeDocumentTitle(input: {
   if (job === null) {
     return [TITLE_PREFIX, "analyzing"].join(TITLE_SEPARATOR);
   }
-  if (job.status === "done" && overallDecision !== null) {
-    const verdict = overallDecision.verdict === "pass" ? "ok" : "flagged";
+  if (job.status === "done") {
+    const verdict =
+      overallDecision === null
+        ? "partial analysis"
+        : overallDecision.verdict === "pass"
+          ? "ok"
+          : "flagged";
     const title = truncateAnalyzeTitleSegment(
       analyzedTitleSource({
         pageTitle: job.page_title,
@@ -95,7 +100,9 @@ export function formatAnalyzeDocumentTitle(input: {
         url: job.url ?? input.url,
       }),
     );
-    return [TITLE_PREFIX, lifecycleLabelForJob(job), title].join(TITLE_SEPARATOR);
+    return [TITLE_PREFIX, lifecycleLabelForJob(job), title].join(
+      TITLE_SEPARATOR,
+    );
   }
   return [TITLE_PREFIX, lifecycleLabelForJob(job)].join(TITLE_SEPARATOR);
 }

@@ -90,6 +90,17 @@ describe("analyze document title helpers", () => {
     expect(
       formatAnalyzeDocumentTitle({
         job: makeJobState({
+          status: "done",
+          page_title: "Finished without an overall decision",
+        }),
+        overallDecision: null,
+      }),
+    ).toBe(
+      "vibecheck - partial analysis - Finished without an overall decision",
+    );
+    expect(
+      formatAnalyzeDocumentTitle({
+        job: makeJobState({
           status: "partial",
           page_title: "Partially complete report",
         }),
