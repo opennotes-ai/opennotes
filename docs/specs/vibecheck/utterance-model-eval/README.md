@@ -57,7 +57,8 @@ uv run python scripts/eval_utterance_extractor_models.py run \
     --input ~/Downloads/vibecheck_scrapes_rows.json --force
 
 # Phase 3: judge long+medium subset (burns Vertex)
-uv run python scripts/eval_utterance_extractor_models.py judge
+uv run python scripts/eval_utterance_extractor_models.py judge \
+    --input ~/Downloads/vibecheck_scrapes_rows.json
 
 # Phase 4: generate report (free)
 uv run python scripts/eval_utterance_extractor_models.py report

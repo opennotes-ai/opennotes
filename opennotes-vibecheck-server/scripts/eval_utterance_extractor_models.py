@@ -15,7 +15,8 @@ Usage (from opennotes-vibecheck-server/):
     uv run python scripts/eval_utterance_extractor_models.py run \\
         --input ~/Downloads/vibecheck_scrapes_rows.json
 
-    uv run python scripts/eval_utterance_extractor_models.py judge
+    uv run python scripts/eval_utterance_extractor_models.py judge \\
+        --input ~/Downloads/vibecheck_scrapes_rows.json
 
     uv run python scripts/eval_utterance_extractor_models.py report
 """
@@ -40,7 +41,11 @@ from pydantic import BaseModel
 from src.cache.scrape_cache import CachedScrape, SupabaseScrapeCache
 from src.config import Settings
 from src.firecrawl_client import ScrapeMetadata, ScrapeResult
-from src.services.gemini_agent import build_agent, run_vertex_agent_with_retry
+from src.services.gemini_agent import (
+    build_agent,
+    google_vertex_model_name,
+    run_vertex_agent_with_retry,
+)
 from src.services.vertex_limiter import vertex_slot
 from src.utterances.extractor import (
     EXTRACTOR_SYSTEM_PROMPT,
@@ -189,13 +194,10 @@ async def _run_single_model(
         storage_key=None,
     )
 
-    class _StubScrapeCache(SupabaseScrapeCache):
+    class _StubScrapeCache:
         """Hermetic stub -- no GCS, no Supabase. Screenshot always returns None."""
 
-        def __init__(self) -> None:
-            object.__init__(self)
-
-        async def signed_screenshot_url(self, scrape: ScrapeResult) -> str | None:  # type: ignore[override]
+        async def signed_screenshot_url(self, scrape: ScrapeResult) -> str | None:
             _ = scrape
             return None
 
@@ -227,7 +229,7 @@ async def _run_single_model(
         name="vibecheck.utterance_extractor_eval",
     )
     _register_tools(agent)
-    deps = ExtractorDeps(scrape=scrape, scrape_cache=stub_cache)  # type: ignore[arg-type]
+    deps = ExtractorDeps(scrape=scrape, scrape_cache=cast(SupabaseScrapeCache, cast(object, stub_cache)))
 
     t0 = time.monotonic()
     error: str | None = None
@@ -352,10 +354,13 @@ class JudgeVerdict(BaseModel):
     granularity_rationale: str
     judge_model: str = ""
     judge_prompt_sha: str = ""
+    source_preview_len: int = 0
+    source_truncated: bool = False
 
 
 async def _judge_scrape(
     run_data: dict[str, Any],
+    rows_by_id: dict[str, dict[str, Any]],
     out_path: Path,
     settings: Settings,
     judge_prompt: str,
@@ -375,7 +380,7 @@ async def _judge_scrape(
         print(f"  [{scrape_id}] skip -- missing payload (run errors?)")
         return
 
-    flip = random.random() < 0.5
+    flip = random.Random(scrape_id).random() < 0.5
     if flip:
         system_a, system_b = "flash", "flash_lite"
         a_payload, b_payload = flash_payload, lite_payload
@@ -383,15 +388,18 @@ async def _judge_scrape(
         system_a, system_b = "flash_lite", "flash"
         a_payload, b_payload = lite_payload, flash_payload
 
-    source_markdown = run_data.get("_source_markdown_preview", "")
+    source_row = rows_by_id.get(scrape_id, {})
+    source_markdown = source_row.get("markdown") or ""
+    source_truncated = len(source_markdown) > 4000
+    source_preview = source_markdown[:4000]
 
     user_prompt = (
-        judge_prompt.replace("{source_markdown}", source_markdown[:4000])
+        judge_prompt.replace("{source_markdown}", source_preview)
         .replace("{system_a_json}", json.dumps(a_payload, indent=2)[:8000])
         .replace("{system_b_json}", json.dumps(b_payload, indent=2)[:8000])
     )
 
-    model_name = settings.VERTEXAI_MODEL
+    model_name = google_vertex_model_name(settings.VERTEXAI_MODEL, setting_name="VERTEXAI_MODEL")
 
     agent = build_agent(
         settings,
@@ -407,6 +415,8 @@ async def _judge_scrape(
         verdict = cast(JudgeVerdict, cast(object, result.output))
         verdict.judge_model = model_name
         verdict.judge_prompt_sha = judge_prompt_sha
+        verdict.source_preview_len = len(source_preview)
+        verdict.source_truncated = source_truncated
         verdict_dict = json.loads(verdict.model_dump_json())
         verdict_dict["_blind_mapping"] = {"A": system_a, "B": system_b, "flip": flip}
         out_path.write_text(json.dumps(verdict_dict, indent=2) + "\n", encoding="utf-8")
@@ -426,13 +436,21 @@ def _load_run_files() -> list[dict[str, Any]]:
     for p in sorted(RUNS_DIR.glob("*.json")):
         try:
             results.append(json.loads(p.read_text(encoding="utf-8")))
-        except Exception:
-            pass
+        except Exception as err:
+            print(f"WARN: skipping corrupted run file {p}: {err}")
     return results
 
 
 def cmd_judge(args: argparse.Namespace) -> None:
     """Phase 3: LLM-as-judge on long + medium sample."""
+    input_path = Path(args.input).expanduser()
+    if not input_path.exists():
+        raise SystemExit(f"Input file not found: {input_path}")
+
+    rows_by_id: dict[str, dict[str, Any]] = {
+        row["scrape_id"]: row for row in _load_rows(input_path)
+    }
+
     runs = _load_run_files()
     if not runs:
         raise SystemExit(f"No run files found in {RUNS_DIR} -- run `run` first")
@@ -453,6 +471,7 @@ def cmd_judge(args: argparse.Namespace) -> None:
             out_path = JUDGMENTS_DIR / f"{scrape_id}.json"
             await _judge_scrape(
                 run_data,
+                rows_by_id,
                 out_path,
                 settings,
                 judge_prompt,
@@ -686,6 +705,11 @@ def _build_parser() -> argparse.ArgumentParser:
     p_run.set_defaults(func=cmd_run)
 
     p_judge = sub.add_parser("judge", help="Gemini Pro judges long+medium subset (burns Vertex)")
+    p_judge.add_argument(
+        "--input",
+        required=True,
+        help="Path to the exported vibecheck_scrapes JSON/CSV rows (same file as `run --input`)",
+    )
     p_judge.add_argument(
         "--force",
         action="store_true",
