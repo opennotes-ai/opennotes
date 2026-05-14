@@ -48,11 +48,30 @@ def function_tool() -> ToolDefinition:
     )
 
 
+def _tool_kinds(tools: list[dict[str, object]] | None) -> set[str]:
+    if not tools:
+        return set()
+    return {key for tool in tools for key in tool if key != "function_declarations"}
+
+
+def _function_declaration_names(tools: list[dict[str, object]] | None) -> list[str]:
+    if not tools:
+        return []
+
+    names: list[str] = []
+    for tool in tools:
+        for declaration in tool.get("function_declarations") or []:
+            name = declaration.get("name")
+            if isinstance(name, str):
+                names.append(name)
+    return names
+
+
 def test_opennotes_google_model_is_upstream_google_model() -> None:
     assert OpenNotesGoogleModel is GoogleModel
 
 
-def test_google_model_combines_function_and_native_tools(
+def test_google_model_tool_config_sentinel_allows_function_and_native_tools_together(
     google_model: GoogleModel, function_tool: ToolDefinition
 ) -> None:
     params = ModelRequestParameters(
@@ -60,22 +79,20 @@ def test_google_model_combines_function_and_native_tools(
         native_tools=[WebSearchTool()],
     )
 
+    # Compatibility sentinel for pydantic-ai 1.96: there is no public offline API
+    # that exposes GoogleModel's tool serialization, so we probe the narrow private
+    # helper and assert only the OpenNotes-supported behavior.
     tools, tool_config, image_config = google_model._get_tool_config(params, {})
 
     assert image_config is None
     assert tools is not None
-    assert any("function_declarations" in tool for tool in tools)
-    assert any("google_search" in tool for tool in tools)
+    assert _function_declaration_names(tools) == ["lookup_note"]
+    assert _tool_kinds(tools) == {"google_search"}
     assert tool_config is not None
     assert tool_config["include_server_side_tool_invocations"] is True
 
-    function_tool_names = [
-        decl.get("name") for tool in tools for decl in tool.get("function_declarations") or []
-    ]
-    assert function_tool_names == ["lookup_note"]
 
-
-def test_google_model_function_tools_only(
+def test_google_model_tool_config_sentinel_keeps_function_only_requests_stable(
     google_model: GoogleModel, function_tool: ToolDefinition
 ) -> None:
     params = ModelRequestParameters(
@@ -89,13 +106,13 @@ def test_google_model_function_tools_only(
     assert tools is not None
     assert tool_config is not None
     assert "include_server_side_tool_invocations" not in tool_config
-    function_tool_names = [
-        decl.get("name") for tool in tools for decl in tool.get("function_declarations") or []
-    ]
-    assert function_tool_names == ["lookup_note"]
+    assert _function_declaration_names(tools) == ["lookup_note"]
+    assert _tool_kinds(tools) == set()
 
 
-def test_google_model_native_tools_only(google_model: GoogleModel) -> None:
+def test_google_model_tool_config_sentinel_keeps_native_only_requests_stable(
+    google_model: GoogleModel,
+) -> None:
     params = ModelRequestParameters(
         function_tools=[],
         native_tools=[WebSearchTool()],
@@ -104,7 +121,9 @@ def test_google_model_native_tools_only(google_model: GoogleModel) -> None:
     tools, tool_config, image_config = google_model._get_tool_config(params, {})
 
     assert image_config is None
-    assert tools == [{"google_search": {}}]
+    assert tools is not None
+    assert _function_declaration_names(tools) == []
+    assert _tool_kinds(tools) == {"google_search"}
     assert tool_config is not None
     assert tool_config["include_server_side_tool_invocations"] is True
 
