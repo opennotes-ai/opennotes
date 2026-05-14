@@ -671,9 +671,7 @@ class OpenNotesSimAgent:
         self._action_selector = action_selector
         self._model = model
 
-    def _model_run_kwargs(self, agent: Agent[Any, Any]) -> dict[str, Any]:
-        if agent._override_model.get() is not None:
-            return {}
+    def _model_run_kwargs(self) -> dict[str, Any]:
         return {"model": self._model.to_pydantic_ai_model()}
 
     async def select_action(
@@ -698,7 +696,7 @@ class OpenNotesSimAgent:
             prompt,
             deps=deps,
             message_history=history_copy,
-            **self._model_run_kwargs(self._action_selector),
+            **self._model_run_kwargs(),
         )
 
         has_work = len(requests) > 0 or len(notes) > 0
@@ -717,7 +715,7 @@ class OpenNotesSimAgent:
                 retry_prompt,
                 deps=deps,
                 message_history=list(message_history) if message_history else None,
-                **self._model_run_kwargs(self._action_selector),
+                **self._model_run_kwargs(),
             )
 
         has_notes = len(notes) > 0
@@ -742,7 +740,7 @@ class OpenNotesSimAgent:
                 nudge_prompt,
                 deps=deps,
                 message_history=list(message_history) if message_history else None,
-                **self._model_run_kwargs(self._action_selector),
+                **self._model_run_kwargs(),
             )
 
         return result.output, result.all_messages()
@@ -767,7 +765,7 @@ class OpenNotesSimAgent:
             "message_history": message_history,
             "usage_limits": usage_limits or UsageLimits(request_limit=3, total_tokens_limit=16000),
         }
-        run_kwargs.update(self._model_run_kwargs(self._agent))
+        run_kwargs.update(self._model_run_kwargs())
 
         if _is_research_available(deps):
             run_kwargs["builtin_tools"] = [WebSearchTool()]
