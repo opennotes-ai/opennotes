@@ -178,7 +178,7 @@ wheels = [
 
 [[package]]
 name = "anthropic"
-version = "0.85.0"
+version = "0.102.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "anyio" },
@@ -190,9 +190,9 @@ dependencies = [
     { name = "sniffio" },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/c5/08/c620a0eb8625539a8ea9f5a6e06f13d131be0bc8b5b714c235d4b25dd1b5/anthropic-0.85.0.tar.gz", hash = "sha256:d45b2f38a1efb1a5d15515a426b272179a0d18783efa2bb4c3925fa773eb50b9", size = 542034, upload-time = "2026-03-16T17:00:44.324Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/b9/47/cb2a71f70431fb09af4db83e3ea89eb2dd8e0e348d27af53ed32e6c599dd/anthropic-0.102.0.tar.gz", hash = "sha256:96f747cad11886c4ae12d4080131b94eebd68b202bd2190fe27959031bb1fa9c", size = 763697, upload-time = "2026-05-13T18:12:41.624Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/e1/5a/9d85b85686d5cdd79f5488c8667e668d7920d06a0a1a1beb454a5b77b2db/anthropic-0.85.0-py3-none-any.whl", hash = "sha256:b4f54d632877ed7b7b29c6d9ba7299d5e21c4c92ae8de38947e9d862bff74adf", size = 458237, upload-time = "2026-03-16T17:00:45.877Z" },
+    { url = "https://files.pythonhosted.org/packages/87/75/0f6c603594876413bc858a00e7cc0d80a0cc14edf5c7b959a3ea6ec45e44/anthropic-0.102.0-py3-none-any.whl", hash = "sha256:ab96540bbd4b0f36564252d955a86f8abbe4f00944a24bc9931acc9b139bab6f", size = 763070, upload-time = "2026-05-13T18:12:43.474Z" },
 ]
 
 [[package]]
@@ -1691,16 +1691,15 @@ grpc = [
 
 [[package]]
 name = "google-auth"
-version = "2.48.0"
+version = "2.52.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "cryptography" },
     { name = "pyasn1-modules" },
-    { name = "rsa" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/0c/41/242044323fbd746615884b1c16639749e73665b718209946ebad7ba8a813/google_auth-2.48.0.tar.gz", hash = "sha256:4f7e706b0cd3208a3d940a19a822c37a476ddba5450156c3e6624a71f7c841ce", size = 326522, upload-time = "2026-01-26T19:22:47.157Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/d4/f8/80d2493cbedece1c623dc3e3cb1883300871af0dcdae254409522985ac23/google_auth-2.52.0.tar.gz", hash = "sha256:01f30e1a9e3638698d89464f5e603ce29d18e1c0e63ec31ac570aba4e164aaf5", size = 335027, upload-time = "2026-05-07T19:45:24.033Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/83/1d/d6466de3a5249d35e832a52834115ca9d1d0de6abc22065f049707516d47/google_auth-2.48.0-py3-none-any.whl", hash = "sha256:2e2a537873d449434252a9632c28bfc268b0adb1e53f9fb62afc5333a975903f", size = 236499, upload-time = "2026-01-26T19:22:45.099Z" },
+    { url = "https://files.pythonhosted.org/packages/ee/fc/2cdc74252746f547f81ff3f02d4d4234a3f411b5de5b61af97e633a060b9/google_auth-2.52.0-py3-none-any.whl", hash = "sha256:aee92803ba0ff93a70a3b8a35c7b4797837751cd6380b63ff38372b98f3ed627", size = 245614, upload-time = "2026-05-07T19:45:21.914Z" },
 ]
 
 [package.optional-dependencies]
@@ -1878,7 +1877,7 @@ wheels = [
 
 [[package]]
 name = "google-genai"
-version = "1.68.0"
+version = "2.2.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "anyio" },
@@ -1892,9 +1891,9 @@ dependencies = [
     { name = "typing-extensions" },
     { name = "websockets" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/9c/2c/f059982dbcb658cc535c81bbcbe7e2c040d675f4b563b03cdb01018a4bc3/google_genai-1.68.0.tar.gz", hash = "sha256:ac30c0b8bc630f9372993a97e4a11dae0e36f2e10d7c55eacdca95a9fa14ca96", size = 511285, upload-time = "2026-03-18T01:03:18.243Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/c9/18/b9024eb20ae76c867f09254dbb9df27c9980284ab54f068bfd9a4f54ea0e/google_genai-2.2.0.tar.gz", hash = "sha256:9e50fe798289b600360b523254b9fe5af72bbc1a4fcf7d774f849aa0a9748a9e", size = 546792, upload-time = "2026-05-12T22:47:01.079Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/84/de/7d3ee9c94b74c3578ea4f88d45e8de9405902f857932334d81e89bce3dfa/google_genai-1.68.0-py3-none-any.whl", hash = "sha256:a1bc9919c0e2ea2907d1e319b65471d3d6d58c54822039a249fe1323e4178d15", size = 750912, upload-time = "2026-03-18T01:03:15.983Z" },
+    { url = "https://files.pythonhosted.org/packages/b9/72/fa38d7fff62f1bb09cd3bae5e64a2e55f5eb54d9950ca346e44e297457e3/google_genai-2.2.0-py3-none-any.whl", hash = "sha256:26b0815fd45fe4ccc07c3fb3a47a808732349a9fb3de74970c3d3ad897de4647", size = 806323, upload-time = "2026-05-12T22:46:59.061Z" },
 ]
 
 [[package]]
@@ -3834,7 +3833,7 @@ requires-dist = [
     { name = "pyarrow", marker = "extra == 'dev'", specifier = ">=15.0.0" },
     { name = "pyarrow", marker = "extra == 'scoring'", specifier = ">=15.0.0" },
     { name = "pydantic", extras = ["email"], specifier = ">=2.5.0" },
-    { name = "pydantic-ai-slim", extras = ["openai", "google", "anthropic", "groq", "dbos", "mcp", "retries", "evals"], specifier = ">=1.82.0,<2.0.0" },
+    { name = "pydantic-ai-slim", extras = ["openai", "google", "anthropic", "groq", "dbos", "mcp", "retries", "evals"], specifier = ">=1.96.0,<2.0.0" },
     { name = "pydantic-settings", specifier = ">=2.1.0" },
     { name = "pyjwt", specifier = ">=2.10.1" },
     { name = "pyroscope-io", specifier = ">=0.8.0" },
@@ -4982,7 +4981,7 @@ email = [
 
 [[package]]
 name = "pydantic-ai-slim"
-version = "1.82.0"
+version = "1.96.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "genai-prices" },
@@ -4993,9 +4992,9 @@ dependencies = [
     { name = "pydantic-graph" },
     { name = "typing-inspection" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/1d/33/6b75ea6d59575b8dcce01922666b3152afbf76e2b606992e1c87bfa49172/pydantic_ai_slim-1.82.0.tar.gz", hash = "sha256:8f0f0eac4d3102e576fb9655d36d9f4efc1a599d81e8fe62d37652ef1e6a3913", size = 551393, upload-time = "2026-04-15T02:51:55.528Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/f1/b0/26299238be57ddbc1ce5b4fc019338dc4856a549d5b636276bf3743a1008/pydantic_ai_slim-1.96.0.tar.gz", hash = "sha256:44ff8bb5cf81023076e82174de1d6a089515277ce508906263d17880e3fcb2f4", size = 699284, upload-time = "2026-05-14T01:09:07.519Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/e2/68/c1f572e50c2b5a6dbd121866d17f53df7b2f451de46159cf46498de73b84/pydantic_ai_slim-1.82.0-py3-none-any.whl", hash = "sha256:22fcaae5bfb6a024f3dcf28c8e3859adc23a7cae4be9f49873cf7f5da8bf78dd", size = 705400, upload-time = "2026-04-15T02:51:47.975Z" },
+    { url = "https://files.pythonhosted.org/packages/32/a0/4ceb29871244a398fed43009b8d6577ee60b8562437e47027e371ef2d22c/pydantic_ai_slim-1.96.0-py3-none-any.whl", hash = "sha256:58044dee3e5429499938a5ef1a44ef44d5e179f3f68e80600bbddea1f6081967", size = 870756, upload-time = "2026-05-14T01:08:58.945Z" },
 ]
 
 [package.optional-dependencies]
@@ -5120,7 +5119,7 @@ wheels = [
 
 [[package]]
 name = "pydantic-evals"
-version = "1.82.0"
+version = "1.96.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "anyio" },
@@ -5130,14 +5129,14 @@ dependencies = [
     { name = "pyyaml" },
     { name = "rich" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/a0/04/06690b422c7eb584e664df6148a6cecd09101fba7c628b0e9676d4059afe/pydantic_evals-1.82.0.tar.gz", hash = "sha256:10a0e1ee45b2229044383acce759e2e5ef73b7f19b7698302e955176f47e024e", size = 65790, upload-time = "2026-04-15T02:51:57.001Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/10/f0/9e43f04c1c90f251254b881ff4cf4b86d032a9191b6688835bb3ce1fbbaf/pydantic_evals-1.96.0.tar.gz", hash = "sha256:812b01c4b8c4f1c567dda7a1e44195f8e68ece69d3a7bf95c49d1670ae5c6cc9", size = 76672, upload-time = "2026-05-14T01:09:09.133Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/f2/ea/88bea7e7f581171c06ebb596469adb27c21fdad27a0be1466265999a6565/pydantic_evals-1.82.0-py3-none-any.whl", hash = "sha256:902b1a275c87d6064f8b29ea6dbe8173eac46e0e4aeb1798a815bc8e8a172058", size = 77710, upload-time = "2026-04-15T02:51:49.909Z" },
+    { url = "https://files.pythonhosted.org/packages/4d/5c/3421b21b4912dbbb5b6768a6f6244fadb4304482b8b6499462f5c60d7c96/pydantic_evals-1.96.0-py3-none-any.whl", hash = "sha256:100e986962468941cac2d96a53d9773c97ee10882f4705ba7e281c794bcd18ce", size = 91597, upload-time = "2026-05-14T01:09:01.015Z" },
 ]
 
 [[package]]
 name = "pydantic-graph"
-version = "1.82.0"
+version = "1.96.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "httpx" },
@@ -5145,9 +5144,9 @@ dependencies = [
     { name = "pydantic" },
     { name = "typing-inspection" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/de/6d/507d5344f91d437d9eac8320b38106d4885d360660e112828a95ab17fed4/pydantic_graph-1.82.0.tar.gz", hash = "sha256:78facea28c206ce9b459ae18344db4af0ded5bd4b3e08eb4458b8298453979e2", size = 59243, upload-time = "2026-04-15T02:51:57.958Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/5b/b3/7e279ee3e8d1db7ff29fb4c6cf21c2b30a002e0900eae94bcc829a66f0e2/pydantic_graph-1.96.0.tar.gz", hash = "sha256:299a2b1e47e232a78b8038779c1ff5b387d6f02d79aebae217806c5d53607f9e", size = 59294, upload-time = "2026-05-14T01:09:10.11Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/ed/3f/4215971d86c6ae662edad5d4dc07a14ec16f8385e7231862599777672fab/pydantic_graph-1.82.0-py3-none-any.whl", hash = "sha256:db7ebc4de07236795c9c2f429404a387cf47ec44afc033e39c9cda26e937cff0", size = 73066, upload-time = "2026-04-15T02:51:51.235Z" },
+    { url = "https://files.pythonhosted.org/packages/a3/58/918e641e1d94b95315a174bf318a78c0c127191333ffe021a92d417f6159/pydantic_graph-1.96.0-py3-none-any.whl", hash = "sha256:5904661751c4f19cba726e4e16a878f2f83722432236c231c88dba2bd887b43d", size = 73047, upload-time = "2026-05-14T01:09:02.476Z" },
 ]
 
 [[package]]
@@ -6602,9 +6601,9 @@ dependencies = [
     { name = "typing-extensions", marker = "(python_full_version < '3.12' and platform_machine == 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux') or (python_full_version < '3.12' and sys_platform == 'darwin')" },
 ]
 wheels = [
-    { url = "https://download-r2.pytorch.org/whl/cpu/torch-2.1.2-cp311-cp311-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:8f32ce591616a30304f37a7d5ea80b69ca9e1b94bba7f308184bf616fdaea155" },
-    { url = "https://download-r2.pytorch.org/whl/cpu/torch-2.1.2-cp311-none-macosx_10_9_x86_64.whl", hash = "sha256:76d37967c31c99548ad2c4d3f2cf191db48476f2e69b35a0937137116da356a1" },
-    { url = "https://download-r2.pytorch.org/whl/cpu/torch-2.1.2-cp311-none-macosx_11_0_arm64.whl", hash = "sha256:e2d83f07b4aac983453ea5bf8f9aa9dacf2278a8d31247f5d9037f37befc60e4" },
+    { url = "https://download-r2.pytorch.org/whl/cpu/torch-2.1.2-cp311-cp311-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:8f32ce591616a30304f37a7d5ea80b69ca9e1b94bba7f308184bf616fdaea155", upload-time = "2024-01-29T18:33:46Z" },
+    { url = "https://download-r2.pytorch.org/whl/cpu/torch-2.1.2-cp311-none-macosx_10_9_x86_64.whl", hash = "sha256:76d37967c31c99548ad2c4d3f2cf191db48476f2e69b35a0937137116da356a1", upload-time = "2024-01-29T18:33:50Z" },
+    { url = "https://download-r2.pytorch.org/whl/cpu/torch-2.1.2-cp311-none-macosx_11_0_arm64.whl", hash = "sha256:e2d83f07b4aac983453ea5bf8f9aa9dacf2278a8d31247f5d9037f37befc60e4", upload-time = "2024-01-29T18:33:57Z" },
 ]
 
 [[package]]
@@ -6630,8 +6629,8 @@ dependencies = [
     { name = "typing-extensions", marker = "(python_full_version >= '3.12' and sys_platform == 'darwin') or (python_full_version >= '3.12' and sys_platform == 'linux') or (platform_machine != 'aarch64' and sys_platform == 'linux') or (platform_python_implementation != 'CPython' and sys_platform == 'linux') or (sys_platform != 'darwin' and sys_platform != 'linux')" },
 ]
 wheels = [
-    { url = "https://download-r2.pytorch.org/whl/cpu/torch-2.1.2%2Bcpu-cp311-cp311-linux_x86_64.whl", hash = "sha256:6acac7871cca2b72f00b60496dd7d59d7d8247721f374705b8f9c6b9aeea482a" },
-    { url = "https://download-r2.pytorch.org/whl/cpu/torch-2.1.2%2Bcpu-cp311-cp311-win_amd64.whl", hash = "sha256:d7ed25db586afef2c022eb143471c6742088decbe05ed1f879fac770e67df189" },
+    { url = "https://download-r2.pytorch.org/whl/cpu/torch-2.1.2%2Bcpu-cp311-cp311-linux_x86_64.whl", hash = "sha256:6acac7871cca2b72f00b60496dd7d59d7d8247721f374705b8f9c6b9aeea482a", upload-time = "2024-01-29T18:32:32Z" },
+    { url = "https://download-r2.pytorch.org/whl/cpu/torch-2.1.2%2Bcpu-cp311-cp311-win_amd64.whl", hash = "sha256:d7ed25db586afef2c022eb143471c6742088decbe05ed1f879fac770e67df189", upload-time = "2024-01-29T18:32:42Z" },
 ]
 
 [[package]]
