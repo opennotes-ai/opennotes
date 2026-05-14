@@ -227,6 +227,7 @@ async def _run_single_model(
         output_type=UtterancesPayload,
         system_prompt=EXTRACTOR_SYSTEM_PROMPT,
         name="vibecheck.utterance_extractor_eval",
+        tier="extractor",
     )
     _register_tools(agent)
     deps = ExtractorDeps(scrape=scrape, scrape_cache=cast(SupabaseScrapeCache, cast(object, stub_cache)))
