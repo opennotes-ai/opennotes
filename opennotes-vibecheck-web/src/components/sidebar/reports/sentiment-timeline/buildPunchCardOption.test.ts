@@ -13,13 +13,13 @@ function makeBucket(startMs: number, endMs: number): SentimentBucket {
 
 describe("buildPunchCardOption", () => {
   describe("grid alignment", () => {
-    it("uses left margin of 64 to align with rolling chart", () => {
+    it("uses left margin of 8 to occupy full chart width", () => {
       const start = new Date("2026-05-06T10:00:00Z").getTime();
       const end = new Date("2026-05-06T14:00:00Z").getTime();
       const option = buildPunchCardOption([makeBucket(start, end)]);
 
       const grid = Array.isArray(option.grid) ? option.grid[0] : option.grid;
-      expect((grid as { left?: number })?.left).toBe(64);
+      expect((grid as { left?: number })?.left).toBe(8);
     });
   });
 });

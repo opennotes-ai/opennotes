@@ -110,4 +110,10 @@ describe("buildRollingOption", () => {
     expect(text).toContain("Negative: 37.5%");
     expect(text).toContain("Neutral: 25.0%");
   });
+
+  it("uses a compact grid with left=8 so the chart occupies full width", () => {
+    const option = rollingOption();
+    const grid = option.grid as { left?: number };
+    expect(grid.left).toBe(8);
+  });
 });
