@@ -11,6 +11,7 @@ class Settings(BaseSettings):
     VERTEXAI_PROJECT: str = "open-notes-core"
     VERTEXAI_LOCATION: str = "global"
     VERTEXAI_FAST_MODEL: str = "google-vertex:gemini-3-flash-preview"
+    VERTEXAI_EXTRACTOR_MODEL: str = "google-vertex:gemini-3.1-flash-lite-preview"
     VERTEXAI_MODEL: str = "google-vertex:gemini-3.1-pro-preview"
     VERTEXAI_EMBEDDING_MODEL: str = "google-vertex:gemini-embedding-001"
     # Conservative global cap for Vertex/Gemini calls.

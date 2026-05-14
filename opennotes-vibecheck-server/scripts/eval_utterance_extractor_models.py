@@ -204,7 +204,7 @@ async def _run_single_model(
     stub_cache = _StubScrapeCache()
 
     model_string = MODEL_DISPLAY[model_key]
-    patched_settings = settings.model_copy(update={"VERTEXAI_FAST_MODEL": model_string})
+    patched_settings = settings.model_copy(update={"VERTEXAI_EXTRACTOR_MODEL": model_string})
 
     markdown = scrape.markdown or ""
     if not markdown.strip():
@@ -227,6 +227,7 @@ async def _run_single_model(
         output_type=UtterancesPayload,
         system_prompt=EXTRACTOR_SYSTEM_PROMPT,
         name="vibecheck.utterance_extractor_eval",
+        tier="extractor",
     )
     _register_tools(agent)
     deps = ExtractorDeps(scrape=scrape, scrape_cache=cast(SupabaseScrapeCache, cast(object, stub_cache)))

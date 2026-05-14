@@ -7,6 +7,7 @@ from src.config import Settings, get_settings
 def test_defaults():
     s = Settings()
     assert s.VERTEXAI_FAST_MODEL == "google-vertex:gemini-3-flash-preview"
+    assert s.VERTEXAI_EXTRACTOR_MODEL == "google-vertex:gemini-3.1-flash-lite-preview"
     assert s.VERTEXAI_MODEL == "google-vertex:gemini-3.1-pro-preview"
     assert s.VERTEX_MAX_CONCURRENCY == 4
     assert s.VIBECHECK_MAX_INSTANCES == 1
