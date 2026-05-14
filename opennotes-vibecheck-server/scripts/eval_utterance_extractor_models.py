@@ -71,7 +71,7 @@ SHORT_MAX = 5_000
 MEDIUM_MAX = 25_000
 
 MODEL_FLASH = "google-vertex:gemini-3-flash-preview"
-MODEL_FLASH_LITE = "google-vertex:gemini-3-flash-lite-preview"
+MODEL_FLASH_LITE = "google-vertex:gemini-3.1-flash-lite-preview"
 
 MODEL_KEYS: list[Literal["flash", "flash_lite"]] = ["flash", "flash_lite"]
 MODEL_DISPLAY: dict[str, str] = {
@@ -245,8 +245,8 @@ async def _run_single_model(
             result = await run_vertex_agent_with_retry(agent, user_prompt, deps=deps)  # pyright: ignore[reportArgumentType]
 
         usage = result.usage()
-        request_tokens = usage.request_tokens or 0
-        response_tokens = usage.response_tokens or 0
+        request_tokens = usage.input_tokens or 0
+        response_tokens = usage.output_tokens or 0
 
         payload = cast(UtterancesPayload, cast(object, result.output))
 
