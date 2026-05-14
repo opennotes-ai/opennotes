@@ -270,7 +270,7 @@ _logfire_configured = False
 # alias (used by Firecrawl and some Supabase variants) and was missed in
 # the initial list — codex W3 P1-6.
 _LOGFIRE_EXTRA_PATTERNS: tuple[str, ...] = (
-    r"token",
+    r"token=",
     r"X-Amz-Signature",
     r"X-Goog-Signature",
     r"signature",
@@ -288,7 +288,7 @@ def _instrument_pydantic_ai(logfire_module: Any) -> None:
     from pydantic_ai.models.instrumented import InstrumentationSettings  # noqa: PLC0415
 
     logfire_module.instrument_pydantic_ai(
-        include_content=False,
+        include_content=True,
         include_binary_content=False,
         version=_PYDANTIC_AI_INSTRUMENTATION_VERSION,
     )
@@ -298,7 +298,7 @@ def _instrument_pydantic_ai(logfire_module: Any) -> None:
             tracer_provider=config.get_tracer_provider(),
             meter_provider=config.get_meter_provider(),
             logger_provider=config.get_logger_provider(),
-            include_content=False,
+            include_content=True,
             include_binary_content=False,
             version=_PYDANTIC_AI_INSTRUMENTATION_VERSION,
         )

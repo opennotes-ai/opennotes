@@ -155,7 +155,7 @@ async def test_extract_utterances_does_not_block_event_loop_on_large_html(
     fake_agent = _FakeAgent(payload=payload)
     monkeypatch.setattr(
         "src.utterances.extractor.build_agent",
-        lambda settings, output_type=None, system_prompt=None, name=None: fake_agent,
+        lambda settings, output_type=None, system_prompt=None, name=None, **_kwargs: fake_agent,
     )
 
     def _blocking_sanitize(html: str) -> str:

@@ -20,6 +20,7 @@ from pydantic import BaseModel
 from pydantic_ai import Agent, AgentRunResult
 from pydantic_ai.exceptions import ModelHTTPError
 from pydantic_ai.models.google import GoogleModel, GoogleModelSettings
+from pydantic_ai.models.instrumented import InstrumentationSettings
 from pydantic_ai.providers.google import GoogleProvider
 
 from src.config import Settings
@@ -73,6 +74,7 @@ def build_agent(
     builtin_tools: Sequence[Any] = (),
     logprobs: bool = False,
     top_logprobs: int | None = None,
+    instrument: InstrumentationSettings | bool | None = None,
 ) -> Agent[None, T]: ...
 
 
@@ -87,6 +89,7 @@ def build_agent(
     builtin_tools: Sequence[Any] = (),
     logprobs: bool = False,
     top_logprobs: int | None = None,
+    instrument: InstrumentationSettings | bool | None = None,
 ) -> Agent[None, str]: ...
 
 
@@ -100,6 +103,7 @@ def build_agent(
     builtin_tools: Sequence[Any] = (),
     logprobs: bool = False,
     top_logprobs: int | None = None,
+    instrument: InstrumentationSettings | bool | None = None,
 ) -> Agent[None, T] | Agent[None, str]:
     """Construct a pydantic-ai Agent bound to Vertex Gemini.
 
@@ -127,6 +131,8 @@ def build_agent(
         if top_logprobs is not None:
             model_settings["google_top_logprobs"] = top_logprobs
         kwargs["model_settings"] = model_settings
+    if instrument is not None:
+        kwargs["instrument"] = instrument
     return Agent(model, **kwargs)
 
 

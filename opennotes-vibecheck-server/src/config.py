@@ -186,6 +186,17 @@ class Settings(BaseSettings):
     # True in staging/prod env config (we ship over HTTPS there).
     VIBECHECK_COOKIE_SECURE: bool = False
 
+    LOGFIRE_EXTRACTOR_CONTENT_SAMPLE_RATE: float = 0.05
+
+    @field_validator("LOGFIRE_EXTRACTOR_CONTENT_SAMPLE_RATE")
+    @classmethod
+    def _validate_extractor_content_sample_rate(cls, value: float) -> float:
+        if not (0.0 <= value <= 1.0):
+            raise ValueError(
+                "LOGFIRE_EXTRACTOR_CONTENT_SAMPLE_RATE must be between 0.0 and 1.0"
+            )
+        return value
+
     @field_validator("VIBECHECK_RECENT_ANALYSES_CACHE_TTL_SECONDS")
     @classmethod
     def _recent_cache_ttl_under_signed_url_validity(cls, value: int) -> int:

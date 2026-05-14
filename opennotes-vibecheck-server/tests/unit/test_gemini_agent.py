@@ -95,3 +95,29 @@ def test_build_agent_passes_output_retries_to_agent_constructor(settings: Settin
         _, kwargs = mock_agent_cls.call_args
         assert kwargs.get("output_retries") == 3
         assert "retries" not in kwargs
+
+
+def test_build_agent_forwards_instrument_to_agent(settings: Settings) -> None:
+    """TASK-1642.02 — `instrument=` passes through to `Agent(...)` at construction."""
+    from pydantic_ai.models.instrumented import InstrumentationSettings
+
+    instrument = InstrumentationSettings(include_content=True, version=3)
+    with patch("src.services.gemini_agent.Agent") as mock_agent_cls:
+        mock_agent_cls.return_value = MagicMock()
+        build_agent(
+            settings,
+            output_type=_Out,
+            system_prompt="test",
+            instrument=instrument,
+        )
+        _, kwargs = mock_agent_cls.call_args
+        assert kwargs.get("instrument") is instrument
+
+
+def test_build_agent_omits_instrument_when_unspecified(settings: Settings) -> None:
+    """When `instrument` is None (default), no `instrument=` kwarg is sent."""
+    with patch("src.services.gemini_agent.Agent") as mock_agent_cls:
+        mock_agent_cls.return_value = MagicMock()
+        build_agent(settings, output_type=_Out, system_prompt="test")
+        _, kwargs = mock_agent_cls.call_args
+        assert "instrument" not in kwargs

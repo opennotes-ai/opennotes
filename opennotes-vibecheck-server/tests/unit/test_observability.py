@@ -292,6 +292,35 @@ class TestPrometheusCounters:
         ) == before + 1
 
 
+class TestLogfireExtraPatterns:
+    """Logfire `extra_patterns` must trigger on credential aliases without
+    catching innocent OTel attribute names like `gen_ai.client.token.usage`.
+    """
+
+    def test_token_equals_pattern_present(self) -> None:
+        from src.monitoring import _LOGFIRE_EXTRA_PATTERNS
+
+        assert "token=" in _LOGFIRE_EXTRA_PATTERNS
+
+    def test_bare_token_pattern_absent(self) -> None:
+        """A bare `token` pattern would scrub `gen_ai.client.token.usage`
+        attribute names — only the `=`-suffixed query-param form should match.
+        """
+        from src.monitoring import _LOGFIRE_EXTRA_PATTERNS
+
+        assert "token" not in _LOGFIRE_EXTRA_PATTERNS
+
+    def test_bearer_pattern_present(self) -> None:
+        from src.monitoring import _LOGFIRE_EXTRA_PATTERNS
+
+        assert "bearer" in _LOGFIRE_EXTRA_PATTERNS
+
+    def test_xamz_signature_pattern_present(self) -> None:
+        from src.monitoring import _LOGFIRE_EXTRA_PATTERNS
+
+        assert "X-Amz-Signature" in _LOGFIRE_EXTRA_PATTERNS
+
+
 class TestClassifyError:
     def test_asyncio_timeout_buckets_to_timeout(self) -> None:
         assert classify_error(asyncio.TimeoutError()) == "timeout"  # noqa: UP041

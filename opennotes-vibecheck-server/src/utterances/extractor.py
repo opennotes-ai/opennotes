@@ -34,6 +34,7 @@ from __future__ import annotations
 
 import asyncio
 import html
+import random
 import re
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -42,11 +43,13 @@ from typing import cast
 import logfire
 from pydantic_ai import Agent, RunContext
 from pydantic_ai.messages import ImageUrl
+from pydantic_ai.models.instrumented import InstrumentationSettings
 
 from src.analyses.schemas import PageKind, UtteranceStreamType
 from src.cache.scrape_cache import CachedScrape, SupabaseScrapeCache
 from src.config import Settings, get_settings
 from src.firecrawl_client import FirecrawlClient
+from src.monitoring import _PYDANTIC_AI_INSTRUMENTATION_VERSION
 from src.services.gemini_agent import (
     build_agent,
     google_vertex_model_name,
@@ -223,6 +226,13 @@ async def extract_utterances(
             output_type=UtterancesPayload,
             system_prompt=EXTRACTOR_SYSTEM_PROMPT,
             name="vibecheck.utterance_extractor",
+            instrument=InstrumentationSettings(
+                include_content=(
+                    random.random() < settings.LOGFIRE_EXTRACTOR_CONTENT_SAMPLE_RATE
+                ),
+                include_binary_content=False,
+                version=_PYDANTIC_AI_INSTRUMENTATION_VERSION,
+            ),
         )
         _register_tools(agent)
         deps = ExtractorDeps(scrape=scrape, scrape_cache=scrape_cache)
