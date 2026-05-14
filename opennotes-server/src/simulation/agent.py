@@ -7,6 +7,7 @@ from uuid import UUID
 
 import pendulum
 from pydantic_ai import Agent, RunContext, WebSearchTool
+from pydantic_ai.capabilities import Instrumentation
 from pydantic_ai.messages import ModelMessage
 from pydantic_ai.usage import UsageLimits
 from sqlalchemy import func, select
@@ -68,8 +69,9 @@ sim_agent: Agent[SimAgentDeps, SimAgentAction] = Agent(
     name="sim-agent",
     deps_type=SimAgentDeps,
     output_type=SimAgentAction,
-    retries=3,
-    instrument=True,
+    tool_retries=3,
+    output_retries=3,
+    capabilities=[Instrumentation()],
 )
 
 
@@ -77,8 +79,9 @@ action_selector: Agent[SimAgentDeps, ActionSelectionResult] = Agent(
     name="sim-agent-action-selector",
     deps_type=SimAgentDeps,
     output_type=ActionSelectionResult,
-    retries=3,
-    instrument=True,
+    tool_retries=3,
+    output_retries=3,
+    capabilities=[Instrumentation()],
 )
 
 
@@ -668,6 +671,11 @@ class OpenNotesSimAgent:
         self._action_selector = action_selector
         self._model = model
 
+    def _model_run_kwargs(self, agent: Agent[Any, Any]) -> dict[str, Any]:
+        if agent._override_model.get() is not None:
+            return {}
+        return {"model": self._model.to_pydantic_ai_model()}
+
     async def select_action(
         self,
         deps: SimAgentDeps,
@@ -690,7 +698,7 @@ class OpenNotesSimAgent:
             prompt,
             deps=deps,
             message_history=history_copy,
-            model=self._model.to_pydantic_ai_model(),
+            **self._model_run_kwargs(self._action_selector),
         )
 
         has_work = len(requests) > 0 or len(notes) > 0
@@ -709,7 +717,7 @@ class OpenNotesSimAgent:
                 retry_prompt,
                 deps=deps,
                 message_history=list(message_history) if message_history else None,
-                model=self._model.to_pydantic_ai_model(),
+                **self._model_run_kwargs(self._action_selector),
             )
 
         has_notes = len(notes) > 0
@@ -734,7 +742,7 @@ class OpenNotesSimAgent:
                 nudge_prompt,
                 deps=deps,
                 message_history=list(message_history) if message_history else None,
-                model=self._model.to_pydantic_ai_model(),
+                **self._model_run_kwargs(self._action_selector),
             )
 
         return result.output, result.all_messages()
@@ -757,9 +765,9 @@ class OpenNotesSimAgent:
         run_kwargs: dict[str, Any] = {
             "deps": deps,
             "message_history": message_history,
-            "model": self._model.to_pydantic_ai_model(),
             "usage_limits": usage_limits or UsageLimits(request_limit=3, total_tokens_limit=16000),
         }
+        run_kwargs.update(self._model_run_kwargs(self._agent))
 
         if _is_research_available(deps):
             run_kwargs["builtin_tools"] = [WebSearchTool()]

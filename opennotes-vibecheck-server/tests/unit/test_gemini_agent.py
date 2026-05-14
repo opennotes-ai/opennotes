@@ -6,12 +6,13 @@ making post-Gemini traces correlatable per analysis.
 """
 
 from __future__ import annotations
-
 from unittest.mock import MagicMock, patch
 
 import pytest
 from pydantic import BaseModel
+from pydantic_ai.capabilities import Instrumentation
 from pydantic_ai.models.google import GoogleModel
+from pydantic_ai.models.instrumented import InstrumentationSettings
 
 from src.config import Settings
 from src.services.gemini_agent import (
@@ -97,10 +98,7 @@ def test_build_agent_passes_output_retries_to_agent_constructor(settings: Settin
         assert "retries" not in kwargs
 
 
-def test_build_agent_forwards_instrument_to_agent(settings: Settings) -> None:
-    """TASK-1642.02 — `instrument=` passes through to `Agent(...)` at construction."""
-    from pydantic_ai.models.instrumented import InstrumentationSettings
-
+def test_build_agent_converts_instrument_settings_to_capability(settings: Settings) -> None:
     instrument = InstrumentationSettings(include_content=True, version=3)
     with patch("src.services.gemini_agent.Agent") as mock_agent_cls:
         mock_agent_cls.return_value = MagicMock()
@@ -111,13 +109,33 @@ def test_build_agent_forwards_instrument_to_agent(settings: Settings) -> None:
             instrument=instrument,
         )
         _, kwargs = mock_agent_cls.call_args
-        assert kwargs.get("instrument") is instrument
+        assert "instrument" not in kwargs
+        capabilities = kwargs.get("capabilities")
+        assert len(capabilities) == 1
+        capability = capabilities[0]
+        assert isinstance(capability, Instrumentation)
+        assert capability.settings is instrument
+
+
+def test_build_agent_converts_instrument_true_to_capability(settings: Settings) -> None:
+    with patch("src.services.gemini_agent.Agent") as mock_agent_cls:
+        mock_agent_cls.return_value = MagicMock()
+        build_agent(settings, output_type=_Out, system_prompt="test", instrument=True)
+        _, kwargs = mock_agent_cls.call_args
+        assert "instrument" not in kwargs
+        capabilities = kwargs.get("capabilities")
+        assert len(capabilities) == 1
+        assert isinstance(capabilities[0], Instrumentation)
 
 
 def test_build_agent_omits_instrument_when_unspecified(settings: Settings) -> None:
-    """When `instrument` is None (default), no `instrument=` kwarg is sent."""
     with patch("src.services.gemini_agent.Agent") as mock_agent_cls:
         mock_agent_cls.return_value = MagicMock()
         build_agent(settings, output_type=_Out, system_prompt="test")
         _, kwargs = mock_agent_cls.call_args
         assert "instrument" not in kwargs
+
+
+def test_build_agent_does_not_emit_deprecation_warnings(settings: Settings) -> None:
+    agent = build_agent(settings, output_type=_Out, system_prompt="test", name="vibecheck.unit_test")
+    assert agent.name == "vibecheck.unit_test"

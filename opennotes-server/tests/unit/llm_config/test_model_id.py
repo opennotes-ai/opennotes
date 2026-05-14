@@ -112,6 +112,10 @@ class TestModelIdRendering:
         m = ModelId(provider="openai", model="gpt-5.1", flavor=ModelFlavor.LEGACY_SLASH)
         assert m.to_pydantic_ai() == "openai:gpt-5.1"
 
+    def test_to_pydantic_ai_openai_keeps_v1_provider_prefix_until_config_migration(self):
+        m = ModelId(provider="openai", model="gpt-5.1", flavor=ModelFlavor.PYDANTIC_AI)
+        assert m.to_pydantic_ai() == "openai:gpt-5.1"
+
     def test_to_pydantic_ai_with_slash_in_model(self):
         m = ModelId(
             provider="openrouter", model="google/gemini-3-pro", flavor=ModelFlavor.PYDANTIC_AI

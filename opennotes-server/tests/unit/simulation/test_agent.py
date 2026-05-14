@@ -1,11 +1,14 @@
+import importlib
 import inspect
 import logging
+import warnings
 from dataclasses import fields
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import UUID, uuid4
 
 import pytest
 from pydantic_ai import Agent, WebSearchTool
+from pydantic_ai.capabilities import Instrumentation
 from pydantic_ai.models.test import TestModel
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
@@ -115,6 +118,18 @@ class TestAgentClassExists:
     def test_agent_default_model(self):
         agent = OpenNotesSimAgent()
         assert agent._model == _TEST_MODEL_ID
+
+    def test_module_reload_avoids_pydantic_ai_deprecation_warnings(self):
+        import src.simulation.agent as agent_module
+
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            importlib.reload(agent_module)
+
+        deprecations = [
+            warning for warning in caught if issubclass(warning.category, DeprecationWarning)
+        ]
+        assert deprecations == []
 
 
 class TestToolsRegistered:
@@ -1074,7 +1089,7 @@ class TestRunTurnWithTestModel:
     async def test_run_turn_returns_action_and_messages(self, sample_deps):
         agent = OpenNotesSimAgent()
         m = TestModel()
-        with sim_agent.override(model=m):
+        with patch.object(ModelId, "to_pydantic_ai_model", return_value=m):
             action, messages = await agent.run_turn(sample_deps)
 
         assert isinstance(action, SimAgentAction)
@@ -1083,9 +1098,9 @@ class TestRunTurnWithTestModel:
 
     @pytest.mark.asyncio
     async def test_run_turn_respects_model_override(self, sample_deps):
-        agent = OpenNotesSimAgent(model=_GENERIC_MODEL_ID)
+        agent = OpenNotesSimAgent(model=_TEST_MODEL_ID)
         m = TestModel()
-        with sim_agent.override(model=m):
+        with patch.object(ModelId, "to_pydantic_ai_model", return_value=m):
             action, _messages = await agent.run_turn(sample_deps)
 
         assert isinstance(action, SimAgentAction)
@@ -1644,10 +1659,22 @@ class TestResearchPromptsUnsupportedProvider:
 
 class TestAgentRetryConfiguration:
     def test_sim_agent_has_retries_3(self):
-        assert sim_agent._max_result_retries == 3
+        assert sim_agent._max_tool_retries == 3
+        assert sim_agent._max_output_retries == 3
 
     def test_action_selector_has_retries_3(self):
-        assert action_selector._max_result_retries == 3
+        assert action_selector._max_tool_retries == 3
+        assert action_selector._max_output_retries == 3
+
+    def test_agents_have_instrumentation_capability(self):
+        assert any(
+            isinstance(capability, Instrumentation)
+            for capability in sim_agent.root_capability.capabilities
+        )
+        assert any(
+            isinstance(capability, Instrumentation)
+            for capability in action_selector.root_capability.capabilities
+        )
 
 
 class TestListRequestsTool:

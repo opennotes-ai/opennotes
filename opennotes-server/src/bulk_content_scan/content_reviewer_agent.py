@@ -15,6 +15,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 from pydantic_ai import Agent, ModelRetry
+from pydantic_ai.capabilities import Instrumentation
 from pydantic_ai.exceptions import (
     ModelAPIError,
     ModelHTTPError,
@@ -80,9 +81,10 @@ content_reviewer_agent: Agent[ContentReviewerDeps, ContentModerationClassificati
     name="content-reviewer",
     output_type=ContentModerationClassificationResult,
     deps_type=ContentReviewerDeps,
-    instrument=True,
-    retries=2,
+    tool_retries=2,
+    output_retries=2,
     instructions=_STATIC_INSTRUCTIONS,
+    capabilities=[Instrumentation()],
 )
 
 

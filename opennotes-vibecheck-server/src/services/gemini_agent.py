@@ -18,6 +18,7 @@ from typing import Any, Final, Literal, TypedDict, TypeVar, overload
 import logfire
 from pydantic import BaseModel
 from pydantic_ai import Agent, AgentRunResult
+from pydantic_ai.capabilities import Instrumentation
 from pydantic_ai.exceptions import ModelHTTPError
 from pydantic_ai.models.google import GoogleModel, GoogleModelSettings
 from pydantic_ai.models.instrumented import InstrumentationSettings
@@ -131,8 +132,10 @@ def build_agent(
         if top_logprobs is not None:
             model_settings["google_top_logprobs"] = top_logprobs
         kwargs["model_settings"] = model_settings
-    if instrument is not None:
-        kwargs["instrument"] = instrument
+    if isinstance(instrument, InstrumentationSettings):
+        kwargs["capabilities"] = [Instrumentation(instrument)]
+    elif instrument is True:
+        kwargs["capabilities"] = [Instrumentation()]
     return Agent(model, **kwargs)
 
 
