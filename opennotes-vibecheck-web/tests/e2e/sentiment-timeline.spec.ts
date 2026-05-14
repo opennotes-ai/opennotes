@@ -275,7 +275,7 @@ async function hoverUntilPunchCardTooltipAppears(
     throw new Error("punch-card canvas bounding box is unavailable");
   }
 
-  const leftPadding = 64;
+  const leftPadding = 8;
   const rightPadding = 8;
   const topPadding = 8;
   const bottomPadding = 24;
