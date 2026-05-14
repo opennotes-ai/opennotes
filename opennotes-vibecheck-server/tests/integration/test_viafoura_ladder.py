@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from typing import Any
 
+import httpx
 import pytest
+from pytest_httpx import HTTPXMock
 
 from src.cache.scrape_cache import CachedScrape, ScrapeTier
 from src.firecrawl_client import ScrapeMetadata, ScrapeResult
@@ -13,7 +15,12 @@ from src.utterances.extractor import (
     COMMENTS_PROMPT_ADDENDUM,
     _agent_user_prompt,
 )
-from src.viafoura import ViafouraUnsupportedError
+from src.viafoura import (
+    ViafouraSignal,
+    ViafouraUnsupportedError,
+    fetch_viafoura_comments,
+    merge_viafoura_into_scrape,
+)
 
 AP_URL = "https://apnews.com/article/redistricting-virginia-congress-democrats-republicans-12a31037f3c9a94d3cb9fbcaaf84d94f"
 AP_HTML = """
@@ -147,6 +154,118 @@ async def test_viafoura_detection_escalates_to_tier2_and_caches_marker(
     actions = interact_client.interact_calls[0][1]["actions"]
     assert "data-platform-comments" in actions[3]["script"]
     assert interact_client.interact_calls[0][1]["only_main_content"] is False
+
+
+@pytest.mark.asyncio
+async def test_ap_news_viafoura_authors_resolve_via_dedup(httpx_mock: HTTPXMock) -> None:
+    """End-to-end: AP News-style fixture surfaces all four real usernames, not 'anonymous'."""
+    signal = ViafouraSignal(
+        container_id="12a31037f3c9a94d3cb9fbcaaf84d94f",
+        site_domain=None,
+        embed_origin="https://cdn.viafoura.net",
+        iframe_src=None,
+        has_conversations_component=True,
+    )
+    bootstrap_url = "https://api.viafoura.co/v2/apnews.com/bootstrap/v2?session=false"
+    container_url = (
+        "https://livecomments.viafoura.co/v4/livecomments/"
+        "00000000-0000-4000-8000-3caf4df03307/contentcontainer/id"
+        "?container_id=12a31037f3c9a94d3cb9fbcaaf84d94f"
+    )
+    comments_url = (
+        "https://livecomments.viafoura.co/v4/livecomments/"
+        "00000000-0000-4000-8000-3caf4df03307/fe897d9b-8fcf-411a-b9d6-97325116ed98/comments"
+        "?limit=50&reply_limit=5&sorted_by=newest"
+    )
+
+    httpx_mock.add_response(url=bootstrap_url, method="POST", json={
+        "result": {
+            "settings": {"site_uuid": "00000000-0000-4000-8000-3caf4df03307"},
+            "sectionTree": {"uuid": "00000000-0000-4000-8000-3caf4df03307"},
+        }
+    })
+    httpx_mock.add_response(url=container_url, method="GET", json={
+        "container_id": "12a31037f3c9a94d3cb9fbcaaf84d94f",
+        "content_container_uuid": "fe897d9b-8fcf-411a-b9d6-97325116ed98",
+    })
+    httpx_mock.add_response(url=comments_url, method="GET", json={
+        "more_available": False,
+        "contents": [
+            {
+                "content_uuid": "c1",
+                "parent_uuid": "fe897d9b-8fcf-411a-b9d6-97325116ed98",
+                "content": "<p>So they ignored the voters.</p>",
+                "date_created": 1778282641870,
+                "state": "visible",
+                "actor": None,
+                "actor_uuid": "aaaaaaaa-1111-2222-3333-444444444444",
+            },
+            {
+                "content_uuid": "c2",
+                "parent_uuid": "fe897d9b-8fcf-411a-b9d6-97325116ed98",
+                "content": "<p>This is a bad ruling.</p>",
+                "date_created": 1778282651870,
+                "state": "visible",
+                "actor": None,
+                "actor_uuid": "bbbbbbbb-1111-2222-3333-444444444444",
+            },
+            {
+                "content_uuid": "c3",
+                "parent_uuid": "fe897d9b-8fcf-411a-b9d6-97325116ed98",
+                "content": "<p>Democracy at work.</p>",
+                "date_created": 1778282661870,
+                "state": "visible",
+                "actor": None,
+                "actor_uuid": "cccccccc-1111-2222-3333-444444444444",
+            },
+            {
+                "content_uuid": "c4",
+                "parent_uuid": "fe897d9b-8fcf-411a-b9d6-97325116ed98",
+                "content": "<p>Read the constitution.</p>",
+                "date_created": 1778282671870,
+                "state": "visible",
+                "actor": None,
+                "actor_uuid": "dddddddd-1111-2222-3333-444444444444",
+            },
+        ],
+    })
+
+    ap_scrape_html = (
+        "<article><p>Article body with enough real text.</p></article>"
+        '<article class="vf3-comment" aria-label="Comment by Mikeee.">'
+        '<div class="vf3-comment-content">So they ignored the voters.</div></article>'
+        '<article class="vf3-comment" aria-label="Comment by Bear0678.">'
+        '<div class="vf3-comment-content">This is a bad ruling.</div></article>'
+        '<article class="vf3-comment" aria-label="Comment by MargaretO.">'
+        '<div class="vf3-comment-content">Democracy at work.</div></article>'
+        '<article class="vf3-comment" aria-label="Comment by Lostagain.">'
+        '<div class="vf3-comment-content">Read the constitution.</div></article>'
+    )
+    scrape = ScrapeResult(
+        markdown="Article body with enough real text.",
+        html=ap_scrape_html,
+        metadata=ScrapeMetadata(source_url=AP_URL),
+    )
+
+    async with httpx.AsyncClient() as client:
+        comments = await fetch_viafoura_comments(signal, AP_URL, client=client)
+
+    merged = merge_viafoura_into_scrape(scrape, comments)
+
+    assert merged.markdown is not None
+    assert "author=Mikeee" in merged.markdown
+    assert "author=Bear0678" in merged.markdown
+    assert "author=MargaretO" in merged.markdown
+    assert "author=Lostagain" in merged.markdown
+    assert "anonymous" not in merged.markdown
+    assert "user-aaaaaaaa" not in merged.markdown
+    assert "user-bbbbbbbb" not in merged.markdown
+
+    assert merged.html is not None
+    assert "vf3-comment" not in merged.html
+    assert 'data-platform="viafoura"' in merged.html
+    for username in ("Mikeee", "Bear0678", "MargaretO", "Lostagain"):
+        assert username in merged.html
 
 
 def test_platform_marker_addendum_recognizes_viafoura_comments() -> None:
