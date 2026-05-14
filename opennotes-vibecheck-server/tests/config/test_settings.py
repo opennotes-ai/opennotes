@@ -13,6 +13,8 @@ def test_defaults():
     assert s.VIBECHECK_LIMITER_REDIS_URL == ""
     assert s.VIBECHECK_LIMITER_REDIS_CA_CERT_PATH == ""
     assert s.VIBECHECK_LIMITER_KEY_SALT == ""
+    assert s.VIBECHECK_LIMITER_REDIS_REQUEST_SOCKET_TIMEOUT_SECONDS == 1.5
+    assert s.VIBECHECK_LIMITER_REDIS_REQUEST_CONNECT_TIMEOUT_SECONDS == 2.0
     assert s.VERTEX_LEASE_ACQUIRE_TIMEOUT_MS == 30_000
     assert s.VERTEX_LEASE_TTL_MS == 300_000
     assert s.MAX_IMAGES_MODERATED == 30
@@ -143,3 +145,33 @@ def test_vibec_max_instances_env_override(monkeypatch):
 def test_vibec_max_instances_rejects_non_positive(value: int):
     with pytest.raises(ValidationError, match="Vertex limiter numeric settings must be > 0"):
         Settings(VIBECHECK_MAX_INSTANCES=value)
+
+
+def test_limiter_redis_request_socket_timeout_env_override(monkeypatch):
+    monkeypatch.setenv("VIBECHECK_LIMITER_REDIS_REQUEST_SOCKET_TIMEOUT_SECONDS", "3.0")
+    get_settings.cache_clear()
+    try:
+        assert get_settings().VIBECHECK_LIMITER_REDIS_REQUEST_SOCKET_TIMEOUT_SECONDS == 3.0
+    finally:
+        get_settings.cache_clear()
+
+
+def test_limiter_redis_request_connect_timeout_env_override(monkeypatch):
+    monkeypatch.setenv("VIBECHECK_LIMITER_REDIS_REQUEST_CONNECT_TIMEOUT_SECONDS", "4.5")
+    get_settings.cache_clear()
+    try:
+        assert get_settings().VIBECHECK_LIMITER_REDIS_REQUEST_CONNECT_TIMEOUT_SECONDS == 4.5
+    finally:
+        get_settings.cache_clear()
+
+
+@pytest.mark.parametrize("value", [0.0, -1.5])
+def test_limiter_redis_request_socket_timeout_rejects_non_positive(value: float):
+    with pytest.raises(ValidationError, match="must be > 0"):
+        Settings(VIBECHECK_LIMITER_REDIS_REQUEST_SOCKET_TIMEOUT_SECONDS=value)
+
+
+@pytest.mark.parametrize("value", [0.0, -2.0])
+def test_limiter_redis_request_connect_timeout_rejects_non_positive(value: float):
+    with pytest.raises(ValidationError, match="must be > 0"):
+        Settings(VIBECHECK_LIMITER_REDIS_REQUEST_CONNECT_TIMEOUT_SECONDS=value)
