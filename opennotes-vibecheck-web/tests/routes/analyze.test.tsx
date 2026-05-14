@@ -319,6 +319,7 @@ Object.defineProperty(window, "localStorage", {
 import AnalyzePage from "../../src/routes/analyze";
 
 function resetTestEnv() {
+  document.title = "";
   getArchiveProbeMock.mockReset();
   getArchiveProbeMock.mockImplementation(async () => ({
     ok: true,
@@ -514,6 +515,149 @@ function makeWeatherReport(
 }
 
 describe("AnalyzePage route", () => {
+  it("renders the ASCII-hyphen fallback title before content mounts", async () => {
+    const pendingJobState = deferred<JobState | null>();
+    getJobStateMock.mockReturnValueOnce(pendingJobState.promise);
+
+    renderAt("/analyze?job=slow-initial-state");
+
+    await flushMicrotasks();
+    expect(document.title).toBe("vibecheck - analyzing");
+
+    pendingJobState.resolve(null);
+  });
+
+  it("updates document title from lifecycle labels to final server overall verdict", async () => {
+    renderAt("/analyze?job=title-lifecycle&url=https://news.example.com/a");
+    await waitFor(() => {
+      expect(pollingHandles.length).toBeGreaterThan(0);
+    });
+
+    setPolledJobState(
+      makeJobState({
+        status: "extracting",
+        activity_label: "Extracting page content",
+        page_title: "Article title",
+      }),
+    );
+    await flushMicrotasks();
+    expect(document.title).toBe("vibecheck - extracting");
+
+    setPolledJobState(
+      makeJobState({
+        status: "analyzing",
+        activity_label: "Running section analyses",
+        page_title: "Article title",
+      }),
+    );
+    await flushMicrotasks();
+    expect(document.title).toBe("vibecheck - analyzing");
+
+    setPolledJobState(
+      makeJobState({
+        status: "analyzing",
+        activity_label: "Writing overall recommendation",
+        page_title: "Article title",
+      }),
+    );
+    await flushMicrotasks();
+    expect(document.title).toBe("vibecheck - recommending");
+
+    setPolledJobState(
+      makeJobState({
+        status: "done",
+        page_title: "Article title",
+        sidebar_payload_complete: true,
+        sidebar_payload: makeSidebarPayload({
+          overall: {
+            verdict: "pass",
+            reason: "Server synthesis",
+          },
+        }),
+      }),
+    );
+    await flushMicrotasks();
+    expect(document.title).toBe("vibecheck - ok - Article title");
+  });
+
+  it("uses fallback overall resolution for final flagged document title", async () => {
+    renderAt("/analyze?job=title-fallback&url=https://news.example.com/a");
+    await waitFor(() => {
+      expect(pollingHandles.length).toBeGreaterThan(0);
+    });
+
+    setPolledJobState(
+      makeJobState({
+        status: "done",
+        page_title: "Fallback flag article",
+        sidebar_payload_complete: true,
+        sidebar_payload: makeSidebarPayload({
+          safety: {
+            harmful_content_matches: [],
+            recommendation: {
+              level: "mild",
+              rationale: "Minor concern",
+              top_signals: ["minor concern"],
+              unavailable_inputs: [],
+            },
+          },
+          tone_dynamics: {
+            ...makeSidebarPayload().tone_dynamics,
+            flashpoint_matches: [
+              {
+                scan_type: "conversation_flashpoint",
+                utterance_id: "u1",
+                derailment_score: 60,
+                risk_level: "Dangerous",
+                reasoning: "escalates fallback",
+                context_messages: 4,
+              },
+            ],
+          },
+        }),
+      }),
+    );
+    await flushMicrotasks();
+    expect(document.title).toBe("vibecheck - flagged - Fallback flag article");
+    expect(
+      await screen.findByTestId("overall-recommendation-verdict"),
+    ).toHaveTextContent("Overall: Flag!");
+  });
+
+  it("uses terminal fallback labels in document title when no decision exists", async () => {
+    renderAt(
+      "/analyze?job=title-terminal-fallbacks&url=https://news.example.com/a",
+    );
+    await waitFor(() => {
+      expect(pollingHandles.length).toBeGreaterThan(0);
+    });
+
+    setPolledJobState(
+      makeJobState({
+        status: "partial",
+        page_title: "Partial result",
+        sidebar_payload_complete: true,
+        sidebar_payload: makeSidebarPayload({
+          safety: { harmful_content_matches: [] },
+        }),
+      }),
+    );
+    await flushMicrotasks();
+    expect(document.title).toBe("vibecheck - partial analysis - Partial result");
+
+    setPolledJobState(
+      makeJobState({
+        status: "failed",
+        page_title: null,
+        url: "https://news.example.com/failure",
+      }),
+    );
+    await flushMicrotasks();
+    expect(document.title).toBe(
+      "vibecheck - failed analysis - https://news.example.com/failure",
+    );
+  });
+
   it("renders a cached terminal seed immediately without extracting or page-frame loading indicators", async () => {
     getJobStateMock.mockResolvedValueOnce(
       makeJobState({

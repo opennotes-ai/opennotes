@@ -1,7 +1,10 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, render, screen } from "@solidjs/testing-library";
 import type { components } from "~/lib/generated-types";
-import { OverallRecommendationCard } from "./OverallRecommendationCard";
+import {
+  OverallRecommendationCard,
+  resolveOverallDecision,
+} from "./OverallRecommendationCard";
 
 type SafetyRecommendation = components["schemas"]["SafetyRecommendation"];
 type FlashpointMatch = components["schemas"]["FlashpointMatch"];
@@ -51,6 +54,48 @@ function makeFlashpoint(
 }
 
 describe("<OverallRecommendationCard />", () => {
+  it("resolves explicit server overall before derived safety fallback", () => {
+    const decision = resolveOverallDecision({
+      recommendation: makeRecommendation({
+        level: "unsafe",
+        top_signals: ["unsafe fallback"],
+      }),
+      overall: { verdict: "pass", reason: "Server synthesis" },
+    });
+
+    expect(decision).toEqual({ verdict: "pass", reason: "Server synthesis" });
+  });
+
+  it("resolves fallback flashpoint escalation when server overall is absent", () => {
+    const decision = resolveOverallDecision({
+      recommendation: makeRecommendation({
+        level: "mild",
+        top_signals: ["minor concern"],
+      }),
+      flashpointMatches: [makeFlashpoint({ risk_level: "Dangerous" })],
+    });
+
+    expect(decision).toEqual({
+      verdict: "flag",
+      reason: "Conversation flashpoint risk: Dangerous",
+    });
+  });
+
+  it("resolves fallback weather escalation when discussion is misleading and on topic", () => {
+    const decision = resolveOverallDecision({
+      recommendation: makeRecommendation({
+        level: "safe",
+        top_signals: ["educational context"],
+      }),
+      weatherReport: makeWeatherReport("misleading", "on_topic"),
+    });
+
+    expect(decision).toEqual({
+      verdict: "flag",
+      reason: "Misleading framing in on-topic discussion",
+    });
+  });
+
   it("renders 'Overall: OK.' for safe level with top_signals[0] as reason", () => {
     render(() => (
       <OverallRecommendationCard
