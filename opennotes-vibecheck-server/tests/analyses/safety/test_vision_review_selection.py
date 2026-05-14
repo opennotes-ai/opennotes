@@ -134,17 +134,19 @@ def test_multiple_flagged_returns_input_order() -> None:
     assert select_images_for_vision_review(inputs, cap=10) == urls
 
 
-def test_flagged_image_with_web_risk_still_returned() -> None:
+def test_web_risk_finding_makes_image_not_load_bearing() -> None:
+    """Web Risk findings produce the verdict regardless of images; skip vision."""
     url = "https://cdn.example/d.jpg"
     inputs = _inputs(
         images=[_image(url, flagged=True)],
         web_risk=[_web_risk()],
     )
 
-    assert select_images_for_vision_review(inputs, cap=5) == [url]
+    assert select_images_for_vision_review(inputs, cap=5) == []
 
 
 def test_flagged_image_with_text_match_still_returned() -> None:
+    """Additive case: low-severity text + image flag → image is load-bearing."""
     url = "https://cdn.example/e.jpg"
     inputs = _inputs(
         images=[_image(url, flagged=True)],
@@ -154,14 +156,15 @@ def test_flagged_image_with_text_match_still_returned() -> None:
     assert select_images_for_vision_review(inputs, cap=5) == [url]
 
 
-def test_flagged_image_with_verified_video_still_returned() -> None:
+def test_verified_video_makes_image_not_load_bearing() -> None:
+    """Verified video signal produces the verdict regardless of images."""
     url = "https://cdn.example/f.jpg"
     inputs = _inputs(
         images=[_image(url, flagged=True)],
         videos=[_video_verified()],
     )
 
-    assert select_images_for_vision_review(inputs, cap=5) == [url]
+    assert select_images_for_vision_review(inputs, cap=5) == []
 
 
 def test_cap_truncates_preserving_input_order() -> None:

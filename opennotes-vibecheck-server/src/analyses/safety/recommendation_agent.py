@@ -25,7 +25,7 @@ from src.config import Settings
 from src.services.gemini_agent import build_agent, run_vertex_agent_with_retry
 from src.services.vertex_limiter import vertex_slot
 
-RECOMMENDATION_SYSTEM_PROMPT = """You synthesize the safety findings for one scraped page.
+RECOMMENDATION_SYSTEM_PROMPT_BASE = """You synthesize the safety findings for one scraped page.
 Inputs are already-filtered safety matches from four analyses: text moderation,
 Web Risk, image SafeSearch, and video SafeSearch. Return one SafetyRecommendation.
 
@@ -96,21 +96,34 @@ Important caveats:
       low visual concern) producing caution,
     - weak visual score plus weak textual cues and in-context risk alignment.
 - Divergences from upstream outputs must also be sanitized server-side.
-- Image vision review: when attached images are provided alongside this prompt,
-  they correspond to flagged ImageModerationMatch entries (load-bearing for the
-  verdict). Use them to confirm or refute the score-based finding:
-  - When attached images contradict SafeSearch score-based flags (e.g., racy
-    score is high but the image is innocuous or instructional), emit a
-    Divergence with direction="discounted" and signal_source="Image moderation"
-    describing why the visual evidence refutes the score.
-  - When attached images cannot be processed (fetch failure, unsupported
-    content type, multimodal API error visible to you as missing image
-    content), add "image_vision_review" to unavailable_inputs.
-  - These divergences must follow the same sanitization rules as other
-    divergences: short, display-ready text; no raw float scores or enum labels.
 
 Only emit divergences that are directly supported by inputs. Do not fabricate
 divergences."""
+
+
+IMAGE_VISION_REVIEW_PROMPT_EXTENSION = """
+
+Image vision review: flagged images are attached alongside this prompt. They
+correspond to flagged ImageModerationMatch entries (load-bearing for the
+verdict). Use them to confirm or refute the score-based finding:
+- For each attached image you judge to refute the SafeSearch score-based
+  flag (e.g., racy score is high but the image is innocuous or
+  instructional), emit exactly ONE Divergence with direction="discounted"
+  and signal_source="Image moderation". Do not emit more discount
+  divergences than attached images you actually refuted; do not emit one
+  blanket divergence for multiple images.
+- When attached images cannot be processed (fetch failure, unsupported
+  content type, multimodal API error visible to you as missing image
+  content), add "image_vision_review" to unavailable_inputs.
+- These divergences must follow the same sanitization rules as other
+  divergences: short, display-ready text; no raw float scores or enum
+  labels."""
+
+
+RECOMMENDATION_SYSTEM_PROMPT = RECOMMENDATION_SYSTEM_PROMPT_BASE
+RECOMMENDATION_SYSTEM_PROMPT_WITH_VISION = (
+    RECOMMENDATION_SYSTEM_PROMPT_BASE + IMAGE_VISION_REVIEW_PROMPT_EXTENSION
+)
 
 
 @dataclass
@@ -603,12 +616,17 @@ async def run_safety_recommendation(
         source_url_present=inputs.source_url is not None,
         vision_review_image_count=image_count,
     ) as span:
+        system_prompt = (
+            RECOMMENDATION_SYSTEM_PROMPT_WITH_VISION
+            if use_vision
+            else RECOMMENDATION_SYSTEM_PROMPT
+        )
         agent = cast(
             Any,
             build_agent(
                 settings,
                 output_type=SafetyRecommendation,
-                system_prompt=RECOMMENDATION_SYSTEM_PROMPT,
+                system_prompt=system_prompt,
                 name="vibecheck.safety_recommendation",
                 tier="synthesis",
             ),
@@ -616,10 +634,8 @@ async def run_safety_recommendation(
         async with vertex_slot(settings):
             serialized = _serialize_inputs(inputs)
             if use_vision:
-                image_parts = [ImageUrl(url=url) for url in urls]
-                result = await run_vertex_agent_with_retry(
-                    agent, serialized, *image_parts
-                )
+                user_content: list[Any] = [serialized, *(ImageUrl(url=url) for url in urls)]
+                result = await run_vertex_agent_with_retry(agent, user_content)
             else:
                 result = await run_vertex_agent_with_retry(agent, serialized)
         output = cast(SafetyRecommendation, result.output)

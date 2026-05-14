@@ -1,6 +1,7 @@
 """Orchestrator wiring tests for image vision review pre-pass (TASK-1639.06)."""
 from __future__ import annotations
 
+import json
 from typing import Any
 from unittest.mock import MagicMock
 from uuid import UUID, uuid4
@@ -209,7 +210,12 @@ async def test_flag_enabled_retries_without_images_on_vision_failure(
             }
         )
         if image_urls:
-            raise RuntimeError("vertex multimodal rejected image")
+            # Real Vertex multimodal rejections surface through pydantic_ai
+            # as UnexpectedModelBehavior. RuntimeError would (correctly) bypass
+            # the narrow retry handler — that distinction is what P2-1 fixed.
+            from pydantic_ai import UnexpectedModelBehavior
+
+            raise UnexpectedModelBehavior("vertex multimodal rejected image")
         return _safe_recommendation()
 
     monkeypatch.setattr(orchestrator, "run_safety_recommendation", fake_run)
@@ -259,3 +265,78 @@ async def test_flag_disabled_does_not_retry_on_failure(
     # Flag disabled: only one call, outer except swallows and skips write.
     assert len(calls) == 1
     assert conn.written is None
+
+
+@pytest.mark.asyncio
+async def test_programming_error_propagates_not_retried(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """P2-1: TypeError (and other programming errors) must NOT trigger the
+    vision-failure retry path. Silently retrying text-only would have masked
+    P1-1 in production. The outer try/except still logs and skips the DB
+    write, but the inner retry is bypassed.
+    """
+    calls: list[Any] = []
+
+    async def fake_run(
+        inputs: SafetyRecommendationInputs,
+        settings: Any,
+        *,
+        image_urls: list[str] | None = None,
+    ) -> SafetyRecommendation:
+        del settings, inputs
+        calls.append(image_urls)
+        raise TypeError("Agent.run() got unexpected positional arg")
+
+    monkeypatch.setattr(orchestrator, "run_safety_recommendation", fake_run)
+    conn = SafetyConnection(_flagged_image_sections())
+
+    await orchestrator._run_safety_recommendation_step(
+        FakePool(conn),
+        uuid4(),
+        uuid4(),
+        _settings(flag_enabled=True),
+    )
+
+    # One call, no retry. Outer try/except handles the TypeError and skips
+    # the DB write so we surface the bug instead of silently degrading.
+    assert len(calls) == 1
+    assert conn.written is None
+
+
+@pytest.mark.asyncio
+async def test_image_vision_review_marker_persists_when_model_omits_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """P2-2: when the multimodal call fails and we retry text-only, the
+    `image_vision_review` sentinel must end up in the persisted recommendation
+    even if the model's text-only output didn't include it.
+    """
+    from pydantic_ai import UnexpectedModelBehavior
+
+    async def fake_run(
+        inputs: SafetyRecommendationInputs,
+        settings: Any,
+        *,
+        image_urls: list[str] | None = None,
+    ) -> SafetyRecommendation:
+        del settings
+        if image_urls:
+            raise UnexpectedModelBehavior("vertex multimodal failure")
+        # Model returns its own (empty) unavailable_inputs on the retry.
+        del inputs
+        return _safe_recommendation()
+
+    monkeypatch.setattr(orchestrator, "run_safety_recommendation", fake_run)
+    conn = SafetyConnection(_flagged_image_sections())
+
+    await orchestrator._run_safety_recommendation_step(
+        FakePool(conn),
+        uuid4(),
+        uuid4(),
+        _settings(flag_enabled=True),
+    )
+
+    assert conn.written is not None
+    persisted = json.loads(conn.written["recommendation_json"])
+    assert "image_vision_review" in persisted["unavailable_inputs"]

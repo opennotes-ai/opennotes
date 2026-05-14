@@ -19,6 +19,7 @@ from src.analyses.safety._schemas import (
 )
 from src.analyses.safety.recommendation_agent import (
     RECOMMENDATION_SYSTEM_PROMPT,
+    RECOMMENDATION_SYSTEM_PROMPT_WITH_VISION,
     SafetyRecommendationInputs,
     _sanitize_divergences,
     _sanitize_top_signals,
@@ -29,15 +30,22 @@ from src.config import Settings
 
 
 class StubAgent:
+    """Mirrors pydantic_ai.Agent.run signature: one positional arg.
+
+    Real signature: `async def run(user_prompt: str | Sequence[UserContent], *, ...)`.
+    Keeping the stub matched to the real shape catches passing-as-varargs bugs
+    that would silently fail in production.
+    """
+
     def __init__(self, output: SafetyRecommendation) -> None:
         self.output = output
         self.prompts: list[str] = []
-        self.calls: list[tuple[Any, ...]] = []
+        self.calls: list[Any] = []
 
-    async def run(self, *args: Any) -> Any:
-        self.calls.append(args)
-        if args and isinstance(args[0], str):
-            self.prompts.append(args[0])
+    async def run(self, user_prompt: Any, **kwargs: Any) -> Any:
+        self.calls.append(user_prompt)
+        if isinstance(user_prompt, str):
+            self.prompts.append(user_prompt)
         return SimpleNamespace(output=self.output)
 
 
@@ -109,13 +117,25 @@ def test_recommendation_prompt_downgrades_all_discounted_complete_coverage() -> 
     assert "MUST emit a corresponding direction=\"discounted\" divergence" in RECOMMENDATION_SYSTEM_PROMPT
 
 
-def test_recommendation_prompt_describes_image_vision_review() -> None:
-    assert "Image moderation" in RECOMMENDATION_SYSTEM_PROMPT
-    assert "image_vision_review" in RECOMMENDATION_SYSTEM_PROMPT
-    assert 'direction="discounted"' in RECOMMENDATION_SYSTEM_PROMPT
-    assert "ImageModerationMatch" in RECOMMENDATION_SYSTEM_PROMPT
-    assert "contradict" in RECOMMENDATION_SYSTEM_PROMPT
-    assert "unavailable_inputs" in RECOMMENDATION_SYSTEM_PROMPT
+def test_image_vision_review_prompt_describes_attached_images() -> None:
+    assert "Image moderation" in RECOMMENDATION_SYSTEM_PROMPT_WITH_VISION
+    assert "image_vision_review" in RECOMMENDATION_SYSTEM_PROMPT_WITH_VISION
+    assert 'direction="discounted"' in RECOMMENDATION_SYSTEM_PROMPT_WITH_VISION
+    assert "ImageModerationMatch" in RECOMMENDATION_SYSTEM_PROMPT_WITH_VISION
+    assert "refute" in RECOMMENDATION_SYSTEM_PROMPT_WITH_VISION
+    # Prompt should require one discount per refuted image, not blanket
+    # divergences (mitigates spurious-multi-discount risk in the guardrail).
+    assert "exactly ONE" in RECOMMENDATION_SYSTEM_PROMPT_WITH_VISION
+
+
+def test_base_recommendation_prompt_omits_image_vision_review() -> None:
+    """Flag-off invariant: prompt with vision disabled must not change.
+
+    The image-vision-review section is opt-in. If it leaked into the base
+    prompt the flag-off production path would silently change behavior.
+    """
+    assert "image_vision_review" not in RECOMMENDATION_SYSTEM_PROMPT
+    assert "Image vision review" not in RECOMMENDATION_SYSTEM_PROMPT
 
 
 def test_recommendation_prompt_treats_inconclusive_video_as_incomplete_evidence() -> None:
@@ -153,8 +173,7 @@ async def test_run_safety_recommendation_omits_image_parts_when_no_image_urls(
     )
 
     assert len(agent.calls) == 1
-    assert len(agent.calls[0]) == 1
-    assert isinstance(agent.calls[0][0], str)
+    assert isinstance(agent.calls[0], str)
 
 
 async def test_run_safety_recommendation_passes_image_urls_as_multimodal_parts(
@@ -208,6 +227,7 @@ async def test_run_safety_recommendation_passes_image_urls_as_multimodal_parts(
 
     assert len(agent.calls) == 1
     call = agent.calls[0]
+    assert isinstance(call, list)
     assert len(call) == 3
     assert isinstance(call[0], str)
     assert isinstance(call[1], ImageUrl)
@@ -265,8 +285,7 @@ async def test_run_safety_recommendation_omits_image_parts_when_flag_disabled(
     )
 
     assert len(agent.calls) == 1
-    assert len(agent.calls[0]) == 1
-    assert isinstance(agent.calls[0][0], str)
+    assert isinstance(agent.calls[0], str)
     assert span["vision_review_image_count"] == 0
 
 

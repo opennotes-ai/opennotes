@@ -66,6 +66,8 @@ from uuid import UUID, uuid4
 import asyncpg
 import httpx
 import logfire
+from pydantic import ValidationError
+from pydantic_ai import ModelHTTPError, UnexpectedModelBehavior, UserError
 
 from src.analyses.claims._claims_schemas import ClaimsReport
 from src.analyses.claims._factcheck_schemas import FactCheckMatch
@@ -2429,11 +2431,19 @@ async def _run_safety_recommendation_step(
                     recommendation = await run_safety_recommendation(
                         inputs, settings, image_urls=image_urls
                     )
-                except Exception as exc:
-                    # TASK-1639.06: any failure when image URLs were attached is
-                    # treated as a multimodal/vision-review failure (image fetch,
-                    # content-type mismatch, or Vertex multimodal error). Softens
-                    # to `image_vision_review` unavailable and retries text-only.
+                except (
+                    ModelHTTPError,
+                    UnexpectedModelBehavior,
+                    UserError,
+                    ValidationError,
+                ) as exc:
+                    # TASK-1639.06: model/transport/validation failures with
+                    # images attached are treated as vision-review failures
+                    # (image fetch, content-type mismatch, Vertex multimodal
+                    # rejection). Soften to `image_vision_review` unavailable
+                    # and retry text-only. Programming errors (TypeError etc.)
+                    # propagate to the outer handler so we don't silently
+                    # mask broken call shapes.
                     logfire.warning(
                         "safety_recommendation_vision_review_unavailable",
                         image_url_count=len(image_urls),
@@ -2443,6 +2453,17 @@ async def _run_safety_recommendation_step(
                     recommendation = await run_safety_recommendation(
                         inputs, settings, image_urls=[]
                     )
+                    # P2-2: ensure the persisted recommendation carries the
+                    # unavailable marker even if the model omitted it.
+                    if "image_vision_review" not in recommendation.unavailable_inputs:
+                        recommendation = recommendation.model_copy(
+                            update={
+                                "unavailable_inputs": [
+                                    *recommendation.unavailable_inputs,
+                                    "image_vision_review",
+                                ]
+                            }
+                        )
             else:
                 recommendation = await run_safety_recommendation(inputs, settings)
         recommendation = _merge_safety_divergences(
