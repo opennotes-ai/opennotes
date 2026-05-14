@@ -48,7 +48,10 @@ def _get_embedder() -> Embedder:
         with _service_lock:
             if _embedder is None:
                 settings = get_settings()
-                _embedder = Embedder(settings.EMBEDDING_MODEL.to_pydantic_ai())
+                _embedder = Embedder(
+                    settings.EMBEDDING_MODEL.to_pydantic_ai(),
+                    defer_model_check=True,
+                )
     return _embedder
 
 

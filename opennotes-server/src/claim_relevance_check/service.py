@@ -10,6 +10,7 @@ from typing import Any
 
 from pydantic import ValidationError
 from pydantic_ai import Agent
+from pydantic_ai.capabilities import Instrumentation
 from pydantic_ai.direct import model_request as pydantic_model_request
 from pydantic_ai.exceptions import UnexpectedModelBehavior
 from pydantic_ai.messages import ModelRequest
@@ -29,7 +30,7 @@ logger = get_logger(__name__)
 relevance_agent: Agent[None, RelevanceCheckResult] = Agent(
     name="claim-relevance-checker",
     output_type=RelevanceCheckResult,
-    instrument=True,
+    capabilities=[Instrumentation()],
 )
 
 

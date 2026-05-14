@@ -4,11 +4,14 @@ TDD tests written first (RED phase) before implementation.
 Uses pydantic-ai TestModel - no real LLM calls.
 """
 
+import importlib
 import json
+import warnings
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pendulum
 import pytest
+from pydantic_ai.capabilities import Instrumentation
 from pydantic_ai.messages import ModelMessage, ModelResponse, ToolCallPart
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 from pydantic_ai.models.test import TestModel
@@ -129,10 +132,23 @@ class TestContentReviewerAgentModule:
         assert "detect_flashpoint_tool" in tool_names
 
     def test_agent_has_instrumentation_enabled(self):
-        """Agent should be created with instrument=True."""
+        """Agent should carry the pydantic-ai instrumentation capability."""
         from src.bulk_content_scan.content_reviewer_agent import content_reviewer_agent
 
-        assert content_reviewer_agent.instrument is True
+        capabilities = content_reviewer_agent.root_capability.capabilities
+        assert any(isinstance(capability, Instrumentation) for capability in capabilities)
+
+    def test_module_reload_avoids_pydantic_ai_deprecation_warnings(self):
+        import src.bulk_content_scan.content_reviewer_agent as agent_module
+
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            importlib.reload(agent_module)
+
+        deprecations = [
+            warning for warning in caught if issubclass(warning.category, DeprecationWarning)
+        ]
+        assert deprecations == []
 
     @pytest.mark.asyncio
     async def test_agent_produces_valid_output_with_test_model(self):
@@ -663,13 +679,14 @@ class TestFlashpointEvidenceInInstructions:
 
 
 class TestAgentRetries:
-    """AC1: Agent declares retries=2."""
+    """AC1: Agent preserves tool and output retries."""
 
     def test_agent_has_retries_2(self):
-        """content_reviewer_agent must declare retries=2."""
+        """content_reviewer_agent must keep both retry paths at 2."""
         from src.bulk_content_scan.content_reviewer_agent import content_reviewer_agent
 
-        assert content_reviewer_agent._max_result_retries == 2
+        assert content_reviewer_agent._max_tool_retries == 2
+        assert content_reviewer_agent._max_output_retries == 2
 
 
 class TestOutputValidator:
