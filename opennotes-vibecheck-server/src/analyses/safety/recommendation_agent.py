@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from typing import Any, cast
 
 import logfire
+from pydantic_ai.messages import ImageUrl
 
 from src.analyses.safety._schemas import (
     Divergence,
@@ -24,7 +25,7 @@ from src.config import Settings
 from src.services.gemini_agent import build_agent, run_vertex_agent_with_retry
 from src.services.vertex_limiter import vertex_slot
 
-RECOMMENDATION_SYSTEM_PROMPT = """You synthesize the safety findings for one scraped page.
+RECOMMENDATION_SYSTEM_PROMPT_BASE = """You synthesize the safety findings for one scraped page.
 Inputs are already-filtered safety matches from four analyses: text moderation,
 Web Risk, image SafeSearch, and video SafeSearch. Return one SafetyRecommendation.
 
@@ -98,6 +99,31 @@ Important caveats:
 
 Only emit divergences that are directly supported by inputs. Do not fabricate
 divergences."""
+
+
+IMAGE_VISION_REVIEW_PROMPT_EXTENSION = """
+
+Image vision review: flagged images are attached alongside this prompt. They
+correspond to flagged ImageModerationMatch entries (load-bearing for the
+verdict). Use them to confirm or refute the score-based finding:
+- For each attached image you judge to refute the SafeSearch score-based
+  flag (e.g., racy score is high but the image is innocuous or
+  instructional), emit exactly ONE Divergence with direction="discounted"
+  and signal_source="Image moderation". Do not emit more discount
+  divergences than attached images you actually refuted; do not emit one
+  blanket divergence for multiple images.
+- When attached images cannot be processed (fetch failure, unsupported
+  content type, multimodal API error visible to you as missing image
+  content), add "image_vision_review" to unavailable_inputs.
+- These divergences must follow the same sanitization rules as other
+  divergences: short, display-ready text; no raw float scores or enum
+  labels."""
+
+
+RECOMMENDATION_SYSTEM_PROMPT = RECOMMENDATION_SYSTEM_PROMPT_BASE
+RECOMMENDATION_SYSTEM_PROMPT_WITH_VISION = (
+    RECOMMENDATION_SYSTEM_PROMPT_BASE + IMAGE_VISION_REVIEW_PROMPT_EXTENSION
+)
 
 
 @dataclass
@@ -411,6 +437,30 @@ def _sanitize_top_signals(recommendation: SafetyRecommendation) -> SafetyRecomme
     return recommendation.model_copy(update={"top_signals": kept})
 
 
+def _flagged_image_count(inputs: SafetyRecommendationInputs) -> int:
+    return sum(
+        1
+        for match in inputs.image_moderation_matches
+        if match.flagged or match.max_likelihood >= FLAG_THRESHOLD
+    )
+
+
+def _discounted_image_signal_count(
+    recommendation: SafetyRecommendation,
+    inputs: SafetyRecommendationInputs,
+) -> int:
+    flagged = _flagged_image_count(inputs)
+    if flagged == 0:
+        return 0
+    discounted = sum(
+        1
+        for divergence in recommendation.divergences
+        if divergence.direction == "discounted"
+        and divergence.signal_source == "Image moderation"
+    )
+    return min(discounted, flagged)
+
+
 def _has_guardrail_downgrade_blocker(
     recommendation: SafetyRecommendation,
     inputs: SafetyRecommendationInputs,
@@ -423,10 +473,12 @@ def _has_guardrail_downgrade_blocker(
         return True
     if any(_has_verified_video_signal(match) for match in inputs.video_moderation_matches):
         return True
-    return any(
-        match.flagged or match.max_likelihood >= FLAG_THRESHOLD
-        for match in inputs.image_moderation_matches
-    )
+    flagged_images = _flagged_image_count(inputs)
+    if flagged_images > 0:
+        discounted_images = _discounted_image_signal_count(recommendation, inputs)
+        if discounted_images < flagged_images:
+            return True
+    return False
 
 
 def _is_inconclusive_video_match(match: VideoModerationMatch) -> bool:
@@ -461,7 +513,7 @@ def _discounted_text_signal_count(
     return min(discounted, len(inputs.harmful_content_matches))
 
 
-def _apply_recommendation_guardrail(
+def _apply_recommendation_guardrail(  # noqa: PLR0911
     recommendation: SafetyRecommendation,
     inputs: SafetyRecommendationInputs,
 ) -> tuple[SafetyRecommendation, str | None]:
@@ -475,7 +527,25 @@ def _apply_recommendation_guardrail(
         _is_inconclusive_video_match(match)
         for match in inputs.video_moderation_matches
     )
+    flagged_images = _flagged_image_count(inputs)
+    discounted_images = _discounted_image_signal_count(recommendation, inputs)
+    supported_image_signals = flagged_images - discounted_images
+
     if not inputs.harmful_content_matches:
+        if flagged_images > 0 and supported_image_signals == 0:
+            return (
+                recommendation.model_copy(
+                    update={
+                        "level": SafetyLevel.SAFE,
+                        "rationale": (
+                            "Visual evidence refuted the score-based image flags; "
+                            "no supported safety concern remains."
+                        ),
+                        "top_signals": [],
+                    }
+                ),
+                "all_image_signals_discounted",
+            )
         if not has_inconclusive_video:
             return recommendation, None
         return (
@@ -494,8 +564,9 @@ def _apply_recommendation_guardrail(
 
     discounted_text_signals = _discounted_text_signal_count(recommendation, inputs)
     supported_text_signals = len(inputs.harmful_content_matches) - discounted_text_signals
+    supported_signals = supported_text_signals + supported_image_signals
 
-    if supported_text_signals == 0:
+    if supported_signals == 0:
         return (
             recommendation.model_copy(
                 update={
@@ -510,7 +581,7 @@ def _apply_recommendation_guardrail(
             "all_text_signals_discounted",
         )
 
-    if supported_text_signals == 1:
+    if supported_signals == 1:
         return (
             recommendation.model_copy(
                 update={
@@ -529,7 +600,12 @@ def _apply_recommendation_guardrail(
 async def run_safety_recommendation(
     inputs: SafetyRecommendationInputs,
     settings: Settings,
+    *,
+    image_urls: list[str] | None = None,
 ) -> SafetyRecommendation:
+    urls = list(image_urls or [])
+    use_vision = bool(urls) and settings.VIBECHECK_SAFETY_IMAGE_VISION_REVIEW_ENABLED
+    image_count = len(urls) if use_vision else 0
     with logfire.span(
         "vibecheck.safety_recommendation.run",
         harmful_input_count=len(inputs.harmful_content_matches),
@@ -538,19 +614,30 @@ async def run_safety_recommendation(
         video_input_count=len(inputs.video_moderation_matches),
         unavailable_input_count=len(inputs.unavailable_inputs),
         source_url_present=inputs.source_url is not None,
+        vision_review_image_count=image_count,
     ) as span:
+        system_prompt = (
+            RECOMMENDATION_SYSTEM_PROMPT_WITH_VISION
+            if use_vision
+            else RECOMMENDATION_SYSTEM_PROMPT
+        )
         agent = cast(
             Any,
             build_agent(
                 settings,
                 output_type=SafetyRecommendation,
-                system_prompt=RECOMMENDATION_SYSTEM_PROMPT,
+                system_prompt=system_prompt,
                 name="vibecheck.safety_recommendation",
                 tier="synthesis",
             ),
         )
         async with vertex_slot(settings):
-            result = await run_vertex_agent_with_retry(agent, _serialize_inputs(inputs))
+            serialized = _serialize_inputs(inputs)
+            if use_vision:
+                user_content: list[Any] = [serialized, *(ImageUrl(url=url) for url in urls)]
+                result = await run_vertex_agent_with_retry(agent, user_content)
+            else:
+                result = await run_vertex_agent_with_retry(agent, serialized)
         output = cast(SafetyRecommendation, result.output)
 
         sanitized_output = _sanitize_top_signals(output)

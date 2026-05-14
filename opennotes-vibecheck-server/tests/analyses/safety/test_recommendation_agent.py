@@ -19,6 +19,7 @@ from src.analyses.safety._schemas import (
 )
 from src.analyses.safety.recommendation_agent import (
     RECOMMENDATION_SYSTEM_PROMPT,
+    RECOMMENDATION_SYSTEM_PROMPT_WITH_VISION,
     SafetyRecommendationInputs,
     _sanitize_divergences,
     _sanitize_top_signals,
@@ -29,12 +30,22 @@ from src.config import Settings
 
 
 class StubAgent:
+    """Mirrors pydantic_ai.Agent.run signature: one positional arg.
+
+    Real signature: `async def run(user_prompt: str | Sequence[UserContent], *, ...)`.
+    Keeping the stub matched to the real shape catches passing-as-varargs bugs
+    that would silently fail in production.
+    """
+
     def __init__(self, output: SafetyRecommendation) -> None:
         self.output = output
         self.prompts: list[str] = []
+        self.calls: list[Any] = []
 
-    async def run(self, user_prompt: str):
-        self.prompts.append(user_prompt)
+    async def run(self, user_prompt: Any, **kwargs: Any) -> Any:
+        self.calls.append(user_prompt)
+        if isinstance(user_prompt, str):
+            self.prompts.append(user_prompt)
         return SimpleNamespace(output=self.output)
 
 
@@ -106,12 +117,176 @@ def test_recommendation_prompt_downgrades_all_discounted_complete_coverage() -> 
     assert "MUST emit a corresponding direction=\"discounted\" divergence" in RECOMMENDATION_SYSTEM_PROMPT
 
 
+def test_image_vision_review_prompt_describes_attached_images() -> None:
+    assert "Image moderation" in RECOMMENDATION_SYSTEM_PROMPT_WITH_VISION
+    assert "image_vision_review" in RECOMMENDATION_SYSTEM_PROMPT_WITH_VISION
+    assert 'direction="discounted"' in RECOMMENDATION_SYSTEM_PROMPT_WITH_VISION
+    assert "ImageModerationMatch" in RECOMMENDATION_SYSTEM_PROMPT_WITH_VISION
+    assert "refute" in RECOMMENDATION_SYSTEM_PROMPT_WITH_VISION
+    # Prompt should require one discount per refuted image, not blanket
+    # divergences (mitigates spurious-multi-discount risk in the guardrail).
+    assert "exactly ONE" in RECOMMENDATION_SYSTEM_PROMPT_WITH_VISION
+
+
+def test_base_recommendation_prompt_omits_image_vision_review() -> None:
+    """Flag-off invariant: prompt with vision disabled must not change.
+
+    The image-vision-review section is opt-in. If it leaked into the base
+    prompt the flag-off production path would silently change behavior.
+    """
+    assert "image_vision_review" not in RECOMMENDATION_SYSTEM_PROMPT
+    assert "Image vision review" not in RECOMMENDATION_SYSTEM_PROMPT
+
+
 def test_recommendation_prompt_treats_inconclusive_video_as_incomplete_evidence() -> None:
     assert "sampling_inconclusive" in RECOMMENDATION_SYSTEM_PROMPT
     assert "incomplete evidence" in RECOMMENDATION_SYSTEM_PROMPT
     assert "not a supported video safety signal" in RECOMMENDATION_SYSTEM_PROMPT
     assert "must not by itself justify `caution`" in RECOMMENDATION_SYSTEM_PROMPT
     assert "Treat it as caution unless" not in RECOMMENDATION_SYSTEM_PROMPT
+
+
+async def test_run_safety_recommendation_omits_image_parts_when_no_image_urls(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    agent = StubAgent(
+        SafetyRecommendation(
+            level=SafetyLevel.SAFE,
+            rationale="No images attached.",
+            top_signals=[],
+        )
+    )
+    monkeypatch.setattr(
+        "src.analyses.safety.recommendation_agent.build_agent",
+        lambda *args, **kwargs: agent,
+    )
+
+    await run_safety_recommendation(
+        SafetyRecommendationInputs(
+            harmful_content_matches=[],
+            web_risk_findings=[],
+            image_moderation_matches=[],
+            video_moderation_matches=[],
+            unavailable_inputs=[],
+        ),
+        settings=Settings(VIBECHECK_SAFETY_IMAGE_VISION_REVIEW_ENABLED=True),
+    )
+
+    assert len(agent.calls) == 1
+    assert isinstance(agent.calls[0], str)
+
+
+async def test_run_safety_recommendation_passes_image_urls_as_multimodal_parts(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from pydantic_ai.messages import ImageUrl
+
+    agent = StubAgent(
+        SafetyRecommendation(
+            level=SafetyLevel.SAFE,
+            rationale="Image confirmed benign.",
+            top_signals=[],
+        )
+    )
+    span: dict[str, Any] = {}
+
+    class _RecordingSpan:
+        def __enter__(self) -> _RecordingSpan:
+            return self
+
+        def __exit__(self, *_args: object) -> None:
+            return None
+
+        def set_attribute(self, key: str, value: Any) -> None:
+            span[key] = value
+
+        def set_attributes(self, attributes: dict[str, Any]) -> None:
+            span.update(attributes)
+
+    def _fake_span(name: str, **attrs: Any) -> _RecordingSpan:
+        span.update(attrs)
+        return _RecordingSpan()
+
+    monkeypatch.setattr(recommendation_agent.logfire, "span", _fake_span)
+    monkeypatch.setattr(
+        "src.analyses.safety.recommendation_agent.build_agent",
+        lambda *args, **kwargs: agent,
+    )
+
+    await run_safety_recommendation(
+        SafetyRecommendationInputs(
+            harmful_content_matches=[],
+            web_risk_findings=[],
+            image_moderation_matches=[],
+            video_moderation_matches=[],
+            unavailable_inputs=[],
+        ),
+        settings=Settings(VIBECHECK_SAFETY_IMAGE_VISION_REVIEW_ENABLED=True),
+        image_urls=["https://a/img.jpg", "https://b/img.png"],
+    )
+
+    assert len(agent.calls) == 1
+    call = agent.calls[0]
+    assert isinstance(call, list)
+    assert len(call) == 3
+    assert isinstance(call[0], str)
+    assert isinstance(call[1], ImageUrl)
+    assert call[1].url == "https://a/img.jpg"
+    assert isinstance(call[2], ImageUrl)
+    assert call[2].url == "https://b/img.png"
+    assert span["vision_review_image_count"] == 2
+
+
+async def test_run_safety_recommendation_omits_image_parts_when_flag_disabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    agent = StubAgent(
+        SafetyRecommendation(
+            level=SafetyLevel.SAFE,
+            rationale="Flag disabled.",
+            top_signals=[],
+        )
+    )
+    span: dict[str, Any] = {}
+
+    class _RecordingSpan:
+        def __enter__(self) -> _RecordingSpan:
+            return self
+
+        def __exit__(self, *_args: object) -> None:
+            return None
+
+        def set_attribute(self, key: str, value: Any) -> None:
+            span[key] = value
+
+        def set_attributes(self, attributes: dict[str, Any]) -> None:
+            span.update(attributes)
+
+    def _fake_span(name: str, **attrs: Any) -> _RecordingSpan:
+        span.update(attrs)
+        return _RecordingSpan()
+
+    monkeypatch.setattr(recommendation_agent.logfire, "span", _fake_span)
+    monkeypatch.setattr(
+        "src.analyses.safety.recommendation_agent.build_agent",
+        lambda *args, **kwargs: agent,
+    )
+
+    await run_safety_recommendation(
+        SafetyRecommendationInputs(
+            harmful_content_matches=[],
+            web_risk_findings=[],
+            image_moderation_matches=[],
+            video_moderation_matches=[],
+            unavailable_inputs=[],
+        ),
+        settings=Settings(VIBECHECK_SAFETY_IMAGE_VISION_REVIEW_ENABLED=False),
+        image_urls=["https://a/img.jpg"],
+    )
+
+    assert len(agent.calls) == 1
+    assert isinstance(agent.calls[0], str)
+    assert span["vision_review_image_count"] == 0
 
 
 async def test_run_safety_recommendation_logfire_attrs_are_set_for_inputs_and_sanitization(
@@ -581,6 +756,129 @@ async def test_run_safety_recommendation_preserves_empty_divergences(monkeypatch
     result = await run_safety_recommendation(inputs, settings=Settings())
 
     assert result.divergences == []
+
+
+def _image_match(utterance_id: str, *, max_likelihood: float = 0.9) -> ImageModerationMatch:
+    return ImageModerationMatch(
+        utterance_id=utterance_id,
+        image_url=f"https://cdn.example/{utterance_id}.jpg",
+        adult=0.0,
+        violence=0.0,
+        racy=max_likelihood,
+        medical=0.0,
+        spoof=0.0,
+        flagged=True,
+        max_likelihood=max_likelihood,
+    )
+
+
+def _image_discount(utterance_id: str) -> Divergence:
+    return Divergence(
+        direction="discounted",
+        signal_source="Image moderation",
+        signal_detail=f"Image moderation signal {utterance_id}",
+        reason="Visual evidence refutes the score-based flag.",
+    )
+
+
+async def test_guardrail_downgrades_when_all_flagged_images_discounted_to_safe(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    agent = StubAgent(
+        _caution_recommendation(divergences=[_image_discount("u1")])
+    )
+    monkeypatch.setattr(
+        "src.analyses.safety.recommendation_agent.build_agent",
+        lambda *args, **kwargs: agent,
+    )
+
+    result = await run_safety_recommendation(
+        SafetyRecommendationInputs(
+            harmful_content_matches=[],
+            web_risk_findings=[],
+            image_moderation_matches=[_image_match("u1")],
+            video_moderation_matches=[],
+            unavailable_inputs=[],
+        ),
+        settings=Settings(),
+    )
+
+    assert result.level == SafetyLevel.SAFE
+
+
+async def test_guardrail_preserves_caution_when_image_discount_partial(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    agent = StubAgent(
+        _caution_recommendation(divergences=[_image_discount("u1")])
+    )
+    monkeypatch.setattr(
+        "src.analyses.safety.recommendation_agent.build_agent",
+        lambda *args, **kwargs: agent,
+    )
+
+    result = await run_safety_recommendation(
+        SafetyRecommendationInputs(
+            harmful_content_matches=[],
+            web_risk_findings=[],
+            image_moderation_matches=[_image_match("u1"), _image_match("u2")],
+            video_moderation_matches=[],
+            unavailable_inputs=[],
+        ),
+        settings=Settings(),
+    )
+
+    assert result.level == SafetyLevel.CAUTION
+
+
+async def test_guardrail_preserves_caution_when_image_discount_wrong_source(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    agent = StubAgent(
+        _caution_recommendation(divergences=[_text_discount("u1")])
+    )
+    monkeypatch.setattr(
+        "src.analyses.safety.recommendation_agent.build_agent",
+        lambda *args, **kwargs: agent,
+    )
+
+    result = await run_safety_recommendation(
+        SafetyRecommendationInputs(
+            harmful_content_matches=[],
+            web_risk_findings=[],
+            image_moderation_matches=[_image_match("u1")],
+            video_moderation_matches=[],
+            unavailable_inputs=[],
+        ),
+        settings=Settings(),
+    )
+
+    assert result.level == SafetyLevel.CAUTION
+
+
+async def test_guardrail_downgrades_to_mild_when_text_remains_after_image_discount(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    agent = StubAgent(
+        _caution_recommendation(divergences=[_image_discount("img-u1")])
+    )
+    monkeypatch.setattr(
+        "src.analyses.safety.recommendation_agent.build_agent",
+        lambda *args, **kwargs: agent,
+    )
+
+    result = await run_safety_recommendation(
+        SafetyRecommendationInputs(
+            harmful_content_matches=[_text_match("u1")],
+            web_risk_findings=[],
+            image_moderation_matches=[_image_match("img-u1")],
+            video_moderation_matches=[],
+            unavailable_inputs=[],
+        ),
+        settings=Settings(),
+    )
+
+    assert result.level == SafetyLevel.MILD
 
 
 async def test_guardrail_downgrades_all_discounted_text_signals_to_safe(

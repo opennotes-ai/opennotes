@@ -67,6 +67,8 @@ from uuid import UUID, uuid4
 import asyncpg
 import httpx
 import logfire
+from pydantic import ValidationError
+from pydantic_ai import ModelHTTPError, UnexpectedModelBehavior, UserError
 
 from src.analyses.claims._claims_schemas import ClaimsReport
 from src.analyses.claims._factcheck_schemas import FactCheckMatch
@@ -102,6 +104,9 @@ from src.analyses.safety.recommendation_agent import (
 )
 from src.analyses.safety.video_intelligence_worker import run_video_intelligence
 from src.analyses.safety.video_moderation_worker import run_video_moderation
+from src.analyses.safety.vision_review_selection import (
+    select_images_for_vision_review,
+)
 from src.analyses.safety.web_risk_worker import run_web_risk
 from src.analyses.schemas import (
     ErrorCode,
@@ -2420,7 +2425,57 @@ async def _run_safety_recommendation_step(
             _parse_sections(row["sections"]),
             source_url=source_url,
         )
-        recommendation = await run_safety_recommendation(inputs, settings)
+        if settings.VIBECHECK_SAFETY_IMAGE_VISION_REVIEW_ENABLED:
+            image_urls = select_images_for_vision_review(
+                inputs, cap=settings.MAX_IMAGES_MODERATED
+            )
+        else:
+            image_urls = []
+
+        with logfire.span(
+            "safety_recommendation_step",
+            vision_review_image_count=len(image_urls),
+        ):
+            if image_urls:
+                try:
+                    recommendation = await run_safety_recommendation(
+                        inputs, settings, image_urls=image_urls
+                    )
+                except (
+                    ModelHTTPError,
+                    UnexpectedModelBehavior,
+                    UserError,
+                    ValidationError,
+                ) as exc:
+                    # TASK-1639.06: model/transport/validation failures with
+                    # images attached are treated as vision-review failures
+                    # (image fetch, content-type mismatch, Vertex multimodal
+                    # rejection). Soften to `image_vision_review` unavailable
+                    # and retry text-only. Programming errors (TypeError etc.)
+                    # propagate to the outer handler so we don't silently
+                    # mask broken call shapes.
+                    logfire.warning(
+                        "safety_recommendation_vision_review_unavailable",
+                        image_url_count=len(image_urls),
+                        error_type=type(exc).__name__,
+                    )
+                    inputs.unavailable_inputs.append("image_vision_review")
+                    recommendation = await run_safety_recommendation(
+                        inputs, settings, image_urls=[]
+                    )
+                    # P2-2: ensure the persisted recommendation carries the
+                    # unavailable marker even if the model omitted it.
+                    if "image_vision_review" not in recommendation.unavailable_inputs:
+                        recommendation = recommendation.model_copy(
+                            update={
+                                "unavailable_inputs": [
+                                    *recommendation.unavailable_inputs,
+                                    "image_vision_review",
+                                ]
+                            }
+                        )
+            else:
+                recommendation = await run_safety_recommendation(inputs, settings)
         recommendation = _merge_safety_divergences(
             recommendation, synthesized_divergences
         )

@@ -61,6 +61,19 @@ def _require_markdown(scrape: ScrapeResult) -> str:
 # ---------------------------------------------------------------------------
 
 
+def _safety_step_settings(*, flag_enabled: bool = False) -> MagicMock:
+    """Settings stub for _run_safety_recommendation_step tests.
+
+    Bare MagicMock() returns truthy MagicMock objects on attribute access,
+    which would make the vision-review pre-pass branch fire with a non-int
+    cap. Set the flag explicitly so the legacy text-only path is exercised.
+    """
+    settings = MagicMock()
+    settings.VIBECHECK_SAFETY_IMAGE_VISION_REVIEW_ENABLED = flag_enabled
+    settings.MAX_IMAGES_MODERATED = 30
+    return settings
+
+
 async def test_run_section_write_slot_exception_raises_transient_error(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -914,7 +927,7 @@ async def test_safety_recommendation_step_writes_serialized_recommendation(monke
     )
 
     await orchestrator._run_safety_recommendation_step(
-        FakePool(conn), job_id, task_attempt, MagicMock()
+        FakePool(conn), job_id, task_attempt, _safety_step_settings()
     )
 
     assert calls[0].web_risk_findings[0].threat_types == ["MALWARE"]
@@ -959,7 +972,7 @@ async def test_safety_recommendation_step_uses_job_url_for_source_url(
     )
 
     await orchestrator._run_safety_recommendation_step(
-        FakePool(conn), uuid4(), uuid4(), MagicMock()
+        FakePool(conn), uuid4(), uuid4(), _safety_step_settings()
     )
 
     assert calls[0].source_url == "https://input.example/article"
@@ -1078,7 +1091,7 @@ async def test_safety_recommendation_step_marks_failed_slots_unavailable(monkeyp
     )
 
     await orchestrator._run_safety_recommendation_step(
-        FakePool(conn), uuid4(), uuid4(), MagicMock()
+        FakePool(conn), uuid4(), uuid4(), _safety_step_settings()
     )
 
     assert calls[0].web_risk_findings == []
@@ -1096,7 +1109,7 @@ async def test_safety_recommendation_step_swallows_agent_exception(monkeypatch):
     conn = SafetyRecommendationConn(_sections_for_safety_step())
 
     await orchestrator._run_safety_recommendation_step(
-        FakePool(conn), uuid4(), uuid4(), MagicMock()
+        FakePool(conn), uuid4(), uuid4(), _safety_step_settings()
     )
 
     assert conn.written is None
@@ -1112,7 +1125,7 @@ async def test_safety_recommendation_step_noops_when_attempt_rotates(monkeypatch
     conn = SafetyRecommendationConn(_sections_for_safety_step(), attempt_matches=False)
 
     await orchestrator._run_safety_recommendation_step(
-        FakePool(conn), uuid4(), uuid4(), MagicMock()
+        FakePool(conn), uuid4(), uuid4(), _safety_step_settings()
     )
 
     assert conn.written is None
