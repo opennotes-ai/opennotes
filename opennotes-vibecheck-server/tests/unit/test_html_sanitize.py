@@ -613,3 +613,62 @@ def test_enrich_creates_head_when_missing() -> None:
 
     assert "https://example.com/b.css" in result
     assert "<head>" in result
+
+
+def test_enrich_drops_newline_prefixed_scheme_relative_href() -> None:
+    raw = '<html><head><link rel="stylesheet" href="\n//evil.example/a.css"></head><body></body></html>'
+    display = "<html><head></head><body></body></html>"
+
+    result = enrich_display_with_raw_styles(
+        display, raw, base_url="https://www.latimes.com/x"
+    )
+
+    assert "evil.example" not in result
+
+
+def test_enrich_drops_tab_prefixed_scheme_relative_href() -> None:
+    raw = '<html><head><link rel="stylesheet" href="\t//evil.example/a.css"></head><body></body></html>'
+    display = "<html><head></head><body></body></html>"
+
+    result = enrich_display_with_raw_styles(
+        display, raw, base_url="https://www.latimes.com/x"
+    )
+
+    assert "evil.example" not in result
+
+
+def test_enrich_drops_fragment_only_href() -> None:
+    raw = '<html><head><link rel="stylesheet" href="#foo"></head><body></body></html>'
+    display = "<html><head></head><body></body></html>"
+
+    result = enrich_display_with_raw_styles(display, raw, base_url=None)
+
+    assert "#foo" not in result
+
+
+def test_enrich_drops_query_only_href() -> None:
+    raw = '<html><head><link rel="stylesheet" href="?cache=1"></head><body></body></html>'
+    display = "<html><head></head><body></body></html>"
+
+    result = enrich_display_with_raw_styles(display, raw, base_url=None)
+
+    assert "?cache=1" not in result
+
+
+def test_enrich_drops_userinfo_in_resolved_url() -> None:
+    raw = '<html><head><link rel="stylesheet" href="https://user:pass@host.example/a.css"></head><body></body></html>'
+    display = "<html><head></head><body></body></html>"
+
+    result = enrich_display_with_raw_styles(display, raw, base_url=None)
+
+    assert "host.example" not in result
+
+
+def test_enrich_strips_fragment_from_emitted_href() -> None:
+    raw = '<html><head><link rel="stylesheet" href="https://x.com/a.css#frag"></head><body></body></html>'
+    display = "<html><head></head><body></body></html>"
+
+    result = enrich_display_with_raw_styles(display, raw, base_url=None)
+
+    assert "https://x.com/a.css" in result
+    assert "#frag" not in result

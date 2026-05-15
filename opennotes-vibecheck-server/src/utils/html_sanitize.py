@@ -252,6 +252,46 @@ def _sanitize_extracted_archive_html(html: str) -> str:
     return str(soup)
 
 
+def _normalize_stylesheet_href(raw_href: str, base_url: str | None) -> str | None:
+    """Return a safe https stylesheet URL or None to drop.
+
+    Rejects control-char tricks, scheme-relative, data:, userinfo, fragment-only,
+    and query-only hrefs. Strips fragments from emitted URLs. Resolves relatives
+    against base_url when present.
+    """
+    candidate = raw_href.strip()
+    if not candidate:
+        return None
+    if any(ch in candidate for ch in ("\n", "\r", "\t")):
+        return None
+    if candidate.startswith("//"):
+        return None
+    lower = candidate.lower()
+    if lower.startswith(("data:", "javascript:", "vbscript:")):
+        return None
+    if lower.startswith("http://"):
+        return None
+    if candidate.startswith("#") or candidate.startswith("?"):
+        return None
+
+    if lower.startswith("https://"):
+        parsed = urllib.parse.urlsplit(candidate)
+    else:
+        if not base_url:
+            return None
+        joined = urllib.parse.urljoin(base_url, candidate)
+        parsed = urllib.parse.urlsplit(joined)
+
+    if parsed.scheme != "https":
+        return None
+    if not parsed.netloc:
+        return None
+    if "@" in parsed.netloc:
+        return None
+
+    return urllib.parse.urlunsplit((parsed.scheme, parsed.netloc, parsed.path, parsed.query, ""))
+
+
 def enrich_display_with_raw_styles(  # noqa: PLR0912
     display_html: str,
     raw_html: str | None,
@@ -284,7 +324,9 @@ def enrich_display_with_raw_styles(  # noqa: PLR0912
             continue
         href = tag.get("href")
         if isinstance(href, str) and href:
-            existing_link_hrefs.add(href)
+            normalized = _normalize_stylesheet_href(href, base_url)
+            if normalized is not None:
+                existing_link_hrefs.add(normalized)
 
     queued_links: list[dict[str, str]] = []
     queued_styles: list[str] = []
@@ -298,19 +340,9 @@ def enrich_display_with_raw_styles(  # noqa: PLR0912
         raw_href = tag.get("href")
         if not isinstance(raw_href, str) or not raw_href:
             continue
-        href_lower = raw_href.lower()
-        if href_lower.startswith("data:") or raw_href.startswith("//"):
+        resolved = _normalize_stylesheet_href(raw_href, base_url)
+        if resolved is None:
             continue
-        if raw_href.startswith("http://"):
-            continue
-        if raw_href.startswith("https://"):
-            resolved = raw_href
-        else:
-            if not base_url:
-                continue
-            resolved = urllib.parse.urljoin(base_url, raw_href)
-            if not resolved.startswith("https://"):
-                continue
 
         if resolved in existing_link_hrefs:
             continue
