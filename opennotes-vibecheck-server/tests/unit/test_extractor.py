@@ -1471,13 +1471,13 @@ async def test_extract_utterances_sample_rate_one_always_includes_content(
 
 
 def test_assign_stable_ids_is_process_stable() -> None:
+
     from src.analyses.schemas import PageKind, UtteranceStreamType
-    from datetime import timezone
 
     def _make_payload() -> UtterancesPayload:
         return UtterancesPayload(
             source_url="http://example.com",
-            scraped_at=datetime(2024, 1, 1, tzinfo=timezone.utc),
+            scraped_at=datetime(2024, 1, 1, tzinfo=UTC),
             utterances=[
                 Utterance(kind="post", text="Hello world"),
                 Utterance(kind="reply", text="A reply"),

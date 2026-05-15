@@ -1,17 +1,15 @@
-import asyncio
-import re
 import subprocess
 import sys
-from datetime import datetime, timezone
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from unittest.mock import patch
 
 import pytest
 
 from src.analyses.schemas import PageKind, UtteranceStreamType
-from src.utterances.schema import Utterance, UtterancesPayload, BatchedUtteranceRedirectionResponse
-from src.utterances.batched.assembler import assemble_sections
 from src.utterances._ids import stable_utterance_id
+from src.utterances.batched.assembler import assemble_sections
+from src.utterances.schema import BatchedUtteranceRedirectionResponse, Utterance, UtterancesPayload
 
 
 @dataclass
@@ -52,7 +50,7 @@ def make_section(
         ),
         payload=UtterancesPayload(
             source_url="http://example.com",
-            scraped_at=datetime.now(timezone.utc),
+            scraped_at=datetime.now(UTC),
             utterances=utterances,
             page_kind=PageKind.OTHER,
             utterance_stream_type=UtteranceStreamType.UNKNOWN,
@@ -297,13 +295,15 @@ def test_stable_ids_subprocess_hashseed_independent():
     import os
     env0 = {**os.environ, "PYTHONHASHSEED": "0"}
     env1 = {**os.environ, "PYTHONHASHSEED": "1"}
+    from pathlib import Path
+    repo_root = Path(__file__).resolve().parents[2]
     r0 = subprocess.run(
         [sys.executable, "-c", script],
-        capture_output=True, text=True, env=env0, cwd="/Users/mike/code/opennotes-ai/multiverse/worktrees/tasks-1649/opennotes-vibecheck-server"
+        capture_output=True, text=True, env=env0, cwd=str(repo_root), check=False,
     )
     r1 = subprocess.run(
         [sys.executable, "-c", script],
-        capture_output=True, text=True, env=env1, cwd="/Users/mike/code/opennotes-ai/multiverse/worktrees/tasks-1649/opennotes-vibecheck-server"
+        capture_output=True, text=True, env=env1, cwd=str(repo_root), check=False,
     )
     assert r0.returncode == 0, r0.stderr
     assert r1.returncode == 0, r1.stderr
@@ -537,7 +537,7 @@ async def test_normalized_fallback_does_not_use_norm_position():
     norm_of_utterance = "Hello world"
 
     norm_of_html = "Hello world"
-    norm_match_pos = "     <p>".replace("  ", " ").find(norm_of_utterance) if norm_of_utterance in norm_of_html else -1
+    assert norm_of_utterance in norm_of_html
 
     global_start = 100
 
@@ -593,7 +593,6 @@ async def test_normalized_fallback_offset_is_global_start_not_norm_string_pos():
         )
 
     assert len(result.utterances) == 1
-    candidate_offset = result.utterances[0].utterance_id
 
     from src.utterances._ids import stable_utterance_id
     expected_id_at_global_start = stable_utterance_id("post", utterance_text, global_start, 0)
@@ -696,7 +695,7 @@ async def test_full_integration_dedup_ids_parent_attribute_media():
         ],
     )
 
-    with patch("src.utterances.batched.assembler.attribute_media") as mock_attr2:
+    with patch("src.utterances.batched.assembler.attribute_media"):
         result2 = await assemble_sections(
             section_results=[section0b, section1b],
             parent=make_parent(),
@@ -754,7 +753,7 @@ async def test_assembler_propagates_parent_page_title():
 
 
 @pytest.mark.asyncio
-async def test_cross_section_parent_id_NOT_nearest_preceding_post():
+async def test_cross_section_parent_id_not_nearest_preceding_post():
     parent = make_parent()
     section0 = make_section(
         index=0,

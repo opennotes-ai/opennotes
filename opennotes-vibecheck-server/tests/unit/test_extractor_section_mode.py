@@ -14,7 +14,7 @@ from pydantic_ai.tools import ToolDefinition
 
 from src.analyses.schemas import PageKind, UtteranceStreamType
 from src.cache.scrape_cache import CachedScrape
-from src.firecrawl_client import ScrapeMetadata, ScrapeResult
+from src.firecrawl_client import ScrapeMetadata
 from src.utterances.extractor import (
     ExtractorDeps,
     _get_html_impl,

@@ -13,7 +13,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 from unittest.mock import MagicMock
@@ -22,8 +22,8 @@ import pytest
 
 from src.analyses.schemas import PageKind, UtteranceStreamType
 from src.cache.scrape_cache import CachedScrape, SupabaseScrapeCache
-from src.firecrawl_client import ScrapeMetadata
 from src.config import Settings
+from src.firecrawl_client import ScrapeMetadata
 from src.utterances.batched.assembler import SectionResult
 from src.utterances.batched.partition import HtmlSection
 from src.utterances.batched.section_runner import run_all_sections, run_section
@@ -187,8 +187,7 @@ async def test_run_all_sections_respects_semaphore(
         nonlocal counter, max_concurrent, entered
 
         counter += 1
-        if counter > max_concurrent:
-            max_concurrent = counter
+        max_concurrent = max(max_concurrent, counter)
 
         entered += 1
         if entered == settings.VIBECHECK_BATCH_PARALLEL:

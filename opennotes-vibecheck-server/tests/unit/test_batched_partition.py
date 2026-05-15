@@ -1,9 +1,9 @@
 from unittest.mock import MagicMock
 
-from src.utterances.batched.partition import partition_html
-from src.utterances.schema import BatchedUtteranceRedirectionResponse, SectionHint
 from src.analyses.schemas import PageKind
 from src.analyses.stream_types import UtteranceStreamType
+from src.utterances.batched.partition import partition_html
+from src.utterances.schema import BatchedUtteranceRedirectionResponse, SectionHint
 
 
 def make_settings(target: int, overlap: int) -> MagicMock:
@@ -22,7 +22,7 @@ def empty_response() -> BatchedUtteranceRedirectionResponse:
     )
 
 
-class TestAC1_FullCoverageMonotonic:
+class TestAC1FullCoverageMonotonic:
     def test_covers_entire_input_monotonically_nondecreasing(self):
         html = "A" * 1000
         settings = make_settings(target=400, overlap=50)
@@ -43,7 +43,7 @@ class TestAC1_FullCoverageMonotonic:
             ), f"Section {i} start should <= section {i+1} start"
 
 
-class TestAC2_DeterminismNoAnchor:
+class TestAC2DeterminismNoAnchor:
     def test_determinism_same_input_same_output(self):
         html = "X" * 900
         settings = make_settings(target=300, overlap=0)
@@ -68,7 +68,7 @@ class TestAC2_DeterminismNoAnchor:
             ), f"Section {i} should start at {expected}, got {actual_starts[i]}"
 
 
-class TestAC3_AnchorSnap:
+class TestAC3AnchorSnap:
     def test_anchor_snap_pulls_cut_to_marker(self):
         marker = b"<section data-platform-comments>"
         prefix = b"A" * 310
@@ -95,10 +95,10 @@ class TestAC3_AnchorSnap:
         expected_global_start = max(0, non_overlap_start_of_second - overlap_bytes)
         assert (
             sections[1].global_start == expected_global_start
-        ), f"Second section should snap and apply overlap"
+        ), "Second section should snap and apply overlap"
 
 
-class TestAC4_OverlapBytes:
+class TestAC4OverlapBytes:
     def test_overlap_exactly_setting_bytes_for_plain_sections(self):
         html = "Y" * 900
         settings = make_settings(target=300, overlap=60)
@@ -115,7 +115,7 @@ class TestAC4_OverlapBytes:
         ), "Second section should start 60 bytes before deterministic cut"
 
 
-class TestAC5_Emoji4ByteAtBoundary:
+class TestAC5Emoji4ByteAtBoundary:
     def test_emoji_4byte_at_cut_boundary_no_corruption(self):
         emoji = "🎉"
         pre = "A" * 299
@@ -133,7 +133,7 @@ class TestAC5_Emoji4ByteAtBoundary:
             _ = section.html_slice
             assert (
                 isinstance(section.html_slice, str)
-            ), f"html_slice must be decodable string"
+            ), "html_slice must be decodable string"
 
 
 class TestEdgeCases:
@@ -231,7 +231,7 @@ class TestEdgeCases:
         ), "Should use hint's custom overlap over setting"
 
 
-class TestAC6_MultibyteBoundaryHintMetadata:
+class TestAC6MultibyteBoundaryHintMetadata:
     def test_hint_metadata_survives_utf8_widen(self):
         from unittest.mock import patch
 

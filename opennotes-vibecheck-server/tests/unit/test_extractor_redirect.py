@@ -6,14 +6,14 @@ import time
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import MagicMock
 
 import pytest
 
 from src.analyses.schemas import PageKind, UtteranceStreamType
-from src.cache.scrape_cache import CachedScrape, SupabaseScrapeCache
+from src.cache.scrape_cache import CachedScrape
 from src.config import Settings
-from src.firecrawl_client import FirecrawlClient, ScrapeMetadata, ScrapeResult
+from src.firecrawl_client import ScrapeMetadata, ScrapeResult
 from src.utterances.extractor import (
     REDIRECT_ADDENDUM,
     _extract_or_redirect,

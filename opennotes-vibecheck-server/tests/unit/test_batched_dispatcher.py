@@ -2,18 +2,16 @@
 from __future__ import annotations
 
 import asyncio
-import time
-from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock
 
 import pytest
 
 from src.analyses.schemas import PageKind, UtteranceStreamType
-from src.cache.scrape_cache import CachedScrape, SupabaseScrapeCache
+from src.cache.scrape_cache import CachedScrape
 from src.config import Settings
-from src.firecrawl_client import FirecrawlClient, ScrapeMetadata, ScrapeResult
+from src.firecrawl_client import ScrapeMetadata, ScrapeResult
 from src.utterances.batched.dispatcher import extract_utterances_dispatched
 from src.utterances.errors import ZeroUtterancesError
 from src.utterances.schema import (
@@ -169,7 +167,6 @@ async def test_sanitization_uses_asyncio_to_thread(monkeypatch: pytest.MonkeyPat
     Verify by patching asyncio.to_thread and confirming _sanitize_html is only
     called through it, not directly."""
     sanitize_calls_via_thread: list[str] = []
-    sanitize_direct_calls: list[str] = []
     original_to_thread = asyncio.to_thread
 
     async def _fake_to_thread(func: Any, *args: Any, **kwargs: Any) -> Any:

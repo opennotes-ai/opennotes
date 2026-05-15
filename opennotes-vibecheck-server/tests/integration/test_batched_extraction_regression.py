@@ -147,7 +147,7 @@ def _build_section_payloads_with_parent_ids(
 ) -> list[UtterancesPayload]:
     payloads = _build_section_payloads(sections, sanitized_html)
 
-    for i, payload in enumerate(payloads[1:], start=1):
+    for payload in payloads[1:]:
         if payload.utterances:
             first = payload.utterances[0]
             payload.utterances[0] = Utterance(
@@ -172,7 +172,7 @@ class _MulticallFakeAgent:
     section_payloads: list[UtterancesPayload]
     call_count: int = field(default=0, init=False)
     prompts: list[str] = field(default_factory=list)
-    model: Any = field(default_factory=lambda: type("M", (), {"model_name": "fake-batched"})())
+    model: Any = field(default_factory=lambda: type("M", (), {"model_name": "fake-batched"})())  # noqa: PLW0108
     _lock: asyncio.Lock = field(default_factory=asyncio.Lock, init=False)
 
     def tool(self, func: Any = None, /, **_kwargs: Any) -> Any:
@@ -309,7 +309,7 @@ async def test_large_page_no_duplicate_or_missing_utterances_at_seams(
     section_payloads = _build_section_payloads(sections, html)
 
     direct_section_results = [
-        SectionResult(section=s, payload=p) for s, p in zip(sections, section_payloads)
+        SectionResult(section=s, payload=p) for s, p in zip(sections, section_payloads, strict=True)
     ]
     expected_assembled = await assemble_sections(direct_section_results, parent_response, html, TARGET_URL)
     expected_final = len(expected_assembled.utterances)
@@ -506,6 +506,6 @@ async def test_batched_extraction_all_utterance_ids_are_unique(
     ids = [u.utterance_id for u in result.utterances]
     assert len(ids) == len(set(ids)), (
         f"Found {len(ids) - len(set(ids))} duplicate utterance_ids: "
-        f"{[id for id in ids if ids.count(id) > 1][:5]}"
+        f"{[uid for uid in ids if ids.count(uid) > 1][:5]}"
     )
-    assert all(id is not None for id in ids), "All utterances must have a non-None utterance_id"
+    assert all(uid is not None for uid in ids), "All utterances must have a non-None utterance_id"

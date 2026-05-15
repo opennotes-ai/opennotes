@@ -1,9 +1,9 @@
 import pytest
 from pydantic import ValidationError
 
-from src.utterances.schema import BatchedUtteranceRedirectionResponse, SectionHint
 from src.analyses.schemas import PageKind, UtteranceStreamType
 from src.config import Settings
+from src.utterances.schema import BatchedUtteranceRedirectionResponse, SectionHint
 
 
 def test_batched_redirection_response_round_trips():
