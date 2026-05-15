@@ -3,6 +3,7 @@ import subprocess
 import sys
 from datetime import datetime, timezone
 from dataclasses import dataclass
+from unittest.mock import patch
 
 import pytest
 
@@ -383,3 +384,202 @@ def test_orphan_no_preceding_post_gets_none():
 
     assert len(result.utterances) == 1
     assert result.utterances[0].parent_id is None
+
+
+def test_split_token_artifact_dropped_left_side_kept():
+    section0 = make_section(
+        index=0,
+        html_slice="<p>hello apple airconditioner</p>",
+        global_start=0,
+        global_end=33,
+        utterances=[
+            Utterance(kind="post", text="hello apple airconditioner"),
+        ],
+    )
+    section1 = make_section(
+        index=1,
+        html_slice="<p>conditioner gardenhose tantalum</p>",
+        global_start=16,
+        global_end=51,
+        overlap_with_prev_bytes=19,
+        utterances=[
+            Utterance(kind="post", text="conditioner gardenhose tantalum"),
+        ],
+    )
+
+    result = assemble_sections(
+        section_results=[section0, section1],
+        parent=make_parent(),
+        sanitized_html="<p>hello apple airconditioner</p><p>conditioner gardenhose tantalum</p>",
+        source_url="http://example.com",
+    )
+
+    assert len(result.utterances) == 1
+    assert result.utterances[0].text == "hello apple airconditioner"
+
+
+def test_non_split_overlap_both_kept():
+    section0 = make_section(
+        index=0,
+        html_slice="<p>hello world</p>",
+        global_start=0,
+        global_end=18,
+        utterances=[
+            Utterance(kind="post", text="hello world"),
+        ],
+    )
+    section1 = make_section(
+        index=1,
+        html_slice="<p>goodbye world</p>",
+        global_start=10,
+        global_end=30,
+        overlap_with_prev_bytes=8,
+        utterances=[
+            Utterance(kind="post", text="goodbye world"),
+        ],
+    )
+
+    result = assemble_sections(
+        section_results=[section0, section1],
+        parent=make_parent(),
+        sanitized_html="<p>hello world</p><p>goodbye world</p>",
+        source_url="http://example.com",
+    )
+
+    assert len(result.utterances) == 2
+    texts = [u.text for u in result.utterances]
+    assert "hello world" in texts
+    assert "goodbye world" in texts
+
+
+def test_attribute_media_called_exactly_once():
+    section0 = make_section(
+        index=0,
+        html_slice="<p>Hello</p>",
+        global_start=0,
+        global_end=12,
+        utterances=[
+            Utterance(kind="post", text="Hello"),
+        ],
+    )
+
+    with patch("src.utterances.batched.assembler.attribute_media") as mock_attr:
+        result = assemble_sections(
+            section_results=[section0],
+            parent=make_parent(),
+            sanitized_html="<p>Hello</p>",
+            source_url="http://example.com",
+        )
+
+    assert mock_attr.call_count == 1
+    call_args = mock_attr.call_args
+    assert call_args[0][0] == "<p>Hello</p>"
+    assert call_args[0][1] == result.utterances
+
+
+def test_attribute_media_receives_full_sanitized_html_not_slice():
+    section0 = make_section(
+        index=0,
+        html_slice="<p>first</p>",
+        global_start=0,
+        global_end=12,
+        utterances=[
+            Utterance(kind="post", text="first"),
+        ],
+    )
+    section1 = make_section(
+        index=1,
+        html_slice="<p>second</p>",
+        global_start=12,
+        global_end=25,
+        utterances=[
+            Utterance(kind="post", text="second"),
+        ],
+    )
+    full_html = "<html><body>full content</body></html>"
+
+    with patch("src.utterances.batched.assembler.attribute_media") as mock_attr:
+        assemble_sections(
+            section_results=[section0, section1],
+            parent=make_parent(),
+            sanitized_html=full_html,
+            source_url="http://example.com",
+        )
+
+    assert mock_attr.call_count == 1
+    assert mock_attr.call_args[0][0] == full_html
+
+
+def test_full_integration_dedup_ids_parent_attribute_media():
+    section0 = make_section(
+        index=0,
+        html_slice="<p>Root post</p><p>Overlap text</p>",
+        global_start=0,
+        global_end=35,
+        utterances=[
+            Utterance(kind="post", text="Root post", utterance_id="orig-root"),
+            Utterance(kind="comment", text="Overlap text"),
+        ],
+    )
+    section1 = make_section(
+        index=1,
+        html_slice="<p>Overlap text</p><p>Reply here</p>",
+        global_start=16,
+        global_end=51,
+        overlap_with_prev_bytes=19,
+        utterances=[
+            Utterance(kind="comment", text="Overlap text"),
+            Utterance(kind="reply", text="Reply here", parent_id="orig-root"),
+        ],
+    )
+    full_html = "<p>Root post</p><p>Overlap text</p><p>Reply here</p>"
+
+    with patch("src.utterances.batched.assembler.attribute_media") as mock_attr:
+        result1 = assemble_sections(
+            section_results=[section0, section1],
+            parent=make_parent(),
+            sanitized_html=full_html,
+            source_url="http://example.com",
+        )
+
+    section0b = make_section(
+        index=0,
+        html_slice="<p>Root post</p><p>Overlap text</p>",
+        global_start=0,
+        global_end=35,
+        utterances=[
+            Utterance(kind="post", text="Root post", utterance_id="orig-root"),
+            Utterance(kind="comment", text="Overlap text"),
+        ],
+    )
+    section1b = make_section(
+        index=1,
+        html_slice="<p>Overlap text</p><p>Reply here</p>",
+        global_start=16,
+        global_end=51,
+        overlap_with_prev_bytes=19,
+        utterances=[
+            Utterance(kind="comment", text="Overlap text"),
+            Utterance(kind="reply", text="Reply here", parent_id="orig-root"),
+        ],
+    )
+
+    with patch("src.utterances.batched.assembler.attribute_media") as mock_attr2:
+        result2 = assemble_sections(
+            section_results=[section0b, section1b],
+            parent=make_parent(),
+            sanitized_html=full_html,
+            source_url="http://example.com",
+        )
+
+    assert len(result1.utterances) == 3
+    assert result1.utterances[0].utterance_id == result2.utterances[0].utterance_id
+    assert result1.utterances[1].utterance_id == result2.utterances[1].utterance_id
+
+    root_id = result1.utterances[0].utterance_id
+    reply = result1.utterances[2]
+    assert reply.kind == "reply"
+    assert reply.parent_id == root_id
+
+    assert mock_attr.call_count == 1
+    assert mock_attr.call_args[0][0] == full_html

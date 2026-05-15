@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from src.utterances.schema import Utterance, UtterancesPayload, BatchedUtteranceRedirectionResponse
 from src.utterances.batched.partition import HtmlSection
 from src.utterances._ids import stable_utterance_id, _norm_ws
+from src.utterances.media_extraction import attribute_media
 from src.analyses.schemas import PageKind, UtteranceStreamType
 
 
@@ -22,6 +23,18 @@ class _Candidate:
     local_index: int
     utterance: Utterance
     original_id: str | None
+
+
+def _is_split_token_artifact(prior_last_text: str, candidate_text: str) -> bool:
+    prior_words = prior_last_text.split()
+    if not prior_words:
+        return False
+    last_word = prior_words[-1]
+    for split_point in range(1, len(last_word) - 2):
+        suffix = last_word[split_point:]
+        if len(suffix) >= 3 and candidate_text.startswith(suffix):
+            return True
+    return False
 
 
 def _find_offset(utterance_text: str, html_slice: str, global_start: int) -> tuple[int, int]:
@@ -69,6 +82,7 @@ def assemble_sections(
     emitted = []
     prev_section_index = None
     prev_section_overlap_end = None
+    prior_section_last_emitted_text: str | None = None
 
     section_by_index = {result.section.index: result.section for result in section_results}
 
@@ -77,6 +91,12 @@ def assemble_sections(
             if prev_section_index in section_by_index:
                 section = section_by_index[prev_section_index]
                 prev_section_overlap_end = section.global_end
+            prior_section_last_emitted_text = (
+                next(
+                    (e.utterance.text for e in reversed(emitted) if e.section_index == prev_section_index),
+                    None,
+                )
+            )
 
         is_duplicate = False
 
@@ -94,6 +114,10 @@ def assemble_sections(
                     if candidate_norm == emitted_norm:
                         is_duplicate = True
                         break
+
+            if not is_duplicate and prior_section_last_emitted_text is not None:
+                if _is_split_token_artifact(prior_section_last_emitted_text, candidate.utterance.text):
+                    is_duplicate = True
 
         if not is_duplicate:
             emitted.append(candidate)
@@ -155,10 +179,14 @@ def assemble_sections(
         page_kind = section_results[0].payload.page_kind
         utterance_stream_type = section_results[0].payload.utterance_stream_type
 
-    return UtterancesPayload(
+    payload = UtterancesPayload(
         source_url=source_url,
         scraped_at=datetime.now(timezone.utc),
         utterances=utterances,
         page_kind=page_kind,
         utterance_stream_type=utterance_stream_type,
     )
+
+    attribute_media(sanitized_html, payload.utterances)
+
+    return payload
