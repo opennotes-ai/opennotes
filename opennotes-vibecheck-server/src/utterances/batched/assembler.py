@@ -46,7 +46,7 @@ def _find_offset(utterance_text: str, html_slice: str, global_start: int) -> tup
     norm_html = _norm_ws(html_slice)
     match = norm_html.find(norm_utterance)
     if match != -1:
-        return global_start + match, len(norm_utterance)
+        return global_start, len(utterance_text)
 
     return global_start, 0
 

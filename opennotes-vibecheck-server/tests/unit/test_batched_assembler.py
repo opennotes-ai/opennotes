@@ -477,6 +477,105 @@ def test_attribute_media_called_exactly_once():
     assert call_args[0][1] == result.utterances
 
 
+def test_normalized_fallback_offset_not_norm_position():
+    html_slice = "<p>Hello   world  foo</p>"
+    utterance_text = "Hello   world  foo"
+    global_start = 50
+
+    original_pos = html_slice.find(utterance_text)
+    assert original_pos != -1, "utterance_text must appear verbatim in html_slice for this test"
+
+    section = make_section(
+        index=0,
+        html_slice=html_slice,
+        global_start=global_start,
+        global_end=global_start + len(html_slice.encode("utf-8")),
+        utterances=[Utterance(kind="post", text=utterance_text)],
+    )
+
+    result = assemble_sections(
+        section_results=[section],
+        parent=make_parent(),
+        sanitized_html=html_slice,
+        source_url="http://example.com",
+    )
+
+    assert len(result.utterances) == 1
+
+
+def test_normalized_fallback_does_not_use_norm_position():
+    html_slice = "     <p>Hello   world</p>"
+    utterance_with_extra_ws = "Hello   world"
+    norm_of_utterance = "Hello world"
+
+    norm_of_html = "Hello world"
+    norm_match_pos = "     <p>".replace("  ", " ").find(norm_of_utterance) if norm_of_utterance in norm_of_html else -1
+
+    global_start = 100
+
+    section = make_section(
+        index=0,
+        html_slice=html_slice,
+        global_start=global_start,
+        global_end=global_start + len(html_slice.encode("utf-8")),
+        utterances=[Utterance(kind="post", text=utterance_with_extra_ws)],
+    )
+
+    result = assemble_sections(
+        section_results=[section],
+        parent=make_parent(),
+        sanitized_html=html_slice,
+        source_url="http://example.com",
+    )
+
+    assert len(result.utterances) == 1
+
+
+def test_normalized_fallback_offset_is_global_start_not_norm_string_pos():
+    leading_spaces = "     "
+    html_slice = leading_spaces + "<p>Hello world</p>"
+    utterance_text = "Hello  world"
+    global_start = 200
+
+    assert html_slice.find(utterance_text) == -1, "utterance must NOT appear verbatim"
+
+    from src.utterances._ids import _norm_ws
+    norm_html = _norm_ws(html_slice)
+    norm_utt = _norm_ws(utterance_text)
+    norm_match = norm_html.find(norm_utt)
+    assert norm_match != -1, "normalized match must exist"
+    assert norm_match != 0, "norm match pos must be non-zero so we can detect the bug"
+
+    section = make_section(
+        index=0,
+        html_slice=html_slice,
+        global_start=global_start,
+        global_end=global_start + len(html_slice.encode("utf-8")),
+        utterances=[Utterance(kind="post", text=utterance_text)],
+    )
+
+    result = assemble_sections(
+        section_results=[section],
+        parent=make_parent(),
+        sanitized_html=html_slice,
+        source_url="http://example.com",
+    )
+
+    assert len(result.utterances) == 1
+    candidate_offset = result.utterances[0].utterance_id
+
+    from src.utterances._ids import stable_utterance_id
+    expected_id_at_global_start = stable_utterance_id("post", utterance_text, global_start, 0)
+    wrong_id_at_norm_pos = stable_utterance_id("post", utterance_text, global_start + norm_match, 0)
+
+    assert result.utterances[0].utterance_id == expected_id_at_global_start, (
+        f"global_offset must be global_start ({global_start}), "
+        f"not global_start+norm_match ({global_start + norm_match}). "
+        f"Got utterance_id={result.utterances[0].utterance_id!r}, "
+        f"wrong id would be {wrong_id_at_norm_pos!r}"
+    )
+
+
 def test_attribute_media_receives_full_sanitized_html_not_slice():
     section0 = make_section(
         index=0,
