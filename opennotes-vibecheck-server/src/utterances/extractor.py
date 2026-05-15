@@ -44,6 +44,7 @@ import logfire
 from pydantic_ai import Agent, RunContext
 from pydantic_ai.messages import ImageUrl
 from pydantic_ai.models.instrumented import InstrumentationSettings
+from pydantic_ai.tools import ToolDefinition
 
 from src.analyses.schemas import PageKind, UtteranceStreamType
 from src.cache.scrape_cache import CachedScrape, SupabaseScrapeCache
@@ -196,6 +197,11 @@ class ExtractorDeps:
 
     scrape: CachedScrape
     scrape_cache: SupabaseScrapeCache
+    section_mode: bool = False
+    section_html: str | None = None
+    parent_page_kind: PageKind | None = None
+    parent_utterance_stream_type: UtteranceStreamType | None = None
+    parent_page_title: str | None = None
 
 
 async def extract_utterances(
@@ -490,6 +496,8 @@ def _get_html_impl(deps: ExtractorDeps) -> str:
     Empty string (not None) when no HTML was captured so the agent always
     receives a string per the tool's declared return type.
     """
+    if deps.section_mode:
+        return deps.section_html or ""
     html = deps.scrape.html or ""
     if not html:
         return ""
@@ -511,6 +519,13 @@ async def _get_screenshot_impl(deps: ExtractorDeps) -> ImageUrl | None:
     return ImageUrl(url=signed)
 
 
+async def _prepare_screenshot(
+    ctx: RunContext[ExtractorDeps],
+    tool_def: ToolDefinition,
+) -> ToolDefinition | None:
+    return None if ctx.deps.section_mode else tool_def
+
+
 def _register_tools(agent: Agent[None, Any]) -> None:
     """Attach `get_html` and `get_screenshot` tools to a built agent.
 
@@ -519,6 +534,9 @@ def _register_tools(agent: Agent[None, Any]) -> None:
     `AgentDepsT=None`, so the decorator sees `RunContext[None]` at the type
     level — the per-run `deps=` kwarg injects the real `ExtractorDeps`
     instance at call time.
+
+    In section mode, `get_screenshot` is omitted from the tool schema via a
+    per-tool `prepare` callback so the agent never sees the tool at all.
     """
 
     @agent.tool  # pyright: ignore[reportArgumentType]
@@ -526,7 +544,7 @@ def _register_tools(agent: Agent[None, Any]) -> None:
         """Return the page's sanitized HTML. Prefer markdown; call at most once."""
         return await asyncio.to_thread(_get_html_impl, ctx.deps)
 
-    @agent.tool  # pyright: ignore[reportArgumentType]
+    @agent.tool(prepare=_prepare_screenshot)  # pyright: ignore[reportArgumentType]
     async def get_screenshot(ctx: RunContext[ExtractorDeps]) -> ImageUrl | None:
         """Return a 15-minute signed screenshot URL. Call at most once."""
         return await _get_screenshot_impl(ctx.deps)
