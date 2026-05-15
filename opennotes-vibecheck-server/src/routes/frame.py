@@ -119,6 +119,7 @@ SELECT
     s.page_title,
     s.markdown,
     s.html,
+    s.raw_html,
     s.screenshot_storage_key
 FROM vibecheck_jobs j
 JOIN vibecheck_scrapes s ON s.job_id = j.job_id
@@ -408,7 +409,7 @@ async def _get_browser_html_archive(
     return CachedScrape(
         markdown=row["markdown"] or "",
         html=row["html"],
-        raw_html=None,
+        raw_html=row["raw_html"],
         screenshot=None,
         links=None,
         metadata=ScrapeMetadata(

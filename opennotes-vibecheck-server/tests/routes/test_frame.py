@@ -141,6 +141,7 @@ class TestFrameCompat:
                     "page_title": "Extension submitted",
                     "markdown": "Extension submitted article body",
                     "html": "<main>Extension submitted article body</main>",
+                    "raw_html": None,
                     "screenshot_storage_key": None,
                 }
 
@@ -333,6 +334,7 @@ class TestFrameCompat:
                     "page_title": "Browser HTML page",
                     "markdown": "Browser HTML markdown",
                     "html": "<main>Browser HTML</main>",
+                    "raw_html": None,
                     "screenshot_storage_key": None,
                 }
 
@@ -1101,6 +1103,7 @@ class TestArchivePreview:
                     "page_title": "Extension archive",
                     "markdown": "Extension archive",
                     "html": "<main><h1>Extension archive</h1></main>",
+                    "raw_html": None,
                     "screenshot_storage_key": None,
                 }
 
@@ -1125,6 +1128,47 @@ class TestArchivePreview:
         assert resp.headers["content-type"] == "text/html; charset=utf-8"
         assert "Extension archive" in resp.text
 
+    def test_browser_html_archive_preview_enriches_with_raw_html_stylesheet(
+        self, client: TestClient
+    ) -> None:
+        job_id = "22222222-2222-2222-2222-222222222222"
+
+        class StubConn:
+            async def fetchrow(self, query: str, *args: object) -> dict[str, object] | None:
+                return {
+                    "url": "https://example.com/extension-submitted",
+                    "final_url": "https://example.com/extension-submitted",
+                    "page_title": "Extension archive",
+                    "markdown": "Extension archive",
+                    "html": "<main><h1>Extension archive</h1></main>",
+                    "raw_html": (
+                        "<html><head>"
+                        '<link rel="stylesheet" href="https://cdn.example.com/extension-styles.css">'
+                        "</head><body></body></html>"
+                    ),
+                    "screenshot_storage_key": None,
+                }
+
+        class StubCache:
+            async def get(self, url: str, *, tier: str = "scrape") -> None:
+                raise AssertionError("browser_html lookup must be job-scoped")
+
+        _client_state(client).db_pool = _FakePool(StubConn())
+        try:
+            with patch("src.routes.frame.get_scrape_cache", return_value=StubCache()):
+                resp = client.get(
+                    "/api/archive-preview",
+                    params={
+                        "url": "https://example.com/extension-submitted",
+                        "job_id": job_id,
+                    },
+                )
+        finally:
+            del _client_state(client).db_pool
+
+        assert resp.status_code == 200
+        assert "cdn.example.com/extension-styles.css" in resp.text
+
     def test_browser_html_archive_preview_is_scoped_by_job_id(
         self, client: TestClient
     ) -> None:
@@ -1137,6 +1181,7 @@ class TestArchivePreview:
                 "page_title": "First archive",
                 "markdown": "First archive",
                 "html": "<main><h1>First archive</h1></main>",
+                "raw_html": None,
                 "screenshot_storage_key": None,
             },
             second_job_id: {
@@ -1145,6 +1190,7 @@ class TestArchivePreview:
                 "page_title": "Second archive",
                 "markdown": "Second archive",
                 "html": "<main><h1>Second archive</h1></main>",
+                "raw_html": None,
                 "screenshot_storage_key": None,
             },
         }
