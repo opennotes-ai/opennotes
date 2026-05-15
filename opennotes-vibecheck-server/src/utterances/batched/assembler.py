@@ -1,30 +1,17 @@
 import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING
 
 from src.utterances.schema import Utterance, UtterancesPayload, BatchedUtteranceRedirectionResponse
+from src.utterances.batched.partition import HtmlSection
 from src.analyses.schemas import PageKind, UtteranceStreamType
 
-if TYPE_CHECKING:
-    from src.utterances.batched.schemas import HtmlSection, SectionResult
-else:
-    from dataclasses import dataclass as dataclass_decorator
 
-    @dataclass_decorator
-    class HtmlSection:
-        index: int
-        html_slice: str
-        global_start: int
-        global_end: int
-        overlap_with_prev_bytes: int
-        parent_context_text: str
-
-    @dataclass_decorator
-    class SectionResult:
-        section: HtmlSection
-        payload: UtterancesPayload
-        per_section_page_kind_guess: str
+@dataclass(frozen=True)
+class SectionResult:
+    section: HtmlSection
+    payload: UtterancesPayload
+    per_section_page_kind_guess: PageKind | None = None
 
 
 @dataclass
