@@ -28,7 +28,7 @@ def _snap_backward_to_utf8_boundary(raw: bytes, pos: int) -> int:
     return pos
 
 
-def partition_html(
+def partition_html(  # noqa: PLR0912
     sanitized_html: str,
     response: BatchedUtteranceRedirectionResponse,
     settings: Settings,
@@ -93,11 +93,11 @@ def partition_html(
     cuts = filtered_cuts
 
     section_starts = cuts
-    section_ends = section_starts[1:] + [total]
+    section_ends = [*section_starts[1:], total]
 
     sections: list[HtmlSection] = []
 
-    for i, (start, end) in enumerate(zip(section_starts, section_ends)):
+    for i, (start, end) in enumerate(zip(section_starts, section_ends, strict=True)):
         overlap_bytes_for_section = overlap_bytes
         if i > 0:
             matched_hint = matched_hints.get(start)

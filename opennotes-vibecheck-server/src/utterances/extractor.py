@@ -69,9 +69,9 @@ from src.utterances.errors import (
     classify_pydantic_ai_error,
 )
 
+from ._ids import stable_utterance_id
 from .media_extraction import attribute_media
 from .schema import BatchedUtteranceRedirectionResponse, UtterancesPayload
-from ._ids import stable_utterance_id
 
 EXTRACTOR_SYSTEM_PROMPT = f"""\
 You extract structured utterances from a scraped webpage's markdown.

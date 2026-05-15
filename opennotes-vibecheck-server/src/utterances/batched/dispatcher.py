@@ -12,7 +12,7 @@ from src.utterances.batched.assembler import assemble_sections
 from src.utterances.batched.partition import partition_html
 from src.utterances.batched.section_runner import run_all_sections
 from src.utterances.errors import ZeroUtterancesError
-from src.utterances.extractor import _extract_or_redirect, _sanitize_html
+from src.utterances.extractor import _extract_or_redirect, _get_or_scrape, _sanitize_html
 from src.utterances.schema import BatchedUtteranceRedirectionResponse, UtterancesPayload
 
 
@@ -28,7 +28,6 @@ async def extract_utterances_dispatched(
 
     with logfire.span("vibecheck.extract_utterances_dispatched", url=url) as span:
         if scrape is None:
-            from src.utterances.extractor import _get_or_scrape
             scrape = await _get_or_scrape(url, client, scrape_cache)
 
         sanitized_html = await asyncio.to_thread(_sanitize_html, scrape.html or "")

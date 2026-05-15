@@ -180,12 +180,12 @@ from src.utils.url_security import (
     revalidate_redirect_target,
     validate_public_http_url,
 )
+from src.utterances.batched.dispatcher import extract_utterances_dispatched
 from src.utterances.errors import (
     TransientExtractionError,
     UtteranceExtractionError,
     ZeroUtterancesError,
 )
-from src.utterances.batched.dispatcher import extract_utterances_dispatched
 from src.utterances.schema import UtterancesPayload
 from src.viafoura import (
     ViafouraFetchError,

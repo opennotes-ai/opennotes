@@ -1,12 +1,12 @@
 import asyncio
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
-from src.utterances.schema import Utterance, UtterancesPayload, BatchedUtteranceRedirectionResponse
+from src.analyses.schemas import PageKind
+from src.utterances._ids import _norm_ws, stable_utterance_id
 from src.utterances.batched.partition import HtmlSection
-from src.utterances._ids import stable_utterance_id, _norm_ws
 from src.utterances.media_extraction import attribute_media
-from src.analyses.schemas import PageKind, UtteranceStreamType
+from src.utterances.schema import BatchedUtteranceRedirectionResponse, Utterance, UtterancesPayload
 
 
 @dataclass(frozen=True)
@@ -52,7 +52,7 @@ def _find_offset(utterance_text: str, html_slice: str, global_start: int) -> tup
     return global_start, 0
 
 
-async def assemble_sections(
+async def assemble_sections(  # noqa: PLR0912
     section_results: list[SectionResult],
     parent: BatchedUtteranceRedirectionResponse,
     sanitized_html: str,
@@ -87,7 +87,7 @@ async def assemble_sections(
 
     section_by_index = {result.section.index: result.section for result in section_results}
 
-    for i, candidate in enumerate(candidates):
+    for candidate in candidates:
         if candidate.section_index != prev_section_index and prev_section_index is not None:
             if prev_section_index in section_by_index:
                 section = section_by_index[prev_section_index]
@@ -116,9 +116,12 @@ async def assemble_sections(
                         is_duplicate = True
                         break
 
-            if not is_duplicate and prior_section_last_emitted_text is not None:
-                if _is_split_token_artifact(prior_section_last_emitted_text, candidate.utterance.text):
-                    is_duplicate = True
+            if (
+                not is_duplicate
+                and prior_section_last_emitted_text is not None
+                and _is_split_token_artifact(prior_section_last_emitted_text, candidate.utterance.text)
+            ):
+                is_duplicate = True
 
         if not is_duplicate:
             emitted.append(candidate)
@@ -174,7 +177,7 @@ async def assemble_sections(
 
     payload = UtterancesPayload(
         source_url=source_url,
-        scraped_at=datetime.now(timezone.utc),
+        scraped_at=datetime.now(UTC),
         utterances=utterances,
         page_title=parent.page_title,
         page_kind=parent.page_kind,
