@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import asyncio
 import random
+import re
 from datetime import UTC, datetime
+from html import unescape
 from typing import cast
 
 import logfire
@@ -34,6 +36,30 @@ from src.utterances.extractor import (
 from src.utterances.schema import BatchedUtteranceRedirectionResponse, UtterancesPayload
 
 
+def _section_has_extractable_content(section: HtmlSection) -> bool:
+    text = re.sub(r"<[^>]+>", " ", section.html_slice)
+    return bool(unescape(text).strip())
+
+
+def _empty_section_result(
+    section: HtmlSection,
+    parent: BatchedUtteranceRedirectionResponse,
+    scrape: CachedScrape,
+) -> SectionResult:
+    return SectionResult(
+        section=section,
+        payload=UtterancesPayload(
+            utterances=[],
+            page_kind=parent.page_kind,
+            utterance_stream_type=parent.utterance_stream_type,
+            page_title=parent.page_title,
+            source_url=(scrape.metadata.source_url or "") if scrape.metadata else "",
+            scraped_at=datetime.now(UTC),
+        ),
+        per_section_page_kind_guess=None,
+    )
+
+
 async def run_section(
     section: HtmlSection,
     parent: BatchedUtteranceRedirectionResponse,
@@ -55,9 +81,7 @@ async def run_section(
             name="vibecheck.utterance_extractor.section",
             tier="extractor",
             instrument=InstrumentationSettings(
-                include_content=(
-                    random.random() < settings.LOGFIRE_EXTRACTOR_CONTENT_SAMPLE_RATE
-                ),
+                include_content=(random.random() < settings.LOGFIRE_EXTRACTOR_CONTENT_SAMPLE_RATE),
                 include_binary_content=False,
                 version=_PYDANTIC_AI_INSTRUMENTATION_VERSION,
             ),
@@ -85,19 +109,9 @@ async def run_section(
             async with vertex_slot(settings):
                 result = await run_vertex_agent_with_retry(agent, user_prompt, deps=deps)
         except ZeroUtterancesError:
-            empty_payload = UtterancesPayload(
-                utterances=[],
-                page_kind=parent.page_kind,
-                utterance_stream_type=parent.utterance_stream_type,
-                page_title=parent.page_title,
-                source_url=(scrape.metadata.source_url or "") if scrape.metadata else "",
-                scraped_at=datetime.now(UTC),
-            )
-            return SectionResult(
-                section=section,
-                payload=empty_payload,
-                per_section_page_kind_guess=None,
-            )
+            if _section_has_extractable_content(section):
+                raise
+            return _empty_section_result(section, parent, scrape)
         except TransientExtractionError:
             raise
         except VertexLimiterBackendUnavailableError as exc:
@@ -118,19 +132,9 @@ async def run_section(
 
         payload = cast(UtterancesPayload, cast(object, result.output))
         if not payload.utterances:
-            empty_payload = UtterancesPayload(
-                utterances=[],
-                page_kind=parent.page_kind,
-                utterance_stream_type=parent.utterance_stream_type,
-                page_title=parent.page_title,
-                source_url=(scrape.metadata.source_url or "") if scrape.metadata else "",
-                scraped_at=datetime.now(UTC),
-            )
-            return SectionResult(
-                section=section,
-                payload=empty_payload,
-                per_section_page_kind_guess=None,
-            )
+            if _section_has_extractable_content(section):
+                raise ZeroUtterancesError(f"section {section.index} produced zero utterances")
+            return _empty_section_result(section, parent, scrape)
 
         per_section_page_kind_guess = payload.page_kind
 
@@ -177,6 +181,9 @@ def _build_section_prompt(
     if parent.boundary_instructions:
         parts.append(parent.boundary_instructions)
     parts.append(f"Page kind context from parent pass: {parent.page_kind}")
+    parts.append(f"Utterance stream type from parent pass: {parent.utterance_stream_type}")
+    if parent.page_title:
+        parts.append(f"Page title from parent pass: {parent.page_title}")
     if section.parent_context_text:
         parts.append(f"Preceding context:\n{section.parent_context_text}")
     parts.append(f"Section HTML to extract:\n{section.html_slice}")

@@ -1,4 +1,5 @@
 """Tests for extract_utterances_dispatched dispatcher."""
+
 from __future__ import annotations
 
 import asyncio
@@ -51,7 +52,9 @@ _SINGLE_UTTERANCE_PAYLOAD = UtterancesPayload(
 
 
 class _FakeFirecrawlClient:
-    async def scrape(self, url: str, formats: list[str], *, only_main_content: bool = False) -> ScrapeResult:
+    async def scrape(
+        self, url: str, formats: list[str], *, only_main_content: bool = False
+    ) -> ScrapeResult:
         return ScrapeResult(
             markdown=_SMALL_SCRAPE.markdown,
             html=_SMALL_SCRAPE.html,
@@ -97,7 +100,11 @@ async def test_single_pass_payload_returned_unchanged(monkeypatch: pytest.Monkey
 
     settings = Settings()
     result = await extract_utterances_dispatched(
-        TARGET_URL, _FakeFirecrawlClient(), _FakeScrapeCache(), settings=settings, scrape=_SMALL_SCRAPE
+        TARGET_URL,
+        _FakeFirecrawlClient(),
+        _FakeScrapeCache(),
+        settings=settings,
+        scrape=_SMALL_SCRAPE,
     )
 
     assert result is _SINGLE_UTTERANCE_PAYLOAD
@@ -126,11 +133,15 @@ async def test_batched_path_calls_pipeline_in_order(monkeypatch: pytest.MonkeyPa
         seen_html_in_partition.append(sanitized_html)
         return [fake_section]
 
-    async def _fake_run_all(sections: Any, redirect: Any, *, settings: Any, scrape: Any, scrape_cache: Any) -> list[Any]:
+    async def _fake_run_all(
+        sections: Any, redirect: Any, *, settings: Any, scrape: Any, scrape_cache: Any
+    ) -> list[Any]:
         call_order.append("runner")
         return [fake_section_result]
 
-    async def _fake_assemble(section_results: Any, redirect: Any, sanitized_html: str, source_url: str) -> UtterancesPayload:
+    async def _fake_assemble(
+        section_results: Any, redirect: Any, sanitized_html: str, source_url: str
+    ) -> UtterancesPayload:
         call_order.append("assemble")
         seen_html_in_assemble.append(sanitized_html)
         return UtterancesPayload(
@@ -152,7 +163,11 @@ async def test_batched_path_calls_pipeline_in_order(monkeypatch: pytest.MonkeyPa
 
     settings = Settings()
     result = await extract_utterances_dispatched(
-        TARGET_URL, _FakeFirecrawlClient(), _FakeScrapeCache(), settings=settings, scrape=_SMALL_SCRAPE
+        TARGET_URL,
+        _FakeFirecrawlClient(),
+        _FakeScrapeCache(),
+        settings=settings,
+        scrape=_SMALL_SCRAPE,
     )
 
     assert call_order == ["partition", "runner", "assemble"]
@@ -182,7 +197,11 @@ async def test_sanitization_uses_asyncio_to_thread(monkeypatch: pytest.MonkeyPat
 
     settings = Settings()
     await extract_utterances_dispatched(
-        TARGET_URL, _FakeFirecrawlClient(), _FakeScrapeCache(), settings=settings, scrape=_SMALL_SCRAPE
+        TARGET_URL,
+        _FakeFirecrawlClient(),
+        _FakeScrapeCache(),
+        settings=settings,
+        scrape=_SMALL_SCRAPE,
     )
 
     assert len(sanitize_calls_via_thread) >= 1, (
@@ -206,14 +225,52 @@ async def test_zero_utterances_after_assembly_raises_error(monkeypatch: pytest.M
         AsyncMock(return_value=_REDIRECT),
     )
     monkeypatch.setattr("src.utterances.batched.dispatcher._sanitize_html", lambda h: h)
-    monkeypatch.setattr("src.utterances.batched.dispatcher.partition_html", lambda *a, **kw: [object()])
-    monkeypatch.setattr("src.utterances.batched.dispatcher.run_all_sections", AsyncMock(return_value=[object()]))
-    monkeypatch.setattr("src.utterances.batched.dispatcher.assemble_sections", AsyncMock(return_value=empty_payload))
+    monkeypatch.setattr(
+        "src.utterances.batched.dispatcher.partition_html", lambda *a, **kw: [object()]
+    )
+    monkeypatch.setattr(
+        "src.utterances.batched.dispatcher.run_all_sections", AsyncMock(return_value=[object()])
+    )
+    monkeypatch.setattr(
+        "src.utterances.batched.dispatcher.assemble_sections", AsyncMock(return_value=empty_payload)
+    )
 
     settings = Settings()
     with pytest.raises(ZeroUtterancesError):
         await extract_utterances_dispatched(
-            TARGET_URL, _FakeFirecrawlClient(), _FakeScrapeCache(), settings=settings, scrape=_SMALL_SCRAPE
+            TARGET_URL,
+            _FakeFirecrawlClient(),
+            _FakeScrapeCache(),
+            settings=settings,
+            scrape=_SMALL_SCRAPE,
+        )
+
+
+@pytest.mark.asyncio
+async def test_zero_utterances_from_section_runner_propagates(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "src.utterances.batched.dispatcher._extract_or_redirect",
+        AsyncMock(return_value=_REDIRECT),
+    )
+    monkeypatch.setattr("src.utterances.batched.dispatcher._sanitize_html", lambda h: h)
+    monkeypatch.setattr(
+        "src.utterances.batched.dispatcher.partition_html", lambda *a, **kw: [object(), object()]
+    )
+    monkeypatch.setattr(
+        "src.utterances.batched.dispatcher.run_all_sections",
+        AsyncMock(side_effect=ZeroUtterancesError("section 1 produced zero utterances")),
+    )
+
+    settings = Settings()
+    with pytest.raises(ZeroUtterancesError):
+        await extract_utterances_dispatched(
+            TARGET_URL,
+            _FakeFirecrawlClient(),
+            _FakeScrapeCache(),
+            settings=settings,
+            scrape=_SMALL_SCRAPE,
         )
 
 
@@ -226,8 +283,10 @@ async def test_section_count_span_attr_set_on_batched_path(monkeypatch: pytest.M
     class _FakeSpan:
         def __enter__(self) -> _FakeSpan:
             return self
+
         def __exit__(self, *args: Any) -> None:
             pass
+
         def set_attribute(self, key: str, value: Any) -> None:
             captured_attrs[key] = value
 
@@ -237,22 +296,32 @@ async def test_section_count_span_attr_set_on_batched_path(monkeypatch: pytest.M
         AsyncMock(return_value=_REDIRECT),
     )
     monkeypatch.setattr("src.utterances.batched.dispatcher._sanitize_html", lambda h: h)
-    monkeypatch.setattr("src.utterances.batched.dispatcher.partition_html", lambda *a, **kw: fake_sections)
-    monkeypatch.setattr("src.utterances.batched.dispatcher.run_all_sections", AsyncMock(return_value=[object()]))
+    monkeypatch.setattr(
+        "src.utterances.batched.dispatcher.partition_html", lambda *a, **kw: fake_sections
+    )
+    monkeypatch.setattr(
+        "src.utterances.batched.dispatcher.run_all_sections", AsyncMock(return_value=[object()])
+    )
     monkeypatch.setattr(
         "src.utterances.batched.dispatcher.assemble_sections",
-        AsyncMock(return_value=UtterancesPayload(
-            source_url=TARGET_URL,
-            scraped_at=datetime(2020, 1, 1, tzinfo=UTC),
-            page_title="Ok",
-            page_kind=PageKind.ARTICLE,
-            utterances=[Utterance(utterance_id=None, kind="post", text="text")],
-        )),
+        AsyncMock(
+            return_value=UtterancesPayload(
+                source_url=TARGET_URL,
+                scraped_at=datetime(2020, 1, 1, tzinfo=UTC),
+                page_title="Ok",
+                page_kind=PageKind.ARTICLE,
+                utterances=[Utterance(utterance_id=None, kind="post", text="text")],
+            )
+        ),
     )
 
     settings = Settings()
     await extract_utterances_dispatched(
-        TARGET_URL, _FakeFirecrawlClient(), _FakeScrapeCache(), settings=settings, scrape=_SMALL_SCRAPE
+        TARGET_URL,
+        _FakeFirecrawlClient(),
+        _FakeScrapeCache(),
+        settings=settings,
+        scrape=_SMALL_SCRAPE,
     )
 
     assert captured_attrs.get("section_count") == 3
@@ -267,7 +336,9 @@ async def test_under_threshold_sanitizes_only_once(monkeypatch: pytest.MonkeyPat
 
     extract_utterances_calls: list[dict] = []
 
-    async def _fake_extract_utterances(url, client, scrape_cache, *, settings=None, scrape=None, sanitized_html=None):
+    async def _fake_extract_utterances(
+        url, client, scrape_cache, *, settings=None, scrape=None, sanitized_html=None
+    ):
         extract_utterances_calls.append({"sanitized_html": sanitized_html})
         return _SINGLE_UTTERANCE_PAYLOAD
 

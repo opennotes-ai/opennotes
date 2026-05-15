@@ -4,7 +4,7 @@ Covers:
 - AC1: parent page_kind / utterance_stream_type / page_title are forced onto
   every returned payload regardless of what the agent returned.
 - AC2: run_all_sections bounds concurrency to VIBECHECK_BATCH_PARALLEL.
-- AC3: ZeroUtterancesError per-section yields empty SectionResult (not abort).
+- AC3: ZeroUtterancesError for content-bearing sections aborts the batch.
 - AC4: TransientExtractionError propagates and aborts run_all_sections.
 """
 
@@ -62,9 +62,7 @@ def _make_payload(
     utterances: list[Utterance] | None = None,
 ) -> UtterancesPayload:
     if utterances is None:
-        utterances = [
-            Utterance(kind="post", text="Hello world", utterance_id="u1")
-        ]
+        utterances = [Utterance(kind="post", text="Hello world", utterance_id="u1")]
     return UtterancesPayload(
         source_url="https://example.com/",
         scraped_at=datetime.now(UTC),
@@ -112,8 +110,10 @@ def _patch_build_agent(monkeypatch: pytest.MonkeyPatch) -> None:
     class _FakeAgent:
         def tool(self, func: Any = None, /, **_kwargs: Any) -> Any:
             if func is None:
+
                 def _wrap(f: Any) -> Any:
                     return f
+
                 return _wrap
             return func
 
@@ -167,6 +167,47 @@ async def test_run_section_forces_parent_meta(
     assert result.payload.utterance_stream_type == UtteranceStreamType.COMMENT_SECTION
     assert result.payload.page_title == "Parent Title"
     assert result.per_section_page_kind_guess == PageKind.ARTICLE
+
+
+@pytest.mark.asyncio
+async def test_run_section_prompt_includes_parent_context(
+    monkeypatch: pytest.MonkeyPatch,
+    settings: Settings,
+    mock_scrape: MagicMock,
+    mock_scrape_cache: MagicMock,
+) -> None:
+    captured_prompt = ""
+
+    async def _fake_run(agent: Any, prompt: str, *, deps: Any = None) -> _FakeRunResult:
+        nonlocal captured_prompt
+        captured_prompt = prompt
+        return _FakeRunResult(output=_make_payload())
+
+    _patch_vertex_slot(monkeypatch)
+    _patch_build_agent(monkeypatch)
+    monkeypatch.setattr(
+        "src.utterances.batched.section_runner.run_vertex_agent_with_retry",
+        _fake_run,
+    )
+
+    parent = _make_parent(
+        page_kind=PageKind.FORUM_THREAD,
+        utterance_stream_type=UtteranceStreamType.COMMENT_SECTION,
+        page_title="Parent Title",
+    )
+    section = _make_section(index=0)
+
+    await run_section(
+        section,
+        parent,
+        settings=settings,
+        scrape=mock_scrape,
+        scrape_cache=mock_scrape_cache,
+    )
+
+    assert "Page kind context from parent pass: forum_thread" in captured_prompt
+    assert "Utterance stream type from parent pass: comment_section" in captured_prompt
+    assert "Page title from parent pass: Parent Title" in captured_prompt
 
 
 @pytest.mark.asyncio
@@ -226,13 +267,14 @@ async def test_run_all_sections_respects_semaphore(
 
 
 @pytest.mark.asyncio
-async def test_zero_utterances_error_yields_empty_result(
+async def test_zero_utterances_error_from_content_section_raises(
     monkeypatch: pytest.MonkeyPatch,
     settings: Settings,
     mock_scrape: MagicMock,
     mock_scrape_cache: MagicMock,
 ) -> None:
-    """AC3: ZeroUtterancesError from agent produces empty SectionResult, no exception."""
+    """AC3: ZeroUtterancesError from a content section propagates for retry/escalation."""
+
     async def _raising_run(agent: Any, prompt: Any, *, deps: Any = None) -> Any:
         raise ZeroUtterancesError("no utterances found")
 
@@ -249,6 +291,43 @@ async def test_zero_utterances_error_yields_empty_result(
     )
     section = _make_section(index=0)
 
+    with pytest.raises(ZeroUtterancesError):
+        await run_section(
+            section,
+            parent,
+            settings=settings,
+            scrape=mock_scrape,
+            scrape_cache=mock_scrape_cache,
+        )
+
+
+@pytest.mark.asyncio
+async def test_empty_html_section_can_yield_empty_result(
+    monkeypatch: pytest.MonkeyPatch,
+    settings: Settings,
+    mock_scrape: MagicMock,
+    mock_scrape_cache: MagicMock,
+) -> None:
+    async def _raising_run(agent: Any, prompt: Any, *, deps: Any = None) -> Any:
+        raise ZeroUtterancesError("no utterances found")
+
+    _patch_vertex_slot(monkeypatch)
+    _patch_build_agent(monkeypatch)
+    monkeypatch.setattr(
+        "src.utterances.batched.section_runner.run_vertex_agent_with_retry",
+        _raising_run,
+    )
+
+    parent = _make_parent()
+    section = HtmlSection(
+        index=0,
+        html_slice="<div>   </div>",
+        global_start=0,
+        global_end=13,
+        overlap_with_prev_bytes=0,
+        parent_context_text=None,
+    )
+
     result = await run_section(
         section,
         parent,
@@ -257,10 +336,44 @@ async def test_zero_utterances_error_yields_empty_result(
         scrape_cache=mock_scrape_cache,
     )
 
-    assert isinstance(result, SectionResult)
     assert result.payload.utterances == []
-    assert result.payload.page_kind == PageKind.FORUM_THREAD
     assert result.per_section_page_kind_guess is None
+
+
+@pytest.mark.asyncio
+async def test_run_all_sections_aborts_when_middle_content_section_is_empty(
+    monkeypatch: pytest.MonkeyPatch,
+    settings: Settings,
+    mock_scrape: MagicMock,
+    mock_scrape_cache: MagicMock,
+) -> None:
+    call_count = 0
+
+    async def _mixed_run(agent: Any, prompt: Any, *, deps: Any = None) -> _FakeRunResult:
+        nonlocal call_count
+        call_count += 1
+        if call_count == 2:
+            return _FakeRunResult(output=_make_payload(utterances=[]))
+        return _FakeRunResult(output=_make_payload())
+
+    _patch_vertex_slot(monkeypatch)
+    _patch_build_agent(monkeypatch)
+    monkeypatch.setattr(
+        "src.utterances.batched.section_runner.run_vertex_agent_with_retry",
+        _mixed_run,
+    )
+
+    parent = _make_parent()
+    sections = [_make_section(i) for i in range(3)]
+
+    with pytest.raises(ZeroUtterancesError):
+        await run_all_sections(
+            sections,
+            parent,
+            settings=settings,
+            scrape=mock_scrape,
+            scrape_cache=mock_scrape_cache,
+        )
 
 
 @pytest.mark.asyncio

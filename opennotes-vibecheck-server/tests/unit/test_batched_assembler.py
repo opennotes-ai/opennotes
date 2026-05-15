@@ -144,6 +144,66 @@ async def test_overlap_duplicate_dropped():
 
 
 @pytest.mark.asyncio
+async def test_repeated_text_after_overlap_is_not_collapsed_into_seam_duplicate():
+    section0 = make_section(
+        index=0,
+        html_slice="<p>Intro</p><p>Thanks</p>",
+        global_start=0,
+        global_end=25,
+        utterances=[
+            Utterance(kind="post", text="Intro"),
+            Utterance(kind="comment", text="Thanks"),
+        ],
+    )
+    section1 = make_section(
+        index=1,
+        html_slice="<p>Thanks</p><p>Middle</p><p>Thanks</p>",
+        global_start=13,
+        global_end=50,
+        overlap_with_prev_bytes=12,
+        utterances=[
+            Utterance(kind="comment", text="Thanks"),
+        ],
+    )
+
+    with patch("src.utterances.batched.assembler.attribute_media"):
+        result = await assemble_sections(
+            section_results=[section0, section1],
+            parent=make_parent(),
+            sanitized_html="<p>Intro</p><p>Thanks</p><p>Middle</p><p>Thanks</p>",
+            source_url="http://example.com",
+        )
+
+    texts = [u.text for u in result.utterances]
+    assert texts == ["Intro", "Thanks", "Thanks"]
+
+
+@pytest.mark.asyncio
+async def test_identical_comments_in_same_section_get_distinct_final_ids():
+    section = make_section(
+        index=0,
+        html_slice="<p>Thanks</p><p>Thanks</p>",
+        global_start=0,
+        global_end=26,
+        utterances=[
+            Utterance(kind="comment", text="Thanks"),
+            Utterance(kind="comment", text="Thanks"),
+        ],
+    )
+
+    with patch("src.utterances.batched.assembler.attribute_media"):
+        result = await assemble_sections(
+            section_results=[section],
+            parent=make_parent(),
+            sanitized_html="<p>Thanks</p><p>Thanks</p>",
+            source_url="http://example.com",
+        )
+
+    assert [u.text for u in result.utterances] == ["Thanks", "Thanks"]
+    assert result.utterances[0].utterance_id != result.utterances[1].utterance_id
+
+
+@pytest.mark.asyncio
 async def test_normalized_whitespace_fallback():
     section = make_section(
         index=0,
@@ -293,17 +353,27 @@ def test_stable_ids_subprocess_hashseed_independent():
         "print(stable_utterance_id('post', 'hello world', 0, 0))"
     )
     import os
+
     env0 = {**os.environ, "PYTHONHASHSEED": "0"}
     env1 = {**os.environ, "PYTHONHASHSEED": "1"}
     from pathlib import Path
+
     repo_root = Path(__file__).resolve().parents[2]
     r0 = subprocess.run(
         [sys.executable, "-c", script],
-        capture_output=True, text=True, env=env0, cwd=str(repo_root), check=False,
+        capture_output=True,
+        text=True,
+        env=env0,
+        cwd=str(repo_root),
+        check=False,
     )
     r1 = subprocess.run(
         [sys.executable, "-c", script],
-        capture_output=True, text=True, env=env1, cwd=str(repo_root), check=False,
+        capture_output=True,
+        text=True,
+        env=env1,
+        cwd=str(repo_root),
+        check=False,
     )
     assert r0.returncode == 0, r0.stderr
     assert r1.returncode == 0, r1.stderr
@@ -407,6 +477,82 @@ async def test_orphan_no_preceding_post_gets_none():
 
 
 @pytest.mark.asyncio
+async def test_section_local_parent_ids_do_not_collide_across_sections():
+    section0 = make_section(
+        index=0,
+        html_slice="<p>First root</p><p>First reply</p>",
+        global_start=0,
+        global_end=35,
+        utterances=[
+            Utterance(kind="post", text="First root", utterance_id="root"),
+            Utterance(kind="reply", text="First reply", parent_id="root"),
+        ],
+    )
+    section1 = make_section(
+        index=1,
+        html_slice="<p>Second root</p>",
+        global_start=35,
+        global_end=53,
+        utterances=[
+            Utterance(kind="post", text="Second root", utterance_id="root"),
+        ],
+    )
+
+    with patch("src.utterances.batched.assembler.attribute_media"):
+        result = await assemble_sections(
+            section_results=[section0, section1],
+            parent=make_parent(),
+            sanitized_html="<p>First root</p><p>First reply</p><p>Second root</p>",
+            source_url="http://example.com",
+        )
+
+    first_root = result.utterances[0]
+    first_reply = result.utterances[1]
+    second_root = result.utterances[2]
+
+    assert first_reply.parent_id == first_root.utterance_id
+    assert first_reply.parent_id != second_root.utterance_id
+
+
+@pytest.mark.asyncio
+async def test_parent_id_resolves_to_surviving_overlap_duplicate_alias():
+    section0 = make_section(
+        index=0,
+        html_slice="<p>Root post</p>",
+        global_start=0,
+        global_end=16,
+        utterances=[
+            Utterance(kind="post", text="Root post", utterance_id="root-a"),
+        ],
+    )
+    section1 = make_section(
+        index=1,
+        html_slice="<p>Root post</p><p>Reply</p>",
+        global_start=0,
+        global_end=28,
+        overlap_with_prev_bytes=16,
+        utterances=[
+            Utterance(kind="post", text="Root post", utterance_id="root-b"),
+            Utterance(kind="reply", text="Reply", parent_id="root-b"),
+        ],
+    )
+
+    with patch("src.utterances.batched.assembler.attribute_media"):
+        result = await assemble_sections(
+            section_results=[section0, section1],
+            parent=make_parent(),
+            sanitized_html="<p>Root post</p><p>Reply</p>",
+            source_url="http://example.com",
+        )
+
+    root = result.utterances[0]
+    reply = result.utterances[1]
+
+    assert [u.text for u in result.utterances] == ["Root post", "Reply"]
+    assert reply.parent_id == root.utterance_id
+
+
+@pytest.mark.asyncio
 async def test_split_token_artifact_dropped_left_side_kept():
     section0 = make_section(
         index=0,
@@ -474,6 +620,45 @@ async def test_non_split_overlap_both_kept():
     texts = [u.text for u in result.utterances]
     assert "hello world" in texts
     assert "goodbye world" in texts
+
+
+@pytest.mark.asyncio
+async def test_split_token_suffix_text_kept_when_candidate_is_real_next_utterance():
+    section0 = make_section(
+        index=0,
+        html_slice="<p>hello apple airconditioner</p><p>unrelated overlap</p>",
+        global_start=0,
+        global_end=60,
+        utterances=[
+            Utterance(kind="post", text="hello apple airconditioner"),
+        ],
+    )
+    section1 = make_section(
+        index=1,
+        html_slice="<p>conditioner repair is expensive</p>",
+        global_start=32,
+        global_end=70,
+        overlap_with_prev_bytes=28,
+        utterances=[
+            Utterance(kind="post", text="conditioner repair is expensive"),
+        ],
+    )
+
+    with patch("src.utterances.batched.assembler.attribute_media"):
+        result = await assemble_sections(
+            section_results=[section0, section1],
+            parent=make_parent(),
+            sanitized_html=(
+                "<p>hello apple airconditioner</p><p>conditioner repair is expensive</p>"
+            ),
+            source_url="http://example.com",
+        )
+
+    texts = [u.text for u in result.utterances]
+    assert texts == [
+        "hello apple airconditioner",
+        "conditioner repair is expensive",
+    ]
 
 
 @pytest.mark.asyncio
@@ -570,6 +755,7 @@ async def test_normalized_fallback_offset_is_global_start_not_norm_string_pos():
     assert html_slice.find(utterance_text) == -1, "utterance must NOT appear verbatim"
 
     from src.utterances._ids import _norm_ws
+
     norm_html = _norm_ws(html_slice)
     norm_utt = _norm_ws(utterance_text)
     norm_match = norm_html.find(norm_utt)
@@ -595,6 +781,7 @@ async def test_normalized_fallback_offset_is_global_start_not_norm_string_pos():
     assert len(result.utterances) == 1
 
     from src.utterances._ids import stable_utterance_id
+
     expected_id_at_global_start = stable_utterance_id("post", utterance_text, global_start, 0)
     wrong_id_at_norm_pos = stable_utterance_id("post", utterance_text, global_start + norm_match, 0)
 
