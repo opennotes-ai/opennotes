@@ -682,3 +682,38 @@ def test_full_integration_dedup_ids_parent_attribute_media():
 
     assert mock_attr.call_count == 1
     assert mock_attr.call_args[0][0] == full_html
+
+
+def test_assembler_propagates_parent_page_title():
+    parent = BatchedUtteranceRedirectionResponse(
+        page_kind=PageKind.BLOG_POST,
+        utterance_stream_type=UtteranceStreamType.COMMENT_SECTION,
+        page_title="Parent Title From Redirect",
+        boundary_instructions="",
+    )
+    section0 = make_section(
+        index=0,
+        html_slice="<p>A</p>",
+        global_start=0,
+        global_end=8,
+        utterances=[],
+    )
+    section1 = make_section(
+        index=1,
+        html_slice="<p>B</p>",
+        global_start=8,
+        global_end=16,
+        utterances=[Utterance(kind="post", text="B")],
+    )
+
+    with patch("src.utterances.batched.assembler.attribute_media"):
+        result = assemble_sections(
+            section_results=[section0, section1],
+            parent=parent,
+            sanitized_html="<p>A</p><p>B</p>",
+            source_url="http://example.com",
+        )
+
+    assert result.page_title == "Parent Title From Redirect"
+    assert result.page_kind == PageKind.BLOG_POST
+    assert result.utterance_stream_type == UtteranceStreamType.COMMENT_SECTION

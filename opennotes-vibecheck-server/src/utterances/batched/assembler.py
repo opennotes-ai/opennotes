@@ -173,18 +173,13 @@ def assemble_sections(
         for c in survivors
     ]
 
-    page_kind = PageKind.OTHER
-    utterance_stream_type = UtteranceStreamType.UNKNOWN
-    if section_results:
-        page_kind = section_results[0].payload.page_kind
-        utterance_stream_type = section_results[0].payload.utterance_stream_type
-
     payload = UtterancesPayload(
         source_url=source_url,
         scraped_at=datetime.now(timezone.utc),
         utterances=utterances,
-        page_kind=page_kind,
-        utterance_stream_type=utterance_stream_type,
+        page_title=parent.page_title,
+        page_kind=parent.page_kind,
+        utterance_stream_type=parent.utterance_stream_type,
     )
 
     attribute_media(sanitized_html, payload.utterances)
