@@ -30,6 +30,11 @@ _DISPLAY_STRIPPED_TAGS: tuple[str, ...] = ("script",)
 _LLM_STRIPPED_TAGS: tuple[str, ...] = ("script", "style", "link")
 _ARCHIVE_EXTRACT_MIN_CHARS = 200
 
+_ICON_VIEWBOX_MAX_DIMENSION: float = 64.0
+_ICON_FALLBACK_STYLE: str = (
+    "width:1em;height:1em;max-width:1.5rem;max-height:1.5rem;vertical-align:middle"
+)
+
 _SCROLL_LOCK_CLASS_FRAGMENTS: frozenset[str] = frozenset({
     "met-panel-open", "modal-open", "menu-open", "no-scroll",
     "has-contextual-navigation", "overflow-hidden", "is-locked",
@@ -99,6 +104,65 @@ def _neutralize_page_scroll_locks(soup: BeautifulSoup) -> None:
                 del tag["class"]
 
 
+def _bound_unsized_icon_svgs(soup: BeautifulSoup) -> None:
+    """Prepend em-relative fallback dimensions to icon-shaped SVGs that have no explicit size.
+
+    Archive HTML lost the Tailwind utility CSS that gave class-sized icons their dimensions,
+    so unsized SVGs fall back to viewBox-derived sizes that can be the full container width.
+    Bound icon-shaped SVGs with em-relative defaults that page CSS (when present) can still
+    override.
+    """
+    for svg in soup.find_all("svg"):
+        if svg.get("width") or svg.get("height"):
+            continue
+
+        style = svg.get("style")
+        if style and isinstance(style, str):
+            style_lower = style.lower()
+            if "width:" in style_lower or "height:" in style_lower:
+                continue
+
+        viewbox = svg.get("viewBox") or svg.get("viewbox")
+        if viewbox and isinstance(viewbox, str):
+            parts = viewbox.strip().split()
+            if len(parts) == 4:
+                try:
+                    vb_w = float(parts[2])
+                    vb_h = float(parts[3])
+                    if vb_w > _ICON_VIEWBOX_MAX_DIMENSION or vb_h > _ICON_VIEWBOX_MAX_DIMENSION:
+                        continue
+                except ValueError:
+                    pass
+
+        skip = False
+        ancestor_count = 0
+        for parent in svg.parents:
+            if ancestor_count >= 3:
+                break
+            if not hasattr(parent, "get"):
+                break
+            if parent.get("width") or parent.get("height"):
+                skip = True
+                break
+            parent_style = parent.get("style")
+            if parent_style and isinstance(parent_style, str):
+                ps_lower = parent_style.lower()
+                if "width:" in ps_lower or "height:" in ps_lower:
+                    skip = True
+                    break
+            ancestor_count += 1
+
+        if skip:
+            continue
+
+        fallback = _ICON_FALLBACK_STYLE + ";"
+        existing_style = svg.get("style")
+        if existing_style and isinstance(existing_style, str):
+            svg["style"] = fallback + existing_style
+        else:
+            svg["style"] = fallback
+
+
 def _strip_tags_and_comments(
     html: str | None, stripped_tags: tuple[str, ...]
 ) -> str | None:
@@ -135,6 +199,7 @@ def strip_for_display(html: str | None) -> str | None:
     for comment in soup.find_all(string=lambda s: isinstance(s, Comment)):
         comment.extract()
     _neutralize_page_scroll_locks(soup)
+    _bound_unsized_icon_svgs(soup)
     return str(soup)
 
 

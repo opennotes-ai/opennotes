@@ -363,6 +363,91 @@ def test_strip_for_display_handles_empty_style_attribute_removal() -> None:
     assert body.get("style") is None
 
 
+def test_strip_for_display_bounds_class_only_sized_svg() -> None:
+    html = '<html><body><svg xmlns="http://www.w3.org/2000/svg" class="icon w-4 h-4" viewBox="0 0 24 24"></svg></body></html>'
+
+    result = strip_for_display(html)
+
+    assert result is not None
+    from bs4 import BeautifulSoup
+    soup = BeautifulSoup(result, "html.parser")
+    svg = soup.find("svg")
+    assert svg is not None
+    style = str(svg.get("style") or "")
+    assert style.startswith("width:1em;height:1em;")
+
+
+def test_strip_for_display_preserves_svg_with_explicit_width_attr() -> None:
+    html = '<html><body><svg xmlns="http://www.w3.org/2000/svg" width="24" viewBox="0 0 24 24"></svg></body></html>'
+
+    result = strip_for_display(html)
+
+    assert result is not None
+    from bs4 import BeautifulSoup
+    soup = BeautifulSoup(result, "html.parser")
+    svg = soup.find("svg")
+    assert svg is not None
+    assert svg.get("style") is None
+
+
+def test_strip_for_display_preserves_large_viewbox_svg() -> None:
+    html = '<html><body><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 600"></svg></body></html>'
+
+    result = strip_for_display(html)
+
+    assert result is not None
+    from bs4 import BeautifulSoup
+    soup = BeautifulSoup(result, "html.parser")
+    svg = soup.find("svg")
+    assert svg is not None
+    assert svg.get("style") is None
+
+
+def test_strip_for_display_preserves_svg_inside_sized_parent() -> None:
+    html = '<html><body><div style="width:400px;height:300px"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"></svg></div></body></html>'
+
+    result = strip_for_display(html)
+
+    assert result is not None
+    from bs4 import BeautifulSoup
+    soup = BeautifulSoup(result, "html.parser")
+    svg = soup.find("svg")
+    assert svg is not None
+    assert svg.get("style") is None
+
+
+def test_strip_for_display_preserves_svg_with_inline_height_style() -> None:
+    html = '<html><body><svg xmlns="http://www.w3.org/2000/svg" style="height:32px" viewBox="0 0 24 24"></svg></body></html>'
+
+    result = strip_for_display(html)
+
+    assert result is not None
+    from bs4 import BeautifulSoup
+    soup = BeautifulSoup(result, "html.parser")
+    svg = soup.find("svg")
+    assert svg is not None
+    style = str(svg.get("style") or "")
+    assert not style.startswith("width:1em")
+    assert "height:32px" in style
+
+
+def test_la_times_fixture_bounds_icon_svgs_only() -> None:
+    html = load_la_times_archive_fixture()
+
+    result = strip_for_display(html)
+
+    assert result is not None
+    from bs4 import BeautifulSoup
+    soup = BeautifulSoup(result, "html.parser")
+    svgs = soup.find_all("svg")
+    bounded = [s for s in svgs if str(s.get("style") or "").startswith("width:1em")]
+    unbounded = [s for s in svgs if not str(s.get("style") or "").startswith("width:1em")]
+
+    assert len(bounded) > 0, "expected class-sized icon SVGs to get fallback style"
+    logo_svgs = [s for s in unbounded if s.get("width") == "200" and s.get("height") == "48"]
+    assert len(logo_svgs) == 1, "logo SVG with explicit width/height must not get fallback"
+
+
 def test_strip_for_display_handles_overscroll_behavior_none() -> None:
     html = "<html><body style='overscroll-behavior: none'><p>text</p></body></html>"
 
