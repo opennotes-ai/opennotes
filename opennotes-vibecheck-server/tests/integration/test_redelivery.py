@@ -93,7 +93,7 @@ async def test_two_deliveries_with_same_expected_attempt_id_are_idempotent(
         extract_calls += 1
         return _payload(url)
 
-    monkeypatch.setattr(orchestrator, "extract_utterances", _stub_extract)
+    monkeypatch.setattr(orchestrator, "extract_utterances_dispatched", _stub_extract)
     for slug in SectionSlug:
         async def _empty_handler(
             pool: Any,

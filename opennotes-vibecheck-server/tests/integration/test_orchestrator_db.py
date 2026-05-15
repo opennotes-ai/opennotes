@@ -255,7 +255,7 @@ async def test_run_pipeline_translates_transient_extraction_error_to_transient(
             fallback_message="Vertex 504",
         )
 
-    monkeypatch.setattr(orchestrator, "extract_utterances", raise_transient)
+    monkeypatch.setattr(orchestrator, "extract_utterances_dispatched", raise_transient)
 
     job_id, attempt = await insert_pending_job(db_pool)
 
@@ -295,7 +295,7 @@ async def test_run_pipeline_backstop_escalates_to_terminal_at_max(
             fallback_message="Vertex 429",
         )
 
-    monkeypatch.setattr(orchestrator, "extract_utterances", raise_transient)
+    monkeypatch.setattr(orchestrator, "extract_utterances_dispatched", raise_transient)
 
     job_id, attempt = await insert_pending_job(db_pool)
     # Pre-load the row's counter to (MAX - 1); the next increment hits MAX.

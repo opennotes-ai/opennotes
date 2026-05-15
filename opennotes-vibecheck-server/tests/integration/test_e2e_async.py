@@ -120,7 +120,7 @@ async def test_post_then_internal_run_then_poll_to_done(
     ) -> UtterancesPayload:
         return payload
 
-    monkeypatch.setattr(orchestrator, "extract_utterances", _stub_extract)
+    monkeypatch.setattr(orchestrator, "extract_utterances_dispatched", _stub_extract)
 
     from src.analyses.claims import dedupe_slot
     from src.analyses.opinions import sentiment_slot, subjective_slot
@@ -436,7 +436,7 @@ async def test_write_slot_cas_miss_propagates_503_for_redelivery(
     ) -> UtterancesPayload:
         return payload
 
-    monkeypatch.setattr(orchestrator, "extract_utterances", _stub_extract)
+    monkeypatch.setattr(orchestrator, "extract_utterances_dispatched", _stub_extract)
 
     async def _zero_write_slot(*_args: Any, **_kwargs: Any) -> int:
         return 0

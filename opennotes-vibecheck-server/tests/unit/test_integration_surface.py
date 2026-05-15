@@ -370,7 +370,7 @@ async def test_extract_transient_backstop_first_delivery_increments_counter_and_
 
     monkeypatch.setattr(orchestrator, "_scrape_step", _stub_scrape)
     monkeypatch.setattr(orchestrator, "_revalidate_final_url", _stub_revalidate)
-    monkeypatch.setattr(orchestrator, "extract_utterances", _raise_transient)
+    monkeypatch.setattr(orchestrator, "extract_utterances_dispatched", _raise_transient)
     monkeypatch.setattr(orchestrator, "HEARTBEAT_INTERVAL_SEC", 60.0)
 
     initial = uuid4()
@@ -435,7 +435,7 @@ async def test_extract_transient_backstop_third_delivery_escalates_to_terminal(
 
     monkeypatch.setattr(orchestrator, "_scrape_step", _stub_scrape)
     monkeypatch.setattr(orchestrator, "_revalidate_final_url", _stub_revalidate)
-    monkeypatch.setattr(orchestrator, "extract_utterances", _raise_transient)
+    monkeypatch.setattr(orchestrator, "extract_utterances_dispatched", _raise_transient)
     monkeypatch.setattr(orchestrator, "HEARTBEAT_INTERVAL_SEC", 60.0)
 
     initial = uuid4()
