@@ -1,10 +1,18 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from src.utils.html_sanitize import (
     extract_archive_main_content,
     strip_for_display,
     strip_for_llm,
 )
+
+_FIXTURES_DIR = Path(__file__).parent / "fixtures"
+
+
+def load_la_times_archive_fixture() -> str:
+    return (_FIXTURES_DIR / "archive_la_times_reduced.html").read_text(encoding="utf-8")
 
 # A trimmed-down Mastodon-shaped SSR HTML: a long chunk of site chrome
 # (search box, server stats, banner) precedes the actual post content.
@@ -274,3 +282,13 @@ def test_sanitizers_are_idempotent_on_clean_html() -> None:
 
     assert strip_for_display(strip_for_display(html)) == html
     assert strip_for_llm(strip_for_llm(html)) == html
+
+
+def test_la_times_fixture_preserves_bug_surface_pre_fix() -> None:
+    html = load_la_times_archive_fixture()
+    result = strip_for_display(html)
+
+    assert result is not None
+    assert "overflow: hidden" in result
+    assert "met-panel-open" in result
+    assert "has-contextual-navigation" in result
