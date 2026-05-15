@@ -2,7 +2,7 @@
 
 ## Intent
 
-The "Overall: OK." / "Overall: Flag!" line in `OverallRecommendationCard` (vibecheck-web) answers a single product question: **should a moderator (or someone in that role) intervene in this content?** It's a cost-benefit decision, not a tight summary of the safety agent:
+The "Overall: OK." / "Overall: Needs a mod!" line in `OverallRecommendationCard` (vibecheck-web) answers a single product question: **should a moderator (or someone in that role) intervene in this content?** It's a cost-benefit decision, not a tight summary of the safety agent:
 
 - **Cost** of not intervening — the risk signals: safety agent verdict, conversation flashpoint matches, raw moderation findings, etc.
 - **Benefit** of intervening — the utility signals: is the content worth the effort? Relevance, on-topic-ness, sourcing quality, engagement.
@@ -30,7 +30,7 @@ The rules below all run after the safety-recommendation base verdict (`decideFro
 
 When `OverallRecommendationCard` would derive `verdict: "pass"` and the safety level is exactly `mild`, promote to `verdict: "flag"` if any `tone_dynamics.flashpoint_matches` entry has `risk_level` in `{Heated, Hostile, Dangerous}`.
 
-- Verdict label: reuse the existing `"Overall: Flag!"` copy. No third variant ("Overall: Caution!" etc) is introduced here.
+- Verdict label: reuse the existing `"Overall: Needs a mod!"` copy. No third variant ("Overall: Caution!" etc) is introduced here.
 - Reason text: `"Conversation flashpoint risk: <level>"` where `<level>` is the highest match risk level, priority `Dangerous > Hostile > Heated`.
 - Explicit `overall` prop (manual override path) still wins over all derivation.
 
@@ -118,4 +118,4 @@ Renders: `Overall: OK.` with reason `minor concern`.
 }
 ```
 
-Renders: `Overall: Flag!` with reason `Conversation flashpoint risk: Heated`.
+Renders: `Overall: Needs a mod!` with reason `Conversation flashpoint risk: Heated`.
