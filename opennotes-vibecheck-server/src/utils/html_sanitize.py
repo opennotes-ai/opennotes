@@ -96,10 +96,7 @@ def _neutralize_page_scroll_locks(soup: BeautifulSoup) -> None:
 
         classes = tag.get("class")
         if classes:
-            if isinstance(classes, str):
-                tokens = classes.split()
-            else:
-                tokens = list(classes)
+            tokens = classes.split() if isinstance(classes, str) else list(classes)
             filtered = [t for t in tokens if t.lower() not in _SCROLL_LOCK_CLASS_FRAGMENTS]
             if filtered:
                 tag["class"] = " ".join(filtered)
@@ -107,7 +104,7 @@ def _neutralize_page_scroll_locks(soup: BeautifulSoup) -> None:
                 del tag["class"]
 
 
-def _bound_unsized_icon_svgs(soup: BeautifulSoup) -> None:
+def _bound_unsized_icon_svgs(soup: BeautifulSoup) -> None:  # noqa: PLR0912
     """Prepend em-relative fallback dimensions to icon-shaped SVGs that have no explicit size.
 
     Archive HTML lost the Tailwind utility CSS that gave class-sized icons their dimensions,
@@ -138,8 +135,7 @@ def _bound_unsized_icon_svgs(soup: BeautifulSoup) -> None:
                     pass
 
         skip = False
-        ancestor_count = 0
-        for parent in svg.parents:
+        for ancestor_count, parent in enumerate(svg.parents):
             if ancestor_count >= 3:
                 break
             if not hasattr(parent, "get"):
@@ -153,7 +149,6 @@ def _bound_unsized_icon_svgs(soup: BeautifulSoup) -> None:
                 if "width:" in ps_lower or "height:" in ps_lower:
                     skip = True
                     break
-            ancestor_count += 1
 
         if skip:
             continue
@@ -248,7 +243,7 @@ def _sanitize_extracted_archive_html(html: str) -> str:
     return str(soup)
 
 
-def enrich_display_with_raw_styles(
+def enrich_display_with_raw_styles(  # noqa: PLR0912
     display_html: str,
     raw_html: str | None,
     *,
