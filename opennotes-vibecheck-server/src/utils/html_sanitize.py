@@ -361,7 +361,7 @@ def enrich_display_with_raw_styles(
             display_soup.insert(0, head)
 
     for link_attrs in queued_links:
-        new_link = display_soup.new_tag("link", rel="stylesheet", **link_attrs)
+        new_link = display_soup.new_tag("link", attrs={"rel": "stylesheet", **link_attrs})
         head.append(new_link)
 
     for style_text in queued_styles:
