@@ -717,3 +717,53 @@ def test_assembler_propagates_parent_page_title():
     assert result.page_title == "Parent Title From Redirect"
     assert result.page_kind == PageKind.BLOG_POST
     assert result.utterance_stream_type == UtteranceStreamType.COMMENT_SECTION
+
+
+def test_cross_section_parent_id_NOT_nearest_preceding_post():
+    parent = make_parent()
+    section0 = make_section(
+        index=0,
+        html_slice="<p>Sec0 post</p>",
+        global_start=0,
+        global_end=16,
+        utterances=[
+            Utterance(kind="post", text="Sec0 post", utterance_id="sec0-original-id"),
+        ],
+    )
+    section1 = make_section(
+        index=1,
+        html_slice="<p>Sec1 post</p>",
+        global_start=16,
+        global_end=32,
+        utterances=[
+            Utterance(kind="post", text="Sec1 post", utterance_id="sec1-post-id"),
+        ],
+    )
+    section2 = make_section(
+        index=2,
+        html_slice="<p>Reply to sec0</p>",
+        global_start=32,
+        global_end=52,
+        utterances=[
+            Utterance(kind="reply", text="Reply to sec0", parent_id="sec0-original-id"),
+        ],
+    )
+
+    with patch("src.utterances.batched.assembler.attribute_media"):
+        result = assemble_sections(
+            section_results=[section0, section1, section2],
+            parent=parent,
+            sanitized_html="<p>Sec0 post</p><p>Sec1 post</p><p>Reply to sec0</p>",
+            source_url="http://example.com",
+        )
+
+    assert len(result.utterances) == 3
+    sec0_post = result.utterances[0]
+    sec1_post = result.utterances[1]
+    reply = result.utterances[2]
+
+    assert sec0_post.text == "Sec0 post"
+    assert sec1_post.text == "Sec1 post"
+    assert reply.text == "Reply to sec0"
+    assert reply.parent_id == sec0_post.utterance_id
+    assert reply.parent_id != sec1_post.utterance_id

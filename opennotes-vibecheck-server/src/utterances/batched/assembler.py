@@ -134,11 +134,10 @@ def assemble_sections(
             ordinal,
         )
 
-    local_to_final: dict[tuple[int, str], str] = {}
-    for candidate in survivors:
+    local_to_final: dict[str, str] = {}
+    for candidate in sorted(survivors, key=lambda c: c.section_index):
         if candidate.original_id is not None:
-            key = (candidate.section_index, candidate.original_id)
-            local_to_final[key] = candidate.utterance.utterance_id
+            local_to_final[candidate.original_id] = candidate.utterance.utterance_id
 
     surviving_utterances = [c.utterance for c in survivors]
 
@@ -146,8 +145,7 @@ def assemble_sections(
         utt = candidate.utterance
         if utt.parent_id is None:
             continue
-        lookup_key = (candidate.section_index, utt.parent_id)
-        resolved = local_to_final.get(lookup_key)
+        resolved = local_to_final.get(utt.parent_id)
         if resolved is not None:
             utt.parent_id = resolved
         else:
