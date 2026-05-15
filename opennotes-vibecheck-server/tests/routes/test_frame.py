@@ -1011,6 +1011,37 @@ class TestArchivePreview:
         # `<p>tiny</p>` survives intact.
         assert "<p>tiny</p>" in resp.text
 
+    def test_archive_preview_enriches_display_with_raw_html_stylesheet(
+        self, client: TestClient
+    ) -> None:
+        from src.cache.scrape_cache import CachedScrape
+
+        small_html = "<html><head></head><body><p>article content here</p></body></html>"
+        raw_html = (
+            "<html><head>"
+            '<link rel="stylesheet" href="https://cdn.example.com/styles.css">'
+            "<script>alert('xss')</script>"
+            "</head><body></body></html>"
+        )
+
+        class StubCache:
+            async def get(
+                self, url: str, *, tier: str = "scrape"
+            ) -> CachedScrape | None:
+                if tier in {"browser_html", "interact"}:
+                    return None
+                return CachedScrape(html=small_html, raw_html=raw_html)
+
+        with patch("src.routes.frame.get_scrape_cache", return_value=StubCache()):
+            resp = client.get(
+                "/api/archive-preview",
+                params={"url": "https://example.com/styled"},
+            )
+
+        assert resp.status_code == 200
+        assert "cdn.example.com/styles.css" in resp.text
+        assert "alert('xss')" not in resp.text
+
     def test_cached_interact_html_served_when_scrape_tier_is_superficially_ok(
         self, client: TestClient
     ) -> None:

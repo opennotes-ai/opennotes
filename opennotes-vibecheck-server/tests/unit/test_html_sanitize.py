@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Any
 
 from src.utils.html_sanitize import (
+    enrich_display_with_raw_styles,
     extract_archive_main_content,
     strip_for_display,
     strip_for_llm,
@@ -459,3 +460,104 @@ def test_strip_for_display_handles_overscroll_behavior_none() -> None:
     body = soup.find("body")
     assert body is not None
     assert body.get("style") is None
+
+
+def test_enrich_merges_style_and_https_link_into_display_head() -> None:
+    raw = (
+        "<html><head>"
+        "<style>body{color:red}</style>"
+        '<link rel="stylesheet" href="https://example.com/a.css">'
+        "</head><body></body></html>"
+    )
+    display = "<html><head></head><body><p>article</p></body></html>"
+
+    result = enrich_display_with_raw_styles(display, raw, base_url=None)
+
+    assert "body{color:red}" in result
+    assert "https://example.com/a.css" in result
+
+
+def test_enrich_dedupes_style_already_in_display() -> None:
+    raw = "<html><head><style>body{color:red}</style></head><body></body></html>"
+    display = "<html><head><style>body{color:red}</style></head><body></body></html>"
+
+    result = enrich_display_with_raw_styles(display, raw, base_url=None)
+
+    assert result.count("body{color:red}") == 1
+
+
+def test_enrich_drops_http_stylesheet() -> None:
+    raw = '<html><head><link rel="stylesheet" href="http://example.com/x.css"></head><body></body></html>'
+    display = "<html><head></head><body></body></html>"
+
+    result = enrich_display_with_raw_styles(display, raw, base_url=None)
+
+    assert "http://example.com/x.css" not in result
+
+
+def test_enrich_resolves_relative_href_with_base_url() -> None:
+    raw = '<html><head><link rel="stylesheet" href="/static/a.css"></head><body></body></html>'
+    display = "<html><head></head><body></body></html>"
+
+    result = enrich_display_with_raw_styles(
+        display, raw, base_url="https://www.latimes.com/some/path"
+    )
+
+    assert "https://www.latimes.com/static/a.css" in result
+
+
+def test_enrich_drops_relative_href_without_base_url() -> None:
+    raw = '<html><head><link rel="stylesheet" href="/static/a.css"></head><body></body></html>'
+    display = "<html><head></head><body></body></html>"
+
+    result = enrich_display_with_raw_styles(display, raw, base_url=None)
+
+    assert "/static/a.css" not in result
+
+
+def test_enrich_normalizes_print_onload_link() -> None:
+    raw = (
+        '<html><head>'
+        '<link rel="stylesheet" media="print" onload="this.media=\'all\'" href="https://x/a.css">'
+        "</head><body></body></html>"
+    )
+    display = "<html><head></head><body></body></html>"
+
+    result = enrich_display_with_raw_styles(display, raw, base_url=None)
+
+    assert "https://x/a.css" in result
+    assert 'media="all"' in result
+    assert "onload" not in result
+
+
+def test_enrich_passthrough_when_raw_html_none() -> None:
+    display = "<html><head></head><body><p>content</p></body></html>"
+
+    result = enrich_display_with_raw_styles(display, None, base_url=None)
+
+    assert result == display
+
+
+def test_enrich_caps_total_style_bytes() -> None:
+    from src.utils.html_sanitize import _ENRICH_MAX_BYTES
+
+    giant_css = "a" * (_ENRICH_MAX_BYTES + 1)
+    raw = f"<html><head><style>{giant_css}</style></head><body></body></html>"
+    display = "<html><head></head><body></body></html>"
+
+    result = enrich_display_with_raw_styles(display, raw, base_url=None)
+
+    assert giant_css not in result
+
+
+def test_enrich_creates_head_when_missing() -> None:
+    raw = (
+        '<html><head><link rel="stylesheet" href="https://example.com/b.css"></head>'
+        "<body></body></html>"
+    )
+    display = "<html><body><p>no head here</p></body></html>"
+
+    result = enrich_display_with_raw_styles(display, raw, base_url=None)
+
+    assert "https://example.com/b.css" in result
+    assert "<head>" in result

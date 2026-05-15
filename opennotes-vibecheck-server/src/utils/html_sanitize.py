@@ -21,10 +21,13 @@ structure is needed downstream of the extractor agent's `get_html()`.
 from __future__ import annotations
 
 import functools
+import urllib.parse
 
 import trafilatura
 from bs4 import BeautifulSoup, Comment
 from markdown_it import MarkdownIt
+
+_ENRICH_MAX_BYTES: int = 256 * 1024
 
 _DISPLAY_STRIPPED_TAGS: tuple[str, ...] = ("script",)
 _LLM_STRIPPED_TAGS: tuple[str, ...] = ("script", "style", "link")
@@ -243,6 +246,130 @@ def _sanitize_extracted_archive_html(html: str) -> str:
                 if any(trimmed.startswith(scheme) for scheme in _ARCHIVE_UNSAFE_URL_SCHEMES):
                     del tag.attrs[attr_name]
     return str(soup)
+
+
+def enrich_display_with_raw_styles(
+    display_html: str,
+    raw_html: str | None,
+    *,
+    base_url: str | None,
+) -> str:
+    """Inject safe <style> and <link rel=stylesheet> nodes from raw_html into display_html.
+
+    Pass-through when raw_html is falsy. Idempotent: running twice does not duplicate.
+    Filters stylesheet links to https-only absolute URLs (resolves relative via base_url).
+    Normalizes async-load <link media=print onload=...> patterns to media=all (no onload).
+    Caps total injected style text size at _ENRICH_MAX_BYTES to avoid blowing the iframe budget.
+    """
+    if not raw_html or not raw_html.strip():
+        return display_html
+
+    raw_soup = BeautifulSoup(raw_html, "html.parser")
+    display_soup = BeautifulSoup(display_html, "html.parser")
+
+    existing_style_texts: set[str] = {
+        str(tag.get_text()).strip()
+        for tag in display_soup.find_all("style")
+        if str(tag.get_text()).strip()
+    }
+    existing_link_hrefs: set[str] = set()
+    for tag in display_soup.find_all("link"):
+        rel = tag.get("rel")
+        rel_tokens: list[str] = rel if isinstance(rel, list) else ([rel] if isinstance(rel, str) else [])
+        if "stylesheet" not in rel_tokens:
+            continue
+        href = tag.get("href")
+        if isinstance(href, str) and href:
+            existing_link_hrefs.add(href)
+
+    queued_links: list[dict[str, str]] = []
+    queued_styles: list[str] = []
+    total_style_bytes = 0
+
+    for tag in raw_soup.find_all("link"):
+        rel = tag.get("rel")
+        rel_tokens = rel if isinstance(rel, list) else ([rel] if isinstance(rel, str) else [])
+        if "stylesheet" not in rel_tokens:
+            continue
+        raw_href = tag.get("href")
+        if not isinstance(raw_href, str) or not raw_href:
+            continue
+        href_lower = raw_href.lower()
+        if href_lower.startswith("data:") or raw_href.startswith("//"):
+            continue
+        if raw_href.startswith("http://"):
+            continue
+        if raw_href.startswith("https://"):
+            resolved = raw_href
+        else:
+            if not base_url:
+                continue
+            resolved = urllib.parse.urljoin(base_url, raw_href)
+            if not resolved.startswith("https://"):
+                continue
+
+        if resolved in existing_link_hrefs:
+            continue
+        existing_link_hrefs.add(resolved)
+
+        attrs: dict[str, str] = {"href": resolved}
+        media = tag.get("media")
+        onload = tag.get("onload")
+        # Normalize async-load pattern: <link media="print" onload="this.media='all'"> → media="all"
+        if (
+            isinstance(media, str)
+            and media.strip().lower() == "print"
+            and isinstance(onload, str)
+            and "this.media" in onload
+        ):
+            attrs["media"] = "all"
+        elif isinstance(media, str) and media:
+            attrs["media"] = media
+
+        crossorigin = tag.get("crossorigin")
+        if isinstance(crossorigin, str) and crossorigin:
+            attrs["crossorigin"] = crossorigin
+        integrity = tag.get("integrity")
+        if isinstance(integrity, str) and integrity:
+            attrs["integrity"] = integrity
+
+        queued_links.append(attrs)
+
+    for tag in raw_soup.find_all("style"):
+        text = str(tag.get_text()).strip()
+        if not text:
+            continue
+        if text in existing_style_texts:
+            continue
+        text_bytes = len(text.encode())
+        if total_style_bytes + text_bytes > _ENRICH_MAX_BYTES:
+            continue
+        existing_style_texts.add(text)
+        queued_styles.append(text)
+        total_style_bytes += text_bytes
+
+    if not queued_links and not queued_styles:
+        return display_html
+
+    head = display_soup.find("head")
+    if head is None:
+        head = display_soup.new_tag("head")
+        body = display_soup.find("body")
+        if body is not None:
+            body.insert_before(head)
+        else:
+            display_soup.insert(0, head)
+
+    for link_attrs in queued_links:
+        new_link = display_soup.new_tag("link", rel="stylesheet", **link_attrs)
+        head.append(new_link)
+
+    for style_text in queued_styles:
+        new_style = display_soup.new_tag("style")
+        new_style.string = style_text
+        head.append(new_style)
+
+    return str(display_soup)
 
 
 # Cache size chosen for memory bound: 64 entries times ~120KB cached_html

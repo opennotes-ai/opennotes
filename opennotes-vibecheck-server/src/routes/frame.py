@@ -26,7 +26,11 @@ from src.firecrawl_client import (
 from src.jobs.pdf_storage import get_pdf_upload_store
 from src.jobs.scrape_quality import ScrapeQuality, classify_scrape
 from src.monitoring import get_logger
-from src.utils.html_sanitize import extract_archive_main_content, strip_for_display
+from src.utils.html_sanitize import (
+    enrich_display_with_raw_styles,
+    extract_archive_main_content,
+    strip_for_display,
+)
 from src.utils.url_security import InvalidURL, validate_public_http_url
 from src.utterances.annotate_html import annotate_utterances_in_html
 from src.utterances.lookup import get_utterances_for_archive
@@ -477,6 +481,8 @@ def _archive_display_html(
     cached_markdown: str | None,
     *,
     utterances: list[Utterance] | None = None,
+    raw_html: str | None = None,
+    base_url: str | None = None,
 ) -> str | None:
     """Pick the archive iframe body for `cached_html`/`cached_markdown`.
 
@@ -490,8 +496,13 @@ def _archive_display_html(
     to `strip_for_display` is safe because that path keeps the full
     document text.
     """
-    extracted = extract_archive_main_content(cached_html, cached_markdown)
-    stripped = strip_for_display(cached_html) if cached_html else None
+    enriched_html = (
+        enrich_display_with_raw_styles(cached_html, raw_html, base_url=base_url)
+        if cached_html and raw_html
+        else cached_html
+    )
+    extracted = extract_archive_main_content(enriched_html, cached_markdown)
+    stripped = strip_for_display(enriched_html) if enriched_html else None
 
     if extracted and (
         not utterances or _extracted_preserves_utterances(extracted, utterances)
@@ -604,6 +615,7 @@ async def _render_archive_response(
     request: Request,
     job_id: UUID | None,
     requested_url: str,
+    raw_html: str | None = None,
 ) -> Response:
     """Build the archive iframe response for the supplied scrape body.
 
@@ -615,7 +627,11 @@ async def _render_archive_response(
         request=request, job_id=job_id, requested_url=requested_url
     )
     display_html = _archive_display_html(
-        cached_html, cached_markdown, utterances=utterances
+        cached_html,
+        cached_markdown,
+        utterances=utterances,
+        raw_html=raw_html,
+        base_url=requested_url,
     )
     if not display_html:
         raise HTTPException(status_code=502, detail="Archive unavailable")
@@ -697,6 +713,7 @@ async def archive_preview(
             request=request,
             job_id=parsed_job_id,
             requested_url=url,
+            raw_html=cached.raw_html,
         )
 
     if not generate:
@@ -733,6 +750,7 @@ async def archive_preview(
         request=request,
         job_id=parsed_job_id,
         requested_url=url,
+        raw_html=stored.raw_html,
     )
 
 
