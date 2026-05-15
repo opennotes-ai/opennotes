@@ -252,7 +252,7 @@ def _sanitize_extracted_archive_html(html: str) -> str:
     return str(soup)
 
 
-def _normalize_stylesheet_href(raw_href: str, base_url: str | None) -> str | None:
+def _normalize_stylesheet_href(raw_href: str, base_url: str | None) -> str | None:  # noqa: PLR0911
     """Return a safe https stylesheet URL or None to drop.
 
     Rejects control-char tricks, scheme-relative, data:, userinfo, fragment-only,
@@ -271,7 +271,7 @@ def _normalize_stylesheet_href(raw_href: str, base_url: str | None) -> str | Non
         return None
     if lower.startswith("http://"):
         return None
-    if candidate.startswith("#") or candidate.startswith("?"):
+    if candidate.startswith(("#", "?")):
         return None
 
     if lower.startswith("https://"):
