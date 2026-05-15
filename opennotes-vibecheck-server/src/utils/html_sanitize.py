@@ -30,6 +30,17 @@ _DISPLAY_STRIPPED_TAGS: tuple[str, ...] = ("script",)
 _LLM_STRIPPED_TAGS: tuple[str, ...] = ("script", "style", "link")
 _ARCHIVE_EXTRACT_MIN_CHARS = 200
 
+_SCROLL_LOCK_CLASS_FRAGMENTS: frozenset[str] = frozenset({
+    "met-panel-open", "modal-open", "menu-open", "no-scroll",
+    "has-contextual-navigation", "overflow-hidden", "is-locked",
+})
+_SCROLL_LOCK_STYLE_PROPERTIES: tuple[str, ...] = (
+    "overflow", "overflow-x", "overflow-y", "overscroll-behavior",
+)
+_SCROLL_LOCK_STYLE_VALUE_MARKERS: tuple[str, ...] = (
+    "hidden", "clip", "none",
+)
+
 # TASK-1577.02 (Codex P2.5): tags and attribute patterns to strip from
 # extracted archive HTML even though the iframe CSP is `default-src 'none'`.
 # Defense in depth — the markup shouldn't carry exploit gadgets even when
@@ -46,6 +57,46 @@ _ARCHIVE_UNSAFE_URL_SCHEMES: tuple[str, ...] = (
     "vbscript:",
     "data:text/html",
 )
+
+
+def _neutralize_page_scroll_locks(soup: BeautifulSoup) -> None:
+    """Strip overflow/overscroll inline styles and lock classes from html/body only."""
+    for tag in (soup.find("html"), soup.find("body")):
+        if tag is None:
+            continue
+
+        style = tag.get("style")
+        if style and isinstance(style, str):
+            kept = []
+            for declaration in style.split(";"):
+                if not declaration.strip():
+                    continue
+                parts = declaration.split(":", 1)
+                if len(parts) == 2:
+                    prop = parts[0].strip().lower()
+                    val = parts[1].strip().lower()
+                    if prop in _SCROLL_LOCK_STYLE_PROPERTIES and any(
+                        marker in val for marker in _SCROLL_LOCK_STYLE_VALUE_MARKERS
+                    ):
+                        continue
+                kept.append(declaration.strip())
+            remainder = "; ".join(kept)
+            if remainder:
+                tag["style"] = remainder
+            else:
+                del tag["style"]
+
+        classes = tag.get("class")
+        if classes:
+            if isinstance(classes, str):
+                tokens = classes.split()
+            else:
+                tokens = list(classes)
+            filtered = [t for t in tokens if t.lower() not in _SCROLL_LOCK_CLASS_FRAGMENTS]
+            if filtered:
+                tag["class"] = filtered
+            else:
+                del tag["class"]
 
 
 def _strip_tags_and_comments(
@@ -74,7 +125,17 @@ def strip_for_display(html: str | None) -> str | None:
     Preserves every other element and text node so downstream consumers
     that render archived HTML still see page styling.
     """
-    return _strip_tags_and_comments(html, _DISPLAY_STRIPPED_TAGS)
+    if html is None:
+        return None
+    if not html:
+        return ""
+    soup = BeautifulSoup(html, "html.parser")
+    for tag in soup.find_all(_DISPLAY_STRIPPED_TAGS):
+        tag.decompose()
+    for comment in soup.find_all(string=lambda s: isinstance(s, Comment)):
+        comment.extract()
+    _neutralize_page_scroll_locks(soup)
+    return str(soup)
 
 
 def strip_for_llm(html: str | None) -> str | None:

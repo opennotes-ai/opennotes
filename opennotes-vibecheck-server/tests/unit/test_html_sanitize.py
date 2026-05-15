@@ -284,11 +284,92 @@ def test_sanitizers_are_idempotent_on_clean_html() -> None:
     assert strip_for_llm(strip_for_llm(html)) == html
 
 
-def test_la_times_fixture_preserves_bug_surface_pre_fix() -> None:
+def test_strip_for_display_removes_body_overflow_hidden() -> None:
+    html = "<html><body style='overflow: hidden; padding: 10px'><p>text</p></body></html>"
+
+    result = strip_for_display(html)
+
+    assert result is not None
+    from bs4 import BeautifulSoup
+    soup = BeautifulSoup(result, "html.parser")
+    body = soup.find("body")
+    assert body is not None
+    style = body.get("style", "")
+    assert "overflow" not in style
+    assert "padding" in style
+
+
+def test_strip_for_display_removes_lock_classes_keeps_others() -> None:
+    html = "<html><body class='page-body met-panel-open has-contextual-navigation article-page'><p>text</p></body></html>"
+
+    result = strip_for_display(html)
+
+    assert result is not None
+    from bs4 import BeautifulSoup
+    soup = BeautifulSoup(result, "html.parser")
+    body = soup.find("body")
+    assert body is not None
+    classes = body.get("class") or []
+    if isinstance(classes, str):
+        classes = classes.split()
+    assert "page-body" in classes
+    assert "article-page" in classes
+    assert "met-panel-open" not in classes
+    assert "has-contextual-navigation" not in classes
+
+
+def test_strip_for_display_preserves_inner_overflow_hidden() -> None:
+    html = "<html><body><div style='overflow: hidden; width: 100px'><p>text</p></div></body></html>"
+
+    result = strip_for_display(html)
+
+    assert result is not None
+    from bs4 import BeautifulSoup
+    soup = BeautifulSoup(result, "html.parser")
+    div = soup.find("div")
+    assert div is not None
+    assert "overflow: hidden" in (div.get("style") or "")
+
+
+def test_la_times_fixture_neutralizes_scroll_locks() -> None:
     html = load_la_times_archive_fixture()
     result = strip_for_display(html)
 
     assert result is not None
-    assert "overflow: hidden" in result
-    assert "met-panel-open" in result
-    assert "has-contextual-navigation" in result
+    from bs4 import BeautifulSoup
+    soup = BeautifulSoup(result, "html.parser")
+    body = soup.find("body")
+    assert body is not None
+    style = body.get("style", "")
+    assert "overflow" not in style
+    classes = body.get("class") or []
+    if isinstance(classes, str):
+        classes = classes.split()
+    assert "met-panel-open" not in classes
+    assert "has-contextual-navigation" not in classes
+
+
+def test_strip_for_display_handles_empty_style_attribute_removal() -> None:
+    html = "<html><body style='overflow: hidden'><p>text</p></body></html>"
+
+    result = strip_for_display(html)
+
+    assert result is not None
+    from bs4 import BeautifulSoup
+    soup = BeautifulSoup(result, "html.parser")
+    body = soup.find("body")
+    assert body is not None
+    assert body.get("style") is None
+
+
+def test_strip_for_display_handles_overscroll_behavior_none() -> None:
+    html = "<html><body style='overscroll-behavior: none'><p>text</p></body></html>"
+
+    result = strip_for_display(html)
+
+    assert result is not None
+    from bs4 import BeautifulSoup
+    soup = BeautifulSoup(result, "html.parser")
+    body = soup.find("body")
+    assert body is not None
+    assert body.get("style") is None
