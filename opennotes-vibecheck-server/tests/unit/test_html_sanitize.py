@@ -404,6 +404,58 @@ def test_strip_for_display_preserves_large_viewbox_svg() -> None:
     assert svg.get("style") is None
 
 
+def test_strip_for_display_bounds_fontawesome_viewbox_svg() -> None:
+    html = '<html><body><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"></svg></body></html>'
+
+    result = strip_for_display(html)
+
+    assert result is not None
+    from bs4 import BeautifulSoup
+    soup = BeautifulSoup(result, "html.parser")
+    svg = soup.find("svg")
+    assert svg is not None
+    assert str(svg.get("style") or "").startswith("width:1em")
+
+
+def test_strip_for_display_bounds_phosphor_viewbox_svg() -> None:
+    html = '<html><body><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256"></svg></body></html>'
+
+    result = strip_for_display(html)
+
+    assert result is not None
+    from bs4 import BeautifulSoup
+    soup = BeautifulSoup(result, "html.parser")
+    svg = soup.find("svg")
+    assert svg is not None
+    assert str(svg.get("style") or "").startswith("width:1em")
+
+
+def test_strip_for_display_preserves_chart_with_wide_aspect_viewbox() -> None:
+    html = '<html><body><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 400"></svg></body></html>'
+
+    result = strip_for_display(html)
+
+    assert result is not None
+    from bs4 import BeautifulSoup
+    soup = BeautifulSoup(result, "html.parser")
+    svg = soup.find("svg")
+    assert svg is not None
+    assert svg.get("style") is None
+
+
+def test_strip_for_display_preserves_oversize_square_viewbox() -> None:
+    html = '<html><body><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 1000"></svg></body></html>'
+
+    result = strip_for_display(html)
+
+    assert result is not None
+    from bs4 import BeautifulSoup
+    soup = BeautifulSoup(result, "html.parser")
+    svg = soup.find("svg")
+    assert svg is not None
+    assert svg.get("style") is None
+
+
 def test_strip_for_display_preserves_svg_inside_sized_parent() -> None:
     html = '<html><body><div style="width:400px;height:300px"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"></svg></div></body></html>'
 

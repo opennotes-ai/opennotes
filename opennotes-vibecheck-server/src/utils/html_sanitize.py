@@ -33,7 +33,8 @@ _DISPLAY_STRIPPED_TAGS: tuple[str, ...] = ("script",)
 _LLM_STRIPPED_TAGS: tuple[str, ...] = ("script", "style", "link")
 _ARCHIVE_EXTRACT_MIN_CHARS = 200
 
-_ICON_VIEWBOX_MAX_DIMENSION: float = 64.0
+_ICON_VIEWBOX_MAX_DIMENSION: float = 512.0
+_ICON_ASPECT_RATIO_BOUNDS: tuple[float, float] = (0.8, 1.25)
 _ICON_FALLBACK_STYLE: str = (
     "width:1em;height:1em;max-width:1.5rem;max-height:1.5rem;vertical-align:middle"
 )
@@ -129,8 +130,16 @@ def _bound_unsized_icon_svgs(soup: BeautifulSoup) -> None:  # noqa: PLR0912
                 try:
                     vb_w = float(parts[2])
                     vb_h = float(parts[3])
+                    # Square viewBox with both dims <= 512 covers common icon libraries
+                    # (FontAwesome 512, Phosphor 256, Heroicons 24); wide-aspect or
+                    # oversize viewBoxes are charts/figures the page sized intentionally.
                     if vb_w > _ICON_VIEWBOX_MAX_DIMENSION or vb_h > _ICON_VIEWBOX_MAX_DIMENSION:
                         continue
+                    if vb_h != 0:
+                        aspect = vb_w / vb_h
+                        lo, hi = _ICON_ASPECT_RATIO_BOUNDS
+                        if aspect < lo or aspect > hi:
+                            continue
                 except ValueError:
                     pass
 
