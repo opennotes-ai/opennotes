@@ -1,9 +1,9 @@
-import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
 from src.utterances.schema import Utterance, UtterancesPayload, BatchedUtteranceRedirectionResponse
 from src.utterances.batched.partition import HtmlSection
+from src.utterances._ids import stable_utterance_id, _norm_ws
 from src.analyses.schemas import PageKind, UtteranceStreamType
 
 
@@ -22,10 +22,6 @@ class _Candidate:
     local_index: int
     utterance: Utterance
     original_id: str | None
-
-
-def _norm_ws(text: str) -> str:
-    return re.sub(r'\s+', ' ', text).strip()
 
 
 def _find_offset(utterance_text: str, html_slice: str, global_start: int) -> tuple[int, int]:
@@ -104,19 +100,53 @@ def assemble_sections(
 
         prev_section_index = candidate.section_index
 
+    survivors = emitted
+
+    for ordinal, candidate in enumerate(survivors):
+        candidate.utterance.utterance_id = stable_utterance_id(
+            candidate.utterance.kind,
+            candidate.utterance.text,
+            candidate.global_offset,
+            ordinal,
+        )
+
+    local_to_final: dict[tuple[int, str], str] = {}
+    for candidate in survivors:
+        if candidate.original_id is not None:
+            key = (candidate.section_index, candidate.original_id)
+            local_to_final[key] = candidate.utterance.utterance_id
+
+    surviving_utterances = [c.utterance for c in survivors]
+
+    for i, candidate in enumerate(survivors):
+        utt = candidate.utterance
+        if utt.parent_id is None:
+            continue
+        lookup_key = (candidate.section_index, utt.parent_id)
+        resolved = local_to_final.get(lookup_key)
+        if resolved is not None:
+            utt.parent_id = resolved
+        else:
+            preceding_post: str | None = None
+            for j in range(i - 1, -1, -1):
+                if surviving_utterances[j].kind == "post":
+                    preceding_post = surviving_utterances[j].utterance_id
+                    break
+            utt.parent_id = preceding_post
+
     utterances = [
         Utterance(
-            utterance_id=f"{c.utterance.kind}-{c.section_index}-{c.local_index:04x}",
+            utterance_id=c.utterance.utterance_id,
             kind=c.utterance.kind,
             text=c.utterance.text,
             author=c.utterance.author,
             timestamp=c.utterance.timestamp,
-            parent_id=None,
+            parent_id=c.utterance.parent_id,
             mentioned_urls=c.utterance.mentioned_urls,
             mentioned_images=c.utterance.mentioned_images,
             mentioned_videos=c.utterance.mentioned_videos,
         )
-        for c in emitted
+        for c in survivors
     ]
 
     page_kind = PageKind.OTHER

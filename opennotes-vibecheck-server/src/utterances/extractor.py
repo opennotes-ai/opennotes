@@ -71,6 +71,7 @@ from src.utterances.errors import (
 
 from .media_extraction import attribute_media
 from .schema import BatchedUtteranceRedirectionResponse, UtterancesPayload
+from ._ids import stable_utterance_id
 
 EXTRACTOR_SYSTEM_PROMPT = f"""\
 You extract structured utterances from a scraped webpage's markdown.
@@ -611,10 +612,11 @@ async def _get_or_scrape(
 
 
 def _assign_stable_ids(payload: UtterancesPayload) -> None:
-    """Fill in missing/duplicate utterance_ids deterministically."""
     seen: set[str] = set()
     for i, utterance in enumerate(payload.utterances):
         uid = utterance.utterance_id
         if not uid or uid in seen:
-            utterance.utterance_id = f"{utterance.kind}-{i}-{hash(utterance.text) & 0xFFFFFFFF:08x}"
+            utterance.utterance_id = stable_utterance_id(
+                utterance.kind, utterance.text, global_offset=0, ordinal=i
+            )
         seen.add(utterance.utterance_id or "")

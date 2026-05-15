@@ -47,6 +47,7 @@ from src.utterances.extractor import (
     EXTRACTOR_SYSTEM_PROMPT,
     ExtractorDeps,
     ZeroUtterancesError,
+    _assign_stable_ids,
     _get_html_impl,
     _get_screenshot_impl,
     extract_utterances,
@@ -1467,3 +1468,33 @@ async def test_extract_utterances_sample_rate_one_always_includes_content(
     assert isinstance(instrument, InstrumentationSettings)
     assert instrument.include_content is True
     assert instrument.include_binary_content is False
+
+
+def test_assign_stable_ids_is_process_stable() -> None:
+    from src.analyses.schemas import PageKind, UtteranceStreamType
+    from datetime import timezone
+
+    def _make_payload() -> UtterancesPayload:
+        return UtterancesPayload(
+            source_url="http://example.com",
+            scraped_at=datetime(2024, 1, 1, tzinfo=timezone.utc),
+            utterances=[
+                Utterance(kind="post", text="Hello world"),
+                Utterance(kind="reply", text="A reply"),
+            ],
+            page_kind=PageKind.OTHER,
+            utterance_stream_type=UtteranceStreamType.UNKNOWN,
+        )
+
+    payload1 = _make_payload()
+    _assign_stable_ids(payload1)
+    ids1 = [u.utterance_id for u in payload1.utterances]
+
+    payload2 = _make_payload()
+    _assign_stable_ids(payload2)
+    ids2 = [u.utterance_id for u in payload2.utterances]
+
+    assert ids1 == ids2
+    for uid in ids1:
+        assert uid is not None
+        assert "hash" not in uid

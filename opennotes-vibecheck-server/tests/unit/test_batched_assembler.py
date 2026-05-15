@@ -1,4 +1,6 @@
 import re
+import subprocess
+import sys
 from datetime import datetime, timezone
 from dataclasses import dataclass
 
@@ -7,6 +9,7 @@ import pytest
 from src.analyses.schemas import PageKind, UtteranceStreamType
 from src.utterances.schema import Utterance, UtterancesPayload, BatchedUtteranceRedirectionResponse
 from src.utterances.batched.assembler import assemble_sections
+from src.utterances._ids import stable_utterance_id
 
 
 @dataclass
@@ -222,3 +225,161 @@ def test_overlap_region_different_utterances_both_kept():
     assert "X" in texts
     assert "Y" in texts
     assert "Z" in texts
+
+
+def test_stable_ids_deterministic():
+    section = make_section(
+        index=0,
+        html_slice="<p>Hello</p>",
+        global_start=0,
+        global_end=12,
+        utterances=[
+            Utterance(kind="post", text="Hello"),
+        ],
+    )
+
+    result1 = assemble_sections(
+        section_results=[section],
+        parent=make_parent(),
+        sanitized_html="<p>Hello</p>",
+        source_url="http://example.com",
+    )
+
+    section2 = make_section(
+        index=0,
+        html_slice="<p>Hello</p>",
+        global_start=0,
+        global_end=12,
+        utterances=[
+            Utterance(kind="post", text="Hello"),
+        ],
+    )
+
+    result2 = assemble_sections(
+        section_results=[section2],
+        parent=make_parent(),
+        sanitized_html="<p>Hello</p>",
+        source_url="http://example.com",
+    )
+
+    assert len(result1.utterances) == 1
+    assert len(result2.utterances) == 1
+    assert result1.utterances[0].utterance_id == result2.utterances[0].utterance_id
+
+
+def test_stable_ids_not_python_hash():
+    uid = stable_utterance_id("post", "hello", 0, 0)
+    old_style = f"post-{hash('hello') & 0xFFFFFFFF:08x}"
+    assert uid != old_style
+    assert uid == stable_utterance_id("post", "hello", 0, 0)
+
+
+def test_stable_ids_subprocess_hashseed_independent():
+    script = (
+        "from src.utterances._ids import stable_utterance_id; "
+        "print(stable_utterance_id('post', 'hello world', 0, 0))"
+    )
+    import os
+    env0 = {**os.environ, "PYTHONHASHSEED": "0"}
+    env1 = {**os.environ, "PYTHONHASHSEED": "1"}
+    r0 = subprocess.run(
+        [sys.executable, "-c", script],
+        capture_output=True, text=True, env=env0, cwd="/Users/mike/code/opennotes-ai/multiverse/worktrees/tasks-1649/opennotes-vibecheck-server"
+    )
+    r1 = subprocess.run(
+        [sys.executable, "-c", script],
+        capture_output=True, text=True, env=env1, cwd="/Users/mike/code/opennotes-ai/multiverse/worktrees/tasks-1649/opennotes-vibecheck-server"
+    )
+    assert r0.returncode == 0, r0.stderr
+    assert r1.returncode == 0, r1.stderr
+    assert r0.stdout.strip() == r1.stdout.strip()
+
+
+def test_cross_section_parent_id_resolved():
+    section0 = make_section(
+        index=0,
+        html_slice="<p>Root post</p>",
+        global_start=0,
+        global_end=16,
+        utterances=[
+            Utterance(kind="post", text="Root post", utterance_id="sec0-root"),
+        ],
+    )
+    section1 = make_section(
+        index=1,
+        html_slice="<p>Reply</p>",
+        global_start=16,
+        global_end=28,
+        utterances=[
+            Utterance(kind="reply", text="Reply", parent_id="sec0-root"),
+        ],
+    )
+
+    result = assemble_sections(
+        section_results=[section0, section1],
+        parent=make_parent(),
+        sanitized_html="<p>Root post</p><p>Reply</p>",
+        source_url="http://example.com",
+    )
+
+    assert len(result.utterances) == 2
+    post = result.utterances[0]
+    reply = result.utterances[1]
+
+    assert post.kind == "post"
+    assert reply.kind == "reply"
+    assert reply.parent_id is not None
+    assert reply.parent_id == post.utterance_id
+    assert reply.parent_id != "sec0-root"
+
+
+def test_orphan_reattaches_to_nearest_preceding_post():
+    section = make_section(
+        index=0,
+        html_slice="<p>A</p><p>B</p><p>C</p>",
+        global_start=0,
+        global_end=24,
+        utterances=[
+            Utterance(kind="post", text="A"),
+            Utterance(kind="reply", text="B", parent_id="nonexistent-id"),
+            Utterance(kind="reply", text="C", parent_id="also-nonexistent"),
+        ],
+    )
+
+    result = assemble_sections(
+        section_results=[section],
+        parent=make_parent(),
+        sanitized_html="<p>A</p><p>B</p><p>C</p>",
+        source_url="http://example.com",
+    )
+
+    assert len(result.utterances) == 3
+    post = result.utterances[0]
+    reply_b = result.utterances[1]
+    reply_c = result.utterances[2]
+
+    assert post.kind == "post"
+    assert reply_b.parent_id == post.utterance_id
+    assert reply_c.parent_id == post.utterance_id
+
+
+def test_orphan_no_preceding_post_gets_none():
+    section = make_section(
+        index=0,
+        html_slice="<p>Reply only</p>",
+        global_start=0,
+        global_end=17,
+        utterances=[
+            Utterance(kind="reply", text="Reply only", parent_id="ghost"),
+        ],
+    )
+
+    result = assemble_sections(
+        section_results=[section],
+        parent=make_parent(),
+        sanitized_html="<p>Reply only</p>",
+        source_url="http://example.com",
+    )
+
+    assert len(result.utterances) == 1
+    assert result.utterances[0].parent_id is None
