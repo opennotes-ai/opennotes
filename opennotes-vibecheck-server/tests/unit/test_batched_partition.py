@@ -229,3 +229,57 @@ class TestEdgeCases:
         assert (
             sections[1].overlap_with_prev_bytes == 100
         ), "Should use hint's custom overlap over setting"
+
+
+class TestAC6_MultibyteBoundaryHintMetadata:
+    def test_hint_metadata_survives_utf8_widen(self):
+        from unittest.mock import patch
+
+        prefix_len = 300
+        prefix = "A" * prefix_len
+        marker = "<section>"
+        suffix = "B" * 600
+        html = prefix + marker + suffix
+        raw = html.encode("utf-8")
+
+        marker_byte_pos = raw.index(marker.encode("utf-8"))
+
+        hint = SectionHint(
+            anchor_hint=marker,
+            tolerance_bytes=50,
+            parent_context_text="ctx-after-widen",
+            overlap_with_prev_bytes=80,
+        )
+        response = BatchedUtteranceRedirectionResponse(
+            page_kind=PageKind.ARTICLE,
+            utterance_stream_type=UtteranceStreamType.COMMENT_SECTION,
+            boundary_instructions="none",
+            section_hints=[hint],
+        )
+        settings = make_settings(target=300, overlap=40)
+
+        original_snap = __import__(
+            "src.utterances.batched.partition",
+            fromlist=["_snap_to_utf8_boundary"],
+        )._snap_to_utf8_boundary
+
+        def snap_that_shifts_anchor(raw_bytes: bytes, pos: int) -> int:
+            if pos == marker_byte_pos:
+                return marker_byte_pos + 1
+            return original_snap(raw_bytes, pos)
+
+        with patch(
+            "src.utterances.batched.partition._snap_to_utf8_boundary",
+            side_effect=snap_that_shifts_anchor,
+        ):
+            sections = partition_html(html, response, settings)
+
+        assert len(sections) >= 2, "Should produce at least 2 sections"
+
+        snapped_section = sections[1]
+        assert snapped_section.parent_context_text == "ctx-after-widen", (
+            "parent_context_text must survive UTF-8 boundary widen"
+        )
+        assert snapped_section.overlap_with_prev_bytes == 80, (
+            "overlap_with_prev_bytes from hint must survive UTF-8 boundary widen"
+        )

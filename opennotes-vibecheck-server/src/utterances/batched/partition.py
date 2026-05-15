@@ -79,7 +79,11 @@ def partition_html(
                 break
 
     for i in range(1, len(cuts)):
-        cuts[i] = _snap_to_utf8_boundary(raw, cuts[i])
+        old_pos = cuts[i]
+        new_pos = _snap_to_utf8_boundary(raw, old_pos)
+        cuts[i] = new_pos
+        if old_pos in matched_hints and new_pos != old_pos:
+            matched_hints[new_pos] = matched_hints.pop(old_pos)
 
     filtered_cuts: list[int] = [cuts[0]]
     for i in range(1, len(cuts)):
