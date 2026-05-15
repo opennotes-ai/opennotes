@@ -22,6 +22,7 @@ import pytest
 
 from src.analyses.schemas import PageKind, UtteranceStreamType
 from src.cache.scrape_cache import CachedScrape, SupabaseScrapeCache
+from src.firecrawl_client import ScrapeMetadata
 from src.config import Settings
 from src.utterances.batched.assembler import SectionResult
 from src.utterances.batched.partition import HtmlSection
@@ -87,7 +88,7 @@ def settings() -> Settings:
 @pytest.fixture
 def mock_scrape() -> MagicMock:
     scrape = MagicMock(spec=CachedScrape)
-    scrape.metadata = {"url": "https://example.com/"}
+    scrape.metadata = ScrapeMetadata(source_url="https://example.com/")
     return scrape
 
 

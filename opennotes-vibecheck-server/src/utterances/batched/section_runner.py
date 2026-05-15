@@ -90,7 +90,7 @@ async def run_section(
                 page_kind=parent.page_kind,
                 utterance_stream_type=parent.utterance_stream_type,
                 page_title=parent.page_title,
-                source_url=scrape.metadata.get("url", "") if scrape.metadata else "",
+                source_url=(scrape.metadata.source_url or "") if scrape.metadata else "",
                 scraped_at=datetime.now(UTC),
             )
             return SectionResult(
@@ -123,7 +123,7 @@ async def run_section(
                 page_kind=parent.page_kind,
                 utterance_stream_type=parent.utterance_stream_type,
                 page_title=parent.page_title,
-                source_url=scrape.metadata.get("url", "") if scrape.metadata else "",
+                source_url=(scrape.metadata.source_url or "") if scrape.metadata else "",
                 scraped_at=datetime.now(UTC),
             )
             return SectionResult(
