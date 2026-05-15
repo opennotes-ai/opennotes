@@ -285,7 +285,7 @@ export function resolveOverallDecision(
 
 const VERDICT_CLASSES: Record<OverallVerdict, string> = {
   pass: "bg-muted text-muted-foreground border-border",
-  flag: "bg-destructive/5 text-destructive border-destructive/40",
+  flag: "bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/40",
 };
 
 export function OverallRecommendationCard(
@@ -301,7 +301,7 @@ export function OverallRecommendationCard(
           class={`flex items-center gap-2 border p-3 text-sm font-semibold ${VERDICT_CLASSES[data().verdict]}`}
         >
           <span data-testid="overall-recommendation-verdict" class="shrink-0">
-            {data().verdict === "pass" ? "Overall: OK." : "Overall: Flag!"}
+            {data().verdict === "pass" ? "Overall: OK." : "Overall: Needs a mod!"}
           </span>
           <span
             data-testid="overall-recommendation-reason"

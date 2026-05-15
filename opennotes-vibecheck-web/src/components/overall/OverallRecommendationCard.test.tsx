@@ -126,7 +126,7 @@ describe("<OverallRecommendationCard />", () => {
     expect(verdict.textContent).toBe("Overall: OK.");
   });
 
-  it("renders 'Overall: Flag!' for unsafe level", () => {
+  it("renders 'Overall: Needs a mod!' for unsafe level", () => {
     render(() => (
       <OverallRecommendationCard
         recommendation={makeRecommendation({
@@ -137,10 +137,10 @@ describe("<OverallRecommendationCard />", () => {
     ));
 
     const verdict = screen.getByTestId("overall-recommendation-verdict");
-    expect(verdict.textContent).toBe("Overall: Flag!");
+    expect(verdict.textContent).toBe("Overall: Needs a mod!");
   });
 
-  it("renders 'Overall: Flag!' for caution level", () => {
+  it("renders 'Overall: Needs a mod!' for caution level", () => {
     render(() => (
       <OverallRecommendationCard
         recommendation={makeRecommendation({
@@ -151,7 +151,7 @@ describe("<OverallRecommendationCard />", () => {
     ));
 
     const verdict = screen.getByTestId("overall-recommendation-verdict");
-    expect(verdict.textContent).toBe("Overall: Flag!");
+    expect(verdict.textContent).toBe("Overall: Needs a mod!");
   });
 
   it("returns null when recommendation is null and overall is absent", () => {
@@ -219,7 +219,7 @@ describe("<OverallRecommendationCard />", () => {
 
     const verdict = screen.getByTestId("overall-recommendation-verdict");
     const reason = screen.getByTestId("overall-recommendation-reason");
-    expect(verdict.textContent).toBe("Overall: Flag!");
+    expect(verdict.textContent).toBe("Overall: Needs a mod!");
     expect(reason.textContent).toBe("Repeated low-severity toxicity");
   });
 
@@ -603,7 +603,7 @@ describe("<OverallRecommendationCard />", () => {
     expect(verdict.textContent).toBe("Overall: OK.");
   });
 
-  it("mild + Heated flashpoint escalates to Overall: Flag!", () => {
+  it("mild + Heated flashpoint escalates to Overall: Needs a mod!", () => {
     render(() => (
       <OverallRecommendationCard
         recommendation={makeRecommendation({
@@ -616,11 +616,11 @@ describe("<OverallRecommendationCard />", () => {
 
     const verdict = screen.getByTestId("overall-recommendation-verdict");
     const reason = screen.getByTestId("overall-recommendation-reason");
-    expect(verdict.textContent).toBe("Overall: Flag!");
+    expect(verdict.textContent).toBe("Overall: Needs a mod!");
     expect(reason.textContent).toBe("Conversation flashpoint risk: Heated");
   });
 
-  it("mild + Hostile flashpoint escalates to Overall: Flag!", () => {
+  it("mild + Hostile flashpoint escalates to Overall: Needs a mod!", () => {
     render(() => (
       <OverallRecommendationCard
         recommendation={makeRecommendation({
@@ -633,7 +633,7 @@ describe("<OverallRecommendationCard />", () => {
 
     const verdict = screen.getByTestId("overall-recommendation-verdict");
     const reason = screen.getByTestId("overall-recommendation-reason");
-    expect(verdict.textContent).toBe("Overall: Flag!");
+    expect(verdict.textContent).toBe("Overall: Needs a mod!");
     expect(reason.textContent).toBe("Conversation flashpoint risk: Hostile");
   });
 
@@ -653,7 +653,7 @@ describe("<OverallRecommendationCard />", () => {
 
     const verdict = screen.getByTestId("overall-recommendation-verdict");
     const reason = screen.getByTestId("overall-recommendation-reason");
-    expect(verdict.textContent).toBe("Overall: Flag!");
+    expect(verdict.textContent).toBe("Overall: Needs a mod!");
     expect(reason.textContent).toBe("Conversation flashpoint risk: Dangerous");
   });
 
@@ -703,7 +703,7 @@ describe("<OverallRecommendationCard />", () => {
 
     const verdict = screen.getByTestId("overall-recommendation-verdict");
     const reason = screen.getByTestId("overall-recommendation-reason");
-    expect(verdict.textContent).toBe("Overall: Flag!");
+    expect(verdict.textContent).toBe("Overall: Needs a mod!");
     expect(reason.textContent).toBe("Misleading framing in on-topic discussion");
   });
 
@@ -719,7 +719,7 @@ describe("<OverallRecommendationCard />", () => {
     ));
 
     expect(screen.getByTestId("overall-recommendation-verdict").textContent).toBe(
-      "Overall: Flag!",
+      "Overall: Needs a mod!",
     );
   });
 
@@ -767,7 +767,7 @@ describe("<OverallRecommendationCard />", () => {
     ));
 
     expect(screen.getByTestId("overall-recommendation-verdict").textContent).toBe(
-      "Overall: Flag!",
+      "Overall: Needs a mod!",
     );
   });
 

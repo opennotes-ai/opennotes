@@ -621,7 +621,7 @@ describe("AnalyzePage route", () => {
     expect(document.title).toBe("vibecheck - flagged - Fallback flag article");
     expect(
       await screen.findByTestId("overall-recommendation-verdict"),
-    ).toHaveTextContent("Overall: Flag!");
+    ).toHaveTextContent("Overall: Needs a mod!");
   });
 
   it("uses terminal fallback labels in document title when no decision exists", async () => {
