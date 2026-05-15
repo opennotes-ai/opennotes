@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 from src.utils.html_sanitize import (
     extract_archive_main_content,
@@ -185,7 +186,7 @@ def test_extract_archive_caches_extraction_output() -> None:
     real_extract = __import__("trafilatura").extract
     calls = {"count": 0}
 
-    def counting_extract(*args: object, **kwargs: object) -> object:
+    def counting_extract(*args: Any, **kwargs: Any) -> Any:
         calls["count"] += 1
         return real_extract(*args, **kwargs)
 
@@ -294,7 +295,7 @@ def test_strip_for_display_removes_body_overflow_hidden() -> None:
     soup = BeautifulSoup(result, "html.parser")
     body = soup.find("body")
     assert body is not None
-    style = body.get("style", "")
+    style = str(body.get("style") or "")
     assert "overflow" not in style
     assert "padding" in style
 
@@ -340,7 +341,7 @@ def test_la_times_fixture_neutralizes_scroll_locks() -> None:
     soup = BeautifulSoup(result, "html.parser")
     body = soup.find("body")
     assert body is not None
-    style = body.get("style", "")
+    style = str(body.get("style") or "")
     assert "overflow" not in style
     classes = body.get("class") or []
     if isinstance(classes, str):

@@ -94,7 +94,7 @@ def _neutralize_page_scroll_locks(soup: BeautifulSoup) -> None:
                 tokens = list(classes)
             filtered = [t for t in tokens if t.lower() not in _SCROLL_LOCK_CLASS_FRAGMENTS]
             if filtered:
-                tag["class"] = filtered
+                tag["class"] = " ".join(filtered)
             else:
                 del tag["class"]
 
