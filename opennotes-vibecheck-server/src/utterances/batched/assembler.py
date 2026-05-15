@@ -1,3 +1,4 @@
+import asyncio
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
@@ -51,7 +52,7 @@ def _find_offset(utterance_text: str, html_slice: str, global_start: int) -> tup
     return global_start, 0
 
 
-def assemble_sections(
+async def assemble_sections(
     section_results: list[SectionResult],
     parent: BatchedUtteranceRedirectionResponse,
     sanitized_html: str,
@@ -180,6 +181,6 @@ def assemble_sections(
         utterance_stream_type=parent.utterance_stream_type,
     )
 
-    attribute_media(sanitized_html, payload.utterances)
+    await asyncio.to_thread(attribute_media, sanitized_html, payload.utterances)
 
     return payload

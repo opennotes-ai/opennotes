@@ -132,7 +132,7 @@ async def test_batched_path_calls_pipeline_in_order(monkeypatch: pytest.MonkeyPa
         call_order.append("runner")
         return [fake_section_result]
 
-    def _fake_assemble(section_results: Any, redirect: Any, sanitized_html: str, source_url: str) -> UtterancesPayload:
+    async def _fake_assemble(section_results: Any, redirect: Any, sanitized_html: str, source_url: str) -> UtterancesPayload:
         call_order.append("assemble")
         seen_html_in_assemble.append(sanitized_html)
         return UtterancesPayload(
@@ -211,7 +211,7 @@ async def test_zero_utterances_after_assembly_raises_error(monkeypatch: pytest.M
     monkeypatch.setattr("src.utterances.batched.dispatcher._sanitize_html", lambda h: h)
     monkeypatch.setattr("src.utterances.batched.dispatcher.partition_html", lambda *a, **kw: [object()])
     monkeypatch.setattr("src.utterances.batched.dispatcher.run_all_sections", AsyncMock(return_value=[object()]))
-    monkeypatch.setattr("src.utterances.batched.dispatcher.assemble_sections", lambda *a, **kw: empty_payload)
+    monkeypatch.setattr("src.utterances.batched.dispatcher.assemble_sections", AsyncMock(return_value=empty_payload))
 
     settings = Settings()
     with pytest.raises(ZeroUtterancesError):
@@ -244,13 +244,13 @@ async def test_section_count_span_attr_set_on_batched_path(monkeypatch: pytest.M
     monkeypatch.setattr("src.utterances.batched.dispatcher.run_all_sections", AsyncMock(return_value=[object()]))
     monkeypatch.setattr(
         "src.utterances.batched.dispatcher.assemble_sections",
-        lambda *a, **kw: UtterancesPayload(
+        AsyncMock(return_value=UtterancesPayload(
             source_url=TARGET_URL,
             scraped_at=datetime(2020, 1, 1, tzinfo=UTC),
             page_title="Ok",
             page_kind=PageKind.ARTICLE,
             utterances=[Utterance(utterance_id=None, kind="post", text="text")],
-        ),
+        )),
     )
 
     settings = Settings()

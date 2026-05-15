@@ -1,3 +1,4 @@
+import asyncio
 import re
 import subprocess
 import sys
@@ -68,7 +69,8 @@ def make_parent() -> BatchedUtteranceRedirectionResponse:
     )
 
 
-def test_non_overlapping_sections_all_utterances_emitted():
+@pytest.mark.asyncio
+async def test_non_overlapping_sections_all_utterances_emitted():
     section0 = make_section(
         index=0,
         html_slice="<p>Hello world</p><p>Goodbye</p>",
@@ -90,12 +92,13 @@ def test_non_overlapping_sections_all_utterances_emitted():
         ],
     )
 
-    result = assemble_sections(
-        section_results=[section0, section1],
-        parent=make_parent(),
-        sanitized_html="<p>Hello world</p><p>Goodbye</p><p>New text</p><p>More</p>",
-        source_url="http://example.com",
-    )
+    with patch("src.utterances.batched.assembler.attribute_media"):
+        result = await assemble_sections(
+            section_results=[section0, section1],
+            parent=make_parent(),
+            sanitized_html="<p>Hello world</p><p>Goodbye</p><p>New text</p><p>More</p>",
+            source_url="http://example.com",
+        )
 
     assert len(result.utterances) == 4
     assert result.utterances[0].text == "Hello world"
@@ -104,7 +107,8 @@ def test_non_overlapping_sections_all_utterances_emitted():
     assert result.utterances[3].text == "More"
 
 
-def test_overlap_duplicate_dropped():
+@pytest.mark.asyncio
+async def test_overlap_duplicate_dropped():
     section0 = make_section(
         index=0,
         html_slice="<p>Hello world</p><p>Goodbye</p>",
@@ -127,12 +131,13 @@ def test_overlap_duplicate_dropped():
         ],
     )
 
-    result = assemble_sections(
-        section_results=[section0, section1],
-        parent=make_parent(),
-        sanitized_html="<p>Hello world</p><p>Goodbye</p><p>New text</p>",
-        source_url="http://example.com",
-    )
+    with patch("src.utterances.batched.assembler.attribute_media"):
+        result = await assemble_sections(
+            section_results=[section0, section1],
+            parent=make_parent(),
+            sanitized_html="<p>Hello world</p><p>Goodbye</p><p>New text</p>",
+            source_url="http://example.com",
+        )
 
     assert len(result.utterances) == 3
     texts = [u.text for u in result.utterances]
@@ -140,7 +145,8 @@ def test_overlap_duplicate_dropped():
     assert texts.count("Goodbye") == 1
 
 
-def test_normalized_whitespace_fallback():
+@pytest.mark.asyncio
+async def test_normalized_whitespace_fallback():
     section = make_section(
         index=0,
         html_slice="<p>Hello world</p>",
@@ -151,18 +157,20 @@ def test_normalized_whitespace_fallback():
         ],
     )
 
-    result = assemble_sections(
-        section_results=[section],
-        parent=make_parent(),
-        sanitized_html="<p>Hello world</p>",
-        source_url="http://example.com",
-    )
+    with patch("src.utterances.batched.assembler.attribute_media"):
+        result = await assemble_sections(
+            section_results=[section],
+            parent=make_parent(),
+            sanitized_html="<p>Hello world</p>",
+            source_url="http://example.com",
+        )
 
     assert len(result.utterances) == 1
     assert result.utterances[0].text == "Hello  world"
 
 
-def test_utterance_not_found_still_emitted():
+@pytest.mark.asyncio
+async def test_utterance_not_found_still_emitted():
     section = make_section(
         index=0,
         html_slice="<p>Hello world</p>",
@@ -173,18 +181,20 @@ def test_utterance_not_found_still_emitted():
         ],
     )
 
-    result = assemble_sections(
-        section_results=[section],
-        parent=make_parent(),
-        sanitized_html="<p>Hello world</p>",
-        source_url="http://example.com",
-    )
+    with patch("src.utterances.batched.assembler.attribute_media"):
+        result = await assemble_sections(
+            section_results=[section],
+            parent=make_parent(),
+            sanitized_html="<p>Hello world</p>",
+            source_url="http://example.com",
+        )
 
     assert len(result.utterances) == 1
     assert result.utterances[0].text == "Nonexistent text"
 
 
-def test_overlap_region_different_utterances_both_kept():
+@pytest.mark.asyncio
+async def test_overlap_region_different_utterances_both_kept():
     section0 = make_section(
         index=0,
         html_slice="<p>A</p><p>B</p><p>C</p><p>D</p>",
@@ -210,12 +220,13 @@ def test_overlap_region_different_utterances_both_kept():
         ],
     )
 
-    result = assemble_sections(
-        section_results=[section0, section1],
-        parent=make_parent(),
-        sanitized_html="",
-        source_url="http://example.com",
-    )
+    with patch("src.utterances.batched.assembler.attribute_media"):
+        result = await assemble_sections(
+            section_results=[section0, section1],
+            parent=make_parent(),
+            sanitized_html="",
+            source_url="http://example.com",
+        )
 
     assert len(result.utterances) == 7
     texts = [u.text for u in result.utterances]
@@ -228,7 +239,8 @@ def test_overlap_region_different_utterances_both_kept():
     assert "Z" in texts
 
 
-def test_stable_ids_deterministic():
+@pytest.mark.asyncio
+async def test_stable_ids_deterministic():
     section = make_section(
         index=0,
         html_slice="<p>Hello</p>",
@@ -239,12 +251,13 @@ def test_stable_ids_deterministic():
         ],
     )
 
-    result1 = assemble_sections(
-        section_results=[section],
-        parent=make_parent(),
-        sanitized_html="<p>Hello</p>",
-        source_url="http://example.com",
-    )
+    with patch("src.utterances.batched.assembler.attribute_media"):
+        result1 = await assemble_sections(
+            section_results=[section],
+            parent=make_parent(),
+            sanitized_html="<p>Hello</p>",
+            source_url="http://example.com",
+        )
 
     section2 = make_section(
         index=0,
@@ -256,12 +269,13 @@ def test_stable_ids_deterministic():
         ],
     )
 
-    result2 = assemble_sections(
-        section_results=[section2],
-        parent=make_parent(),
-        sanitized_html="<p>Hello</p>",
-        source_url="http://example.com",
-    )
+    with patch("src.utterances.batched.assembler.attribute_media"):
+        result2 = await assemble_sections(
+            section_results=[section2],
+            parent=make_parent(),
+            sanitized_html="<p>Hello</p>",
+            source_url="http://example.com",
+        )
 
     assert len(result1.utterances) == 1
     assert len(result2.utterances) == 1
@@ -296,7 +310,8 @@ def test_stable_ids_subprocess_hashseed_independent():
     assert r0.stdout.strip() == r1.stdout.strip()
 
 
-def test_cross_section_parent_id_resolved():
+@pytest.mark.asyncio
+async def test_cross_section_parent_id_resolved():
     section0 = make_section(
         index=0,
         html_slice="<p>Root post</p>",
@@ -316,12 +331,13 @@ def test_cross_section_parent_id_resolved():
         ],
     )
 
-    result = assemble_sections(
-        section_results=[section0, section1],
-        parent=make_parent(),
-        sanitized_html="<p>Root post</p><p>Reply</p>",
-        source_url="http://example.com",
-    )
+    with patch("src.utterances.batched.assembler.attribute_media"):
+        result = await assemble_sections(
+            section_results=[section0, section1],
+            parent=make_parent(),
+            sanitized_html="<p>Root post</p><p>Reply</p>",
+            source_url="http://example.com",
+        )
 
     assert len(result.utterances) == 2
     post = result.utterances[0]
@@ -334,7 +350,8 @@ def test_cross_section_parent_id_resolved():
     assert reply.parent_id != "sec0-root"
 
 
-def test_orphan_reattaches_to_nearest_preceding_post():
+@pytest.mark.asyncio
+async def test_orphan_reattaches_to_nearest_preceding_post():
     section = make_section(
         index=0,
         html_slice="<p>A</p><p>B</p><p>C</p>",
@@ -347,12 +364,13 @@ def test_orphan_reattaches_to_nearest_preceding_post():
         ],
     )
 
-    result = assemble_sections(
-        section_results=[section],
-        parent=make_parent(),
-        sanitized_html="<p>A</p><p>B</p><p>C</p>",
-        source_url="http://example.com",
-    )
+    with patch("src.utterances.batched.assembler.attribute_media"):
+        result = await assemble_sections(
+            section_results=[section],
+            parent=make_parent(),
+            sanitized_html="<p>A</p><p>B</p><p>C</p>",
+            source_url="http://example.com",
+        )
 
     assert len(result.utterances) == 3
     post = result.utterances[0]
@@ -364,7 +382,8 @@ def test_orphan_reattaches_to_nearest_preceding_post():
     assert reply_c.parent_id == post.utterance_id
 
 
-def test_orphan_no_preceding_post_gets_none():
+@pytest.mark.asyncio
+async def test_orphan_no_preceding_post_gets_none():
     section = make_section(
         index=0,
         html_slice="<p>Reply only</p>",
@@ -375,18 +394,20 @@ def test_orphan_no_preceding_post_gets_none():
         ],
     )
 
-    result = assemble_sections(
-        section_results=[section],
-        parent=make_parent(),
-        sanitized_html="<p>Reply only</p>",
-        source_url="http://example.com",
-    )
+    with patch("src.utterances.batched.assembler.attribute_media"):
+        result = await assemble_sections(
+            section_results=[section],
+            parent=make_parent(),
+            sanitized_html="<p>Reply only</p>",
+            source_url="http://example.com",
+        )
 
     assert len(result.utterances) == 1
     assert result.utterances[0].parent_id is None
 
 
-def test_split_token_artifact_dropped_left_side_kept():
+@pytest.mark.asyncio
+async def test_split_token_artifact_dropped_left_side_kept():
     section0 = make_section(
         index=0,
         html_slice="<p>hello apple airconditioner</p>",
@@ -407,18 +428,20 @@ def test_split_token_artifact_dropped_left_side_kept():
         ],
     )
 
-    result = assemble_sections(
-        section_results=[section0, section1],
-        parent=make_parent(),
-        sanitized_html="<p>hello apple airconditioner</p><p>conditioner gardenhose tantalum</p>",
-        source_url="http://example.com",
-    )
+    with patch("src.utterances.batched.assembler.attribute_media"):
+        result = await assemble_sections(
+            section_results=[section0, section1],
+            parent=make_parent(),
+            sanitized_html="<p>hello apple airconditioner</p><p>conditioner gardenhose tantalum</p>",
+            source_url="http://example.com",
+        )
 
     assert len(result.utterances) == 1
     assert result.utterances[0].text == "hello apple airconditioner"
 
 
-def test_non_split_overlap_both_kept():
+@pytest.mark.asyncio
+async def test_non_split_overlap_both_kept():
     section0 = make_section(
         index=0,
         html_slice="<p>hello world</p>",
@@ -439,12 +462,13 @@ def test_non_split_overlap_both_kept():
         ],
     )
 
-    result = assemble_sections(
-        section_results=[section0, section1],
-        parent=make_parent(),
-        sanitized_html="<p>hello world</p><p>goodbye world</p>",
-        source_url="http://example.com",
-    )
+    with patch("src.utterances.batched.assembler.attribute_media"):
+        result = await assemble_sections(
+            section_results=[section0, section1],
+            parent=make_parent(),
+            sanitized_html="<p>hello world</p><p>goodbye world</p>",
+            source_url="http://example.com",
+        )
 
     assert len(result.utterances) == 2
     texts = [u.text for u in result.utterances]
@@ -452,7 +476,8 @@ def test_non_split_overlap_both_kept():
     assert "goodbye world" in texts
 
 
-def test_attribute_media_called_exactly_once():
+@pytest.mark.asyncio
+async def test_attribute_media_called_exactly_once():
     section0 = make_section(
         index=0,
         html_slice="<p>Hello</p>",
@@ -464,7 +489,7 @@ def test_attribute_media_called_exactly_once():
     )
 
     with patch("src.utterances.batched.assembler.attribute_media") as mock_attr:
-        result = assemble_sections(
+        result = await assemble_sections(
             section_results=[section0],
             parent=make_parent(),
             sanitized_html="<p>Hello</p>",
@@ -477,7 +502,8 @@ def test_attribute_media_called_exactly_once():
     assert call_args[0][1] == result.utterances
 
 
-def test_normalized_fallback_offset_not_norm_position():
+@pytest.mark.asyncio
+async def test_normalized_fallback_offset_not_norm_position():
     html_slice = "<p>Hello   world  foo</p>"
     utterance_text = "Hello   world  foo"
     global_start = 50
@@ -493,17 +519,19 @@ def test_normalized_fallback_offset_not_norm_position():
         utterances=[Utterance(kind="post", text=utterance_text)],
     )
 
-    result = assemble_sections(
-        section_results=[section],
-        parent=make_parent(),
-        sanitized_html=html_slice,
-        source_url="http://example.com",
-    )
+    with patch("src.utterances.batched.assembler.attribute_media"):
+        result = await assemble_sections(
+            section_results=[section],
+            parent=make_parent(),
+            sanitized_html=html_slice,
+            source_url="http://example.com",
+        )
 
     assert len(result.utterances) == 1
 
 
-def test_normalized_fallback_does_not_use_norm_position():
+@pytest.mark.asyncio
+async def test_normalized_fallback_does_not_use_norm_position():
     html_slice = "     <p>Hello   world</p>"
     utterance_with_extra_ws = "Hello   world"
     norm_of_utterance = "Hello world"
@@ -521,17 +549,19 @@ def test_normalized_fallback_does_not_use_norm_position():
         utterances=[Utterance(kind="post", text=utterance_with_extra_ws)],
     )
 
-    result = assemble_sections(
-        section_results=[section],
-        parent=make_parent(),
-        sanitized_html=html_slice,
-        source_url="http://example.com",
-    )
+    with patch("src.utterances.batched.assembler.attribute_media"):
+        result = await assemble_sections(
+            section_results=[section],
+            parent=make_parent(),
+            sanitized_html=html_slice,
+            source_url="http://example.com",
+        )
 
     assert len(result.utterances) == 1
 
 
-def test_normalized_fallback_offset_is_global_start_not_norm_string_pos():
+@pytest.mark.asyncio
+async def test_normalized_fallback_offset_is_global_start_not_norm_string_pos():
     leading_spaces = "     "
     html_slice = leading_spaces + "<p>Hello world</p>"
     utterance_text = "Hello  world"
@@ -554,12 +584,13 @@ def test_normalized_fallback_offset_is_global_start_not_norm_string_pos():
         utterances=[Utterance(kind="post", text=utterance_text)],
     )
 
-    result = assemble_sections(
-        section_results=[section],
-        parent=make_parent(),
-        sanitized_html=html_slice,
-        source_url="http://example.com",
-    )
+    with patch("src.utterances.batched.assembler.attribute_media"):
+        result = await assemble_sections(
+            section_results=[section],
+            parent=make_parent(),
+            sanitized_html=html_slice,
+            source_url="http://example.com",
+        )
 
     assert len(result.utterances) == 1
     candidate_offset = result.utterances[0].utterance_id
@@ -576,7 +607,8 @@ def test_normalized_fallback_offset_is_global_start_not_norm_string_pos():
     )
 
 
-def test_attribute_media_receives_full_sanitized_html_not_slice():
+@pytest.mark.asyncio
+async def test_attribute_media_receives_full_sanitized_html_not_slice():
     section0 = make_section(
         index=0,
         html_slice="<p>first</p>",
@@ -598,7 +630,7 @@ def test_attribute_media_receives_full_sanitized_html_not_slice():
     full_html = "<html><body>full content</body></html>"
 
     with patch("src.utterances.batched.assembler.attribute_media") as mock_attr:
-        assemble_sections(
+        await assemble_sections(
             section_results=[section0, section1],
             parent=make_parent(),
             sanitized_html=full_html,
@@ -609,7 +641,8 @@ def test_attribute_media_receives_full_sanitized_html_not_slice():
     assert mock_attr.call_args[0][0] == full_html
 
 
-def test_full_integration_dedup_ids_parent_attribute_media():
+@pytest.mark.asyncio
+async def test_full_integration_dedup_ids_parent_attribute_media():
     section0 = make_section(
         index=0,
         html_slice="<p>Root post</p><p>Overlap text</p>",
@@ -634,7 +667,7 @@ def test_full_integration_dedup_ids_parent_attribute_media():
     full_html = "<p>Root post</p><p>Overlap text</p><p>Reply here</p>"
 
     with patch("src.utterances.batched.assembler.attribute_media") as mock_attr:
-        result1 = assemble_sections(
+        result1 = await assemble_sections(
             section_results=[section0, section1],
             parent=make_parent(),
             sanitized_html=full_html,
@@ -664,7 +697,7 @@ def test_full_integration_dedup_ids_parent_attribute_media():
     )
 
     with patch("src.utterances.batched.assembler.attribute_media") as mock_attr2:
-        result2 = assemble_sections(
+        result2 = await assemble_sections(
             section_results=[section0b, section1b],
             parent=make_parent(),
             sanitized_html=full_html,
@@ -684,7 +717,8 @@ def test_full_integration_dedup_ids_parent_attribute_media():
     assert mock_attr.call_args[0][0] == full_html
 
 
-def test_assembler_propagates_parent_page_title():
+@pytest.mark.asyncio
+async def test_assembler_propagates_parent_page_title():
     parent = BatchedUtteranceRedirectionResponse(
         page_kind=PageKind.BLOG_POST,
         utterance_stream_type=UtteranceStreamType.COMMENT_SECTION,
@@ -707,7 +741,7 @@ def test_assembler_propagates_parent_page_title():
     )
 
     with patch("src.utterances.batched.assembler.attribute_media"):
-        result = assemble_sections(
+        result = await assemble_sections(
             section_results=[section0, section1],
             parent=parent,
             sanitized_html="<p>A</p><p>B</p>",
@@ -719,7 +753,8 @@ def test_assembler_propagates_parent_page_title():
     assert result.utterance_stream_type == UtteranceStreamType.COMMENT_SECTION
 
 
-def test_cross_section_parent_id_NOT_nearest_preceding_post():
+@pytest.mark.asyncio
+async def test_cross_section_parent_id_NOT_nearest_preceding_post():
     parent = make_parent()
     section0 = make_section(
         index=0,
@@ -750,7 +785,7 @@ def test_cross_section_parent_id_NOT_nearest_preceding_post():
     )
 
     with patch("src.utterances.batched.assembler.attribute_media"):
-        result = assemble_sections(
+        result = await assemble_sections(
             section_results=[section0, section1, section2],
             parent=parent,
             sanitized_html="<p>Sec0 post</p><p>Sec1 post</p><p>Reply to sec0</p>",
@@ -767,3 +802,24 @@ def test_cross_section_parent_id_NOT_nearest_preceding_post():
     assert reply.text == "Reply to sec0"
     assert reply.parent_id == sec0_post.utterance_id
     assert reply.parent_id != sec1_post.utterance_id
+
+
+@pytest.mark.asyncio
+async def test_assemble_sections_is_async():
+    section0 = make_section(
+        index=0,
+        html_slice="<p>Hello</p>",
+        global_start=0,
+        global_end=12,
+        utterances=[Utterance(kind="post", text="Hello")],
+    )
+
+    with patch("src.utterances.batched.assembler.attribute_media"):
+        result = await assemble_sections(
+            section_results=[section0],
+            parent=make_parent(),
+            sanitized_html="<p>Hello</p>",
+            source_url="http://example.com",
+        )
+
+    assert len(result.utterances) == 1

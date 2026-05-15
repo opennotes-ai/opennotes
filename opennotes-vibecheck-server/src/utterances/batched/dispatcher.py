@@ -51,7 +51,7 @@ async def extract_utterances_dispatched(
         section_results = await run_all_sections(
             sections, redirect, settings=settings, scrape=scrape, scrape_cache=scrape_cache
         )
-        merged = assemble_sections(section_results, redirect, sanitized_html, url)
+        merged = await assemble_sections(section_results, redirect, sanitized_html, url)
         merged.scraped_at = datetime.now(UTC)
 
         if not merged.utterances:
