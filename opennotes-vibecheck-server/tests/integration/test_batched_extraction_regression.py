@@ -311,7 +311,7 @@ async def test_large_page_no_duplicate_or_missing_utterances_at_seams(
     direct_section_results = [
         SectionResult(section=s, payload=p) for s, p in zip(sections, section_payloads)
     ]
-    expected_assembled = assemble_sections(direct_section_results, parent_response, html, TARGET_URL)
+    expected_assembled = await assemble_sections(direct_section_results, parent_response, html, TARGET_URL)
     expected_final = len(expected_assembled.utterances)
 
     fake_agent = _stub_batched_agent(monkeypatch, parent_response, section_payloads)
