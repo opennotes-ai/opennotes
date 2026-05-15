@@ -38,7 +38,7 @@ import random
 import re
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import cast
+from typing import Any, cast
 
 import logfire
 from pydantic_ai import Agent, RunContext
@@ -69,7 +69,7 @@ from src.utterances.errors import (
 )
 
 from .media_extraction import attribute_media
-from .schema import UtterancesPayload
+from .schema import BatchedUtteranceRedirectionResponse, UtterancesPayload
 
 EXTRACTOR_SYSTEM_PROMPT = f"""\
 You extract structured utterances from a scraped webpage's markdown.
@@ -149,6 +149,19 @@ Comment extraction:
 - The scrape contains only comment widget shell/chrome, not loaded user comments.
 - Do not emit `kind='comment'` utterances from moderation guidelines, counters,
   sort controls, or placeholder `Commenter` rows.
+"""
+
+REDIRECT_ADDENDUM = """
+
+Batched extraction:
+- This page's content is large. You MAY return a `BatchedUtteranceRedirectionResponse`
+  instead of a `UtterancesPayload` when you judge that extracting all utterances
+  reliably requires seeing the content in sections.
+- If you return `BatchedUtteranceRedirectionResponse`, set `page_kind`,
+  `utterance_stream_type`, and `page_title` based on what you can infer now, and
+  populate `boundary_instructions` with guidance for the section extractor.
+  Use `section_hints` to suggest natural split points (anchor text fragments).
+- If the content is manageable in one pass, return `UtterancesPayload` as normal.
 """
 
 _PLATFORM_MARKER_RE = re.compile(
@@ -272,6 +285,99 @@ async def extract_utterances(
         sanitized_html = await asyncio.to_thread(_sanitize_html, scrape.html or "")
         await asyncio.to_thread(attribute_media, sanitized_html, payload.utterances)
         return payload
+
+
+async def _extract_or_redirect(
+    url: str,
+    client: FirecrawlClient,
+    scrape_cache: SupabaseScrapeCache,
+    *,
+    settings: Settings,
+    scrape: CachedScrape,
+    sanitized_html: str | None = None,
+) -> UtterancesPayload | BatchedUtteranceRedirectionResponse:
+    """Internal coroutine for oversized pages.
+
+    Runs sanitization off-loop, checks byte thresholds, and builds the agent
+    with the union output type + REDIRECT_ADDENDUM when either HTML or markdown
+    exceeds configured limits. Public extract_utterances keeps its
+    UtterancesPayload-only return type.
+
+    sanitized_html may be passed in when the caller already computed it
+    (avoids double sanitization).
+    """
+    if sanitized_html is None:
+        sanitized_html = await asyncio.to_thread(_sanitize_html, scrape.html or "")
+
+    markdown = scrape.markdown or ""
+    html_bytes = len(sanitized_html.encode("utf-8"))
+    markdown_bytes = len(markdown.encode("utf-8"))
+    oversized = (
+        html_bytes > settings.VIBECHECK_BATCH_HTML_BYTES
+        or markdown_bytes > settings.VIBECHECK_BATCH_MARKDOWN_BYTES
+    )
+
+    if not oversized:
+        # Under threshold: delegate to the normal path
+        return await extract_utterances(
+            url, client, scrape_cache, settings=settings, scrape=scrape
+        )
+
+    # Over threshold: build union-typed agent with redirect addendum
+    addendum = _platform_comments_prompt_addendum(scrape)
+    full_prompt = REDIRECT_ADDENDUM + "\n\n" + (f"{addendum}\n\n{markdown}" if addendum else markdown)
+
+    with logfire.span("vibecheck.extract_or_redirect", url=url, html_bytes=html_bytes, markdown_bytes=markdown_bytes) as span:
+        agent = build_agent(
+            settings,
+            output_type=UtterancesPayload | BatchedUtteranceRedirectionResponse,
+            system_prompt=EXTRACTOR_SYSTEM_PROMPT,
+            name="vibecheck.utterance_extractor_redirect",
+            tier="extractor",
+            instrument=InstrumentationSettings(
+                include_content=(
+                    random.random() < settings.LOGFIRE_EXTRACTOR_CONTENT_SAMPLE_RATE
+                ),
+                include_binary_content=False,
+                version=_PYDANTIC_AI_INSTRUMENTATION_VERSION,
+            ),
+        )
+        _register_tools(agent)
+        deps = ExtractorDeps(scrape=scrape, scrape_cache=scrape_cache)
+        model_name = google_vertex_model_name(
+            settings.VERTEXAI_EXTRACTOR_MODEL,
+            setting_name="VERTEXAI_EXTRACTOR_MODEL",
+        )
+        try:
+            async with vertex_slot(settings):
+                result = await run_vertex_agent_with_retry(agent, full_prompt, deps=deps)  # pyright: ignore[reportArgumentType]
+        except VertexLimiterBackendUnavailableError as exc:
+            transient = TransientExtractionError(
+                provider="vertex_limiter",
+                status=type(exc).__name__,
+                model_name=model_name,
+                fallback_message=f"Vertex limiter backend unavailable: {exc}",
+            )
+            _set_upstream_span_attrs(span, transient)
+            raise transient from exc
+        except Exception as exc:
+            transient = classify_pydantic_ai_error(exc, model_name=model_name)
+            if transient is not None:
+                _set_upstream_span_attrs(span, transient)
+                raise transient from exc
+            raise UtteranceExtractionError(f"Gemini extraction failed (redirect path): {exc}") from exc
+
+        output = cast(UtterancesPayload | BatchedUtteranceRedirectionResponse, cast(object, result.output))
+        if isinstance(output, UtterancesPayload):
+            if not output.utterances:
+                raise ZeroUtterancesError(
+                    "Gemini returned 0 utterances on oversized path despite redirect option"
+                )
+            output.source_url = url
+            output.scraped_at = datetime.now(UTC)
+            _assign_stable_ids(output)
+            await asyncio.to_thread(attribute_media, sanitized_html, output.utterances)
+        return output
 
 
 def _set_upstream_span_attrs(
@@ -405,7 +511,7 @@ async def _get_screenshot_impl(deps: ExtractorDeps) -> ImageUrl | None:
     return ImageUrl(url=signed)
 
 
-def _register_tools(agent: Agent[None, UtterancesPayload]) -> None:
+def _register_tools(agent: Agent[None, Any]) -> None:
     """Attach `get_html` and `get_screenshot` tools to a built agent.
 
     Uses `agent.tool` decorator at construction time; tests swap in a fake
