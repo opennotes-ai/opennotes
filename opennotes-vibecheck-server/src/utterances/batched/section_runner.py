@@ -37,7 +37,10 @@ from src.utterances.schema import BatchedUtteranceRedirectionResponse, Utterance
 
 
 def _section_has_extractable_content(section: HtmlSection) -> bool:
-    text = re.sub(r"<[^>]+>", " ", section.html_slice)
+    raw = section.html_slice.encode("utf-8")
+    non_overlap_start = min(section.overlap_with_prev_bytes, len(raw))
+    non_overlap_html = raw[non_overlap_start:].decode("utf-8", errors="ignore")
+    text = re.sub(r"<[^>]+>", " ", non_overlap_html)
     return bool(unescape(text).strip())
 
 

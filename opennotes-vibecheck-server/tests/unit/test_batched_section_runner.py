@@ -341,6 +341,46 @@ async def test_empty_html_section_can_yield_empty_result(
 
 
 @pytest.mark.asyncio
+async def test_overlap_only_section_can_yield_empty_result(
+    monkeypatch: pytest.MonkeyPatch,
+    settings: Settings,
+    mock_scrape: MagicMock,
+    mock_scrape_cache: MagicMock,
+) -> None:
+    async def _raising_run(agent: Any, prompt: Any, *, deps: Any = None) -> Any:
+        raise ZeroUtterancesError("no utterances found")
+
+    _patch_vertex_slot(monkeypatch)
+    _patch_build_agent(monkeypatch)
+    monkeypatch.setattr(
+        "src.utterances.batched.section_runner.run_vertex_agent_with_retry",
+        _raising_run,
+    )
+
+    parent = _make_parent()
+    html_slice = "<p>already covered by the previous section</p>"
+    section = HtmlSection(
+        index=1,
+        html_slice=html_slice,
+        global_start=0,
+        global_end=len(html_slice),
+        overlap_with_prev_bytes=len(html_slice.encode("utf-8")),
+        parent_context_text=None,
+    )
+
+    result = await run_section(
+        section,
+        parent,
+        settings=settings,
+        scrape=mock_scrape,
+        scrape_cache=mock_scrape_cache,
+    )
+
+    assert result.payload.utterances == []
+    assert result.per_section_page_kind_guess is None
+
+
+@pytest.mark.asyncio
 async def test_run_all_sections_aborts_when_middle_content_section_is_empty(
     monkeypatch: pytest.MonkeyPatch,
     settings: Settings,
