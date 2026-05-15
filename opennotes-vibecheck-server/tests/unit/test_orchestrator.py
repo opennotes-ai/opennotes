@@ -1165,7 +1165,7 @@ def _stub_pre_gemini(monkeypatch: pytest.MonkeyPatch) -> None:
 
     monkeypatch.setattr(orchestrator, "_scrape_step", stub_scrape_step)
     monkeypatch.setattr(orchestrator, "_revalidate_final_url", stub_revalidate)
-    monkeypatch.setattr(orchestrator, "extract_utterances", stub_extract)
+    monkeypatch.setattr(orchestrator, "extract_utterances_dispatched", stub_extract)
 
 
 async def test_run_pipeline_logs_traceback_on_unclassified_post_gemini_failure(
@@ -1379,7 +1379,7 @@ async def test_run_pipeline_treats_utterance_extraction_error_as_terminal_extrac
     async def raise_terminal(*args, **kwargs):
         raise UtteranceExtractionError("agent returned empty utterances")
 
-    monkeypatch.setattr(orchestrator, "extract_utterances", raise_terminal)
+    monkeypatch.setattr(orchestrator, "extract_utterances_dispatched", raise_terminal)
 
     increment_spy = AsyncMock()
     monkeypatch.setattr(
@@ -1417,7 +1417,7 @@ async def test_run_pipeline_unexpected_exception_falls_through_to_terminal(
     async def boom(*args, **kwargs):
         raise RuntimeError("kaboom unknown bug")
 
-    monkeypatch.setattr(orchestrator, "extract_utterances", boom)
+    monkeypatch.setattr(orchestrator, "extract_utterances_dispatched", boom)
 
     increment_spy = AsyncMock()
     monkeypatch.setattr(
@@ -1461,7 +1461,7 @@ async def test_run_pipeline_falls_back_to_transient_when_column_missing(
             fallback_message="Vertex 503",
         )
 
-    monkeypatch.setattr(orchestrator, "extract_utterances", raise_transient)
+    monkeypatch.setattr(orchestrator, "extract_utterances_dispatched", raise_transient)
 
     class _MissingColumnConn:
         async def fetchval(self, sql: str, *args: Any) -> int:
@@ -1512,7 +1512,7 @@ async def test_run_pipeline_falls_back_to_transient_when_increment_db_fails(
             fallback_message="Firecrawl 502",
         )
 
-    monkeypatch.setattr(orchestrator, "extract_utterances", raise_transient)
+    monkeypatch.setattr(orchestrator, "extract_utterances_dispatched", raise_transient)
 
     class _DbDownConn:
         async def fetchval(self, sql: str, *args: Any) -> int:
@@ -1597,7 +1597,7 @@ async def test_run_pipeline_unexpected_increment_error_terminates(
             fallback_message="Vertex 504",
         )
 
-    monkeypatch.setattr(orchestrator, "extract_utterances", raise_transient)
+    monkeypatch.setattr(orchestrator, "extract_utterances_dispatched", raise_transient)
 
     class _BuggyConn:
         async def fetchval(self, sql: str, *args: Any) -> int:
@@ -4399,7 +4399,7 @@ async def test_run_pipeline_first_pass_zero_utterances_escalates_to_interact_the
             raise ZeroUtterancesError("first pass empty")
         return MagicMock()
 
-    monkeypatch.setattr(orchestrator, "extract_utterances", flaky_extract)
+    monkeypatch.setattr(orchestrator, "extract_utterances_dispatched", flaky_extract)
 
     await orchestrator._run_pipeline(
         MagicMock(), uuid4(), uuid4(), "https://example.com", MagicMock()
@@ -4432,7 +4432,7 @@ async def test_run_pipeline_zero_utterances_twice_raises_terminal_extraction_fai
         extract_calls.append(args)
         raise ZeroUtterancesError("still empty")
 
-    monkeypatch.setattr(orchestrator, "extract_utterances", always_empty)
+    monkeypatch.setattr(orchestrator, "extract_utterances_dispatched", always_empty)
 
     with pytest.raises(TerminalError) as exc_info:
         await orchestrator._run_pipeline(
@@ -4469,7 +4469,7 @@ async def test_run_pipeline_first_pass_success_does_not_escalate(
         extract_calls.append(args)
         return MagicMock()
 
-    monkeypatch.setattr(orchestrator, "extract_utterances", good_extract)
+    monkeypatch.setattr(orchestrator, "extract_utterances_dispatched", good_extract)
 
     await orchestrator._run_pipeline(
         MagicMock(), uuid4(), uuid4(), "https://example.com", MagicMock()
@@ -4505,7 +4505,7 @@ async def test_run_pipeline_zero_utterances_then_success_logs_escalation_reason(
             raise ZeroUtterancesError("first pass empty")
         return MagicMock()
 
-    monkeypatch.setattr(orchestrator, "extract_utterances", flaky)
+    monkeypatch.setattr(orchestrator, "extract_utterances_dispatched", flaky)
 
     await orchestrator._run_pipeline(
         MagicMock(), uuid4(), uuid4(), "https://example.com", MagicMock()
@@ -4594,7 +4594,7 @@ async def test_run_pipeline_threads_scrape_step_result_into_extractor(
         # Raise terminal so we don't have to mock the post-Gemini path.
         raise UtteranceExtractionError("stop here")
 
-    monkeypatch.setattr(orchestrator, "extract_utterances", capturing_extract)
+    monkeypatch.setattr(orchestrator, "extract_utterances_dispatched", capturing_extract)
 
     pool = FakePool(MagicMock())
     with pytest.raises(orchestrator.TerminalError):
@@ -4654,7 +4654,7 @@ async def test_run_pipeline_uses_browser_html_cache_without_classifying(
 
     monkeypatch.setattr(orchestrator, "_scrape_step", no_scrape_step)
     monkeypatch.setattr(orchestrator, "_revalidate_final_url", noop_revalidate)
-    monkeypatch.setattr(orchestrator, "extract_utterances", capturing_extract)
+    monkeypatch.setattr(orchestrator, "extract_utterances_dispatched", capturing_extract)
 
     with pytest.raises(orchestrator.TerminalError):
         await orchestrator._run_pipeline(
