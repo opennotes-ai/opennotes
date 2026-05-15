@@ -259,3 +259,42 @@ async def test_section_count_span_attr_set_on_batched_path(monkeypatch: pytest.M
     )
 
     assert captured_attrs.get("section_count") == 3
+
+
+@pytest.mark.asyncio
+async def test_under_threshold_sanitizes_only_once(monkeypatch: pytest.MonkeyPatch) -> None:
+    """On under-threshold pages, _sanitize_html must be called exactly once.
+    The pre-computed sanitized_html from the dispatcher is passed through to
+    extract_utterances via _extract_or_redirect so it skips internal sanitization."""
+    from src.utterances.extractor import _extract_or_redirect
+
+    extract_utterances_calls: list[dict] = []
+
+    async def _fake_extract_utterances(url, client, scrape_cache, *, settings=None, scrape=None, sanitized_html=None):
+        extract_utterances_calls.append({"sanitized_html": sanitized_html})
+        return _SINGLE_UTTERANCE_PAYLOAD
+
+    monkeypatch.setattr(
+        "src.utterances.extractor.extract_utterances",
+        _fake_extract_utterances,
+    )
+
+    settings = Settings()
+    settings.VIBECHECK_BATCH_HTML_BYTES = 10_000_000
+    settings.VIBECHECK_BATCH_MARKDOWN_BYTES = 10_000_000
+
+    pre_sanitized = "already-sanitized-html"
+    result = await _extract_or_redirect(
+        TARGET_URL,
+        _FakeFirecrawlClient(),
+        _FakeScrapeCache(),
+        settings=settings,
+        scrape=_SMALL_SCRAPE,
+        sanitized_html=pre_sanitized,
+    )
+
+    assert len(extract_utterances_calls) == 1
+    assert extract_utterances_calls[0]["sanitized_html"] == pre_sanitized, (
+        "extract_utterances must receive the pre-computed sanitized_html to avoid double-sanitize"
+    )
+    assert result is _SINGLE_UTTERANCE_PAYLOAD

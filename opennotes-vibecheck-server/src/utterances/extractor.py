@@ -212,6 +212,7 @@ async def extract_utterances(
     *,
     settings: Settings | None = None,
     scrape: CachedScrape | None = None,
+    sanitized_html: str | None = None,
 ) -> UtterancesPayload:
     """Scrape + persist + agent-extract utterances for a URL.
 
@@ -289,7 +290,8 @@ async def extract_utterances(
         payload.source_url = url
         payload.scraped_at = datetime.now(UTC)
         _assign_stable_ids(payload)
-        sanitized_html = await asyncio.to_thread(_sanitize_html, scrape.html or "")
+        if sanitized_html is None:
+            sanitized_html = await asyncio.to_thread(_sanitize_html, scrape.html or "")
         await asyncio.to_thread(attribute_media, sanitized_html, payload.utterances)
         return payload
 
@@ -325,9 +327,8 @@ async def _extract_or_redirect(
     )
 
     if not oversized:
-        # Under threshold: delegate to the normal path
         return await extract_utterances(
-            url, client, scrape_cache, settings=settings, scrape=scrape
+            url, client, scrape_cache, settings=settings, scrape=scrape, sanitized_html=sanitized_html
         )
 
     # Over threshold: build union-typed agent with redirect addendum
