@@ -1,10 +1,20 @@
 from __future__ import annotations
 
+from pathlib import Path
+from typing import Any
+
 from src.utils.html_sanitize import (
+    enrich_display_with_raw_styles,
     extract_archive_main_content,
     strip_for_display,
     strip_for_llm,
 )
+
+_FIXTURES_DIR = Path(__file__).parent / "fixtures"
+
+
+def load_la_times_archive_fixture() -> str:
+    return (_FIXTURES_DIR / "archive_la_times_reduced.html").read_text(encoding="utf-8")
 
 # A trimmed-down Mastodon-shaped SSR HTML: a long chunk of site chrome
 # (search box, server stats, banner) precedes the actual post content.
@@ -177,7 +187,7 @@ def test_extract_archive_caches_extraction_output() -> None:
     real_extract = __import__("trafilatura").extract
     calls = {"count": 0}
 
-    def counting_extract(*args: object, **kwargs: object) -> object:
+    def counting_extract(*args: Any, **kwargs: Any) -> Any:
         calls["count"] += 1
         return real_extract(*args, **kwargs)
 
@@ -274,3 +284,391 @@ def test_sanitizers_are_idempotent_on_clean_html() -> None:
 
     assert strip_for_display(strip_for_display(html)) == html
     assert strip_for_llm(strip_for_llm(html)) == html
+
+
+def test_strip_for_display_removes_body_overflow_hidden() -> None:
+    html = "<html><body style='overflow: hidden; padding: 10px'><p>text</p></body></html>"
+
+    result = strip_for_display(html)
+
+    assert result is not None
+    from bs4 import BeautifulSoup
+    soup = BeautifulSoup(result, "html.parser")
+    body = soup.find("body")
+    assert body is not None
+    style = str(body.get("style") or "")
+    assert "overflow" not in style
+    assert "padding" in style
+
+
+def test_strip_for_display_removes_lock_classes_keeps_others() -> None:
+    html = "<html><body class='page-body met-panel-open has-contextual-navigation article-page'><p>text</p></body></html>"
+
+    result = strip_for_display(html)
+
+    assert result is not None
+    from bs4 import BeautifulSoup
+    soup = BeautifulSoup(result, "html.parser")
+    body = soup.find("body")
+    assert body is not None
+    classes = body.get("class") or []
+    if isinstance(classes, str):
+        classes = classes.split()
+    assert "page-body" in classes
+    assert "article-page" in classes
+    assert "met-panel-open" not in classes
+    assert "has-contextual-navigation" not in classes
+
+
+def test_strip_for_display_preserves_inner_overflow_hidden() -> None:
+    html = "<html><body><div style='overflow: hidden; width: 100px'><p>text</p></div></body></html>"
+
+    result = strip_for_display(html)
+
+    assert result is not None
+    from bs4 import BeautifulSoup
+    soup = BeautifulSoup(result, "html.parser")
+    div = soup.find("div")
+    assert div is not None
+    assert "overflow: hidden" in (div.get("style") or "")
+
+
+def test_la_times_fixture_neutralizes_scroll_locks() -> None:
+    html = load_la_times_archive_fixture()
+    result = strip_for_display(html)
+
+    assert result is not None
+    from bs4 import BeautifulSoup
+    soup = BeautifulSoup(result, "html.parser")
+    body = soup.find("body")
+    assert body is not None
+    style = str(body.get("style") or "")
+    assert "overflow" not in style
+    classes = body.get("class") or []
+    if isinstance(classes, str):
+        classes = classes.split()
+    assert "met-panel-open" not in classes
+    assert "has-contextual-navigation" not in classes
+
+
+def test_strip_for_display_handles_empty_style_attribute_removal() -> None:
+    html = "<html><body style='overflow: hidden'><p>text</p></body></html>"
+
+    result = strip_for_display(html)
+
+    assert result is not None
+    from bs4 import BeautifulSoup
+    soup = BeautifulSoup(result, "html.parser")
+    body = soup.find("body")
+    assert body is not None
+    assert body.get("style") is None
+
+
+def test_strip_for_display_bounds_class_only_sized_svg() -> None:
+    html = '<html><body><svg xmlns="http://www.w3.org/2000/svg" class="icon w-4 h-4" viewBox="0 0 24 24"></svg></body></html>'
+
+    result = strip_for_display(html)
+
+    assert result is not None
+    from bs4 import BeautifulSoup
+    soup = BeautifulSoup(result, "html.parser")
+    svg = soup.find("svg")
+    assert svg is not None
+    style = str(svg.get("style") or "")
+    assert style.startswith("width:1em;height:1em;")
+
+
+def test_strip_for_display_preserves_svg_with_explicit_width_attr() -> None:
+    html = '<html><body><svg xmlns="http://www.w3.org/2000/svg" width="24" viewBox="0 0 24 24"></svg></body></html>'
+
+    result = strip_for_display(html)
+
+    assert result is not None
+    from bs4 import BeautifulSoup
+    soup = BeautifulSoup(result, "html.parser")
+    svg = soup.find("svg")
+    assert svg is not None
+    assert svg.get("style") is None
+
+
+def test_strip_for_display_preserves_large_viewbox_svg() -> None:
+    html = '<html><body><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 600"></svg></body></html>'
+
+    result = strip_for_display(html)
+
+    assert result is not None
+    from bs4 import BeautifulSoup
+    soup = BeautifulSoup(result, "html.parser")
+    svg = soup.find("svg")
+    assert svg is not None
+    assert svg.get("style") is None
+
+
+def test_strip_for_display_bounds_fontawesome_viewbox_svg() -> None:
+    html = '<html><body><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"></svg></body></html>'
+
+    result = strip_for_display(html)
+
+    assert result is not None
+    from bs4 import BeautifulSoup
+    soup = BeautifulSoup(result, "html.parser")
+    svg = soup.find("svg")
+    assert svg is not None
+    assert str(svg.get("style") or "").startswith("width:1em")
+
+
+def test_strip_for_display_bounds_phosphor_viewbox_svg() -> None:
+    html = '<html><body><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256"></svg></body></html>'
+
+    result = strip_for_display(html)
+
+    assert result is not None
+    from bs4 import BeautifulSoup
+    soup = BeautifulSoup(result, "html.parser")
+    svg = soup.find("svg")
+    assert svg is not None
+    assert str(svg.get("style") or "").startswith("width:1em")
+
+
+def test_strip_for_display_preserves_chart_with_wide_aspect_viewbox() -> None:
+    html = '<html><body><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 400"></svg></body></html>'
+
+    result = strip_for_display(html)
+
+    assert result is not None
+    from bs4 import BeautifulSoup
+    soup = BeautifulSoup(result, "html.parser")
+    svg = soup.find("svg")
+    assert svg is not None
+    assert svg.get("style") is None
+
+
+def test_strip_for_display_preserves_oversize_square_viewbox() -> None:
+    html = '<html><body><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 1000"></svg></body></html>'
+
+    result = strip_for_display(html)
+
+    assert result is not None
+    from bs4 import BeautifulSoup
+    soup = BeautifulSoup(result, "html.parser")
+    svg = soup.find("svg")
+    assert svg is not None
+    assert svg.get("style") is None
+
+
+def test_strip_for_display_preserves_svg_inside_sized_parent() -> None:
+    html = '<html><body><div style="width:400px;height:300px"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"></svg></div></body></html>'
+
+    result = strip_for_display(html)
+
+    assert result is not None
+    from bs4 import BeautifulSoup
+    soup = BeautifulSoup(result, "html.parser")
+    svg = soup.find("svg")
+    assert svg is not None
+    assert svg.get("style") is None
+
+
+def test_strip_for_display_preserves_svg_with_inline_height_style() -> None:
+    html = '<html><body><svg xmlns="http://www.w3.org/2000/svg" style="height:32px" viewBox="0 0 24 24"></svg></body></html>'
+
+    result = strip_for_display(html)
+
+    assert result is not None
+    from bs4 import BeautifulSoup
+    soup = BeautifulSoup(result, "html.parser")
+    svg = soup.find("svg")
+    assert svg is not None
+    style = str(svg.get("style") or "")
+    assert not style.startswith("width:1em")
+    assert "height:32px" in style
+
+
+def test_la_times_fixture_bounds_icon_svgs_only() -> None:
+    html = load_la_times_archive_fixture()
+
+    result = strip_for_display(html)
+
+    assert result is not None
+    from bs4 import BeautifulSoup
+    soup = BeautifulSoup(result, "html.parser")
+    svgs = soup.find_all("svg")
+    bounded = [s for s in svgs if str(s.get("style") or "").startswith("width:1em")]
+    unbounded = [s for s in svgs if not str(s.get("style") or "").startswith("width:1em")]
+
+    assert len(bounded) > 0, "expected class-sized icon SVGs to get fallback style"
+    logo_svgs = [s for s in unbounded if s.get("width") == "200" and s.get("height") == "48"]
+    assert len(logo_svgs) == 1, "logo SVG with explicit width/height must not get fallback"
+
+
+def test_strip_for_display_handles_overscroll_behavior_none() -> None:
+    html = "<html><body style='overscroll-behavior: none'><p>text</p></body></html>"
+
+    result = strip_for_display(html)
+
+    assert result is not None
+    from bs4 import BeautifulSoup
+    soup = BeautifulSoup(result, "html.parser")
+    body = soup.find("body")
+    assert body is not None
+    assert body.get("style") is None
+
+
+def test_enrich_merges_style_and_https_link_into_display_head() -> None:
+    raw = (
+        "<html><head>"
+        "<style>body{color:red}</style>"
+        '<link rel="stylesheet" href="https://example.com/a.css">'
+        "</head><body></body></html>"
+    )
+    display = "<html><head></head><body><p>article</p></body></html>"
+
+    result = enrich_display_with_raw_styles(display, raw, base_url=None)
+
+    assert "body{color:red}" in result
+    assert "https://example.com/a.css" in result
+
+
+def test_enrich_dedupes_style_already_in_display() -> None:
+    raw = "<html><head><style>body{color:red}</style></head><body></body></html>"
+    display = "<html><head><style>body{color:red}</style></head><body></body></html>"
+
+    result = enrich_display_with_raw_styles(display, raw, base_url=None)
+
+    assert result.count("body{color:red}") == 1
+
+
+def test_enrich_drops_http_stylesheet() -> None:
+    raw = '<html><head><link rel="stylesheet" href="http://example.com/x.css"></head><body></body></html>'
+    display = "<html><head></head><body></body></html>"
+
+    result = enrich_display_with_raw_styles(display, raw, base_url=None)
+
+    assert "http://example.com/x.css" not in result
+
+
+def test_enrich_resolves_relative_href_with_base_url() -> None:
+    raw = '<html><head><link rel="stylesheet" href="/static/a.css"></head><body></body></html>'
+    display = "<html><head></head><body></body></html>"
+
+    result = enrich_display_with_raw_styles(
+        display, raw, base_url="https://www.latimes.com/some/path"
+    )
+
+    assert "https://www.latimes.com/static/a.css" in result
+
+
+def test_enrich_drops_relative_href_without_base_url() -> None:
+    raw = '<html><head><link rel="stylesheet" href="/static/a.css"></head><body></body></html>'
+    display = "<html><head></head><body></body></html>"
+
+    result = enrich_display_with_raw_styles(display, raw, base_url=None)
+
+    assert "/static/a.css" not in result
+
+
+def test_enrich_normalizes_print_onload_link() -> None:
+    raw = (
+        '<html><head>'
+        '<link rel="stylesheet" media="print" onload="this.media=\'all\'" href="https://x/a.css">'
+        "</head><body></body></html>"
+    )
+    display = "<html><head></head><body></body></html>"
+
+    result = enrich_display_with_raw_styles(display, raw, base_url=None)
+
+    assert "https://x/a.css" in result
+    assert 'media="all"' in result
+    assert "onload" not in result
+
+
+def test_enrich_passthrough_when_raw_html_none() -> None:
+    display = "<html><head></head><body><p>content</p></body></html>"
+
+    result = enrich_display_with_raw_styles(display, None, base_url=None)
+
+    assert result == display
+
+
+def test_enrich_caps_total_style_bytes() -> None:
+    from src.utils.html_sanitize import _ENRICH_MAX_BYTES
+
+    giant_css = "a" * (_ENRICH_MAX_BYTES + 1)
+    raw = f"<html><head><style>{giant_css}</style></head><body></body></html>"
+    display = "<html><head></head><body></body></html>"
+
+    result = enrich_display_with_raw_styles(display, raw, base_url=None)
+
+    assert giant_css not in result
+
+
+def test_enrich_creates_head_when_missing() -> None:
+    raw = (
+        '<html><head><link rel="stylesheet" href="https://example.com/b.css"></head>'
+        "<body></body></html>"
+    )
+    display = "<html><body><p>no head here</p></body></html>"
+
+    result = enrich_display_with_raw_styles(display, raw, base_url=None)
+
+    assert "https://example.com/b.css" in result
+    assert "<head>" in result
+
+
+def test_enrich_drops_newline_prefixed_scheme_relative_href() -> None:
+    raw = '<html><head><link rel="stylesheet" href="\n//evil.example/a.css"></head><body></body></html>'
+    display = "<html><head></head><body></body></html>"
+
+    result = enrich_display_with_raw_styles(
+        display, raw, base_url="https://www.latimes.com/x"
+    )
+
+    assert "evil.example" not in result
+
+
+def test_enrich_drops_tab_prefixed_scheme_relative_href() -> None:
+    raw = '<html><head><link rel="stylesheet" href="\t//evil.example/a.css"></head><body></body></html>'
+    display = "<html><head></head><body></body></html>"
+
+    result = enrich_display_with_raw_styles(
+        display, raw, base_url="https://www.latimes.com/x"
+    )
+
+    assert "evil.example" not in result
+
+
+def test_enrich_drops_fragment_only_href() -> None:
+    raw = '<html><head><link rel="stylesheet" href="#foo"></head><body></body></html>'
+    display = "<html><head></head><body></body></html>"
+
+    result = enrich_display_with_raw_styles(display, raw, base_url=None)
+
+    assert "#foo" not in result
+
+
+def test_enrich_drops_query_only_href() -> None:
+    raw = '<html><head><link rel="stylesheet" href="?cache=1"></head><body></body></html>'
+    display = "<html><head></head><body></body></html>"
+
+    result = enrich_display_with_raw_styles(display, raw, base_url=None)
+
+    assert "?cache=1" not in result
+
+
+def test_enrich_drops_userinfo_in_resolved_url() -> None:
+    raw = '<html><head><link rel="stylesheet" href="https://user:pass@host.example/a.css"></head><body></body></html>'
+    display = "<html><head></head><body></body></html>"
+
+    result = enrich_display_with_raw_styles(display, raw, base_url=None)
+
+    assert "host.example" not in result
+
+
+def test_enrich_strips_fragment_from_emitted_href() -> None:
+    raw = '<html><head><link rel="stylesheet" href="https://x.com/a.css#frag"></head><body></body></html>'
+    display = "<html><head></head><body></body></html>"
+
+    result = enrich_display_with_raw_styles(display, raw, base_url=None)
+
+    assert "https://x.com/a.css" in result
+    assert "#frag" not in result

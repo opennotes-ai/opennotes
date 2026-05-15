@@ -1,0 +1,86 @@
+<!-- Synthetic reduction inspired by job 592ee338-82d9-4871-ab55-53c3c7df5d0d
+     (LA Times Olympics article 2026-05-14). Reproduces: body overflow:hidden,
+     modal-open classes, Tailwind utility-class SVG icons with no intrinsic size,
+     and one logo SVG with explicit dimensions that must not be shrunk. -->
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <title>LA Times — Olympics 2028 venue plan finalized</title>
+  <link rel="stylesheet" href="/static/styles/latimes.css"/>
+</head>
+<body class="page-body has-contextual-navigation met-panel-open" style="overflow: hidden;">
+
+  <header class="site-header">
+    <a href="/" class="site-logo" aria-label="Los Angeles Times">
+      <svg xmlns="http://www.w3.org/2000/svg" width="200" height="48"
+           viewBox="0 0 200 48" aria-hidden="true" focusable="false">
+        <text x="0" y="38" font-size="40" font-family="serif">LA Times</text>
+      </svg>
+    </a>
+
+    <nav class="primary-nav">
+      <button class="nav-hamburger" aria-label="Open menu">
+        <svg class="w-2.75 h-4.25" xmlns="http://www.w3.org/2000/svg"
+             viewBox="0 0 11 17" aria-hidden="true" focusable="false">
+          <use href="#icon-hamburger"/>
+        </svg>
+      </button>
+      <button class="nav-search" aria-label="Search">
+        <svg class="icon h-4.5 w-4.5" xmlns="http://www.w3.org/2000/svg"
+             viewBox="0 0 18 18" aria-hidden="true" focusable="false">
+          <use href="#icon-search"/>
+        </svg>
+      </button>
+    </nav>
+  </header>
+
+  <div class="met-panel" role="dialog" aria-modal="true"
+       aria-label="Subscribe panel">
+    <button class="met-panel__close" aria-label="Close">
+      <svg class="w-3 h-3" xmlns="http://www.w3.org/2000/svg"
+           viewBox="0 0 12 12" aria-hidden="true" focusable="false">
+        <use href="#icon-close"/>
+      </svg>
+    </button>
+    <p>Subscribe to continue reading</p>
+  </div>
+
+  <main id="main-content" class="page-content">
+    <article class="story">
+      <header class="story-header">
+        <h1>Olympics 2028 venue plan finalized after years of negotiation</h1>
+        <p class="byline">By Jane Reporter · May 14, 2026</p>
+      </header>
+
+      <figure class="story-lead-image">
+        <img src="/media/olympics-venue.jpg"
+             alt="Aerial view of SoFi Stadium draped in Olympic rings"/>
+        <figcaption>SoFi Stadium will host the opening ceremony.</figcaption>
+      </figure>
+
+      <div class="story-body">
+        <p>Los Angeles officials confirmed Tuesday that all 2028 Olympic
+           venues have been finalized, capping a multi-year negotiation with
+           the IOC over cost overruns and legacy use agreements.</p>
+        <p>The plan covers 35 competition sites spread across five counties,
+           with transportation funding tied to a 2027 bond measure still
+           pending voter approval.</p>
+        <p>Organizers say the village at UCLA will house 16,000 athletes,
+           the largest capacity since Athens 2004.</p>
+      </div>
+
+      <footer class="story-footer">
+        <button class="share-btn" aria-label="Share this story">
+          <svg class="icon w-4 h-4" xmlns="http://www.w3.org/2000/svg"
+               viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+            <use href="#icon-share"/>
+          </svg>
+          Share
+        </button>
+      </footer>
+    </article>
+  </main>
+
+</body>
+</html>
