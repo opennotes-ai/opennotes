@@ -30,14 +30,22 @@
       };
     }
 
-    const expanded = await clickAllMatching([
-      { selector: "ytd-comment-replies-renderer #more-replies button" },
-      { selector: "ytd-continuation-item-renderer button" },
-      { selector: "tp-yt-paper-button#more" },
-      { selector: "ytd-button-renderer#more-replies button" },
-      { selector: "#button[aria-label^='Show more']" },
-      { selector: "button", textPattern: /^(show more|view \d+ replies|show more replies)$/i },
-    ]);
+    const commentsContainer = document.querySelector("ytd-comments") || commentsLoaded;
+
+    const expanded = await clickAllMatching(
+      [
+        { selector: "ytd-comment-replies-renderer #more-replies button" },
+        { selector: "ytd-continuation-item-renderer button" },
+        { selector: "tp-yt-paper-button#more" },
+        { selector: "ytd-button-renderer#more-replies button" },
+        { selector: "#button[aria-label^='Show more']" },
+        { selector: "#expander #more" },
+        { selector: "[aria-label*='more replies' i]" },
+        { selector: "[aria-label*='show more' i]" },
+        { selector: "button", textPattern: /^(show more|view \d+ replies|show more replies)$/i },
+      ],
+      { scope: commentsContainer }
+    );
 
     return {
       ...expanded,

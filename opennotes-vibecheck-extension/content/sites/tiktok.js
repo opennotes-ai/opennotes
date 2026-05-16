@@ -7,7 +7,9 @@
     waitForSelector,
     sleep,
   }) => {
-    let commentList = document.querySelector("div[class*='DivCommentListContainer']");
+    let commentList =
+      document.querySelector("[data-e2e='comment-list']") ||
+      document.querySelector("div[class*='DivCommentListContainer']");
 
     if (!commentList) {
       const opener = document.querySelector("button[data-e2e='comment-icon']");
@@ -15,7 +17,9 @@
         opener.click();
         await sleep(250);
       }
-      commentList = await waitForSelector("div[class*='DivCommentListContainer']", { deadlineMs: 2_000 });
+      commentList =
+        (await waitForSelector("[data-e2e='comment-list']", { deadlineMs: 2_000 })) ||
+        (await waitForSelector("div[class*='DivCommentListContainer']", { deadlineMs: 500 }));
     }
 
     if (!commentList) {
@@ -35,13 +39,18 @@
       stepPx: Math.max(400, commentList.clientHeight || 600),
       deadlineMs: 5_000,
     });
-    const expanded = await clickAllMatching([
-      { selector: "div[data-e2e='view-more-comments']", closestClickable: true },
-      { selector: "p[data-e2e='view-more-1']", closestClickable: true },
-      { selector: "p[data-e2e='view-more-2']", closestClickable: true },
-      { selector: "div[class*='DivViewMoreReplies']", closestClickable: true },
-      { selector: "button, div[role='button'], p", textPattern: /^view .*more/i, closestClickable: true },
-    ]);
+    const expanded = await clickAllMatching(
+      [
+        { selector: "[data-e2e='view-more-comments']", closestClickable: true },
+        { selector: "[data-e2e='view-more-reply']", closestClickable: true },
+        { selector: "div[data-e2e='view-more-comments']", closestClickable: true },
+        { selector: "p[data-e2e='view-more-1']", closestClickable: true },
+        { selector: "p[data-e2e='view-more-2']", closestClickable: true },
+        { selector: "div[class*='DivViewMoreReplies']", closestClickable: true },
+        { selector: "button, div[role='button'], p", textPattern: /^view .*more/i, closestClickable: true },
+      ],
+      { scope: commentList }
+    );
 
     return {
       ...expanded,

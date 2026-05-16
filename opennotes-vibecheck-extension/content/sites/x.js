@@ -17,7 +17,7 @@
         closestClickable: true,
       },
       {
-        selector: "[data-testid='cellInnerDiv'] button span",
+        selector: "[data-testid='cellInnerDiv'] button:not([data-testid='tweet-text-show-more-link']) span",
         textPattern: /show/i,
         closestClickable: true,
       },
