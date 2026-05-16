@@ -283,8 +283,11 @@ sources = ["src/**/*.ts", "src/**/*.tsx"]
 
 [tasks."test:vibecheck-extension"]
 description = "Run Vibecheck browser extension tests"
-run = "node opennotes-vibecheck-extension/tests/run-tests.mjs"
-sources = ["opennotes-vibecheck-extension/**/*.js", "opennotes-vibecheck-extension/**/*.html", "opennotes-vibecheck-extension/**/*.css"]
+run = '''
+node opennotes-vibecheck-extension/tests/run-tests.mjs
+node opennotes-vibecheck-extension/tests/run-strategy-tests.mjs
+'''
+sources = ["opennotes-vibecheck-extension/**/*.js", "opennotes-vibecheck-extension/**/*.mjs", "opennotes-vibecheck-extension/**/*.html", "opennotes-vibecheck-extension/**/*.css"]
 
 [tasks."test:heavy"]
 description = "Run heavy/resource-intensive tests sequentially (OOM-risk under xdist)"
