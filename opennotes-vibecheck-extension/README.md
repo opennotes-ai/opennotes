@@ -44,6 +44,14 @@ The screenshot is a full-page PNG captured through Chrome debugger protocol. The
 
 Successful responses display the returned `analyze_url` as a link.
 
+## Comment Expansion
+
+The popup includes an **Expand all comments** checkbox below Submit. The preference is stored in `chrome.storage.sync` as `vibecheck_expand_all_comments`.
+
+When enabled, the extension injects comment-expansion scripts before it captures page HTML and the screenshot. Supported sites are Reddit, old Reddit, YouTube, TikTok, X/Twitter, and LinkedIn. Unsupported sites silently skip expansion and do not show a status box.
+
+Expansion is capped at 50 click iterations and 25 seconds. If some work completes but a cap is hit, the popup shows `Expanding comments was partially successful` below the result. If expansion fails twice before doing useful work, the popup shows `Expanding comments was not successful`; submission still proceeds with the captured page.
+
 ## Screenshot Verification
 
 1. Load this directory as an unpacked extension.

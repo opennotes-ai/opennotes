@@ -26,6 +26,10 @@
         <h1 id="submit-heading" class="field-label">Current page</h1>
         <textarea id="current-url" readonly rows="2" aria-label="Current page URL"></textarea>
         <button id="submit-btn" type="button">Submit</button>
+        <label class="expand-toggle" for="expand-all-comments">
+          <input id="expand-all-comments" name="expand-all-comments" type="checkbox">
+          <span>Expand all comments</span>
+        </label>
         <div id="status" role="status" aria-live="polite"></div>
       </section>
 
@@ -33,6 +37,8 @@
         <h2 id="result-heading">Result</h2>
         <div id="result-content"></div>
       </section>
+
+      <div id="expand-status" class="expand-status" role="status" aria-live="polite" hidden></div>
     </main>
     <script src="popup.js"></script>
   </body>
