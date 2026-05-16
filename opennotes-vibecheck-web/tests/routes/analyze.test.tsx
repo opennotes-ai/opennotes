@@ -183,6 +183,26 @@ vi.mock("~/lib/utterance-scroll", () => ({
   scrollToUtterance: scrollToUtteranceMock,
 }));
 
+const { notifyMock } = vi.hoisted(() => ({
+  notifyMock: vi.fn(() => null),
+}));
+
+vi.mock("~/lib/notifications", () => ({
+  isSupported: vi.fn(() => true),
+  getPermission: vi.fn(() => "granted"),
+  requestPermission: vi.fn(async () => "granted"),
+  notify: notifyMock,
+}));
+
+vi.mock("~/lib/notify-preference", () => ({
+  loadNotifyPreference: vi.fn(() => true),
+  saveNotifyPreference: vi.fn(),
+  NOTIFY_PREFERENCE_KEY: "vibecheck.notifyOnComplete",
+}));
+
+import * as notificationsModule from "~/lib/notifications";
+import * as notifyPreferenceModule from "~/lib/notify-preference";
+
 vi.mock("embla-carousel-autoplay", () => ({
   default: vi.fn(() => ({ name: "autoplay" })),
 }));
@@ -341,6 +361,12 @@ function resetTestEnv() {
   retrySectionActionMock.mockReset();
   scrollToUtteranceMock.mockReset();
   scrollToUtteranceMock.mockReturnValue(true);
+  notifyMock.mockReset();
+  notifyMock.mockReturnValue(null);
+  vi.mocked(notificationsModule.isSupported).mockReturnValue(true);
+  vi.mocked(notificationsModule.getPermission).mockReturnValue("granted");
+  vi.mocked(notifyPreferenceModule.loadNotifyPreference).mockReturnValue(true);
+  vi.mocked(notifyPreferenceModule.saveNotifyPreference).mockReset();
 }
 
 beforeEach(() => {
@@ -3345,4 +3371,199 @@ describe("HighlightsCard + OverallRecommendationCard DOM order (TASK-1612.06 + 1
       expect(leadInIdx).toBeLessThan(highlightsIdx);
       expect(highlightsIdx).toBeLessThan(layoutIdx);
     });
+});
+
+describe("notify-on-complete integration", () => {
+  it("A — terminal at mount (done): does NOT call notify(); checkbox present in nav", async () => {
+    vi.mocked(notificationsModule.isSupported).mockReturnValue(true);
+    vi.mocked(notificationsModule.getPermission).mockReturnValue("granted");
+    vi.mocked(notifyPreferenceModule.loadNotifyPreference).mockReturnValue(true);
+
+    getJobStateMock.mockResolvedValueOnce(
+      makeJobState({ job_id: "terminal-at-mount-done", status: "done" }),
+    );
+
+    renderAt("/analyze?job=terminal-at-mount-done&url=https://news.example.com/a");
+    await waitFor(() => {
+      expect(pollingHandles.length).toBeGreaterThan(0);
+    });
+
+    await flushMicrotasks();
+
+    expect(notifyMock).not.toHaveBeenCalled();
+
+    const nav = document.querySelector("nav");
+    expect(nav).not.toBeNull();
+    const checkbox = within(nav!).getByRole("checkbox", { name: /notify me when ready/i });
+    expect(checkbox).toBeTruthy();
+  });
+
+  it("B — analyzing → done: calls notify() exactly once", async () => {
+    vi.mocked(notificationsModule.isSupported).mockReturnValue(true);
+    vi.mocked(notificationsModule.getPermission).mockReturnValue("granted");
+    vi.mocked(notifyPreferenceModule.loadNotifyPreference).mockReturnValue(true);
+
+    renderAt("/analyze?job=analyzing-to-done&url=https://news.example.com/a");
+    await waitFor(() => {
+      expect(pollingHandles.length).toBeGreaterThan(0);
+    });
+
+    setPolledJobState(makeJobState({ status: "analyzing" }));
+    await flushMicrotasks();
+
+    expect(notifyMock).not.toHaveBeenCalled();
+
+    setPolledJobState(makeJobState({ status: "done" }));
+    await flushMicrotasks();
+
+    expect(notifyMock).toHaveBeenCalledTimes(1);
+    expect(notifyMock).toHaveBeenCalledWith(
+      expect.stringContaining("Vibecheck"),
+      expect.any(Object),
+    );
+  });
+
+  it("C — header visibility on completed page: checkbox is descendant of <nav>", async () => {
+    vi.mocked(notificationsModule.isSupported).mockReturnValue(true);
+    vi.mocked(notificationsModule.getPermission).mockReturnValue("granted");
+    vi.mocked(notifyPreferenceModule.loadNotifyPreference).mockReturnValue(true);
+
+    renderAt("/analyze?job=header-visibility&url=https://news.example.com/a");
+    await waitFor(() => {
+      expect(pollingHandles.length).toBeGreaterThan(0);
+    });
+
+    setPolledJobState(makeJobState({ status: "done" }));
+    await flushMicrotasks();
+
+    const nav = document.querySelector("nav");
+    expect(nav).not.toBeNull();
+    const checkbox = within(nav!).getByRole("checkbox", { name: /notify me when ready/i });
+    expect(nav!.contains(checkbox)).toBe(true);
+  });
+
+  it("D — terminal at mount (partial): does NOT call notify()", async () => {
+    vi.mocked(notificationsModule.isSupported).mockReturnValue(true);
+    vi.mocked(notificationsModule.getPermission).mockReturnValue("granted");
+    vi.mocked(notifyPreferenceModule.loadNotifyPreference).mockReturnValue(true);
+
+    getJobStateMock.mockResolvedValueOnce(
+      makeJobState({ job_id: "terminal-at-mount-partial", status: "partial" }),
+    );
+
+    renderAt("/analyze?job=terminal-at-mount-partial&url=https://news.example.com/a");
+    await waitFor(() => {
+      expect(pollingHandles.length).toBeGreaterThan(0);
+    });
+    await flushMicrotasks();
+
+    expect(notifyMock).not.toHaveBeenCalled();
+  });
+
+  it("E — terminal at mount (failed): does NOT call notify()", async () => {
+    vi.mocked(notificationsModule.isSupported).mockReturnValue(true);
+    vi.mocked(notificationsModule.getPermission).mockReturnValue("granted");
+    vi.mocked(notifyPreferenceModule.loadNotifyPreference).mockReturnValue(true);
+
+    getJobStateMock.mockResolvedValueOnce(
+      makeJobState({ job_id: "terminal-at-mount-failed", status: "failed" }),
+    );
+
+    renderAt("/analyze?job=terminal-at-mount-failed&url=https://news.example.com/a");
+    await waitFor(() => {
+      expect(pollingHandles.length).toBeGreaterThan(0);
+    });
+    await flushMicrotasks();
+
+    expect(notifyMock).not.toHaveBeenCalled();
+  });
+
+  it("F — analyzing → partial: calls notify() exactly once", async () => {
+    vi.mocked(notificationsModule.isSupported).mockReturnValue(true);
+    vi.mocked(notificationsModule.getPermission).mockReturnValue("granted");
+    vi.mocked(notifyPreferenceModule.loadNotifyPreference).mockReturnValue(true);
+
+    renderAt("/analyze?job=analyzing-to-partial&url=https://news.example.com/a");
+    await waitFor(() => {
+      expect(pollingHandles.length).toBeGreaterThan(0);
+    });
+
+    setPolledJobState(makeJobState({ status: "analyzing" }));
+    await flushMicrotasks();
+
+    expect(notifyMock).not.toHaveBeenCalled();
+
+    setPolledJobState(makeJobState({ status: "partial" }));
+    await flushMicrotasks();
+
+    expect(notifyMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("G — analyzing → failed: calls notify() exactly once", async () => {
+    vi.mocked(notificationsModule.isSupported).mockReturnValue(true);
+    vi.mocked(notificationsModule.getPermission).mockReturnValue("granted");
+    vi.mocked(notifyPreferenceModule.loadNotifyPreference).mockReturnValue(true);
+
+    renderAt("/analyze?job=analyzing-to-failed&url=https://news.example.com/a");
+    await waitFor(() => {
+      expect(pollingHandles.length).toBeGreaterThan(0);
+    });
+
+    setPolledJobState(makeJobState({ status: "analyzing" }));
+    await flushMicrotasks();
+
+    expect(notifyMock).not.toHaveBeenCalled();
+
+    setPolledJobState(makeJobState({ status: "failed" }));
+    await flushMicrotasks();
+
+    expect(notifyMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("H — a11y at route level: checkbox queryable by role+name within nav; checked when enabled; disabled hint linked via aria-describedby when blocked", async () => {
+    vi.mocked(notificationsModule.isSupported).mockReturnValue(true);
+    vi.mocked(notificationsModule.getPermission).mockReturnValue("granted");
+    vi.mocked(notifyPreferenceModule.loadNotifyPreference).mockReturnValue(true);
+
+    renderAt("/analyze?job=a11y-check&url=https://news.example.com/a");
+    await waitFor(() => {
+      expect(pollingHandles.length).toBeGreaterThan(0);
+    });
+
+    setPolledJobState(makeJobState({ status: "done" }));
+    await waitFor(() => {
+      const nav = document.querySelector("nav");
+      expect(nav).not.toBeNull();
+      const checkbox = within(nav!).getByRole("checkbox", { name: /notify me when ready/i });
+      expect(checkbox).toBeTruthy();
+      expect(checkbox).toBeChecked();
+      expect(checkbox).not.toBeDisabled();
+    });
+  });
+
+  it("H — a11y: blocked permission renders disabled checkbox with aria-describedby hint", async () => {
+    vi.mocked(notificationsModule.isSupported).mockReturnValue(true);
+    vi.mocked(notificationsModule.getPermission).mockReturnValue("denied");
+    vi.mocked(notifyPreferenceModule.loadNotifyPreference).mockReturnValue(false);
+
+    renderAt("/analyze?job=a11y-blocked&url=https://news.example.com/a");
+    await waitFor(() => {
+      expect(pollingHandles.length).toBeGreaterThan(0);
+    });
+
+    setPolledJobState(makeJobState({ status: "analyzing" }));
+    await waitFor(() => {
+      const nav = document.querySelector("nav");
+      expect(nav).not.toBeNull();
+      const checkbox = within(nav!).getByRole("checkbox", { name: /notify me when ready/i });
+      expect(checkbox).toBeDisabled();
+
+      const hint = document.querySelector("[aria-describedby]");
+      if (hint) {
+        const describedById = hint.getAttribute("aria-describedby");
+        const hintEl = document.getElementById(describedById ?? "");
+        expect(hintEl).not.toBeNull();
+      }
+    });
+  });
 });
