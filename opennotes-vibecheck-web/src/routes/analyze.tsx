@@ -297,7 +297,7 @@ function AnalyzePageContent(props: { initialJobState: JobState | null }) {
     createSignal<ArchiveProbeState>("pending");
 
   const [notifyEnabled, setNotifyEnabled] = createSignal(false);
-  buildNotifyEffect({ jobStatus: () => jobStatus() ?? null, jobId, notifyEnabled });
+  buildNotifyEffect({ jobStatus: () => jobStatus() ?? null, jobId, notifyEnabled, initialStatusForJob: () => jobStatus() ?? null });
 
   let frameCompatRequest = 0;
   let archiveTerminalAt: number | null = null;

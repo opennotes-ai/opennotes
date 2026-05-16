@@ -58,7 +58,12 @@ describe("buildNotifyEffect (notify-on-complete guard logic)", () => {
       const [jobId, setJobId] = createSignal<string | null>(null);
       const [notifyEnabled, setNotifyEnabled] = createSignal(false);
 
-      buildNotifyEffect({ jobStatus, jobId, notifyEnabled });
+      buildNotifyEffect({
+        jobStatus,
+        jobId,
+        notifyEnabled,
+        initialStatusForJob: () => null,
+      });
 
       setJobId("job-1");
       setNotifyEnabled(true);
@@ -80,7 +85,12 @@ describe("buildNotifyEffect (notify-on-complete guard logic)", () => {
       const [jobId, setJobId] = createSignal<string | null>(null);
       const [notifyEnabled, setNotifyEnabled] = createSignal(false);
 
-      buildNotifyEffect({ jobStatus, jobId, notifyEnabled });
+      buildNotifyEffect({
+        jobStatus,
+        jobId,
+        notifyEnabled,
+        initialStatusForJob: () => null,
+      });
 
       setJobId("job-2");
       setNotifyEnabled(true);
@@ -98,14 +108,21 @@ describe("buildNotifyEffect (notify-on-complete guard logic)", () => {
     });
   });
 
-  it("fires a second notification for a new jobId after the first", async () => {
+  it("fires a second notification for a new jobId after the first when new job starts non-terminal", async () => {
     await createRoot(async (dispose) => {
       const [jobStatus, setJobStatus] = createSignal<string | null>(null);
       const [jobId, setJobId] = createSignal<string | null>(null);
       const [notifyEnabled, setNotifyEnabled] = createSignal(false);
+      const initialStatuses: Record<string, string | null> = {};
 
-      buildNotifyEffect({ jobStatus, jobId, notifyEnabled });
+      buildNotifyEffect({
+        jobStatus,
+        jobId,
+        notifyEnabled,
+        initialStatusForJob: (id) => initialStatuses[id] ?? null,
+      });
 
+      initialStatuses["job-3"] = "analyzing";
       setJobId("job-3");
       setNotifyEnabled(true);
       setJobStatus("done");
@@ -114,6 +131,7 @@ describe("buildNotifyEffect (notify-on-complete guard logic)", () => {
       expect(notifyMock).toHaveBeenCalledTimes(1);
 
       setJobStatus(null);
+      initialStatuses["job-4"] = "analyzing";
       setJobId("job-4");
       setJobStatus("failed");
       await flush();
@@ -130,7 +148,12 @@ describe("buildNotifyEffect (notify-on-complete guard logic)", () => {
       const [jobId, setJobId] = createSignal<string | null>(null);
       const [notifyEnabled] = createSignal(false);
 
-      buildNotifyEffect({ jobStatus, jobId, notifyEnabled });
+      buildNotifyEffect({
+        jobStatus,
+        jobId,
+        notifyEnabled,
+        initialStatusForJob: () => null,
+      });
 
       setJobId("job-5");
       setJobStatus("done");
@@ -148,7 +171,12 @@ describe("buildNotifyEffect (notify-on-complete guard logic)", () => {
       const [jobId, setJobId] = createSignal<string | null>(null);
       const [notifyEnabled, setNotifyEnabled] = createSignal(false);
 
-      buildNotifyEffect({ jobStatus, jobId, notifyEnabled });
+      buildNotifyEffect({
+        jobStatus,
+        jobId,
+        notifyEnabled,
+        initialStatusForJob: () => null,
+      });
 
       setJobId("job-6");
       setNotifyEnabled(true);
@@ -169,7 +197,12 @@ describe("buildNotifyEffect (notify-on-complete guard logic)", () => {
       const [jobId, setJobId] = createSignal<string | null>(null);
       const [notifyEnabled, setNotifyEnabled] = createSignal(false);
 
-      buildNotifyEffect({ jobStatus, jobId, notifyEnabled });
+      buildNotifyEffect({
+        jobStatus,
+        jobId,
+        notifyEnabled,
+        initialStatusForJob: () => null,
+      });
 
       setJobId("job-7");
       setNotifyEnabled(true);
@@ -184,21 +217,95 @@ describe("buildNotifyEffect (notify-on-complete guard logic)", () => {
     });
   });
 
-  it("late-enable: job already terminal when notifyEnabled flips true → notify fires", async () => {
+  it("initial-terminal-done: initialStatusForJob returns 'done', live status 'done', notifyEnabled=true → notify NOT called", async () => {
     await createRoot(async (dispose) => {
       const [jobStatus, setJobStatus] = createSignal<string | null>(null);
       const [jobId, setJobId] = createSignal<string | null>(null);
-      const [notifyEnabled, setNotifyEnabled] = createSignal(false);
+      const [notifyEnabled] = createSignal(true);
 
-      buildNotifyEffect({ jobStatus, jobId, notifyEnabled });
+      buildNotifyEffect({
+        jobStatus,
+        jobId,
+        notifyEnabled,
+        initialStatusForJob: () => "done",
+      });
 
-      setJobId("job-late");
+      setJobId("job-initial-done");
       setJobStatus("done");
       await flush();
 
-      expect(notifyMock).not.toHaveBeenCalled();
+      expect(notifyMock).toHaveBeenCalledTimes(0);
 
-      setNotifyEnabled(true);
+      dispose();
+    });
+  });
+
+  it("initial-terminal-partial: initialStatusForJob returns 'partial', live status 'partial', notifyEnabled=true → notify NOT called", async () => {
+    await createRoot(async (dispose) => {
+      const [jobStatus, setJobStatus] = createSignal<string | null>(null);
+      const [jobId, setJobId] = createSignal<string | null>(null);
+      const [notifyEnabled] = createSignal(true);
+
+      buildNotifyEffect({
+        jobStatus,
+        jobId,
+        notifyEnabled,
+        initialStatusForJob: () => "partial",
+      });
+
+      setJobId("job-initial-partial");
+      setJobStatus("partial");
+      await flush();
+
+      expect(notifyMock).toHaveBeenCalledTimes(0);
+
+      dispose();
+    });
+  });
+
+  it("initial-terminal-failed: initialStatusForJob returns 'failed', live status 'failed', notifyEnabled=true → notify NOT called", async () => {
+    await createRoot(async (dispose) => {
+      const [jobStatus, setJobStatus] = createSignal<string | null>(null);
+      const [jobId, setJobId] = createSignal<string | null>(null);
+      const [notifyEnabled] = createSignal(true);
+
+      buildNotifyEffect({
+        jobStatus,
+        jobId,
+        notifyEnabled,
+        initialStatusForJob: () => "failed",
+      });
+
+      setJobId("job-initial-failed");
+      setJobStatus("failed");
+      await flush();
+
+      expect(notifyMock).toHaveBeenCalledTimes(0);
+
+      dispose();
+    });
+  });
+
+  it("in-progress→terminal: initialStatusForJob returns 'analyzing', live transitions to 'done', notifyEnabled=true → notify called once", async () => {
+    await createRoot(async (dispose) => {
+      const [jobStatus, setJobStatus] = createSignal<string | null>(null);
+      const [jobId, setJobId] = createSignal<string | null>(null);
+      const [notifyEnabled] = createSignal(true);
+
+      buildNotifyEffect({
+        jobStatus,
+        jobId,
+        notifyEnabled,
+        initialStatusForJob: () => "analyzing",
+      });
+
+      setJobId("job-transition");
+      setJobStatus("analyzing");
+      await flush();
+
+      expect(notifyMock).toHaveBeenCalledTimes(0);
+
+      setJobStatus("done");
       await flush();
 
       expect(notifyMock).toHaveBeenCalledTimes(1);
@@ -210,13 +317,50 @@ describe("buildNotifyEffect (notify-on-complete guard logic)", () => {
     });
   });
 
-  it("job-switch: new jobId while jobStatus still holds prior terminal 'done' → still notifies", async () => {
+  it("late-enable: job already terminal when notifyEnabled flips true → notify does NOT fire (INVERTED)", async () => {
     await createRoot(async (dispose) => {
       const [jobStatus, setJobStatus] = createSignal<string | null>(null);
       const [jobId, setJobId] = createSignal<string | null>(null);
-      const [notifyEnabled, setNotifyEnabled] = createSignal(true);
+      const [notifyEnabled, setNotifyEnabled] = createSignal(false);
 
-      buildNotifyEffect({ jobStatus, jobId, notifyEnabled });
+      buildNotifyEffect({
+        jobStatus,
+        jobId,
+        notifyEnabled,
+        initialStatusForJob: () => "done",
+      });
+
+      setJobId("job-late");
+      setJobStatus("done");
+      await flush();
+
+      expect(notifyMock).not.toHaveBeenCalled();
+
+      setNotifyEnabled(true);
+      await flush();
+
+      expect(notifyMock).toHaveBeenCalledTimes(0);
+
+      dispose();
+    });
+  });
+
+  it("job-switch: new jobId whose initialStatusForJob returns terminal 'done' → notify does NOT fire (INVERTED)", async () => {
+    await createRoot(async (dispose) => {
+      const [jobStatus, setJobStatus] = createSignal<string | null>(null);
+      const [jobId, setJobId] = createSignal<string | null>(null);
+      const [notifyEnabled] = createSignal(true);
+      const initialStatuses: Record<string, string | null> = {
+        "job-switch-1": "analyzing",
+        "job-switch-2": "done",
+      };
+
+      buildNotifyEffect({
+        jobStatus,
+        jobId,
+        notifyEnabled,
+        initialStatusForJob: (id) => initialStatuses[id] ?? null,
+      });
 
       setJobId("job-switch-1");
       setJobStatus("done");
@@ -227,7 +371,7 @@ describe("buildNotifyEffect (notify-on-complete guard logic)", () => {
       setJobId("job-switch-2");
       await flush();
 
-      expect(notifyMock).toHaveBeenCalledTimes(2);
+      expect(notifyMock).toHaveBeenCalledTimes(1);
 
       dispose();
     });
