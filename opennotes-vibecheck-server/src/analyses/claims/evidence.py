@@ -20,7 +20,7 @@ from urllib.parse import urlsplit, urlunsplit
 
 import logfire
 from pydantic import BaseModel, Field, ValidationError
-from pydantic_ai.builtin_tools import WebSearchTool
+from pydantic_ai.native_tools import WebSearchTool
 
 from src.analyses.claims._claims_schemas import (
     ClaimCategory,
