@@ -1,11 +1,11 @@
-import { batch, createEffect, createSignal, JSX, onMount, Show, untrack } from "solid-js";
+import { batch, createEffect, createSignal, JSX, onCleanup, onMount, Show, untrack } from "solid-js";
 import {
   getPermission,
   isSupported,
   NotificationPermissionState,
   requestPermission,
 } from "~/lib/notifications";
-import { loadNotifyPreference, saveNotifyPreference } from "~/lib/notify-preference";
+import { loadNotifyPreference, NOTIFY_PREFERENCE_KEY, saveNotifyPreference } from "~/lib/notify-preference";
 import { Checkbox, CheckboxLabel } from "@opennotes/ui/components/ui/checkbox";
 
 export interface NotifyOnCompleteProps {
@@ -25,6 +25,15 @@ export default function NotifyOnComplete(
   onMount(() => {
     setPermission(getPermission());
     setPersistedPref(loadNotifyPreference());
+
+    if (typeof window !== "undefined") {
+      const handler = (e: StorageEvent) => {
+        if (e.key !== NOTIFY_PREFERENCE_KEY) return;
+        setPersistedPref(e.newValue === "true");
+      };
+      window.addEventListener("storage", handler);
+      onCleanup(() => window.removeEventListener("storage", handler));
+    }
   });
 
   const enabled = () => persistedPref() && permission() === "granted";

@@ -329,6 +329,132 @@ describe("<NotifyOnComplete />", () => {
     });
   });
 
+  describe("cross-tab sync via storage event", () => {
+    it("storage event with matching key and newValue='true' checks the checkbox when permission is granted", async () => {
+      isSupported.mockReturnValue(true);
+      getPermission.mockReturnValue("granted");
+      loadNotifyPreference.mockReturnValue(false);
+      const { default: NotifyOnComplete } = await import("./NotifyOnComplete");
+
+      render(() => (
+        <NotifyOnComplete jobStatus="running" onEnabledChange={() => {}} />
+      ));
+
+      await waitFor(() => {
+        expect(screen.getByRole("checkbox", { name: /notify me when ready/i })).not.toBeChecked();
+      });
+
+      window.dispatchEvent(
+        new StorageEvent("storage", {
+          key: notifyPreference.NOTIFY_PREFERENCE_KEY,
+          newValue: "true",
+        })
+      );
+
+      await waitFor(() => {
+        expect(screen.getByRole("checkbox", { name: /notify me when ready/i })).toBeChecked();
+      });
+    });
+
+    it("storage event with matching key and newValue='false' unchecks the checkbox", async () => {
+      isSupported.mockReturnValue(true);
+      getPermission.mockReturnValue("granted");
+      loadNotifyPreference.mockReturnValue(true);
+      const { default: NotifyOnComplete } = await import("./NotifyOnComplete");
+
+      render(() => (
+        <NotifyOnComplete jobStatus="running" onEnabledChange={() => {}} />
+      ));
+
+      await waitFor(() => {
+        expect(screen.getByRole("checkbox", { name: /notify me when ready/i })).toBeChecked();
+      });
+
+      window.dispatchEvent(
+        new StorageEvent("storage", {
+          key: notifyPreference.NOTIFY_PREFERENCE_KEY,
+          newValue: "false",
+        })
+      );
+
+      await waitFor(() => {
+        expect(screen.getByRole("checkbox", { name: /notify me when ready/i })).not.toBeChecked();
+      });
+    });
+
+    it("storage event with an unrelated key does not change state", async () => {
+      isSupported.mockReturnValue(true);
+      getPermission.mockReturnValue("granted");
+      loadNotifyPreference.mockReturnValue(false);
+      const { default: NotifyOnComplete } = await import("./NotifyOnComplete");
+
+      render(() => (
+        <NotifyOnComplete jobStatus="running" onEnabledChange={() => {}} />
+      ));
+
+      await waitFor(() => {
+        expect(screen.getByRole("checkbox", { name: /notify me when ready/i })).not.toBeChecked();
+      });
+
+      window.dispatchEvent(
+        new StorageEvent("storage", {
+          key: "some.other.key",
+          newValue: "true",
+        })
+      );
+
+      await waitFor(() => {
+        expect(screen.getByRole("checkbox", { name: /notify me when ready/i })).not.toBeChecked();
+      });
+    });
+
+    it("storage event does not call saveNotifyPreference (other tab already saved)", async () => {
+      isSupported.mockReturnValue(true);
+      getPermission.mockReturnValue("granted");
+      loadNotifyPreference.mockReturnValue(false);
+      const { default: NotifyOnComplete } = await import("./NotifyOnComplete");
+
+      render(() => (
+        <NotifyOnComplete jobStatus="running" onEnabledChange={() => {}} />
+      ));
+
+      window.dispatchEvent(
+        new StorageEvent("storage", {
+          key: notifyPreference.NOTIFY_PREFERENCE_KEY,
+          newValue: "true",
+        })
+      );
+
+      await waitFor(() => {
+        expect(screen.getByRole("checkbox", { name: /notify me when ready/i })).toBeChecked();
+      });
+
+      expect(saveNotifyPreference).not.toHaveBeenCalled();
+    });
+
+    it("after unmount, storage events do not throw and do not mutate state", async () => {
+      isSupported.mockReturnValue(true);
+      getPermission.mockReturnValue("granted");
+      loadNotifyPreference.mockReturnValue(false);
+      const { default: NotifyOnComplete } = await import("./NotifyOnComplete");
+
+      const { unmount } = render(() => (
+        <NotifyOnComplete jobStatus="running" onEnabledChange={() => {}} />
+      ));
+
+      unmount();
+
+      expect(() => {
+        window.dispatchEvent(
+          new StorageEvent("storage", {
+            key: notifyPreference.NOTIFY_PREFERENCE_KEY,
+            newValue: "true",
+          })
+        );
+      }).not.toThrow();
+    });
+  });
+
   describe("accessibility", () => {
     it("checkbox is findable by role and accessible name", async () => {
       isSupported.mockReturnValue(true);
