@@ -7,7 +7,14 @@ vi.mock("~/lib/notifications", () => ({
   requestPermission: vi.fn(async () => "granted"),
 }));
 
+vi.mock("~/lib/notify-preference", () => ({
+  loadNotifyPreference: vi.fn(() => false),
+  saveNotifyPreference: vi.fn(),
+  NOTIFY_PREFERENCE_KEY: "vibecheck.notifyOnComplete",
+}));
+
 import * as notifications from "~/lib/notifications";
+import * as notifyPreference from "~/lib/notify-preference";
 
 afterEach(() => {
   cleanup();
@@ -18,137 +25,345 @@ describe("<NotifyOnComplete />", () => {
   let isSupported: ReturnType<typeof vi.fn>;
   let getPermission: ReturnType<typeof vi.fn>;
   let requestPermission: ReturnType<typeof vi.fn>;
+  let loadNotifyPreference: ReturnType<typeof vi.fn>;
+  let saveNotifyPreference: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
     isSupported = vi.mocked(notifications.isSupported);
     getPermission = vi.mocked(notifications.getPermission);
     requestPermission = vi.mocked(notifications.requestPermission);
+    loadNotifyPreference = vi.mocked(notifyPreference.loadNotifyPreference);
+    saveNotifyPreference = vi.mocked(notifyPreference.saveNotifyPreference);
   });
 
-  it("renders nothing when isSupported() is false", async () => {
-    isSupported.mockReturnValue(false);
-    const { default: NotifyOnComplete } = await import("./NotifyOnComplete");
+  describe("visibility", () => {
+    it("renders checkbox when supported and jobStatus is 'done'", async () => {
+      isSupported.mockReturnValue(true);
+      getPermission.mockReturnValue("default");
+      loadNotifyPreference.mockReturnValue(false);
+      const { default: NotifyOnComplete } = await import("./NotifyOnComplete");
 
-    render(() => (
-      <NotifyOnComplete jobStatus="running" onEnabledChange={() => {}} />
-    ));
+      render(() => (
+        <NotifyOnComplete jobStatus="done" onEnabledChange={() => {}} />
+      ));
 
-    expect(screen.queryByRole("button")).toBeNull();
-    expect(screen.queryByTestId("notify-on-complete-enabled")).toBeNull();
-  });
+      expect(screen.getByRole("checkbox", { name: /notify me when ready/i })).toBeTruthy();
+    });
 
-  it("renders button when permission is 'default'", async () => {
-    isSupported.mockReturnValue(true);
-    getPermission.mockReturnValue("default");
-    const { default: NotifyOnComplete } = await import("./NotifyOnComplete");
+    it("renders checkbox when supported and jobStatus is undefined", async () => {
+      isSupported.mockReturnValue(true);
+      getPermission.mockReturnValue("default");
+      loadNotifyPreference.mockReturnValue(false);
+      const { default: NotifyOnComplete } = await import("./NotifyOnComplete");
 
-    render(() => (
-      <NotifyOnComplete jobStatus="running" onEnabledChange={() => {}} />
-    ));
+      render(() => (
+        <NotifyOnComplete jobStatus={undefined} onEnabledChange={() => {}} />
+      ));
 
-    expect(screen.getByRole("button")).toBeTruthy();
-    expect(screen.getByRole("button").textContent).toContain("Notify me when ready");
-  });
+      expect(screen.getByRole("checkbox", { name: /notify me when ready/i })).toBeTruthy();
+    });
 
-  it("clicking button calls requestPermission and then onEnabledChange(true) on granted", async () => {
-    isSupported.mockReturnValue(true);
-    getPermission.mockReturnValue("default");
-    requestPermission.mockResolvedValue("granted");
-    const { default: NotifyOnComplete } = await import("./NotifyOnComplete");
+    it("renders disabled checkbox with hint when isSupported() is false", async () => {
+      isSupported.mockReturnValue(false);
+      getPermission.mockReturnValue("unsupported");
+      loadNotifyPreference.mockReturnValue(false);
+      const { default: NotifyOnComplete } = await import("./NotifyOnComplete");
 
-    const onEnabledChange = vi.fn();
-    render(() => (
-      <NotifyOnComplete jobStatus="running" onEnabledChange={onEnabledChange} />
-    ));
+      render(() => (
+        <NotifyOnComplete jobStatus="running" onEnabledChange={() => {}} />
+      ));
 
-    fireEvent.click(screen.getByRole("button"));
-
-    await waitFor(() => {
-      expect(requestPermission).toHaveBeenCalledTimes(1);
-      expect(onEnabledChange).toHaveBeenCalledWith(true);
+      const checkbox = screen.getByRole("checkbox", { name: /notify me when ready/i });
+      expect(checkbox).toBeTruthy();
+      expect(checkbox).toBeDisabled();
+      expect(screen.getByText(/notifications not supported/i)).toBeTruthy();
     });
   });
 
-  it("renders 'blocked' hint when permission is 'denied' and never calls onEnabledChange(true)", async () => {
-    isSupported.mockReturnValue(true);
-    getPermission.mockReturnValue("denied");
-    const { default: NotifyOnComplete } = await import("./NotifyOnComplete");
+  describe("initial state from persisted preference", () => {
+    it("initial checked state reflects persisted preference true", async () => {
+      isSupported.mockReturnValue(true);
+      getPermission.mockReturnValue("granted");
+      loadNotifyPreference.mockReturnValue(true);
+      const { default: NotifyOnComplete } = await import("./NotifyOnComplete");
 
-    const onEnabledChange = vi.fn();
-    render(() => (
-      <NotifyOnComplete jobStatus="running" onEnabledChange={onEnabledChange} />
-    ));
+      render(() => (
+        <NotifyOnComplete jobStatus="running" onEnabledChange={() => {}} />
+      ));
 
-    expect(screen.queryByRole("button")).toBeNull();
-    const hint = screen.getByText(/notifications blocked/i);
-    expect(hint).toBeTruthy();
-    expect(onEnabledChange).not.toHaveBeenCalledWith(true);
-  });
+      await waitFor(() => {
+        const checkbox = screen.getByRole("checkbox", { name: /notify me when ready/i });
+        expect(checkbox).toBeChecked();
+      });
+    });
 
-  it("hides itself when jobStatus is 'done'", async () => {
-    isSupported.mockReturnValue(true);
-    getPermission.mockReturnValue("default");
-    const { default: NotifyOnComplete } = await import("./NotifyOnComplete");
+    it("initial checked state reflects persisted preference false even when permission is granted", async () => {
+      isSupported.mockReturnValue(true);
+      getPermission.mockReturnValue("granted");
+      loadNotifyPreference.mockReturnValue(false);
+      const onEnabledChange = vi.fn();
+      const { default: NotifyOnComplete } = await import("./NotifyOnComplete");
 
-    render(() => (
-      <NotifyOnComplete jobStatus="done" onEnabledChange={() => {}} />
-    ));
+      render(() => (
+        <NotifyOnComplete jobStatus="running" onEnabledChange={onEnabledChange} />
+      ));
 
-    expect(screen.queryByRole("button")).toBeNull();
-    expect(screen.queryByTestId("notify-on-complete-enabled")).toBeNull();
-  });
-
-  it("renders enabled label when permission is 'granted' and opted in", async () => {
-    isSupported.mockReturnValue(true);
-    getPermission.mockReturnValue("default");
-    requestPermission.mockResolvedValue("granted");
-    const { default: NotifyOnComplete } = await import("./NotifyOnComplete");
-
-    render(() => (
-      <NotifyOnComplete jobStatus="running" onEnabledChange={() => {}} />
-    ));
-
-    fireEvent.click(screen.getByRole("button"));
-
-    await waitFor(() => {
-      expect(screen.getByTestId("notify-on-complete-enabled")).toBeTruthy();
+      await waitFor(() => {
+        const checkbox = screen.getByRole("checkbox", { name: /notify me when ready/i });
+        expect(checkbox).not.toBeChecked();
+      });
+      expect(onEnabledChange).not.toHaveBeenCalledWith(true);
     });
   });
 
-  it("shows enabled label immediately when permission is already 'granted' at mount (pre-granted)", async () => {
-    isSupported.mockReturnValue(true);
-    getPermission.mockReturnValue("granted");
-    const { default: NotifyOnComplete } = await import("./NotifyOnComplete");
+  describe("toggle behavior", () => {
+    it("toggle on when permission='default' calls requestPermission, persists true, emits onEnabledChange(true) on granted", async () => {
+      isSupported.mockReturnValue(true);
+      getPermission.mockReturnValue("default");
+      loadNotifyPreference.mockReturnValue(false);
+      requestPermission.mockResolvedValue("granted");
+      const onEnabledChange = vi.fn();
+      const { default: NotifyOnComplete } = await import("./NotifyOnComplete");
 
-    render(() => (
-      <NotifyOnComplete jobStatus="running" onEnabledChange={() => {}} />
-    ));
+      render(() => (
+        <NotifyOnComplete jobStatus="running" onEnabledChange={onEnabledChange} />
+      ));
 
-    await waitFor(() => {
-      expect(screen.getByTestId("notify-on-complete-enabled")).toBeTruthy();
+      fireEvent.click(screen.getByRole("checkbox", { name: /notify me when ready/i }));
+
+      await waitFor(() => {
+        expect(requestPermission).toHaveBeenCalledTimes(1);
+        expect(saveNotifyPreference).toHaveBeenCalledWith(true);
+        expect(onEnabledChange).toHaveBeenCalledWith(true);
+      });
     });
-    expect(screen.queryByRole("button")).toBeNull();
+
+    it("toggle on when permission='default' and requestPermission returns 'denied' does not persist true", async () => {
+      isSupported.mockReturnValue(true);
+      getPermission.mockReturnValue("default");
+      loadNotifyPreference.mockReturnValue(false);
+      requestPermission.mockResolvedValue("denied");
+      const onEnabledChange = vi.fn();
+      const { default: NotifyOnComplete } = await import("./NotifyOnComplete");
+
+      render(() => (
+        <NotifyOnComplete jobStatus="running" onEnabledChange={onEnabledChange} />
+      ));
+
+      fireEvent.click(screen.getByRole("checkbox", { name: /notify me when ready/i }));
+
+      await waitFor(() => {
+        expect(requestPermission).toHaveBeenCalledTimes(1);
+        expect(saveNotifyPreference).not.toHaveBeenCalledWith(true);
+        expect(screen.getByText(/notifications blocked/i)).toBeTruthy();
+      });
+      expect(onEnabledChange).not.toHaveBeenCalledWith(true);
+    });
+
+    it("toggle on when permission='granted' persists true and emits onEnabledChange(true)", async () => {
+      isSupported.mockReturnValue(true);
+      getPermission.mockReturnValue("granted");
+      loadNotifyPreference.mockReturnValue(false);
+      const onEnabledChange = vi.fn();
+      const { default: NotifyOnComplete } = await import("./NotifyOnComplete");
+
+      render(() => (
+        <NotifyOnComplete jobStatus="running" onEnabledChange={onEnabledChange} />
+      ));
+
+      fireEvent.click(screen.getByRole("checkbox", { name: /notify me when ready/i }));
+
+      await waitFor(() => {
+        expect(saveNotifyPreference).toHaveBeenCalledWith(true);
+        expect(onEnabledChange).toHaveBeenCalledWith(true);
+      });
+      expect(requestPermission).not.toHaveBeenCalled();
+    });
+
+    it("toggle off persists false and emits onEnabledChange(false)", async () => {
+      isSupported.mockReturnValue(true);
+      getPermission.mockReturnValue("granted");
+      loadNotifyPreference.mockReturnValue(true);
+      const onEnabledChange = vi.fn();
+      const { default: NotifyOnComplete } = await import("./NotifyOnComplete");
+
+      render(() => (
+        <NotifyOnComplete jobStatus="running" onEnabledChange={onEnabledChange} />
+      ));
+
+      await waitFor(() => {
+        expect(screen.getByRole("checkbox", { name: /notify me when ready/i })).toBeChecked();
+      });
+
+      fireEvent.click(screen.getByRole("checkbox", { name: /notify me when ready/i }));
+
+      await waitFor(() => {
+        expect(saveNotifyPreference).toHaveBeenCalledWith(false);
+        expect(onEnabledChange).toHaveBeenCalledWith(false);
+      });
+    });
   });
 
-  it("hides itself when jobStatus transitions from 'analyzing' to 'done'", async () => {
-    isSupported.mockReturnValue(true);
-    getPermission.mockReturnValue("default");
-    const { default: NotifyOnComplete } = await import("./NotifyOnComplete");
-    const { createSignal } = await import("solid-js");
+  describe("onEnabledChange contract", () => {
+    it("emits onEnabledChange(true) only when persisted=true AND permission='granted'", async () => {
+      isSupported.mockReturnValue(true);
+      getPermission.mockReturnValue("denied");
+      loadNotifyPreference.mockReturnValue(true);
+      const onEnabledChange = vi.fn();
+      const { default: NotifyOnComplete } = await import("./NotifyOnComplete");
 
-    const [jobStatus, setJobStatus] = createSignal<string | undefined>("analyzing");
+      render(() => (
+        <NotifyOnComplete jobStatus="running" onEnabledChange={onEnabledChange} />
+      ));
 
-    render(() => (
-      <NotifyOnComplete jobStatus={jobStatus()} onEnabledChange={() => {}} />
-    ));
+      await waitFor(() => {
+        expect(screen.getByRole("checkbox", { name: /notify me when ready/i })).toBeDisabled();
+      });
+      expect(onEnabledChange).not.toHaveBeenCalledWith(true);
+    });
+  });
 
-    expect(screen.getByRole("button")).toBeTruthy();
+  describe("permission='denied' state", () => {
+    it("renders disabled checkbox and blocked hint when permission='denied'", async () => {
+      isSupported.mockReturnValue(true);
+      getPermission.mockReturnValue("denied");
+      loadNotifyPreference.mockReturnValue(false);
+      const { default: NotifyOnComplete } = await import("./NotifyOnComplete");
 
-    setJobStatus("done");
+      render(() => (
+        <NotifyOnComplete jobStatus="running" onEnabledChange={() => {}} />
+      ));
 
-    await waitFor(() => {
-      expect(screen.queryByRole("button")).toBeNull();
-      expect(screen.queryByTestId("notify-on-complete-enabled")).toBeNull();
+      await waitFor(() => {
+        const checkbox = screen.getByRole("checkbox", { name: /notify me when ready/i });
+        expect(checkbox).toBeDisabled();
+        expect(screen.getByText(/notifications blocked/i)).toBeTruthy();
+      });
+    });
+
+    it("hint is linked via aria-describedby when permission='denied'", async () => {
+      isSupported.mockReturnValue(true);
+      getPermission.mockReturnValue("denied");
+      loadNotifyPreference.mockReturnValue(false);
+      const { default: NotifyOnComplete } = await import("./NotifyOnComplete");
+
+      render(() => (
+        <NotifyOnComplete jobStatus="running" onEnabledChange={() => {}} />
+      ));
+
+      await waitFor(() => {
+        const hint = screen.getByText(/notifications blocked/i);
+        expect(hint.id).toBeTruthy();
+        const container = document.querySelector('[aria-describedby]');
+        expect(container?.getAttribute("aria-describedby")).toContain(hint.id);
+      });
+    });
+  });
+
+  describe("race: requestPermission pending during job completion", () => {
+    it("fires notify exactly once when requestPermission resolves 'granted' after toggle", async () => {
+      isSupported.mockReturnValue(true);
+      getPermission.mockReturnValue("default");
+      loadNotifyPreference.mockReturnValue(false);
+
+      let resolvePermission!: (v: "granted" | "denied") => void;
+      const permissionPromise = new Promise<"granted" | "denied">((resolve) => {
+        resolvePermission = resolve;
+      });
+      requestPermission.mockReturnValue(permissionPromise);
+
+      const onEnabledChange = vi.fn();
+      const { default: NotifyOnComplete } = await import("./NotifyOnComplete");
+      const { createSignal } = await import("solid-js");
+
+      const [jobStatus, setJobStatus] = createSignal<string | undefined>("running");
+
+      render(() => (
+        <NotifyOnComplete jobStatus={jobStatus()} onEnabledChange={onEnabledChange} />
+      ));
+
+      fireEvent.click(screen.getByRole("checkbox", { name: /notify me when ready/i }));
+
+      setJobStatus("done");
+
+      resolvePermission("granted");
+
+      await waitFor(() => {
+        expect(saveNotifyPreference).toHaveBeenCalledWith(true);
+        const trueCallCount = onEnabledChange.mock.calls.filter(([v]) => v === true).length;
+        expect(trueCallCount).toBe(1);
+      });
+    });
+
+    it("does not fire notify when requestPermission resolves 'denied' after job completes", async () => {
+      isSupported.mockReturnValue(true);
+      getPermission.mockReturnValue("default");
+      loadNotifyPreference.mockReturnValue(false);
+
+      let resolvePermission!: (v: "granted" | "denied") => void;
+      const permissionPromise = new Promise<"granted" | "denied">((resolve) => {
+        resolvePermission = resolve;
+      });
+      requestPermission.mockReturnValue(permissionPromise);
+
+      const onEnabledChange = vi.fn();
+      const { default: NotifyOnComplete } = await import("./NotifyOnComplete");
+      const { createSignal } = await import("solid-js");
+
+      const [jobStatus, setJobStatus] = createSignal<string | undefined>("running");
+
+      render(() => (
+        <NotifyOnComplete jobStatus={jobStatus()} onEnabledChange={onEnabledChange} />
+      ));
+
+      fireEvent.click(screen.getByRole("checkbox", { name: /notify me when ready/i }));
+
+      setJobStatus("done");
+
+      resolvePermission("denied");
+
+      await waitFor(() => {
+        expect(saveNotifyPreference).not.toHaveBeenCalledWith(true);
+        expect(onEnabledChange).not.toHaveBeenCalledWith(true);
+      });
+    });
+  });
+
+  describe("accessibility", () => {
+    it("checkbox is findable by role and accessible name", async () => {
+      isSupported.mockReturnValue(true);
+      getPermission.mockReturnValue("default");
+      loadNotifyPreference.mockReturnValue(false);
+      const { default: NotifyOnComplete } = await import("./NotifyOnComplete");
+
+      render(() => (
+        <NotifyOnComplete jobStatus="running" onEnabledChange={() => {}} />
+      ));
+
+      expect(screen.getByRole("checkbox", { name: /notify me when ready/i })).toBeTruthy();
+    });
+
+    it("checkbox input is keyboard-accessible (focusable hidden input with accessible label)", async () => {
+      isSupported.mockReturnValue(true);
+      getPermission.mockReturnValue("granted");
+      loadNotifyPreference.mockReturnValue(false);
+      const onEnabledChange = vi.fn();
+      const { default: NotifyOnComplete } = await import("./NotifyOnComplete");
+
+      render(() => (
+        <NotifyOnComplete jobStatus="running" onEnabledChange={onEnabledChange} />
+      ));
+
+      const checkbox = screen.getByRole("checkbox", { name: /notify me when ready/i });
+      expect(checkbox.tagName.toLowerCase()).toBe("input");
+      expect(checkbox.getAttribute("type")).toBe("checkbox");
+      expect(checkbox).not.toBeDisabled();
+
+      fireEvent.click(checkbox);
+
+      await waitFor(() => {
+        expect(saveNotifyPreference).toHaveBeenCalledWith(true);
+      });
     });
   });
 });
