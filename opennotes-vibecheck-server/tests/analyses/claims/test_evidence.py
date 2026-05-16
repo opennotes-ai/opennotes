@@ -99,12 +99,12 @@ class _AgentCall:
         name: str,
         tier: str,
         output_type: type[Any],
-        builtin_tools: list[Any],
+        capabilities: list[Any],
     ) -> None:
         self.name = name
         self.tier = tier
         self.output_type = output_type
-        self.builtin_tools = builtin_tools
+        self.capabilities = capabilities
 
 
 class _Returned:
@@ -457,7 +457,7 @@ async def test_cluster_claims_repairs_dropped_and_duplicated_claims(
         system_prompt: str | None = None,
         name: str | None = None,
         tier: str = "fast",
-        builtin_tools: list[Any] | tuple[Any, ...] = (),
+        capabilities: list[Any] | tuple[Any, ...] = (),
         **_kwargs: object,
     ) -> _AgentCall:
         del system_prompt
@@ -465,7 +465,7 @@ async def test_cluster_claims_repairs_dropped_and_duplicated_claims(
             name=name or "",
             tier=tier,
             output_type=output_type,
-            builtin_tools=list(builtin_tools),
+            capabilities=list(capabilities),
         )
 
     async def fake_run(_agent: _AgentCall, _prompt: str) -> _RunResult:
@@ -504,7 +504,7 @@ async def test_fetch_grounded_candidates_keeps_successes_and_logs_drops(
         system_prompt: str | None = None,
         name: str | None = None,
         tier: str = "fast",
-        builtin_tools: list[Any] | tuple[Any, ...] = (),
+        capabilities: list[Any] | tuple[Any, ...] = (),
         **_kwargs: object,
     ) -> _AgentCall:
         del system_prompt, output_type
@@ -512,7 +512,7 @@ async def test_fetch_grounded_candidates_keeps_successes_and_logs_drops(
             name=name or "",
             tier=tier,
             output_type=evidence._ExternalEvidenceResponse,
-            builtin_tools=list(builtin_tools),
+            capabilities=list(capabilities),
         )
         calls.append(call)
         return call
@@ -594,7 +594,7 @@ async def test_dedupe_and_sanity_check_candidates_returns_subset(
         system_prompt: str | None = None,
         name: str | None = None,
         tier: str = "fast",
-        builtin_tools: list[Any] | tuple[Any, ...] = (),
+        capabilities: list[Any] | tuple[Any, ...] = (),
         **_kwargs: object,
     ) -> _AgentCall:
         del system_prompt
@@ -602,7 +602,7 @@ async def test_dedupe_and_sanity_check_candidates_returns_subset(
             name=name or "",
             tier=tier,
             output_type=output_type,
-            builtin_tools=list(builtin_tools),
+            capabilities=list(capabilities),
         )
 
     async def fake_run(_agent: _AgentCall, _prompt: str) -> _RunResult:
@@ -669,7 +669,7 @@ async def test_dedupe_and_sanity_check_candidates_caps_prompt_and_logs_length(
         system_prompt: str | None = None,
         name: str | None = None,
         tier: str = "fast",
-        builtin_tools: list[Any] | tuple[Any, ...] = (),
+        capabilities: list[Any] | tuple[Any, ...] = (),
         **_kwargs: object,
     ) -> _AgentCall:
         del system_prompt
@@ -677,7 +677,7 @@ async def test_dedupe_and_sanity_check_candidates_caps_prompt_and_logs_length(
             name=name or "",
             tier=tier,
             output_type=output_type,
-            builtin_tools=list(builtin_tools),
+            capabilities=list(capabilities),
         )
 
     async def fake_run(_agent: _AgentCall, prompt: str) -> _RunResult:
@@ -731,7 +731,7 @@ async def test_dedupe_and_sanity_check_candidates_keeps_unique_candidates_when_s
         system_prompt: str | None = None,
         name: str | None = None,
         tier: str = "fast",
-        builtin_tools: list[Any] | tuple[Any, ...] = (),
+        capabilities: list[Any] | tuple[Any, ...] = (),
         **_kwargs: object,
     ) -> _AgentCall:
         del system_prompt
@@ -739,7 +739,7 @@ async def test_dedupe_and_sanity_check_candidates_keeps_unique_candidates_when_s
             name=name or "",
             tier=tier,
             output_type=output_type,
-            builtin_tools=list(builtin_tools),
+            capabilities=list(capabilities),
         )
 
     async def fake_run(_agent: _AgentCall, _prompt: str) -> _RunResult:
@@ -804,7 +804,7 @@ async def test_curate_supporting_facts_uses_one_synthesis_call_and_external_kind
         system_prompt: str | None = None,
         name: str | None = None,
         tier: str = "fast",
-        builtin_tools: list[Any] | tuple[Any, ...] = (),
+        capabilities: list[Any] | tuple[Any, ...] = (),
         **_kwargs: object,
     ) -> _AgentCall:
         del system_prompt
@@ -812,7 +812,7 @@ async def test_curate_supporting_facts_uses_one_synthesis_call_and_external_kind
             name=name or "",
             tier=tier,
             output_type=output_type,
-            builtin_tools=list(builtin_tools),
+            capabilities=list(capabilities),
         )
         calls.append(call)
         return call
@@ -856,7 +856,7 @@ async def test_curate_supporting_facts_uses_one_synthesis_call_and_external_kind
         Settings(EVIDENCE_SYNTHESIS_CANDIDATE_CAP=10),
     )
 
-    assert [(call.name, call.tier, call.builtin_tools) for call in calls] == [
+    assert [(call.name, call.tier, call.capabilities) for call in calls] == [
         ("vibecheck.claims_evidence_curate", "synthesis", [])
     ]
     assert facts["claim one"][0].model_dump(mode="json") == {
@@ -884,7 +884,7 @@ async def test_curate_supporting_facts_returns_empty_when_curate_fails(
         system_prompt: str | None = None,
         name: str | None = None,
         tier: str = "fast",
-        builtin_tools: list[Any] | tuple[Any, ...] = (),
+        capabilities: list[Any] | tuple[Any, ...] = (),
         **_kwargs: object,
     ) -> _AgentCall:
         del system_prompt
@@ -892,7 +892,7 @@ async def test_curate_supporting_facts_returns_empty_when_curate_fails(
             name=name or "",
             tier=tier,
             output_type=output_type,
-            builtin_tools=list(builtin_tools),
+            capabilities=list(capabilities),
         )
 
     async def fake_run(_agent: _AgentCall, _prompt: str) -> _RunResult:
@@ -935,7 +935,7 @@ async def test_fetch_external_evidence_batch_runs_pipeline_with_one_synthesis_ca
         system_prompt: str | None = None,
         name: str | None = None,
         tier: str = "fast",
-        builtin_tools: list[Any] | tuple[Any, ...] = (),
+        capabilities: list[Any] | tuple[Any, ...] = (),
         **_kwargs: object,
     ) -> _AgentCall:
         del system_prompt
@@ -943,7 +943,7 @@ async def test_fetch_external_evidence_batch_runs_pipeline_with_one_synthesis_ca
             name=name or "",
             tier=tier,
             output_type=output_type,
-            builtin_tools=list(builtin_tools),
+            capabilities=list(capabilities),
         )
         calls.append(call)
         return call

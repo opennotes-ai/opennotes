@@ -10,6 +10,7 @@ Agents bound to Vertex AI Gemini. Mirrors opennotes-server's pattern:
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import random
 from collections.abc import Mapping, Sequence
 from functools import lru_cache
@@ -22,6 +23,7 @@ from pydantic_ai.capabilities import Instrumentation
 from pydantic_ai.exceptions import ModelHTTPError
 from pydantic_ai.models.google import GoogleModel, GoogleModelSettings
 from pydantic_ai.models.instrumented import InstrumentationSettings
+from pydantic_ai.profiles.google import google_model_profile
 from pydantic_ai.providers.google import GoogleProvider
 
 from src.config import Settings
@@ -35,8 +37,20 @@ OUTPUT_VALIDATION_RETRIES: Final[int] = 3
 
 @lru_cache(maxsize=4)
 def _build_google_vertex_model(model_name: str, project: str, location: str) -> GoogleModel:
+    # Vertex AI rejects `include_server_side_tool_invocations` in tool_config (the field is
+    # AI-Studio-only), but pydantic-ai's default Google profile sets that capability to True
+    # for current Gemini releases and emits the field whenever a native tool is registered.
+    # Force it off here so Vertex-bound agents stay compatible. Revisit if Vertex begins
+    # accepting server-side tool invocations. See TASK-1508.06.10.12.
     provider = GoogleProvider(project=project, location=location)
-    return GoogleModel(model_name=model_name, provider=provider)
+    base_profile = google_model_profile(model_name) or provider.model_profile(model_name)
+    if base_profile is None:
+        raise ValueError(f"no Google model profile available for {model_name!r}")
+    vertex_profile = dataclasses.replace(
+        base_profile,
+        google_supports_server_side_tool_invocations=False,
+    )
+    return GoogleModel(model_name=model_name, provider=provider, profile=vertex_profile)
 
 
 def google_vertex_model_name(setting_value: str, *, setting_name: str) -> str:
@@ -75,7 +89,7 @@ def build_agent(
     system_prompt: str | None = None,
     name: str | None = None,
     tier: GeminiTier = "fast",
-    builtin_tools: Sequence[Any] = (),
+    capabilities: Sequence[Any] = (),
     logprobs: bool = False,
     top_logprobs: int | None = None,
     instrument: InstrumentationSettings | bool | None = None,
@@ -90,7 +104,7 @@ def build_agent(
     system_prompt: str | None = None,
     name: str | None = None,
     tier: GeminiTier = "fast",
-    builtin_tools: Sequence[Any] = (),
+    capabilities: Sequence[Any] = (),
     logprobs: bool = False,
     top_logprobs: int | None = None,
     instrument: InstrumentationSettings | bool | None = None,
@@ -104,7 +118,7 @@ def build_agent(
     system_prompt: str | None = None,
     name: str | None = None,
     tier: GeminiTier = "fast",
-    builtin_tools: Sequence[Any] = (),
+    capabilities: Sequence[Any] = (),
     logprobs: bool = False,
     top_logprobs: int | None = None,
     instrument: InstrumentationSettings | bool | None = None,
@@ -126,8 +140,6 @@ def build_agent(
         kwargs["system_prompt"] = system_prompt
     if output_type is not None:
         kwargs["output_type"] = output_type
-    if builtin_tools:
-        kwargs["builtin_tools"] = builtin_tools
     if name is not None:
         kwargs["name"] = name
     if logprobs or top_logprobs is not None:
@@ -135,10 +147,13 @@ def build_agent(
         if top_logprobs is not None:
             model_settings["google_top_logprobs"] = top_logprobs
         kwargs["model_settings"] = model_settings
+    merged_capabilities: list[Any] = list(capabilities)
     if isinstance(instrument, InstrumentationSettings):
-        kwargs["capabilities"] = [Instrumentation(instrument)]
+        merged_capabilities.append(Instrumentation(instrument))
     elif instrument is True:
-        kwargs["capabilities"] = [Instrumentation()]
+        merged_capabilities.append(Instrumentation())
+    if merged_capabilities:
+        kwargs["capabilities"] = merged_capabilities
     return Agent(model, **kwargs)
 
 

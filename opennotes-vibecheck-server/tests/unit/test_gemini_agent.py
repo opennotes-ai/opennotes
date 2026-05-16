@@ -11,10 +11,14 @@ import warnings
 from unittest.mock import MagicMock, patch
 
 import pytest
+from google.genai import models as genai_models
 from pydantic import BaseModel
-from pydantic_ai.capabilities import Instrumentation
+from pydantic_ai.capabilities import Instrumentation, WebSearch
+from pydantic_ai.models import ModelRequestParameters
 from pydantic_ai.models.google import GoogleModel
 from pydantic_ai.models.instrumented import InstrumentationSettings
+from pydantic_ai.native_tools import WebSearchTool
+from pydantic_ai.tools import ToolDefinition
 
 from src.config import Settings
 from src.services.gemini_agent import (
@@ -160,5 +164,40 @@ def test_build_agent_does_not_emit_deprecation_warnings(settings: Settings) -> N
             system_prompt="test",
             name="vibecheck.unit_test",
             instrument=instrument,
+            capabilities=[WebSearch(search_context_size="low", max_uses=1)],
         )
     assert agent.name == "vibecheck.unit_test"
+
+
+def test_build_agent_vertex_web_search_tool_config_omits_server_side_invocations(settings: Settings) -> None:
+    agent = build_agent(settings, output_type=_Out)
+
+    # Probes the Google provider's private tool-config builder so the regression bites
+    # if pydantic-ai or the upstream genai client reintroduces `include_server_side_tool_invocations`
+    # for Vertex. _get_tool_config and _ToolConfig_to_vertex are intentionally underscored;
+    # this is the most direct path to verify the override survives end-to-end.
+    assert isinstance(agent.model, GoogleModel)
+    tools, tool_config, image_config = agent.model._get_tool_config(
+        ModelRequestParameters(
+            native_tools=[WebSearchTool()],
+            function_tools=[
+                ToolDefinition(
+                    name="lookup_fact",
+                    description="Lookup a fact for evidence synthesis.",
+                    parameters_json_schema={
+                        "type": "object",
+                        "properties": {},
+                        "additionalProperties": False,
+                    },
+                )
+            ],
+        ),
+        {},
+    )
+
+    assert image_config is None
+    assert tools is not None
+    assert {"google_search": {}} in tools
+    assert tool_config is not None
+    assert "include_server_side_tool_invocations" not in tool_config
+    genai_models._ToolConfig_to_vertex(tool_config)
