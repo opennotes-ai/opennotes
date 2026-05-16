@@ -24,6 +24,9 @@ Resilience:
 Scheduled Workflows:
     cleanup_stale_batch_jobs_workflow: Weekly cleanup of stale batch jobs (Sunday midnight UTC)
     monitor_stuck_batch_jobs_workflow: Monitor for stuck batch jobs (every 15 minutes)
+    url_scan_orphan_jobs_workflow: Sweep stale URL scan heartbeats (every 5 minutes)
+    url_scan_purge_expired_data_workflow: Purge expired URL scan cache and aged jobs (daily)
+    url_scan_purge_orphan_screenshots_workflow: Purge unreferenced URL scan screenshots (daily)
 
 Workflows:
     rechunk_fact_check_workflow: Batch rechunking of fact-check items
@@ -112,6 +115,18 @@ _LAZY_IMPORTS: dict[str, tuple[str, str]] = {
     "VISION_DESCRIPTION_WORKFLOW_NAME": (
         "src.dbos_workflows.content_monitoring_workflows",
         "VISION_DESCRIPTION_WORKFLOW_NAME",
+    ),
+    "URL_SCAN_ORPHAN_JOBS_WORKFLOW_NAME": (
+        "src.dbos_workflows.url_scan_scheduler_workflows",
+        "URL_SCAN_ORPHAN_JOBS_WORKFLOW_NAME",
+    ),
+    "URL_SCAN_PURGE_EXPIRED_DATA_WORKFLOW_NAME": (
+        "src.dbos_workflows.url_scan_scheduler_workflows",
+        "URL_SCAN_PURGE_EXPIRED_DATA_WORKFLOW_NAME",
+    ),
+    "URL_SCAN_PURGE_ORPHAN_SCREENSHOTS_WORKFLOW_NAME": (
+        "src.dbos_workflows.url_scan_scheduler_workflows",
+        "URL_SCAN_PURGE_ORPHAN_SCREENSHOTS_WORKFLOW_NAME",
     ),
     "BatchJobDBOSAdapter": ("src.dbos_workflows.batch_job_adapter", "BatchJobDBOSAdapter"),
     "CircuitBreakerCore": ("src.circuit_breaker_core", "CircuitBreakerCore"),
@@ -244,6 +259,18 @@ _LAZY_IMPORTS: dict[str, tuple[str, str]] = {
     "vision_description_workflow": (
         "src.dbos_workflows.content_monitoring_workflows",
         "vision_description_workflow",
+    ),
+    "url_scan_orphan_jobs_workflow": (
+        "src.dbos_workflows.url_scan_scheduler_workflows",
+        "url_scan_orphan_jobs_workflow",
+    ),
+    "url_scan_purge_expired_data_workflow": (
+        "src.dbos_workflows.url_scan_scheduler_workflows",
+        "url_scan_purge_expired_data_workflow",
+    ),
+    "url_scan_purge_orphan_screenshots_workflow": (
+        "src.dbos_workflows.url_scan_scheduler_workflows",
+        "url_scan_purge_orphan_screenshots_workflow",
     ),
 }
 

@@ -125,6 +125,8 @@ from src.simulation.sim_channel_messages_jsonapi_router import (
 from src.simulation.simulations_jsonapi_router import router as simulations_jsonapi_router
 from src.startup_migrations import run_startup_migrations
 from src.startup_validation import run_startup_checks
+from src.url_content_scan.auth import UrlScanAuthError
+from src.url_content_scan.router import router as url_scan_router
 from src.users.admin_router import router as admin_router
 from src.users.communities_jsonapi_router import router as communities_jsonapi_router
 from src.users.profile_router import router as profile_auth_router
@@ -742,6 +744,20 @@ app.add_exception_handler(
 
 app.add_exception_handler(RequestValidationError, sanitized_validation_exception_handler)
 
+
+async def url_scan_auth_exception_handler(
+    request: Any,
+    exc: UrlScanAuthError,
+) -> JSONResponse:
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"error_code": exc.error_code, "message": exc.message},
+        headers=exc.headers,
+    )
+
+
+app.add_exception_handler(UrlScanAuthError, url_scan_auth_exception_handler)
+
 if settings.ENABLE_METRICS:
     app.add_middleware(MetricsMiddleware)
 
@@ -899,6 +915,7 @@ app.include_router(chunk_router, prefix=settings.API_V1_PREFIX)
 app.include_router(fact_check_import_router, prefix=settings.API_V1_PREFIX)
 app.include_router(candidates_jsonapi_router, prefix=settings.API_V1_PREFIX)
 app.include_router(batch_jobs_router, prefix=settings.API_V1_PREFIX)
+app.include_router(url_scan_router)
 app.include_router(token_pool_router, prefix=settings.API_V1_PREFIX)
 app.include_router(
     simulations_jsonapi_router,

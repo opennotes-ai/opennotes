@@ -19,7 +19,10 @@ class BatchJobStatus(str, Enum):
 
     PENDING = "pending"
     IN_PROGRESS = "in_progress"
+    EXTRACTING = "extracting"
+    ANALYZING = "analyzing"
     COMPLETED = "completed"
+    PARTIAL = "partial"
     FAILED = "failed"
     CANCELLED = "cancelled"
 

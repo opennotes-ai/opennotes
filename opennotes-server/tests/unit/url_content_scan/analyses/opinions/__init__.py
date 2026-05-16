@@ -1,0 +1,1 @@
+"""Opinions analysis tests."""

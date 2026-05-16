@@ -21,6 +21,18 @@ class TestTokenGateAcquire:
 
     @patch("src.dbos_workflows.token_bucket.gate.DBOS")
     @patch("src.dbos_workflows.token_bucket.gate.try_acquire_tokens")
+    def test_parent_holds_token_skips_acquire(self, mock_acquire, mock_dbos):
+        mock_dbos.workflow_id = "wf-child"
+
+        gate = TokenGate(pool="default", weight=4, parent_holds_token=True)
+        gate.acquire()
+
+        mock_acquire.assert_not_called()
+        mock_dbos.sleep.assert_not_called()
+        assert gate._workflow_id is None
+
+    @patch("src.dbos_workflows.token_bucket.gate.DBOS")
+    @patch("src.dbos_workflows.token_bucket.gate.try_acquire_tokens")
     def test_acquire_polls_until_available(self, mock_acquire, mock_dbos):
         mock_dbos.workflow_id = "wf-123"
         mock_acquire.side_effect = [False, False, True]
@@ -109,6 +121,14 @@ class TestTokenGateRelease:
         mock_release.assert_not_called()
 
     @patch("src.dbos_workflows.token_bucket.gate.release_tokens")
+    def test_release_noop_when_parent_holds_token(self, mock_release):
+        gate = TokenGate(pool="default", weight=4, parent_holds_token=True)
+        gate._workflow_id = "wf-child"
+        gate.release()
+
+        mock_release.assert_not_called()
+
+    @patch("src.dbos_workflows.token_bucket.gate.release_tokens")
     @patch("src.dbos_workflows.token_bucket.gate.try_acquire_tokens")
     @patch("src.dbos_workflows.token_bucket.gate.DBOS")
     def test_workflow_id_not_set_on_timeout(self, mock_dbos, mock_acquire, mock_release):
@@ -131,10 +151,18 @@ class TestTokenGateDefaults:
         assert gate.weight == 1
         assert gate.poll_interval == 2.0
         assert gate.max_wait_seconds == 300.0
+        assert gate.parent_holds_token is False
 
     def test_custom_values(self):
-        gate = TokenGate(pool="gpu", weight=5, poll_interval=5.0, max_wait_seconds=60.0)
+        gate = TokenGate(
+            pool="gpu",
+            weight=5,
+            poll_interval=5.0,
+            max_wait_seconds=60.0,
+            parent_holds_token=True,
+        )
         assert gate.pool == "gpu"
         assert gate.weight == 5
         assert gate.poll_interval == 5.0
         assert gate.max_wait_seconds == 60.0
+        assert gate.parent_holds_token is True

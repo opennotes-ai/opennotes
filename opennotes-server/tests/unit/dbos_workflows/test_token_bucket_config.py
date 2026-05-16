@@ -25,6 +25,9 @@ class TestWorkflowWeight:
     def test_content_scan_weight(self):
         assert WorkflowWeight.CONTENT_SCAN == 3
 
+    def test_url_scan_weight(self):
+        assert WorkflowWeight.URL_SCAN == 4
+
     def test_import_pipeline_weight(self):
         assert WorkflowWeight.IMPORT_PIPELINE == 3
 
@@ -50,10 +53,10 @@ class TestDefaults:
         assert DEFAULT_POOL_NAME == "default"
 
     def test_default_pool_capacity(self):
-        assert DEFAULT_POOL_CAPACITY == 12
+        assert DEFAULT_POOL_CAPACITY == 16
 
     def test_default_worker_capacity(self):
-        assert DEFAULT_WORKER_CAPACITY == 12
+        assert DEFAULT_WORKER_CAPACITY == DEFAULT_POOL_CAPACITY
 
     def test_worker_heartbeat_interval(self):
         assert WORKER_HEARTBEAT_INTERVAL == 30

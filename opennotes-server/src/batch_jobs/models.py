@@ -109,6 +109,7 @@ class BatchJob(Base, TimestampMixin):
         """Check if the job is in a terminal state."""
         return self.status in (
             BatchJobStatus.COMPLETED.value,
+            BatchJobStatus.PARTIAL.value,
             BatchJobStatus.FAILED.value,
             BatchJobStatus.CANCELLED.value,
         )

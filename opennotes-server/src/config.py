@@ -143,6 +143,11 @@ class Settings(BaseSettings):
     DISCORD_API_TIMEOUT: float = Field(
         default=30.0, description="Timeout for Discord API requests in seconds"
     )
+    FIRECRAWL_API_KEY: str = Field(default="")
+    FIRECRAWL_API_BASE: str = Field(
+        default="https://api.firecrawl.dev",
+        description="Base URL for the Firecrawl v2 API.",
+    )
 
     REQUEST_TIMEOUT: float = Field(
         default=30.0, description="Request timeout in seconds for API endpoints"
@@ -521,6 +526,11 @@ class Settings(BaseSettings):
         description="GCS bucket name for scoring snapshot history. "
         "When empty, GCS upload is disabled (graceful no-op for local dev). "
         "Format: gs://bucket-name/{community_server_id}/{timestamp}.json",
+    )
+    URL_SCAN_SCREENSHOT_BUCKET: str = Field(
+        default="",
+        description="GCS bucket name for URL-scan screenshots. When empty, screenshot upload helpers "
+        "must be configured explicitly by the caller.",
     )
 
     ENABLE_METRICS: bool = Field(default=True, description="Enable metrics middleware")

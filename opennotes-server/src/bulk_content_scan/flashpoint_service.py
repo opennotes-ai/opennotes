@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import os
 import threading
-import warnings
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -17,6 +16,8 @@ if TYPE_CHECKING:
 
     from src.bulk_content_scan.flashpoint_utils import RubricDetector
     from src.bulk_content_scan.schemas import BulkScanMessage, ConversationFlashpointMatch
+    from src.url_content_scan.tone_schemas import FlashpointMatch
+    from src.url_content_scan.utterances.schema import Utterance
 
 logger = get_logger(__name__)
 
@@ -78,6 +79,12 @@ class FlashpointDetectionService:
         """Validate that the required API key environment variable is set."""
         for prefix, env_var in _API_KEY_ENV_VARS.items():
             if self.model.startswith(prefix):
+                if prefix == "vertex_ai/":
+                    if not (os.environ.get(env_var) or settings.VERTEXAI_PROJECT):
+                        raise RuntimeError(
+                            f"Environment variable {env_var} is required for model {self.model}"
+                        )
+                    return
                 if not os.environ.get(env_var):
                     raise RuntimeError(
                         f"Environment variable {env_var} is required for model {self.model}"
@@ -101,7 +108,7 @@ class FlashpointDetectionService:
                 RubricDetector as _RubricDetector,
             )
 
-            self._lm = _dspy.LM(self.model)
+            self._lm = self._build_lm(_dspy)
 
             self._detector = _RubricDetector()
 
@@ -119,6 +126,41 @@ class FlashpointDetectionService:
                 )
 
         return self._detector
+
+    def _build_lm(self, dspy_module: Any) -> Any:
+        """Build the configured DSPy LM instance for the selected backend."""
+        if self.model.startswith("vertex_ai/"):
+            return dspy_module.LM(
+                self.model,
+                vertex_project=settings.VERTEXAI_PROJECT,
+                vertex_location=settings.VERTEXAI_LOCATION,
+            )
+        return dspy_module.LM(self.model)
+
+    @staticmethod
+    def _format_speaker_line(
+        author: str | None,
+        content: str,
+        fallback_speaker: str | None = None,
+    ) -> str:
+        speaker = author or fallback_speaker or "unknown"
+        return f"{speaker}: {content}"
+
+    @classmethod
+    def _build_context_and_message(
+        cls,
+        message_author: str | None,
+        message_content: str,
+        context_messages: list[tuple[str | None, str, str | None]],
+        max_context: int,
+    ) -> tuple[str, str, int]:
+        recent_context = context_messages[-max_context:] if context_messages else []
+        context_str = "\n".join(
+            cls._format_speaker_line(author, content, fallback_speaker)
+            for author, content, fallback_speaker in recent_context
+        )
+        current_msg = cls._format_speaker_line(message_author, message_content)
+        return context_str, current_msg, len(recent_context)
 
     def _run_detector(
         self,
@@ -168,12 +210,12 @@ class FlashpointDetectionService:
             score_threshold = self.DEFAULT_SCORE_THRESHOLD
 
         try:
-            recent_context = context_messages[-max_context:] if context_messages else []
-            context_str = "\n".join(
-                f"{m.author_username or m.author_id}: {m.content}" for m in recent_context
+            context_str, current_msg, context_count = self._build_context_and_message(
+                message.author_username or message.author_id,
+                message.content,
+                [(m.author_username or m.author_id, m.content, None) for m in context_messages],
+                max_context,
             )
-
-            current_msg = f"{message.author_username or message.author_id}: {message.content}"
 
             detector = self._get_detector()
             result = await asyncio.to_thread(self._run_detector, detector, context_str, current_msg)
@@ -188,7 +230,7 @@ class FlashpointDetectionService:
                 derailment_score=derailment_score,
                 risk_level=risk_level,
                 reasoning=result.reasoning,
-                context_messages=len(recent_context),
+                context_messages=context_count,
             )
 
         except _TRANSIENT_ERRORS as e:
@@ -213,8 +255,71 @@ class FlashpointDetectionService:
             )
             raise
 
+    async def detect_flashpoint_for_utterance(
+        self,
+        utterance: Utterance,
+        context: list[Utterance],
+        max_context: int | None = None,
+        score_threshold: int | None = None,
+    ) -> FlashpointMatch | None:
+        """Detect flashpoint signals for a URL-scan utterance and return tone schema output."""
+        from src.bulk_content_scan.flashpoint_utils import parse_derailment_score, parse_risk_level
+        from src.url_content_scan.tone_schemas import FlashpointMatch
 
-_flashpoint_service: FlashpointDetectionService | None = None
+        if utterance.utterance_id is None:
+            raise ValueError("detect_flashpoint_for_utterance requires utterance.utterance_id")
+
+        if max_context is None:
+            max_context = self.DEFAULT_MAX_CONTEXT
+        if score_threshold is None:
+            score_threshold = self.DEFAULT_SCORE_THRESHOLD
+
+        try:
+            context_str, current_msg, context_count = self._build_context_and_message(
+                utterance.author or utterance.utterance_id,
+                utterance.text,
+                [(item.author, item.text, item.utterance_id) for item in context],
+                max_context,
+            )
+
+            detector = self._get_detector()
+            result = await asyncio.to_thread(self._run_detector, detector, context_str, current_msg)
+
+            derailment_score = parse_derailment_score(result.derailment_score)
+            if derailment_score < score_threshold:
+                return None
+
+            risk_level = parse_risk_level(result.risk_level, derailment_score)
+            return FlashpointMatch(
+                utterance_id=utterance.utterance_id,
+                derailment_score=derailment_score,
+                risk_level=risk_level,
+                reasoning=result.reasoning,
+                context_messages=context_count,
+            )
+        except _TRANSIENT_ERRORS as e:
+            logger.warning(
+                "Flashpoint detection failed (transient)",
+                extra={
+                    "error": str(e),
+                    "error_type": type(e).__name__,
+                    "utterance_id": utterance.utterance_id,
+                },
+            )
+            return None
+        except Exception as e:
+            logger.error(
+                "Flashpoint detection failed (critical)",
+                extra={
+                    "error": str(e),
+                    "error_type": type(e).__name__,
+                    "utterance_id": utterance.utterance_id,
+                },
+            )
+            raise
+
+
+_flashpoint_services: dict[tuple[str, Path | None], FlashpointDetectionService] = {}
 _singleton_lock = threading.Lock()
 
 
@@ -223,40 +328,17 @@ def get_flashpoint_service(
     optimized_model_path: Path | None = None,
 ) -> FlashpointDetectionService:
     """Return a cached singleton FlashpointDetectionService."""
-    global _flashpoint_service
-
-    if _flashpoint_service is not None:
-        _raw_req = model if model is not None else settings.DEFAULT_MINI_MODEL
-        requested_model = _raw_req if isinstance(_raw_req, str) else str(_raw_req)
-        if model is not None and requested_model != _flashpoint_service.model:
-            warnings.warn(
-                f"get_flashpoint_service() singleton already created with "
-                f"model={_flashpoint_service.model!r}; ignoring requested "
-                f"model={requested_model!r}",
-                UserWarning,
-                stacklevel=2,
-            )
-        if (
-            optimized_model_path is not None
-            and optimized_model_path != _flashpoint_service._optimized_path
-        ):
-            warnings.warn(
-                f"get_flashpoint_service() singleton already created with "
-                f"optimized_model_path="
-                f"{_flashpoint_service._optimized_path!r}; "
-                f"ignoring requested "
-                f"optimized_model_path={optimized_model_path!r}",
-                UserWarning,
-                stacklevel=2,
-            )
-        return _flashpoint_service
+    _raw_req = model if model is not None else settings.DEFAULT_MINI_MODEL
+    requested_model = _raw_req if isinstance(_raw_req, str) else str(_raw_req)
+    cache_key = (requested_model, optimized_model_path)
 
     with _singleton_lock:
-        if _flashpoint_service is not None:
-            return _flashpoint_service
-        _flashpoint_service = FlashpointDetectionService(
-            model=model,
-            optimized_model_path=optimized_model_path,
-        )
+        service = _flashpoint_services.get(cache_key)
+        if service is None:
+            service = FlashpointDetectionService(
+                model=model,
+                optimized_model_path=optimized_model_path,
+            )
+            _flashpoint_services[cache_key] = service
 
-    return _flashpoint_service
+    return service

@@ -1,0 +1,20 @@
+{
+  "source_url": "https://news.example.com/item/42",
+  "scrape": {
+    "markdown": "# Launch thread\n\nroot_author: The launch page is live.\n\nchild_author: I found a typo.\n\ngrandchild_author: Fixed in the latest deploy.",
+    "html": "<html><body><section data-page-kind=\"hierarchical_thread\"><article data-role=\"post\" data-utterance-id=\"root-1\"><h1>Launch thread</h1><p data-author>root_author</p><p>The launch page is live.</p></article><ul><li data-node-id=\"reply-1\" data-parent-id=\"root-1\"><p data-author>child_author</p><p>I found a typo.</p><img src=\"/assets/typo.png\" /><ul><li data-node-id=\"reply-2\" data-parent-id=\"reply-1\"><p data-author>grandchild_author</p><p>Fixed in the latest deploy.</p></li></ul></li></ul></section></body></html>",
+    "metadata": {
+      "title": "Launch thread",
+      "sourceURL": "https://news.example.com/item/42"
+    }
+  },
+  "expected": {
+    "page_kind": "hierarchical_thread",
+    "page_title": "Launch thread",
+    "utterance_count": 3,
+    "kinds": ["post", "reply", "reply"],
+    "parent_ids": [null, "root-1", "reply-1"],
+    "authors": ["root_author", "child_author", "grandchild_author"],
+    "images": [[], ["https://news.example.com/assets/typo.png"], []]
+  }
+}
