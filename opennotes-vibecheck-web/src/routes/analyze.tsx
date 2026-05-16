@@ -297,7 +297,20 @@ function AnalyzePageContent(props: { initialJobState: JobState | null }) {
     createSignal<ArchiveProbeState>("pending");
 
   const [notifyEnabled, setNotifyEnabled] = createSignal(false);
-  buildNotifyEffect({ jobStatus: () => jobStatus() ?? null, jobId, notifyEnabled });
+  const initialStatusByJob = new Map<string, string>();
+  createEffect(() => {
+    const id = jobId();
+    const status = jobStatus();
+    if (id && status && !initialStatusByJob.has(id)) {
+      initialStatusByJob.set(id, status);
+    }
+  });
+  buildNotifyEffect({
+    jobStatus: () => jobStatus() ?? null,
+    jobId,
+    notifyEnabled,
+    initialStatusForJob: (id) => initialStatusByJob.get(id) ?? null,
+  });
 
   let frameCompatRequest = 0;
   let archiveTerminalAt: number | null = null;
@@ -778,9 +791,15 @@ function AnalyzePageContent(props: { initialJobState: JobState | null }) {
             <span aria-hidden="true">&larr;</span>
             <span>Back to Vibecheck home</span>
           </A>
-          <Show when={isCached() && sidebarPayloadComplete()}>
-            <CachedBadge cachedAt={cachedAt()} />
-          </Show>
+          <div class="flex items-center gap-3">
+            <NotifyOnComplete
+              jobStatus={jobStatus() ?? undefined}
+              onEnabledChange={setNotifyEnabled}
+            />
+            <Show when={isCached() && sidebarPayloadComplete()}>
+              <CachedBadge cachedAt={cachedAt()} />
+            </Show>
+          </div>
         </nav>
 
         <Show
@@ -1018,10 +1037,6 @@ function AnalyzePageContent(props: { initialJobState: JobState | null }) {
                             Status: {jobStatus()}
                           </p>
                         </Show>
-                        <NotifyOnComplete
-                          jobStatus={jobStatus() ?? undefined}
-                          onEnabledChange={setNotifyEnabled}
-                        />
                       </div>
                       <Sidebar
                         sections={jobState()?.sections}
