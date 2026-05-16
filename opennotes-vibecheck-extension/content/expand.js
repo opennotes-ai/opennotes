@@ -72,6 +72,7 @@
     const specs = normalizeClickSpecs(rawSpecs);
     const maxIterations = Number(options.maxIterations ?? DEFAULT_MAX_ITERATIONS);
     const deadline = options.deadline ?? now() + Number(options.deadlineMs ?? DEFAULT_DEADLINE_MS);
+    const scope = options.scope ?? null;
     let clicks = 0;
     let usefulClicks = 0;
     let iterations = 0;
@@ -103,6 +104,7 @@
             deadline,
             mutationQuietMs: options.mutationQuietMs,
             settleMs: options.settleMs,
+            scope,
           });
           if (domSignature() !== before) {
             usefulClicks += 1;
@@ -232,7 +234,8 @@
 
       if (typeof MutationObserver === "function") {
         observer = new MutationObserver(schedule);
-        observer.observe(document.documentElement, { childList: true, subtree: true });
+        const observeTarget = (options.scope && typeof options.scope === "object" && options.scope.nodeType) ? options.scope : document.documentElement;
+        observer.observe(observeTarget, { childList: true, subtree: true });
       }
       schedule();
     });
@@ -280,12 +283,9 @@
   }
 
   function domSignature() {
-    const root = document.documentElement;
     return [
-      root?.scrollHeight || 0,
-      document.body?.scrollHeight || 0,
-      root?.childElementCount || 0,
-      document.querySelectorAll?.("*")?.length || 0,
+      document.documentElement?.scrollHeight || 0,
+      document.body?.children?.length || 0,
     ].join(":");
   }
 
