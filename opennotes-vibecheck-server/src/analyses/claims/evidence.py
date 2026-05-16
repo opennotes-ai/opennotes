@@ -20,7 +20,7 @@ from urllib.parse import urlsplit, urlunsplit
 
 import logfire
 from pydantic import BaseModel, Field, ValidationError
-from pydantic_ai.native_tools import WebSearchTool
+from pydantic_ai.capabilities import WebSearch
 
 from src.analyses.claims._claims_schemas import (
     ClaimCategory,
@@ -364,7 +364,7 @@ async def _fetch_grounded_candidates_for_group(
         system_prompt=_EXTERNAL_EVIDENCE_PROMPT,
         name="vibecheck.claims_evidence_fetch",
         tier="fast",
-        builtin_tools=[WebSearchTool(search_context_size="low", max_uses=len(claim_texts))],
+        capabilities=[WebSearch(search_context_size="low", max_uses=len(claim_texts))],
     )
     prompt = "Claims:\n" + "\n".join(f"- {claim_text}" for claim_text in claim_texts)
     async with vertex_slot(settings):
