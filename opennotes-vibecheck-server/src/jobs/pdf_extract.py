@@ -12,12 +12,12 @@ from src.jobs.pdf_storage import get_pdf_upload_store
 from src.jobs.scrape_quality import ScrapeQuality, classify_scrape
 from src.monitoring import get_logger
 from src.utils.html_sanitize import strip_for_llm
+from src.utterances.batched.dispatcher import extract_utterances_dispatched
 from src.utterances.errors import (
     TransientExtractionError,
     ZeroUtterancesError,
     classify_firecrawl_error,
 )
-from src.utterances.extractor import extract_utterances
 from src.utterances.schema import UtterancesPayload
 
 logger = get_logger(__name__)
@@ -157,7 +157,7 @@ async def pdf_extract_step(
         ) from exc
 
     try:
-        return await extract_utterances(
+        return await extract_utterances_dispatched(
             gcs_key,
             client,
             scrape_cache,

@@ -180,12 +180,12 @@ from src.utils.url_security import (
     revalidate_redirect_target,
     validate_public_http_url,
 )
+from src.utterances.batched.dispatcher import extract_utterances_dispatched
 from src.utterances.errors import (
     TransientExtractionError,
     UtteranceExtractionError,
     ZeroUtterancesError,
 )
-from src.utterances.extractor import extract_utterances
 from src.utterances.schema import UtterancesPayload
 from src.viafoura import (
     ViafouraFetchError,
@@ -2997,7 +2997,7 @@ async def _run_pipeline(  # noqa: PLR0912
         # this, `extract_utterances._get_or_scrape` would re-read
         # `tier="scrape"` from cache and overwrite the Tier 2 bundle with the
         # cached Tier 1 INTERSTITIAL — silently defeating force_tier.
-        return await extract_utterances(
+        return await extract_utterances_dispatched(
             url, client, scrape_cache, settings=settings, scrape=scrape
         )
 

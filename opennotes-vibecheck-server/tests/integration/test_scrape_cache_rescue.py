@@ -228,7 +228,7 @@ async def test_second_submit_within_ttl_reuses_scrape_cache(
     ) -> UtterancesPayload:
         raise RuntimeError("Gemini connection lost")
 
-    monkeypatch.setattr(orchestrator, "extract_utterances", _failing_extract)
+    monkeypatch.setattr(orchestrator, "extract_utterances_dispatched", _failing_extract)
 
     job_one_id, job_one_attempt = await insert_pending_job(
         db_pool, url=target_url
@@ -270,7 +270,7 @@ async def test_second_submit_within_ttl_reuses_scrape_cache(
     ) -> UtterancesPayload:
         return _payload(url)
 
-    monkeypatch.setattr(orchestrator, "extract_utterances", _ok_extract)
+    monkeypatch.setattr(orchestrator, "extract_utterances_dispatched", _ok_extract)
 
     job_two_id, job_two_attempt = await insert_pending_job(
         db_pool, url=target_url

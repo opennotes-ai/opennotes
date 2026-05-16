@@ -131,7 +131,7 @@ async def test_pdf_extract_stores_html_and_extracts_from_signed_url(
         return payload
 
     monkeypatch.setattr(pdf_extract, "get_pdf_upload_store", _fake_store_factory)
-    monkeypatch.setattr(pdf_extract, "extract_utterances", fake_extract_utterances)
+    monkeypatch.setattr(pdf_extract, "extract_utterances_dispatched", fake_extract_utterances)
 
     scrape_cache = FakeScrapeCache()
     result = await pdf_extract.pdf_extract_step(
@@ -228,7 +228,7 @@ async def test_pdf_extract_preserves_transient_utterance_errors(
         )
 
     monkeypatch.setattr(pdf_extract, "get_pdf_upload_store", _fake_store_factory)
-    monkeypatch.setattr(pdf_extract, "extract_utterances", fake_extract_utterances)
+    monkeypatch.setattr(pdf_extract, "extract_utterances_dispatched", fake_extract_utterances)
 
     with pytest.raises(TransientExtractionError) as info:
         await pdf_extract.pdf_extract_step(
@@ -296,7 +296,7 @@ async def test_pdf_extract_zero_utterances_is_terminal_pdf_error(
         raise ZeroUtterancesError("Gemini returned 0 utterances")
 
     monkeypatch.setattr(pdf_extract, "get_pdf_upload_store", _fake_store_factory)
-    monkeypatch.setattr(pdf_extract, "extract_utterances", fake_extract_utterances)
+    monkeypatch.setattr(pdf_extract, "extract_utterances_dispatched", fake_extract_utterances)
 
     with pytest.raises(pdf_extract.PDFExtractionError) as info:
         await pdf_extract.pdf_extract_step(
@@ -372,7 +372,7 @@ async def test_pdf_extract_step_signed_url_minted_just_before_scrape(
         return payload
 
     monkeypatch.setattr(pdf_extract, "get_pdf_upload_store", tracking_factory)
-    monkeypatch.setattr(pdf_extract, "extract_utterances", fake_extract_utterances)
+    monkeypatch.setattr(pdf_extract, "extract_utterances_dispatched", fake_extract_utterances)
 
     result = await pdf_extract.pdf_extract_step(
         pool,
@@ -425,7 +425,7 @@ async def test_pdf_extract_step_cache_put_failure_raises_transient(
         )
 
     monkeypatch.setattr(pdf_extract, "get_pdf_upload_store", _fake_store_factory)
-    monkeypatch.setattr(pdf_extract, "extract_utterances", fake_extract_utterances)
+    monkeypatch.setattr(pdf_extract, "extract_utterances_dispatched", fake_extract_utterances)
 
     scrape_cache = FailingScrapeCache()
     with pytest.raises(TransientExtractionError) as info:

@@ -83,7 +83,7 @@ async def test_post_scrape_redirect_to_private_ip_marks_invalid_url(
         extract_called = True
         raise AssertionError("extract_utterances must not run after SSRF reject")
 
-    monkeypatch.setattr(orchestrator, "extract_utterances", _spy_extract)
+    monkeypatch.setattr(orchestrator, "extract_utterances_dispatched", _spy_extract)
 
     # If the section fan-out runs we have a bug — assert by raising.
     async def _fail_fanout(*args: Any, **kwargs: Any) -> None:

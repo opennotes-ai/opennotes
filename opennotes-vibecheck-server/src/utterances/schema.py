@@ -25,3 +25,18 @@ class UtterancesPayload(BaseModel):
     page_title: str | None = None
     page_kind: PageKind = PageKind.OTHER
     utterance_stream_type: UtteranceStreamType = UtteranceStreamType.UNKNOWN
+
+
+class SectionHint(BaseModel):
+    anchor_hint: str
+    tolerance_bytes: int | None = None
+    parent_context_text: str | None = None
+    overlap_with_prev_bytes: int | None = None
+
+
+class BatchedUtteranceRedirectionResponse(BaseModel):
+    page_kind: PageKind
+    utterance_stream_type: UtteranceStreamType
+    page_title: str | None = None
+    boundary_instructions: str
+    section_hints: list[SectionHint] = Field(default_factory=list)

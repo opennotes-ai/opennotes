@@ -191,6 +191,17 @@ class Settings(BaseSettings):
 
     LOGFIRE_EXTRACTOR_CONTENT_SAMPLE_RATE: float = 0.05
 
+    # TASK-1649.01: batched utterance extraction thresholds. Pages whose
+    # sanitized HTML / markdown exceeds the respective byte cap are redirected
+    # to the batched extraction path instead of being processed in one pass.
+    # Defaults are intentionally high so all current normal pages remain on
+    # the single-pass path. Overlap must be < section target (validated below).
+    VIBECHECK_BATCH_HTML_BYTES: int = 800_000
+    VIBECHECK_BATCH_MARKDOWN_BYTES: int = 400_000
+    VIBECHECK_BATCH_SECTION_TARGET_BYTES: int = 80_000
+    VIBECHECK_BATCH_OVERLAP_BYTES: int = 2_000
+    VIBECHECK_BATCH_PARALLEL: int = 3
+
     @field_validator("LOGFIRE_EXTRACTOR_CONTENT_SAMPLE_RATE")
     @classmethod
     def _validate_extractor_content_sample_rate(cls, value: float) -> float:
@@ -235,6 +246,25 @@ class Settings(BaseSettings):
     def _nonnegative_vertex_saturation_retry_numbers(cls, value: int) -> int:
         if value < 0:
             raise ValueError("Vertex saturation retry settings must be >= 0")
+        return value
+
+    @field_validator(
+        "VIBECHECK_BATCH_HTML_BYTES",
+        "VIBECHECK_BATCH_MARKDOWN_BYTES",
+        "VIBECHECK_BATCH_SECTION_TARGET_BYTES",
+        "VIBECHECK_BATCH_OVERLAP_BYTES",
+    )
+    @classmethod
+    def _batch_byte_counts_nonnegative(cls, value: int) -> int:
+        if value < 0:
+            raise ValueError("VIBECHECK_BATCH_*_BYTES settings must be >= 0")
+        return value
+
+    @field_validator("VIBECHECK_BATCH_PARALLEL")
+    @classmethod
+    def _batch_parallel_positive(cls, value: int) -> int:
+        if value <= 0:
+            raise ValueError("VIBECHECK_BATCH_PARALLEL must be > 0")
         return value
 
     @field_validator(
@@ -290,6 +320,14 @@ class Settings(BaseSettings):
     def _vertex_saturation_retry_max_at_least_base(self) -> "Settings":
         if self.VERTEX_SATURATION_RETRY_MAX_MS < self.VERTEX_SATURATION_RETRY_BASE_MS:
             raise ValueError("VERTEX_SATURATION_RETRY_MAX_MS must be >= BASE_MS")
+        return self
+
+    @model_validator(mode="after")
+    def _batch_overlap_less_than_section_target(self) -> "Settings":
+        if self.VIBECHECK_BATCH_OVERLAP_BYTES >= self.VIBECHECK_BATCH_SECTION_TARGET_BYTES:
+            raise ValueError(
+                "VIBECHECK_BATCH_OVERLAP_BYTES must be < VIBECHECK_BATCH_SECTION_TARGET_BYTES"
+            )
         return self
 
     @model_validator(mode="after")

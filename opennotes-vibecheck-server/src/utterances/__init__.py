@@ -1,3 +1,4 @@
+from .batched.dispatcher import extract_utterances_dispatched
 from .extractor import (
     UtteranceExtractionError,
     ZeroUtterancesError,
@@ -11,4 +12,5 @@ __all__ = [
     "UtterancesPayload",
     "ZeroUtterancesError",
     "extract_utterances",
+    "extract_utterances_dispatched",
 ]
