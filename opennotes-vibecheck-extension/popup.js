@@ -36,8 +36,8 @@ endpointInput.addEventListener("change", saveSettings);
 endpointInput.addEventListener("blur", saveSettings);
 apiKeyInput.addEventListener("change", saveSettings);
 apiKeyInput.addEventListener("blur", saveSettings);
-expandCheckbox.addEventListener("change", saveExpandPref);
 expandCheckbox.addEventListener("change", () => {
+  saveExpandPref();
   if (!expandCheckbox.checked) {
     hideExpandStatus();
   }
@@ -81,97 +81,106 @@ async function loadActiveTab() {
 }
 
 async function submitCurrentPage() {
+  if (submitButton.disabled) {
+    return;
+  }
+  submitButton.disabled = true;
+
   hideResult();
   hideExpandStatus();
   const endpointUrl = endpointInput.value.trim();
   const apiKey = apiKeyInput.value.trim();
   const shouldExpandComments = expandCheckbox.checked;
 
-  if (!endpointUrl) {
-    showError("Missing endpoint URL", "Configure the Vibecheck endpoint URL in settings.");
-    return;
-  }
-
-  if (!apiKey) {
-    showError("Missing API key", "Configure the API key in settings.");
-    return;
-  }
-
-  if (!activeTab?.id || !activeTab?.url) {
-    showError("No active page", "Open a browser tab before submitting.");
-    return;
-  }
-
-  let scrapeUrl;
   try {
-    scrapeUrl = buildScrapeUrl(endpointUrl);
-  } catch (error) {
-    showError("Invalid endpoint URL", error instanceof Error ? error.message : String(error));
-    return;
-  }
-
-  let hasEndpointAccess;
-  try {
-    hasEndpointAccess = await ensureEndpointPermission(scrapeUrl);
-  } catch (error) {
-    showError(
-      "Endpoint access unavailable",
-      error instanceof Error ? error.message : String(error)
-    );
-    return;
-  }
-
-  if (!hasEndpointAccess) {
-    showError("Endpoint access denied", "Grant access to the configured endpoint origin and try again.");
-    return;
-  }
-
-  await saveSettings();
-  let expandResult = null;
-
-  try {
-    if (shouldExpandComments) {
-      setPhase("expanding");
-      expandResult = await runExpansion(activeTab.id);
-    }
-
-    setPhase("capturing");
-    const page = await capturePage(activeTab.id);
-    const screenshotBase64 = await captureScreenshotForSubmission(activeTab.id);
-    const body = compactPayload({
-      url: activeTab.url,
-      source_url: activeTab.url,
-      html: page.html,
-      title: page.title,
-      description: page.description,
-      screenshot_base64: screenshotBase64,
-    });
-
-    setPhase("submitting");
-    const response = await fetch(scrapeUrl, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(body),
-    });
-
-    const responseBody = await readResponseBody(response);
-
-    if (!response.ok) {
-      showError(`HTTP ${response.status}`, formatErrorBody(responseBody));
-      renderExpandStatus(expandResult);
+    if (!endpointUrl) {
+      showError("Missing endpoint URL", "Configure the Vibecheck endpoint URL in settings.");
       return;
     }
 
-    showSuccess(responseBody);
-    renderExpandStatus(expandResult);
-  } catch (error) {
-    showError("Network error", error instanceof Error ? error.message : String(error));
-    renderExpandStatus(expandResult);
+    if (!apiKey) {
+      showError("Missing API key", "Configure the API key in settings.");
+      return;
+    }
+
+    if (!activeTab?.id || !activeTab?.url) {
+      showError("No active page", "Open a browser tab before submitting.");
+      return;
+    }
+
+    let scrapeUrl;
+    try {
+      scrapeUrl = buildScrapeUrl(endpointUrl);
+    } catch (error) {
+      showError("Invalid endpoint URL", error instanceof Error ? error.message : String(error));
+      return;
+    }
+
+    let hasEndpointAccess;
+    try {
+      hasEndpointAccess = await ensureEndpointPermission(scrapeUrl);
+    } catch (error) {
+      showError(
+        "Endpoint access unavailable",
+        error instanceof Error ? error.message : String(error)
+      );
+      return;
+    }
+
+    if (!hasEndpointAccess) {
+      showError("Endpoint access denied", "Grant access to the configured endpoint origin and try again.");
+      return;
+    }
+
+    await saveSettings();
+    let expandResult = null;
+
+    try {
+      if (shouldExpandComments) {
+        setPhase("expanding");
+        expandResult = await runExpansion(activeTab.id);
+      }
+
+      setPhase("capturing");
+      const page = await capturePage(activeTab.id);
+      const screenshotBase64 = await captureScreenshotForSubmission(activeTab.id);
+      const body = compactPayload({
+        url: activeTab.url,
+        source_url: activeTab.url,
+        html: page.html,
+        title: page.title,
+        description: page.description,
+        screenshot_base64: screenshotBase64,
+      });
+
+      setPhase("submitting");
+      const response = await fetch(scrapeUrl, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(body),
+      });
+
+      const responseBody = await readResponseBody(response);
+
+      if (!response.ok) {
+        showError(`HTTP ${response.status}`, formatErrorBody(responseBody));
+        renderExpandStatus(expandResult);
+        return;
+      }
+
+      showSuccess(responseBody);
+      renderExpandStatus(expandResult);
+    } catch (error) {
+      showError("Network error", error instanceof Error ? error.message : String(error));
+      renderExpandStatus(expandResult);
+    } finally {
+      setPhase("idle");
+    }
   } finally {
-    setPhase("idle");
+    submitButton.disabled = false;
   }
 }
 
@@ -179,22 +188,36 @@ async function runExpansion(tabId) {
   const attempts = [];
 
   for (let attempt = 1; attempt <= 2; attempt += 1) {
+    if (attempt > 1) {
+      await chrome.scripting.executeScript({
+        target: { tabId },
+        func: () => {
+          delete globalThis.__vibecheckExpand_strategies;
+          delete globalThis.__vibecheckExpand_run;
+        },
+      });
+    }
+
     const result = await runExpansionAttempt(tabId, attempt);
     attempts.push(result);
 
-    if (result.status !== "failure" || !result.retryable || attempt === 2) {
+    if (result.status !== "failure" || !result.retryable) {
       const finalResult = {
         ...result,
         attempts,
         retried: attempts.length === 2,
-        retryable: attempts[0]?.retryable || false,
       };
       logExpansionTelemetry(finalResult);
       return finalResult;
     }
   }
 
-  const finalResult = attempts[attempts.length - 1];
+  const lastResult = attempts[attempts.length - 1];
+  const finalResult = {
+    ...lastResult,
+    attempts,
+    retried: true,
+  };
   logExpansionTelemetry(finalResult);
   return finalResult;
 }
