@@ -34,13 +34,14 @@
 
   function isSafeOldRedditInlineMoreLink(candidate) {
     const href = candidate.getAttribute?.("href") || "";
-    if (!href || href.startsWith("#") || href.startsWith("javascript:")) {
+    if (!href || href.startsWith("#")) {
       return true;
     }
 
     try {
       const link = new URL(href, location.href);
       return (
+        (link.protocol === "https:" || link.protocol === "http:") &&
         link.hostname === location.hostname &&
         link.pathname === location.pathname &&
         candidate.closest?.(".sitetable")

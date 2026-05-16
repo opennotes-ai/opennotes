@@ -160,6 +160,44 @@ test("site strategy files register the planned host keys", async () => {
   }
 });
 
+test("reddit strategy skips non-http inline-more href schemes", async () => {
+  const context = vm.createContext({
+    globalThis: {},
+    location: {
+      href: "https://old.reddit.com/r/example/comments/abc/title/",
+      hostname: "old.reddit.com",
+      pathname: "/r/example/comments/abc/title/",
+    },
+    URL,
+  });
+  context.globalThis = context;
+  const source = await readExtensionFile("content/sites/reddit.js");
+  vm.runInContext(source, context, { filename: "content/sites/reddit.js" });
+
+  let oldRedditSpec = null;
+  await context.__vibecheckExpand_strategies["old.reddit.com"]({
+    clickAllMatching: async (specs) => {
+      oldRedditSpec = specs.find((spec) => spec.selector === ".morechildren a");
+      return { clicks: 0, useful_clicks: 0, iterations: 1, timed_out: false };
+    },
+  });
+
+  const candidate = (href) => ({
+    getAttribute: () => href,
+    closest: (selector) => selector === ".sitetable",
+  });
+
+  assert.equal(oldRedditSpec.predicate(candidate("data:text/html,<p>x</p>")), false);
+  assert.equal(oldRedditSpec.predicate(candidate("vbscript:msgbox(1)")), false);
+  assert.equal(oldRedditSpec.predicate(candidate("javascript:void(0)")), false);
+  assert.equal(
+    oldRedditSpec.predicate(
+      candidate("https://old.reddit.com/r/example/comments/abc/title/?count=500")
+    ),
+    true
+  );
+});
+
 test("submit flow injects expansion before capture and emits one telemetry event", async () => {
   const js = await readExtensionFile("popup.js");
 
