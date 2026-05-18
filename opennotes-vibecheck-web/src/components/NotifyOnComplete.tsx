@@ -1,4 +1,4 @@
-import { batch, createEffect, createSignal, JSX, onCleanup, onMount, Show, untrack } from "solid-js";
+import { batch, createEffect, createSignal, JSX, on, onCleanup, onMount, Show } from "solid-js";
 import {
   getPermission,
   isSupported,
@@ -18,18 +18,28 @@ export default function NotifyOnComplete(
 ): JSX.Element {
   const [persistedPref, setPersistedPref] = createSignal(false);
   const [permission, setPermission] = createSignal<NotificationPermissionState>("default");
-  const [inFlight, setInFlight] = createSignal(false);
+  const [pendingPermission, setPendingPermission] = createSignal(false);
 
   const hintId = "notify-on-complete-hint";
 
   onMount(() => {
-    setPermission(getPermission());
-    setPersistedPref(loadNotifyPreference());
+    const perm = getPermission();
+    const pref = loadNotifyPreference();
+    batch(() => {
+      setPermission(perm);
+      setPersistedPref(pref);
+    });
+    props.onEnabledChange(pref && perm === "granted");
 
     if (typeof window !== "undefined") {
       const handler = (e: StorageEvent) => {
         if (e.key !== NOTIFY_PREFERENCE_KEY) return;
-        setPersistedPref(e.newValue === "true");
+        const newPref = e.newValue === "true";
+        const currentPerm = getPermission();
+        batch(() => {
+          setPersistedPref(newPref);
+          setPermission(currentPerm);
+        });
       };
       window.addEventListener("storage", handler);
       onCleanup(() => window.removeEventListener("storage", handler));
@@ -38,17 +48,16 @@ export default function NotifyOnComplete(
 
   const enabled = () => persistedPref() && permission() === "granted";
 
-  createEffect(() => {
-    const e = enabled();
-    untrack(() => props.onEnabledChange(e));
-  });
+  createEffect(on(enabled, (e) => {
+    props.onEnabledChange(e);
+  }, { defer: true }));
 
-  const disabled = () => permission() === "denied" || !isSupported();
+  const disabled = () => permission() === "denied" || !isSupported() || pendingPermission();
   const showHint = () => permission() === "denied" || !isSupported();
   const hintText = () => !isSupported() ? "Notifications not supported" : "Notifications blocked";
 
   const handleToggle = async (checked: boolean) => {
-    if (inFlight()) return;
+    if (pendingPermission()) return;
 
     if (!checked) {
       batch(() => {
@@ -69,7 +78,7 @@ export default function NotifyOnComplete(
     }
 
     if (currentPermission === "default") {
-      setInFlight(true);
+      setPendingPermission(true);
       try {
         const result = await requestPermission();
         batch(() => {
@@ -83,21 +92,19 @@ export default function NotifyOnComplete(
           }
         });
       } finally {
-        setInFlight(false);
+        setPendingPermission(false);
       }
     }
   };
 
   return (
     <div class="flex flex-col gap-1">
-      <div
-        class="flex items-center gap-2"
-        aria-describedby={showHint() ? hintId : undefined}
-      >
+      <div class="flex items-center gap-2">
         <Checkbox
           checked={enabled()}
           disabled={disabled()}
           onChange={handleToggle}
+          inputProps={{ "aria-describedby": showHint() ? hintId : undefined }}
         >
           <CheckboxLabel>Notify me when ready</CheckboxLabel>
         </Checkbox>

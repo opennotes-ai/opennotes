@@ -258,6 +258,124 @@ describe("<NotifyOnComplete />", () => {
         expect(container?.getAttribute("aria-describedby")).toContain(hint.id);
       });
     });
+
+    it("aria-describedby is on the focusable checkbox input, not a wrapper div", async () => {
+      isSupported.mockReturnValue(true);
+      getPermission.mockReturnValue("denied");
+      loadNotifyPreference.mockReturnValue(false);
+      const { default: NotifyOnComplete } = await import("./NotifyOnComplete");
+
+      render(() => (
+        <NotifyOnComplete jobStatus="running" onEnabledChange={() => {}} />
+      ));
+
+      await waitFor(() => {
+        const checkbox = screen.getByRole("checkbox", { name: /notify me when ready/i });
+        const hintText = screen.getByText(/notifications blocked/i);
+        expect(checkbox.getAttribute("aria-describedby")).toContain(hintText.id);
+      });
+    });
+  });
+
+  describe("pending permission gate", () => {
+    it("two rapid clicks while requestPermission is in flight call requestPermission exactly once", async () => {
+      isSupported.mockReturnValue(true);
+      getPermission.mockReturnValue("default");
+      loadNotifyPreference.mockReturnValue(false);
+
+      let resolvePermission!: (v: "granted" | "denied") => void;
+      const permissionPromise = new Promise<"granted" | "denied">((resolve) => {
+        resolvePermission = resolve;
+      });
+      requestPermission.mockReturnValue(permissionPromise);
+
+      const { default: NotifyOnComplete } = await import("./NotifyOnComplete");
+
+      render(() => (
+        <NotifyOnComplete jobStatus="running" onEnabledChange={() => {}} />
+      ));
+
+      const checkbox = screen.getByRole("checkbox", { name: /notify me when ready/i });
+      fireEvent.click(checkbox);
+      fireEvent.click(checkbox);
+
+      resolvePermission("granted");
+
+      await waitFor(() => {
+        expect(requestPermission).toHaveBeenCalledTimes(1);
+      });
+    });
+
+    it("checkbox is disabled while requestPermission is in flight", async () => {
+      isSupported.mockReturnValue(true);
+      getPermission.mockReturnValue("default");
+      loadNotifyPreference.mockReturnValue(false);
+
+      let resolvePermission!: (v: "granted" | "denied") => void;
+      const permissionPromise = new Promise<"granted" | "denied">((resolve) => {
+        resolvePermission = resolve;
+      });
+      requestPermission.mockReturnValue(permissionPromise);
+
+      const { default: NotifyOnComplete } = await import("./NotifyOnComplete");
+
+      render(() => (
+        <NotifyOnComplete jobStatus="running" onEnabledChange={() => {}} />
+      ));
+
+      const checkbox = screen.getByRole("checkbox", { name: /notify me when ready/i });
+      fireEvent.click(checkbox);
+
+      await waitFor(() => {
+        expect(screen.getByRole("checkbox", { name: /notify me when ready/i })).toBeDisabled();
+      });
+
+      resolvePermission("granted");
+
+      await waitFor(() => {
+        expect(screen.getByRole("checkbox", { name: /notify me when ready/i })).not.toBeDisabled();
+      });
+    });
+  });
+
+  describe("deferred initial emit", () => {
+    it("emits onEnabledChange exactly once with true when persistedPref=true and permission=granted on mount", async () => {
+      isSupported.mockReturnValue(true);
+      getPermission.mockReturnValue("granted");
+      loadNotifyPreference.mockReturnValue(true);
+      const onEnabledChange = vi.fn();
+      const { default: NotifyOnComplete } = await import("./NotifyOnComplete");
+
+      render(() => (
+        <NotifyOnComplete jobStatus="running" onEnabledChange={onEnabledChange} />
+      ));
+
+      await waitFor(() => {
+        expect(screen.getByRole("checkbox", { name: /notify me when ready/i })).toBeChecked();
+      });
+
+      expect(onEnabledChange).toHaveBeenCalledTimes(1);
+      expect(onEnabledChange).toHaveBeenCalledWith(true);
+    });
+
+    it("does not emit onEnabledChange(false) before onMount reads persistedPref", async () => {
+      isSupported.mockReturnValue(true);
+      getPermission.mockReturnValue("granted");
+      loadNotifyPreference.mockReturnValue(true);
+      const onEnabledChange = vi.fn();
+      const { default: NotifyOnComplete } = await import("./NotifyOnComplete");
+
+      render(() => (
+        <NotifyOnComplete jobStatus="running" onEnabledChange={onEnabledChange} />
+      ));
+
+      await waitFor(() => {
+        expect(screen.getByRole("checkbox", { name: /notify me when ready/i })).toBeChecked();
+      });
+
+      const falseCalls = onEnabledChange.mock.calls.filter(([v]) => v === false);
+      expect(falseCalls).toHaveLength(0);
+    });
   });
 
   describe("race: requestPermission pending during job completion", () => {
