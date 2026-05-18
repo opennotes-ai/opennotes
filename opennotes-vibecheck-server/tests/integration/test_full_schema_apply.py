@@ -624,6 +624,105 @@ async def test_atomic_scrape_upsert_rpc_14_arg_shim_writes_null_raw_html(
     assert row["raw_html"] is None
 
 
+async def test_x_api_scrape_tier_round_trips_through_schema_rpcs(
+    full_schema_conn: asyncpg.Connection,
+) -> None:
+    await _apply_full_schema_as_superuser(full_schema_conn)
+
+    now = datetime.now(UTC)
+    wrote = await full_schema_conn.fetchval(
+        """
+        SELECT public.vibecheck_upsert_scrape_if_not_evicted(
+            $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15
+        )
+        """,
+        "https://x.com/alice/status/100",
+        "x_api",
+        "https://x.com/alice/status/100",
+        "https://x.com/i/status/100",
+        "x.com",
+        "other",
+        "@alice on X",
+        "root tweet",
+        '<article data-utterance-id="100">root tweet</article>',
+        '<article data-utterance-id="100">root tweet</article>',
+        None,
+        now,
+        now + timedelta(hours=72),
+        now,
+        1,
+    )
+    assert wrote is True
+
+    replacement_time = now + timedelta(seconds=1)
+    wrote_replacement = await full_schema_conn.fetchval(
+        """
+        SELECT public.vibecheck_upsert_scrape_if_not_evicted(
+            $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15
+        )
+        """,
+        "https://x.com/alice/status/100",
+        "x_api",
+        "https://x.com/alice/status/100",
+        "https://x.com/i/status/100",
+        "x.com",
+        "other",
+        "@alice on X",
+        "replacement",
+        '<article data-utterance-id="100">replacement</article>',
+        '<article data-utterance-id="100">replacement</article>',
+        None,
+        replacement_time,
+        replacement_time + timedelta(hours=72),
+        now,
+        1,
+    )
+    assert wrote_replacement is True
+
+    row = await full_schema_conn.fetchrow(
+        """
+        SELECT markdown, html, raw_html
+        FROM public.vibecheck_scrapes
+        WHERE normalized_url = $1 AND tier = 'x_api'
+        """,
+        "https://x.com/alice/status/100",
+    )
+    assert row is not None
+    assert row["markdown"] == "replacement"
+    assert row["html"] == '<article data-utterance-id="100">replacement</article>'
+    assert row["raw_html"] == '<article data-utterance-id="100">replacement</article>'
+
+    evicted_at = replacement_time + timedelta(seconds=1)
+    await full_schema_conn.execute(
+        """
+        SELECT public.vibecheck_upsert_scrape_evict_tombstone(
+            $1, $2, $3, $4, $5, $6, $7
+        )
+        """,
+        "https://x.com/alice/status/100",
+        "x_api",
+        "https://x.com/alice/status/100",
+        "x.com",
+        evicted_at,
+        evicted_at - timedelta(hours=1),
+        evicted_at,
+    )
+
+    row = await full_schema_conn.fetchrow(
+        """
+        SELECT markdown, html, raw_html, evicted_at
+        FROM public.vibecheck_scrapes
+        WHERE normalized_url = $1 AND tier = 'x_api'
+        """,
+        "https://x.com/alice/status/100",
+    )
+    assert row is not None
+    assert row["markdown"] is None
+    assert row["html"] is None
+    assert row["raw_html"] is None
+    assert row["evicted_at"] == evicted_at
+
+
 # ============= VIBECHECK FEEDBACK tests (TASK-1588.01) =============
 
 
