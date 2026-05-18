@@ -3,6 +3,9 @@
   "version": "0.0.0",
   "private": true,
   "packageManager": "pnpm@10.33.0",
+  "devDependencies": {
+    "happy-dom": "^17.0.0"
+  },
   "scripts": {
     "build": "pnpm -r run build",
     "test": "pnpm -r run test",

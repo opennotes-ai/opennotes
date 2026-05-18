@@ -102,6 +102,23 @@ button:disabled {
   opacity: 0.62;
 }
 
+.expand-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  color: #465569;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.expand-toggle input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  padding: 0;
+}
+
 #status {
   min-height: 18px;
   margin-top: 8px;
@@ -144,4 +161,25 @@ h1.field-label {
   margin-top: 6px;
   color: #607086;
   font-size: 12px;
+}
+
+.expand-status {
+  border: 1px solid #d8dee8;
+  border-left: 4px solid #b7791f;
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: #fffaf0;
+  color: #744210;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.expand-status.error {
+  border-left-color: #c93c37;
+  background: #fff5f5;
+  color: #8a1f1b;
+}
+
+.expand-status[hidden] {
+  display: none;
 }
