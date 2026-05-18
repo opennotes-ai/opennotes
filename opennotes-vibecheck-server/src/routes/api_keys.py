@@ -293,11 +293,11 @@ async def request_api_key(
 
     try:
         email_norm = await _validate_email(email_raw)
-    except (TimeoutError, email_validator.EmailNotValidError) as exc:
+    except (TimeoutError, email_validator.EmailNotValidError):
         return _error_response(
             400,
             "invalid_email",
-            str(exc) or "The email address is invalid or could not be verified. "
+            "The email address is invalid or could not be verified. "
             "Please check the address and try again.",
         )
 

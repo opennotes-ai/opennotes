@@ -68,5 +68,5 @@ async def require_scrape_token(
                 "UPDATE vibecheck_api_keys SET last_used_at = now() WHERE id = $1",
                 row["id"],
             )
-    except Exception as exc:
-        logger.warning("failed to update last_used_at for key %s: %s", key_prefix, exc)
+    except Exception:
+        logger.warning("failed to update last_used_at for an api key", exc_info=True)
