@@ -183,3 +183,51 @@ h1.field-label {
 .expand-status[hidden] {
   display: none;
 }
+
+#request-key-details {
+  border: none;
+  padding: 0;
+  background: transparent;
+}
+
+#request-key-details > summary {
+  font-size: 12px;
+  font-weight: 650;
+  color: #1f6feb;
+  cursor: pointer;
+}
+
+.request-key-panel {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.disclaimer {
+  color: #607086;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+#request-status {
+  padding: 6px 8px;
+  border-radius: 5px;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+#request-status[hidden] {
+  display: none;
+}
+
+.request-status--success {
+  background: #ecfdf5;
+  color: #166534;
+  border: 1px solid #bbf7d0;
+}
+
+.request-status--error {
+  background: #fff5f5;
+  color: #8a1f1b;
+  border: 1px solid #fecaca;
+}

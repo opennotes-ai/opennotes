@@ -11,14 +11,22 @@
       <details id="settings" open>
         <summary>Settings</summary>
         <div class="settings-grid">
-          <label for="endpoint-url">
-            Endpoint URL
-            <input id="endpoint-url" name="endpoint-url" type="url" inputmode="url" placeholder="http://localhost:3000">
-          </label>
           <label for="api-key">
             API Key
             <input id="api-key" name="api-key" type="password" autocomplete="off" placeholder="Bearer token">
           </label>
+          <details id="request-key-details">
+            <summary>Need an API key?</summary>
+            <div class="request-key-panel">
+              <label for="request-email">
+                Receive one via email:
+                <input id="request-email" name="request-email" type="email" placeholder="you@example.com">
+              </label>
+              <button id="request-key-btn" type="button">Request API Key</button>
+              <small class="disclaimer">Requesting a new API key will invalidate the previous API keys sent to this email address.</small>
+              <div id="request-status" role="status" aria-live="polite" hidden></div>
+            </div>
+          </details>
         </div>
       </details>
 
