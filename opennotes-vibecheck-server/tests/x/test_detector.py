@@ -35,3 +35,4 @@ def test_rejects_non_status_routes_and_lookalike_hosts() -> None:
     assert detect_x_status_url("https://x.com/jack/status/20abc") is None
     assert detect_x_status_url("https://evil-x.com/jack/status/20") is None
     assert detect_x_status_url("https://x.com.attacker.com/jack/status/20") is None
+    assert detect_x_status_url("https://twitter.com.attacker.com/jack/status/20") is None

@@ -13,6 +13,7 @@ _ALLOWED_HOSTS = {
     "www.twitter.com",
     "mobile.twitter.com",
 }
+_TWITTER_HOSTS = {"twitter.com", "www.twitter.com", "mobile.twitter.com"}
 
 
 class XStatusRef(BaseModel):
@@ -44,7 +45,7 @@ def detect_x_status_url(url: str) -> XStatusRef | None:
         return None
 
     source_host: Literal["x.com", "twitter.com"] = (
-        "twitter.com" if host.endswith("twitter.com") else "x.com"
+        "twitter.com" if host in _TWITTER_HOSTS else "x.com"
     )
     return XStatusRef(
         post_id=post_id,
