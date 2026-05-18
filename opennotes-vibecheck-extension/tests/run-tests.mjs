@@ -223,7 +223,7 @@ test("popup.js has BASE_URL hardcoded and endpoint storage key removed", async (
   assert.doesNotMatch(js, /endpointInput/);
   assert.doesNotMatch(js, /isLocalDevelopmentHost/);
   assert.doesNotMatch(js, /ensureEndpointPermission/);
-  assert.doesNotMatch(js, /chrome\.permissions\.request/);
+  assert.match(js, /chrome\.permissions\.request/);
   assert.match(js, /chrome\.storage\.sync\.remove\(\["vibecheck_endpoint_url"\]\)/);
 });
 
@@ -236,16 +236,19 @@ test("popup.css has disclaimer and request-status styles", async () => {
   assert.match(css, /\.request-status--success/);
 });
 
-test("manifest.json has host_permissions for vibecheck.opennotes.ai", async () => {
+test("manifest.json has vibecheck.opennotes.ai in optional_host_permissions only (no required host_permissions increase)", async () => {
   const manifestText = await readExtensionFile("manifest.json");
   const manifest = JSON.parse(manifestText);
 
-  assert.ok(Array.isArray(manifest.host_permissions), "host_permissions must be an array");
   assert.ok(
-    manifest.host_permissions.includes("https://vibecheck.opennotes.ai/*"),
-    "host_permissions must include https://vibecheck.opennotes.ai/*"
+    !manifest.host_permissions || manifest.host_permissions.length === 0,
+    "host_permissions must be absent or empty to avoid disabling installed extensions on update"
   );
   assert.ok(Array.isArray(manifest.optional_host_permissions), "optional_host_permissions must be present");
+  assert.ok(
+    manifest.optional_host_permissions.includes("https://vibecheck.opennotes.ai/*"),
+    "optional_host_permissions must include https://vibecheck.opennotes.ai/*"
+  );
 });
 
 test("handleRequestApiKey: 200 response shows success message", async () => {

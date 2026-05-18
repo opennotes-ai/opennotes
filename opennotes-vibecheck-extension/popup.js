@@ -104,6 +104,12 @@ async function submitCurrentPage() {
 
     const scrapeUrl = buildScrapeUrl();
 
+    const permGranted = await ensureVibecheckPermission();
+    if (!permGranted) {
+      showError("Permission denied", "Please allow access to vibecheck.opennotes.ai when prompted.");
+      return;
+    }
+
     await saveSettings();
     let expandResult = null;
 
@@ -156,6 +162,15 @@ async function submitCurrentPage() {
   }
 }
 
+async function ensureVibecheckPermission() {
+  const origin = `${BASE_URL}/*`;
+  const already = await chrome.permissions.contains({ origins: [origin] });
+  if (already) {
+    return true;
+  }
+  return chrome.permissions.request({ origins: [origin] });
+}
+
 async function handleRequestApiKey() {
   const email = requestEmailInput.value.trim();
 
@@ -168,6 +183,12 @@ async function handleRequestApiKey() {
   setRequestStatus("", false);
 
   try {
+    const granted = await ensureVibecheckPermission();
+    if (!granted) {
+      setRequestStatus("Permission denied. Please allow access to vibecheck.opennotes.ai.", true);
+      return;
+    }
+
     const response = await fetch(`${BASE_URL}/api/keys/request`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },

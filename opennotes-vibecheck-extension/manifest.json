@@ -9,10 +9,8 @@
     "storage",
     "scripting"
   ],
-  "host_permissions": [
-    "https://vibecheck.opennotes.ai/*"
-  ],
   "optional_host_permissions": [
+    "https://vibecheck.opennotes.ai/*",
     "http://*/*",
     "https://*/*"
   ],
