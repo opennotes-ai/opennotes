@@ -12,8 +12,6 @@ export const BLOCKING_HOST_FAMILIES: readonly {
   { family: "linkedin", root: "linkedin.com" },
 ];
 
-const SUPPORTED_PROTOCOLS = ["http:", "https:"] as const;
-
 // URL() host parsing applies normalization (e.g., case-folding and IDN/punycode
 // handling); this utility relies on that behavior.
 function normalizeHost(host: string): string | null {
@@ -45,7 +43,10 @@ export function isBlockingHost(input: string | URL): BlockingHostMatch {
           }
         })();
 
-  if (parsedUrl === null || !SUPPORTED_PROTOCOLS.includes(parsedUrl.protocol)) {
+  if (
+    parsedUrl === null ||
+    (parsedUrl.protocol !== "http:" && parsedUrl.protocol !== "https:")
+  ) {
     return { match: false };
   }
 

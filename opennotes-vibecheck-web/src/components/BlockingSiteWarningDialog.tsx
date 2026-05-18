@@ -6,7 +6,7 @@ import {
   DialogTitle,
 } from "@opennotes/ui";
 import { Button } from "@opennotes/ui/components/ui/button";
-import { createEffect, onCleanup } from "solid-js";
+import { createEffect, onCleanup, type JSX } from "solid-js";
 
 export interface BlockingSiteWarningDialogProps {
   open: boolean;
