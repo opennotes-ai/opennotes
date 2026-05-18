@@ -297,7 +297,11 @@ function AnalyzePageContent(props: { initialJobState: JobState | null }) {
     createSignal<ArchiveProbeState>("pending");
 
   const [notifyEnabled, setNotifyEnabled] = createSignal(false);
-  buildNotifyEffect({ jobStatus: () => jobStatus() ?? null, jobId, notifyEnabled });
+  buildNotifyEffect({
+    jobStatus: () => jobStatus() ?? null,
+    jobId,
+    notifyEnabled,
+  });
 
   let frameCompatRequest = 0;
   let archiveTerminalAt: number | null = null;
@@ -778,9 +782,15 @@ function AnalyzePageContent(props: { initialJobState: JobState | null }) {
             <span aria-hidden="true">&larr;</span>
             <span>Back to Vibecheck home</span>
           </A>
-          <Show when={isCached() && sidebarPayloadComplete()}>
-            <CachedBadge cachedAt={cachedAt()} />
-          </Show>
+          <div class="flex items-center gap-3">
+            <NotifyOnComplete
+              jobStatus={jobStatus() ?? undefined}
+              onEnabledChange={setNotifyEnabled}
+            />
+            <Show when={isCached() && sidebarPayloadComplete()}>
+              <CachedBadge cachedAt={cachedAt()} />
+            </Show>
+          </div>
         </nav>
 
         <Show
@@ -1018,10 +1028,6 @@ function AnalyzePageContent(props: { initialJobState: JobState | null }) {
                             Status: {jobStatus()}
                           </p>
                         </Show>
-                        <NotifyOnComplete
-                          jobStatus={jobStatus() ?? undefined}
-                          onEnabledChange={setNotifyEnabled}
-                        />
                       </div>
                       <Sidebar
                         sections={jobState()?.sections}

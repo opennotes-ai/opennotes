@@ -22,15 +22,29 @@ export interface NotifyEffectParams {
 }
 
 export function buildNotifyEffect(params: NotifyEffectParams): void {
-  let firedForJobId: string | null = null;
+  const seenJobIds = new Map<string, boolean>();
 
   createEffect(() => {
     const status = params.jobStatus();
     const id = params.jobId();
-    if (!id || !params.notifyEnabled()) return;
+    if (!id) return;
+
+    if (!seenJobIds.has(id)) {
+      if (status == null) return;
+      if (TERMINAL_JOB_STATUSES.has(status)) {
+        seenJobIds.set(id, true);
+        return;
+      }
+      seenJobIds.set(id, false);
+    }
+
+    if (seenJobIds.get(id) === true) return;
+
     if (!TERMINAL_JOB_STATUSES.has(status ?? "")) return;
-    if (firedForJobId === id) return;
-    firedForJobId = id;
+
+    seenJobIds.set(id, true);
+    if (!params.notifyEnabled()) return;
+
     notify(titleFor(status!), { body: bodyFor(status!) });
   });
 }
