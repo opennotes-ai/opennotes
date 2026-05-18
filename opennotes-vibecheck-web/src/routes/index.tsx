@@ -152,10 +152,9 @@ export default function HomePage() {
               setIsBlockingDialogOpen(true);
               clearUploadPromptState();
             }}
-            onValidSubmit={analyzeUrl}
             autofocus
           />
-          <div class="flex w-full flex-col gap-2">
+          <div id="pdf-upload" class="flex w-full flex-col gap-2">
             <p class="text-sm text-muted-foreground">
               Have a PDF, or hit a paywall? Upload it here:
             </p>

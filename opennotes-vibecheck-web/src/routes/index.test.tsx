@@ -197,6 +197,7 @@ describe("HomePage", () => {
     fireEvent.submit(input.closest("form") as HTMLFormElement);
 
     expect(screen.queryByText("We can’t access this site reliably")).toBeNull();
+    expect(analyzeActionSubmitMock).not.toHaveBeenCalled();
   });
 
   it("tries blocked URL again by submitting normalized URL via analyzeAction", async () => {
