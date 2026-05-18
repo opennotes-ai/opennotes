@@ -102,11 +102,40 @@ describe("<UrlInput />", () => {
     });
 
     const form = input.closest("form") as HTMLFormElement;
-    fireEvent.submit(form);
+    const submitEvent = new SubmitEvent("submit", {
+      bubbles: true,
+      cancelable: true,
+    });
+    const wasNotCanceled = form.dispatchEvent(submitEvent);
 
+    expect(wasNotCanceled).toBe(true);
+    expect(submitEvent.defaultPrevented).toBe(false);
     expect(onBlockingHost).not.toHaveBeenCalled();
     expect(onValidSubmit).toHaveBeenCalledTimes(1);
     expect(onValidSubmit).toHaveBeenCalledWith(url);
+  });
+
+  it("lets blocking hosts submit normally when no blocking handler is provided", () => {
+    const onValidSubmit = vi.fn();
+    render(() => <UrlInput action="analyze" onValidSubmit={onValidSubmit} />);
+
+    const input = screen.getByLabelText("URL to analyze") as HTMLInputElement;
+    fireEvent.input(input, {
+      target: {
+        value: "https://www.reddit.com/r/news",
+      },
+    });
+
+    const form = input.closest("form") as HTMLFormElement;
+    const submitEvent = new SubmitEvent("submit", {
+      bubbles: true,
+      cancelable: true,
+    });
+    const wasNotCanceled = form.dispatchEvent(submitEvent);
+
+    expect(wasNotCanceled).toBe(true);
+    expect(submitEvent.defaultPrevented).toBe(false);
+    expect(onValidSubmit).toHaveBeenCalledWith("https://www.reddit.com/r/news");
   });
 
   it("submits non-blocking example.com URLs via onValidSubmit", () => {

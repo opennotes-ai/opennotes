@@ -6,7 +6,7 @@ import {
   DialogTitle,
 } from "@opennotes/ui";
 import { Button } from "@opennotes/ui/components/ui/button";
-import { createEffect, onCleanup, type JSX } from "solid-js";
+import type { JSX } from "solid-js";
 
 export interface BlockingSiteWarningDialogProps {
   open: boolean;
@@ -22,38 +22,11 @@ export interface BlockingSiteWarningDialogProps {
 export function BlockingSiteWarningDialog(
   props: BlockingSiteWarningDialogProps,
 ): JSX.Element {
-  let contentRef: HTMLDivElement | undefined;
   let proceedButtonRef: HTMLButtonElement | undefined;
-
-  createEffect(() => {
-    if (!props.open) {
-      return;
-    }
-
-    const handlePointerDown = (event: PointerEvent) => {
-      if (!contentRef) {
-        return;
-      }
-
-      if (!contentRef.contains(event.target as Node)) {
-        props.onOpenChange(false);
-      }
-    };
-
-    document.addEventListener("pointerdown", handlePointerDown, {
-      capture: true,
-    });
-    onCleanup(() => {
-      document.removeEventListener("pointerdown", handlePointerDown, {
-        capture: true,
-      });
-    });
-  });
 
   return (
     <Dialog open={props.open} onOpenChange={props.onOpenChange}>
       <DialogContent
-        ref={contentRef}
         onOpenAutoFocus={(event) => {
           event.preventDefault();
           proceedButtonRef?.focus();

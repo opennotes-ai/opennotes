@@ -117,6 +117,7 @@ describe("BlockingSiteWarningDialog", () => {
     await waitFor(() => {
       expect(onOpenChange).toHaveBeenCalledWith(false);
     });
+    expect(onOpenChange).toHaveBeenCalledTimes(1);
 
     expect(onProceedAnyway).not.toHaveBeenCalled();
     expect(onChoosePdf).not.toHaveBeenCalled();
@@ -166,6 +167,8 @@ describe("BlockingSiteWarningDialog", () => {
       }
       return candidate;
     });
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
 
     fireEvent.pointerDown(overlay);
     fireEvent.pointerUp(overlay);

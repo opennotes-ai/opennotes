@@ -67,10 +67,10 @@ export default function UrlInput(props: UrlInputProps) {
     }
 
     const blocking = isBlockingHost(result.normalized);
-    if (blocking.match) {
+    if (blocking.match && props.onBlockingHost) {
       event.preventDefault();
       setError(null);
-      props.onBlockingHost?.({
+      props.onBlockingHost({
         url: result.normalized,
         family: blocking.family,
         host: blocking.host,
