@@ -144,6 +144,14 @@ class Settings(BaseSettings):
     VIBECHECK_LIMITER_REDIS_REQUEST_CONNECT_TIMEOUT_SECONDS: float = 2.0
     VIBECHECK_LIMITER_KEY_SALT: str = ""
 
+    SMTP_HOST: str = ""
+    SMTP_PORT: int = 587
+    SMTP_USERNAME: str = ""
+    SMTP_PASSWORD: str = ""
+    SMTP_FROM_EMAIL: str = ""
+    SMTP_FROM_NAME: str = "Vibecheck"
+    SMTP_USE_TLS: bool = True
+
     # TASK-1473.35: when set + the public POST carries
     # `X-Vibecheck-Test-Fail-Slug: <slug>`, the orchestrator forces a
     # synthetic failure for the named slot so the e2e section-retry

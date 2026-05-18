@@ -27,6 +27,7 @@ dependencies = [
     "markdown-it-py>=3.0.0",
     "logfire>=4.0.0",
     "prometheus-client>=0.20.0",
+    "aiosmtplib>=5.0.0",
     "asyncpg>=0.29.0",
     "fast-json-repair>=0.2.0",
     "email-validator>=2.3.0",
