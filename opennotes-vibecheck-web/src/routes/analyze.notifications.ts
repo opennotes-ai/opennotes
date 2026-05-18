@@ -19,7 +19,6 @@ export interface NotifyEffectParams {
   jobStatus: () => string | null;
   jobId: () => string | null;
   notifyEnabled: () => boolean;
-  initialStatusForJob: (jobId: string) => string | null;
 }
 
 export function buildNotifyEffect(params: NotifyEffectParams): void {
@@ -31,8 +30,8 @@ export function buildNotifyEffect(params: NotifyEffectParams): void {
     if (!id) return;
 
     if (!seenJobIds.has(id)) {
-      const initialStatus = params.initialStatusForJob(id);
-      if (TERMINAL_JOB_STATUSES.has(initialStatus ?? "")) {
+      if (status == null) return;
+      if (TERMINAL_JOB_STATUSES.has(status)) {
         seenJobIds.set(id, true);
         return;
       }
@@ -42,9 +41,10 @@ export function buildNotifyEffect(params: NotifyEffectParams): void {
     if (seenJobIds.get(id) === true) return;
 
     if (!TERMINAL_JOB_STATUSES.has(status ?? "")) return;
-    if (!params.notifyEnabled()) return;
 
     seenJobIds.set(id, true);
+    if (!params.notifyEnabled()) return;
+
     notify(titleFor(status!), { body: bodyFor(status!) });
   });
 }

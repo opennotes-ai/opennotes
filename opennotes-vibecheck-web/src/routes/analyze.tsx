@@ -297,19 +297,10 @@ function AnalyzePageContent(props: { initialJobState: JobState | null }) {
     createSignal<ArchiveProbeState>("pending");
 
   const [notifyEnabled, setNotifyEnabled] = createSignal(false);
-  const initialStatusByJob = new Map<string, string>();
-  createEffect(() => {
-    const id = jobId();
-    const status = jobStatus();
-    if (id && status && !initialStatusByJob.has(id)) {
-      initialStatusByJob.set(id, status);
-    }
-  });
   buildNotifyEffect({
     jobStatus: () => jobStatus() ?? null,
     jobId,
     notifyEnabled,
-    initialStatusForJob: (id) => initialStatusByJob.get(id) ?? null,
   });
 
   let frameCompatRequest = 0;

@@ -3423,7 +3423,7 @@ describe("notify-on-complete integration", () => {
     );
   });
 
-  it("C — header visibility on completed page: checkbox is descendant of <nav>", async () => {
+  it("C — header visibility on completed page: checkbox is descendant of <nav> and notify NOT called", async () => {
     vi.mocked(notificationsModule.isSupported).mockReturnValue(true);
     vi.mocked(notificationsModule.getPermission).mockReturnValue("granted");
     vi.mocked(notifyPreferenceModule.loadNotifyPreference).mockReturnValue(true);
@@ -3440,6 +3440,27 @@ describe("notify-on-complete integration", () => {
     expect(nav).not.toBeNull();
     const checkbox = within(nav!).getByRole("checkbox", { name: /notify me when ready/i });
     expect(nav!.contains(checkbox)).toBe(true);
+    expect(notifyMock.mock.calls.length).toBe(0);
+  });
+
+  it("C2 — seedless-revisit terminal: no preloaded initialJobState, poll resolves done — notify NOT called", async () => {
+    vi.mocked(notificationsModule.isSupported).mockReturnValue(true);
+    vi.mocked(notificationsModule.getPermission).mockReturnValue("granted");
+    vi.mocked(notifyPreferenceModule.loadNotifyPreference).mockReturnValue(true);
+
+    getJobStateMock.mockResolvedValueOnce(null);
+
+    renderAt("/analyze?job=seedless-revisit&url=https://news.example.com/a");
+    await waitFor(() => {
+      expect(pollingHandles.length).toBeGreaterThan(0);
+    });
+
+    await flushMicrotasks();
+
+    setPolledJobState(makeJobState({ status: "done" }));
+    await flushMicrotasks();
+
+    expect(notifyMock.mock.calls.length).toBe(0);
   });
 
   it("D — terminal at mount (partial): does NOT call notify()", async () => {
