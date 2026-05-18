@@ -4370,7 +4370,9 @@ def _stub_scrape_preamble(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, Any
         scrape_cache: Any,
         *,
         force_tier: Any = None,
+        settings: Any = None,
     ) -> Any:
+        del settings
         scrape_calls.append({"url": url, "force_tier": force_tier})
         return MagicMock(metadata=None)
 

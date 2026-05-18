@@ -1107,6 +1107,24 @@ class TestTierAwareCache:
         assert miss is None
 
     @pytest.mark.asyncio
+    async def test_x_api_tier_round_trips_independently(self) -> None:
+        fake = _FakeSupabaseClient()
+        cache, _ = _make_cache(fake)
+
+        await cache.put(
+            "https://x.com/i/status/100",
+            _make_scrape(markdown="x-api"),
+            tier="x_api",
+        )
+
+        got = await cache.get("https://x.com/i/status/100", tier="x_api")
+        scrape_miss = await cache.get("https://x.com/i/status/100", tier="scrape")
+
+        assert got is not None
+        assert got.markdown == "x-api"
+        assert scrape_miss is None
+
+    @pytest.mark.asyncio
     async def test_evict_with_tier_removes_only_that_tier(self) -> None:
         """`evict(url, tier='scrape')` leaves the interact-tier row intact.
 
@@ -1122,6 +1140,9 @@ class TestTierAwareCache:
         )
         await cache.put(
             "https://example.com/a", _make_scrape(markdown="i"), tier="interact"
+        )
+        await cache.put(
+            "https://example.com/a", _make_scrape(markdown="x"), tier="x_api"
         )
 
         await cache.evict("https://example.com/a", tier="scrape")
@@ -1161,13 +1182,14 @@ class TestTierAwareCache:
         await cache.evict("https://example.com/a")
 
         norm = normalize_url("https://example.com/a")
-        for tier in ("scrape", "interact"):
+        for tier in ("scrape", "interact", "x_api"):
             row = fake._rows[(norm, tier)]  # pyright: ignore[reportPrivateUsage]
             assert row["markdown"] is None
             assert row["screenshot_storage_key"] is None
             assert row["evicted_at"] is not None
         assert await cache.get("https://example.com/a", tier="scrape") is None
         assert await cache.get("https://example.com/a", tier="interact") is None
+        assert await cache.get("https://example.com/a", tier="x_api") is None
 
     @pytest.mark.asyncio
     async def test_evict_without_tier_deletes_screenshot_blobs_for_all_tiers(self) -> None:
@@ -1193,26 +1215,35 @@ class TestTierAwareCache:
             tier="interact",
             screenshot_bytes=b"interact-screenshot",
         )
+        x_api_hit = await cache.put(
+            "https://example.com/a",
+            _make_scrape(markdown="x"),
+            tier="x_api",
+            screenshot_bytes=b"x-api-screenshot",
+        )
         assert scrape_hit.storage_key is not None
         assert interact_hit.storage_key is not None
+        assert x_api_hit.storage_key is not None
 
         await cache.evict("https://example.com/a")
 
-        assert len(store.delete_calls) == 2
+        assert len(store.delete_calls) == 3
         assert sorted(store.delete_calls) == sorted(
-            [scrape_hit.storage_key, interact_hit.storage_key]
+            [scrape_hit.storage_key, interact_hit.storage_key, x_api_hit.storage_key]
         )
         assert scrape_hit.storage_key not in store.uploads
         assert interact_hit.storage_key not in store.uploads
+        assert x_api_hit.storage_key not in store.uploads
 
         norm = normalize_url("https://example.com/a")
-        for tier in ("scrape", "interact"):
+        for tier in ("scrape", "interact", "x_api"):
             row = fake._rows[(norm, tier)]  # pyright: ignore[reportPrivateUsage]
             assert row["markdown"] is None
             assert row["screenshot_storage_key"] is None
             assert row["evicted_at"] is not None
         assert await cache.get("https://example.com/a", tier="scrape") is None
         assert await cache.get("https://example.com/a", tier="interact") is None
+        assert await cache.get("https://example.com/a", tier="x_api") is None
 
     @pytest.mark.asyncio
     async def test_put_default_tier_writes_scrape_row(self) -> None:

@@ -196,6 +196,14 @@ from src.viafoura import (
     fetch_viafoura_comments,
     merge_viafoura_into_scrape,
 )
+from src.x import (
+    XApiError,
+    detect_x_status_url,
+    fetch_x_conversation,
+    get_x_bearer,
+    merge_x_into_scrape,
+    synthesize_x_scrape,
+)
 
 logger = get_logger(__name__)
 
@@ -1671,13 +1679,32 @@ async def _run_tier2(
     return outcome
 
 
-async def _scrape_step(
+async def _try_x_api_path(
+    url: str,
+    settings: Settings,
+    scrape_cache: SupabaseScrapeCache,
+) -> CachedScrape | None:
+    ref = detect_x_status_url(url)
+    if ref is None:
+        return None
+    async with httpx.AsyncClient(timeout=httpx.Timeout(10.0)) as http:
+        bearer = await get_x_bearer(settings, http)
+        if bearer is None:
+            return None
+        conversation = await fetch_x_conversation(ref.post_id, bearer=bearer, http=http)
+    scrape = synthesize_x_scrape(conversation.root, ref.canonical_url)
+    merged = merge_x_into_scrape(scrape, conversation)
+    return await _cache_put_or_keyless(scrape_cache, url, merged, tier="x_api")
+
+
+async def _scrape_step(  # noqa: PLR0911, PLR0912
     url: str,
     scrape_client: FirecrawlClient,
     interact_client: FirecrawlClient,
     scrape_cache: SupabaseScrapeCache,
     *,
     force_tier: Literal["scrape", "interact"] | None = None,
+    settings: Settings | None = None,
 ) -> CachedScrape:
     """Run the tiered scrape ladder for `url` and return a `CachedScrape`.
 
@@ -1758,6 +1785,46 @@ async def _scrape_step(
                     f"tier 1: skipped (forced); tier 2: {t2.tier2_reason}",
                     detail={"error_host": urlparse(url).hostname},
                 )
+
+            # Source-specific X API branch. Check x_api first so a fresh
+            # platform-authoritative row is not shadowed by an older Firecrawl row.
+            x_ref = detect_x_status_url(url)
+            if x_ref is not None:
+                cached_x = await scrape_cache.get(url, tier="x_api")
+                if cached_x is not None:
+                    tier_attempted.append("x_api")
+                    tier_success = "x_api"
+                    platform_detected = True
+                    platform_outcome = "x_api_cache_hit"
+                    return cached_x
+                try:
+                    x_result = await _try_x_api_path(
+                        url,
+                        settings or Settings(),
+                        scrape_cache,
+                    )
+                except (XApiError, httpx.HTTPError) as exc:
+                    platform_detected = True
+                    reason = exc.__class__.__name__.removesuffix("Error").lower()
+                    platform_outcome = f"x_api_fallthrough_{reason}"
+                    logger.info(
+                        "x api scrape path failed; falling through to firecrawl",
+                        extra={
+                            "platform": "x",
+                            "platform_outcome": platform_outcome,
+                            "post_id": x_ref.post_id,
+                            "url": url,
+                        },
+                    )
+                else:
+                    if x_result is not None:
+                        tier_attempted.append("x_api")
+                        tier_success = "x_api"
+                        platform_detected = True
+                        platform_outcome = "x_api_ok"
+                        return x_result
+                    platform_detected = True
+                    platform_outcome = "x_api_fallthrough_no_bearer"
 
             # Cache hit: scan URL-scoped Firecrawl tiers before probing
             # Firecrawl. Browser HTML submissions are job-scoped and are loaded
@@ -2982,7 +3049,12 @@ async def _run_pipeline(  # noqa: PLR0912
         else:
             try:
                 scrape = await _scrape_step(
-                    url, tier1_client, client, scrape_cache, force_tier=force_tier
+                    url,
+                    tier1_client,
+                    client,
+                    scrape_cache,
+                    force_tier=force_tier,
+                    settings=settings,
                 )
             except (TransientError, TerminalError):
                 raise

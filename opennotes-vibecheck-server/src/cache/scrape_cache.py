@@ -33,7 +33,7 @@ from __future__ import annotations
 
 import hashlib
 from datetime import UTC, datetime, timedelta
-from typing import Any, Literal
+from typing import Any
 from urllib.parse import urlparse
 from uuid import uuid4
 
@@ -41,6 +41,7 @@ import httpx
 from pydantic import ConfigDict, Field
 from supabase import Client
 
+from src.cache.scrape_tiers import URL_SCOPED_EVICT_TIERS, ScrapeTier
 from src.cache.screenshot_store import ScreenshotStore
 from src.cache.supabase_cache import normalize_url
 from src.firecrawl_client import ScrapeMetadata, ScrapeResult
@@ -52,7 +53,7 @@ logger = get_logger(__name__)
 
 # TASK-1488.01: ladder tier discriminator. `scrape` = Tier 1 cheap
 # Firecrawl /scrape; `interact` = Tier 2 post-fallback Firecrawl /interact.
-ScrapeTier = Literal["scrape", "interact", "browser_html"]
+# TASK-1653: `x_api` is a URL-scoped shared tier populated from the X API.
 
 
 def canonical_cache_key(raw_url: str) -> str:
@@ -470,9 +471,7 @@ class SupabaseScrapeCache:
         now = datetime.now(UTC)
         expires_past = now - timedelta(hours=1)
         host = urlparse(norm).netloc
-        tiers: tuple[ScrapeTier, ...] = (
-            (tier,) if tier is not None else ("scrape", "interact")
-        )
+        tiers: tuple[ScrapeTier, ...] = (tier,) if tier is not None else URL_SCOPED_EVICT_TIERS
         for t in tiers:
             scraped_at = now.isoformat()
             expires_at = expires_past.isoformat()

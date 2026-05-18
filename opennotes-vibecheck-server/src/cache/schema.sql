@@ -524,7 +524,7 @@ ALTER TABLE public.vibecheck_scrapes
     DROP CONSTRAINT IF EXISTS vibecheck_scrapes_tier_check;
 ALTER TABLE public.vibecheck_scrapes
     ADD CONSTRAINT vibecheck_scrapes_tier_check
-    CHECK (tier IN ('scrape', 'interact', 'browser_html'));
+    CHECK (tier IN ('scrape', 'interact', 'browser_html', 'x_api'));
 
 -- Replace UNIQUE(normalized_url) with composite UNIQUE(normalized_url, tier).
 -- Postgres named the original UNIQUE either via the inline column constraint
@@ -548,7 +548,7 @@ ALTER TABLE public.vibecheck_scrapes
 CREATE UNIQUE INDEX IF NOT EXISTS
     vibecheck_scrapes_normalized_url_tier_idx
     ON public.vibecheck_scrapes (normalized_url, tier)
-    WHERE tier IN ('scrape', 'interact');
+    WHERE tier IN ('scrape', 'interact', 'x_api');
 
 CREATE UNIQUE INDEX IF NOT EXISTS
     vibecheck_scrapes_browser_html_job_attempt_idx
@@ -631,7 +631,7 @@ BEGIN
         p_scraped_at, p_expires_at, NULL
     )
     ON CONFLICT (normalized_url, tier)
-    WHERE tier IN ('scrape', 'interact')
+    WHERE tier IN ('scrape', 'interact', 'x_api')
     DO UPDATE
     SET url = EXCLUDED.url,
         final_url = EXCLUDED.final_url,
@@ -753,7 +753,7 @@ BEGIN
         NULL, NULL, NULL, NULL, p_scraped_at, p_expires_at, p_evicted_at
     )
     ON CONFLICT (normalized_url, tier)
-    WHERE tier IN ('scrape', 'interact')
+    WHERE tier IN ('scrape', 'interact', 'x_api')
     DO UPDATE
     SET url = EXCLUDED.url,
         final_url = EXCLUDED.final_url,

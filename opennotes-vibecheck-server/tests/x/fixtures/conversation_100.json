@@ -1,0 +1,43 @@
+{
+  "root": {
+    "data": {
+      "id": "100",
+      "text": "Root post from fixture",
+      "author_id": "1",
+      "created_at": "2026-05-18T12:00:00Z",
+      "conversation_id": "100"
+    },
+    "includes": {
+      "users": [
+        {"id": "1", "username": "alice", "name": "Alice"}
+      ]
+    }
+  },
+  "search_pages": [
+    {
+      "data": [
+        {
+          "id": "101",
+          "text": "First fixture reply",
+          "author_id": "2",
+          "created_at": "2026-05-18T12:01:00Z",
+          "referenced_tweets": [{"type": "replied_to", "id": "100"}]
+        },
+        {
+          "id": "102",
+          "text": "Nested fixture reply",
+          "author_id": "3",
+          "created_at": "2026-05-18T12:02:00Z",
+          "referenced_tweets": [{"type": "replied_to", "id": "101"}]
+        }
+      ],
+      "includes": {
+        "users": [
+          {"id": "2", "username": "bob", "name": "Bob"},
+          {"id": "3", "username": "carol", "name": "Carol"}
+        ]
+      },
+      "meta": {"result_count": 2}
+    }
+  ]
+}

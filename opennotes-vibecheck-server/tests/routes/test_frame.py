@@ -104,7 +104,7 @@ class TestFrameCompat:
                 calls.append(tier)
                 if tier == "browser_html":
                     return None
-                if tier == "interact":
+                if tier in {"interact", "x_api"}:
                     return None
                 return CachedScrape(html="<main>Archived</main>")
 
@@ -121,7 +121,7 @@ class TestFrameCompat:
         body = resp.json()
         assert body["can_iframe"] is False
         assert body["has_archive"] is True
-        assert calls == ["interact", "scrape"]
+        assert calls == ["interact", "x_api", "scrape"]
 
     def test_has_archive_is_true_for_browser_html_job(
         self, client: TestClient, httpx_mock: HTTPXMock
@@ -236,7 +236,7 @@ class TestFrameCompat:
             )
         assert resp.status_code == 200
         assert resp.json()["has_archive"] is False
-        assert calls == ["interact", "scrape"]
+        assert calls == ["interact", "x_api", "scrape"]
 
     def test_has_archive_is_false_when_no_tier_has_html(
         self, client: TestClient, httpx_mock: HTTPXMock
@@ -259,7 +259,7 @@ class TestFrameCompat:
             )
         assert resp.status_code == 200
         assert resp.json()["has_archive"] is False
-        assert calls == ["interact", "scrape"]
+        assert calls == ["interact", "x_api", "scrape"]
 
     def test_frame_compat_returns_html_render_mode_for_html_archive(
         self, client: TestClient, httpx_mock: HTTPXMock
@@ -270,7 +270,7 @@ class TestFrameCompat:
             async def get(
                 self, url: str, *, tier: str = "scrape"
             ) -> CachedScrape | None:
-                if tier in ("browser_html", "interact"):
+                if tier in ("browser_html", "interact", "x_api"):
                     return None
                 return CachedScrape(html="<main>Archived</main>")
 
@@ -297,7 +297,7 @@ class TestFrameCompat:
             async def get(
                 self, url: str, *, tier: str = "scrape"
             ) -> CachedScrape | None:
-                if tier in ("browser_html", "interact"):
+                if tier in ("browser_html", "interact", "x_api"):
                     return None
                 return CachedScrape(
                     html="<main>Archived</main>",
@@ -593,6 +593,7 @@ class TestScreenshot:
         assert key is None
         assert calls == [
             ("https://example.com/article", "interact"),
+            ("https://example.com/article", "x_api"),
             ("https://example.com/article", "scrape"),
         ]
 
@@ -1277,7 +1278,7 @@ class TestArchivePreview:
                 calls.append(tier)
                 if tier == "browser_html":
                     return None
-                if tier == "interact":
+                if tier in {"interact", "x_api"}:
                     return CachedScrape(html="<main>Just a moment</main>")
                 return CachedScrape(html="<main><h1>Scrape preview</h1></main>")
 
@@ -1290,7 +1291,7 @@ class TestArchivePreview:
         assert resp.status_code == 200
         assert "Scrape preview" in resp.text
         assert "Just a moment" not in resp.text
-        assert calls == ["interact", "scrape"]
+        assert calls == ["interact", "x_api", "scrape"]
 
     def test_cached_scrape_html_served_for_interact_tier_when_scrape_empty(
         self, client: TestClient
@@ -1851,7 +1852,7 @@ class TestArchivePreview:
             )
         assert resp.status_code == 404
         assert resp.json() == {"detail": "Archive unavailable"}
-        assert calls == ["interact", "scrape"]
+        assert calls == ["interact", "x_api", "scrape"]
 
     def test_cache_miss_without_generate_when_cached_tiers_are_unusable(
         self, client: TestClient
@@ -1875,7 +1876,7 @@ class TestArchivePreview:
 
         assert resp.status_code == 404
         assert resp.json() == {"detail": "Archive unavailable"}
-        assert calls == ["interact", "scrape"]
+        assert calls == ["interact", "x_api", "scrape"]
 
     def test_generate_scrapes_with_short_budget_and_stores_html(
         self, client: TestClient
@@ -1927,7 +1928,7 @@ class TestArchivePreview:
         assert "img{max-width:100%!important;height:auto!important}" in resp.text
         assert resp.text.endswith("<article>Fresh archive</article>")
         assert cache.put_url == "https://example.com/fresh"
-        assert cache.get_calls == ["interact", "scrape"]
+        assert cache.get_calls == ["interact", "x_api", "scrape"]
 
     @pytest.mark.parametrize(
         ("html", "markdown"),
@@ -1978,7 +1979,7 @@ class TestArchivePreview:
 
         assert resp.status_code == 502
         assert resp.json() == {"detail": "Archive unavailable"}
-        assert cache.get_calls == ["interact", "scrape"]
+        assert cache.get_calls == ["interact", "x_api", "scrape"]
 
     def test_generated_html_with_job_id_annotates_response_but_not_cache(
         self, client: TestClient
