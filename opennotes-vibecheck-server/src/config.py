@@ -132,10 +132,10 @@ class Settings(BaseSettings):
     # share a budget.
     RATE_LIMIT_POLL_BURST: int = 10
     RATE_LIMIT_POLL_SUSTAINED: int = 300
-    VIBECHECK_SCRAPE_API_TOKEN: str = ""
     VIBECHECK_X_BEARER_TOKEN: str = ""
     VIBECHECK_X_CONSUMER_KEY: str = ""
     VIBECHECK_X_SECRET_KEY: str = ""
+    VIBECHECK_LEGACY_SCRAPE_TOKEN: str | None = None
     VIBECHECK_WEB_URL: str = ""
     VIBECHECK_LIMITER_REDIS_URL: str = ""
     VIBECHECK_LIMITER_REDIS_CA_CERT_PATH: str = ""

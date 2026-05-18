@@ -104,7 +104,7 @@ async def client(
     app.state.screenshot_store = InMemoryScreenshotStore()
     app.state.limiter = scrape_route.limiter
     scrape_route.limiter.reset()
-    monkeypatch.setenv("VIBECHECK_SCRAPE_API_TOKEN", "secret")
+    monkeypatch.setenv("VIBECHECK_LEGACY_SCRAPE_TOKEN", "secret")
     monkeypatch.setenv("VIBECHECK_WEB_URL", "https://vibecheck.example")
     scrape_route.get_settings.cache_clear()
     transport = httpx.ASGITransport(app=app)
