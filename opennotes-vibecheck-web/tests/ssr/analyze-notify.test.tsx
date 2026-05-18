@@ -30,12 +30,6 @@ beforeAll(async () => {
           ) {
             return resolve(WEB_ROOT, "tests/ssr/analyze-data.stub.ts");
           }
-          if (id === "~/lib/notifications" || id.endsWith("/lib/notifications")) {
-            return resolve(WEB_ROOT, "tests/ssr/notifications.stub.ts");
-          }
-          if (id === "~/lib/notify-preference" || id.endsWith("/lib/notify-preference")) {
-            return resolve(WEB_ROOT, "tests/ssr/notify-preference.stub.ts");
-          }
           return null;
         },
       },

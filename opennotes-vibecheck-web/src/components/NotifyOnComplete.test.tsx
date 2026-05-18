@@ -571,6 +571,102 @@ describe("<NotifyOnComplete />", () => {
         );
       }).not.toThrow();
     });
+
+    it("storage event round-trips through real localStorage: write via saveNotifyPreference, dispatch StorageEvent, assert state reflects stored value", async () => {
+      const { loadNotifyPreference: realLoad, saveNotifyPreference: realSave, NOTIFY_PREFERENCE_KEY: KEY } =
+        await vi.importActual<typeof import("~/lib/notify-preference")>("~/lib/notify-preference");
+
+      const fakeStore: Record<string, string> = {};
+      const fakeStorage: Storage = {
+        getItem: (k) => fakeStore[k] ?? null,
+        setItem: (k, v) => { fakeStore[k] = v; },
+        removeItem: (k) => { delete fakeStore[k]; },
+        clear: () => { for (const k of Object.keys(fakeStore)) delete fakeStore[k]; },
+        key: (i) => Object.keys(fakeStore)[i] ?? null,
+        get length() { return Object.keys(fakeStore).length; },
+      };
+      Object.defineProperty(window, "localStorage", { value: fakeStorage, writable: true, configurable: true });
+
+      isSupported.mockReturnValue(true);
+      getPermission.mockReturnValue("granted");
+      loadNotifyPreference.mockImplementation(realLoad);
+      saveNotifyPreference.mockImplementation(realSave);
+
+      realSave(false);
+
+      const { default: NotifyOnComplete } = await import("./NotifyOnComplete");
+
+      render(() => (
+        <NotifyOnComplete jobStatus="running" onEnabledChange={() => {}} />
+      ));
+
+      await waitFor(() => {
+        expect(screen.getByRole("checkbox", { name: /notify me when ready/i })).not.toBeChecked();
+      });
+
+      realSave(true);
+      window.dispatchEvent(new StorageEvent("storage", { key: KEY, newValue: "true" }));
+
+      await waitFor(() => {
+        expect(screen.getByRole("checkbox", { name: /notify me when ready/i })).toBeChecked();
+      });
+    });
+  });
+
+  describe("cross-tab permission refresh via storage event", () => {
+    it("storage event with matching key causes component to re-read getPermission and update enabled state", async () => {
+      isSupported.mockReturnValue(true);
+      getPermission.mockReturnValue("default");
+      loadNotifyPreference.mockReturnValue(true);
+      const { default: NotifyOnComplete } = await import("./NotifyOnComplete");
+
+      render(() => (
+        <NotifyOnComplete jobStatus="running" onEnabledChange={() => {}} />
+      ));
+
+      await waitFor(() => {
+        expect(screen.getByRole("checkbox", { name: /notify me when ready/i })).not.toBeChecked();
+      });
+
+      getPermission.mockReturnValue("granted");
+
+      window.dispatchEvent(
+        new StorageEvent("storage", {
+          key: notifyPreference.NOTIFY_PREFERENCE_KEY,
+          newValue: "true",
+        })
+      );
+
+      await waitFor(() => {
+        expect(screen.getByRole("checkbox", { name: /notify me when ready/i })).toBeChecked();
+      });
+    });
+
+    it("storage event with unrelated key does not trigger permission re-read", async () => {
+      isSupported.mockReturnValue(true);
+      getPermission.mockReturnValue("default");
+      loadNotifyPreference.mockReturnValue(false);
+      const { default: NotifyOnComplete } = await import("./NotifyOnComplete");
+
+      render(() => (
+        <NotifyOnComplete jobStatus="running" onEnabledChange={() => {}} />
+      ));
+
+      getPermission.mockReturnValue("granted");
+
+      window.dispatchEvent(
+        new StorageEvent("storage", {
+          key: "some.other.key",
+          newValue: "true",
+        })
+      );
+
+      await waitFor(() => {
+        expect(screen.getByRole("checkbox", { name: /notify me when ready/i })).not.toBeChecked();
+      });
+
+      expect(getPermission).toHaveBeenCalledTimes(1);
+    });
   });
 
   describe("accessibility", () => {
