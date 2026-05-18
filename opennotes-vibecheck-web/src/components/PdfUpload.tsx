@@ -21,6 +21,8 @@ import {
 
 export interface PdfUploadProps {
   pending?: boolean;
+  highlight?: boolean;
+  contextUrl?: string | null;
 }
 
 type UploadStep = "idle" | "getting-url" | "uploading" | "analyzing" | "converting";
@@ -166,64 +168,81 @@ export default function PdfUpload(props: PdfUploadProps): JSX.Element {
   };
 
   return (
-    <form
-      method="post"
-      onSubmit={handleSubmit}
-      class="mx-auto flex w-full max-w-xl flex-col gap-3"
-      novalidate
+    <div
+      id="pdf-upload-region"
+      tabIndex={-1}
+      data-testid="pdf-upload-region"
+      class={`rounded-lg p-1 ${
+        props.highlight ? "ring-2 ring-primary/80 ring-offset-2" : ""
+      }`}
     >
-      <label for="vibecheck-pdf" class="sr-only">
-        PDF or images to analyze
-      </label>
-      <div class="flex flex-col gap-2 sm:flex-row">
-        <Input
-          id="vibecheck-pdf"
-          name="pdf"
-          type="file"
-          accept=".pdf,application/pdf,image/jpeg,image/png,image/tiff,image/bmp"
-          multiple
-          data-testid="vibecheck-pdf-input"
-          onChange={(event) => {
-            const next = Array.from(event.currentTarget.files ?? []);
-            setSelectedFiles(next);
-            if (error()) setError(null);
-          }}
-          aria-invalid={error() ? "true" : undefined}
-          aria-describedby={error() ? "vibecheck-pdf-error" : undefined}
-          class={`${FIELD_SIZE} cursor-pointer px-4 shadow-xs`}
-          disabled={isWorking()}
-        />
-        <Button
-          type="submit"
-          disabled={isWorking()}
-          data-testid="vibecheck-pdf-submit"
-          class={`${FIELD_SIZE} px-4`}
-        >
-          {STEP_LABEL[step()] ?? "Upload PDF"}
-        </Button>
-      </div>
-      <Show when={selectionCopy()}>
-        {(copy) => (
-          <p class="text-xs text-muted-foreground" data-testid="upload-selection-copy">
-            {copy()}
-          </p>
-        )}
-      </Show>
-      <p class="text-xs text-muted-foreground" data-testid="pdf-upload-copy">
-        PDF up to {MAX_PDF_LABEL}, or up to {MAX_IMAGE_COUNT} images /{" "}
-        {MAX_IMAGE_BATCH_LABEL} total.
-      </p>
-      <Show when={error()}>
-        {(message) => (
-          <p
-            id="vibecheck-pdf-error"
-            role="alert"
-            class="text-sm text-destructive"
+      <form
+        method="post"
+        onSubmit={handleSubmit}
+        class="mx-auto flex w-full max-w-xl flex-col gap-3"
+        novalidate
+      >
+        <label for="vibecheck-pdf" class="sr-only">
+          PDF or images to analyze
+        </label>
+        <div class="flex flex-col gap-2 sm:flex-row">
+          <Input
+            id="vibecheck-pdf"
+            name="pdf"
+            type="file"
+            accept=".pdf,application/pdf,image/jpeg,image/png,image/tiff,image/bmp"
+            multiple
+            data-testid="vibecheck-pdf-input"
+            onChange={(event) => {
+              const next = Array.from(event.currentTarget.files ?? []);
+              setSelectedFiles(next);
+              if (error()) setError(null);
+            }}
+            aria-invalid={error() ? "true" : undefined}
+            aria-describedby={error() ? "vibecheck-pdf-error" : undefined}
+            class={`${FIELD_SIZE} cursor-pointer px-4 shadow-xs`}
+            disabled={isWorking()}
+          />
+          <Button
+            type="submit"
+            disabled={isWorking()}
+            data-testid="vibecheck-pdf-submit"
+            class={`${FIELD_SIZE} px-4`}
           >
-            {message()}
-          </p>
-        )}
-      </Show>
-    </form>
+            {STEP_LABEL[step()] ?? "Upload PDF"}
+          </Button>
+        </div>
+        <Show when={props.contextUrl}>
+          {(url) => (
+            <p class="text-xs text-muted-foreground">
+              You tried to analyze {url()} - upload a PDF or screenshot of that
+              page below.
+            </p>
+          )}
+        </Show>
+        <Show when={selectionCopy()}>
+          {(copy) => (
+            <p class="text-xs text-muted-foreground" data-testid="upload-selection-copy">
+              {copy()}
+            </p>
+          )}
+        </Show>
+        <p class="text-xs text-muted-foreground" data-testid="pdf-upload-copy">
+          PDF up to {MAX_PDF_LABEL}, or up to {MAX_IMAGE_COUNT} images /{" "}
+          {MAX_IMAGE_BATCH_LABEL} total.
+        </p>
+        <Show when={error()}>
+          {(message) => (
+            <p
+              id="vibecheck-pdf-error"
+              role="alert"
+              class="text-sm text-destructive"
+            >
+              {message()}
+            </p>
+          )}
+        </Show>
+      </form>
+    </div>
   );
 }
