@@ -11,10 +11,10 @@ import datetime
 import hashlib
 import logging
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
-from fastapi import FastAPI, HTTPException
+from fastapi import HTTPException
 
 from src.auth.scrape_token import require_scrape_token
 from src.config import Settings
@@ -29,7 +29,7 @@ def _hash_token(token: str) -> str:
 
 
 def _now() -> datetime.datetime:
-    return datetime.datetime.now(datetime.timezone.utc)
+    return datetime.datetime.now(datetime.UTC)
 
 
 def _make_row(
@@ -77,7 +77,7 @@ class _FakePool:
         self._update_error = update_error
         self.conn = _FakeConn(row, update_error=update_error)
 
-    def acquire(self) -> "_FakeAcquire":
+    def acquire(self) -> _FakeAcquire:
         return _FakeAcquire(self.conn)
 
 

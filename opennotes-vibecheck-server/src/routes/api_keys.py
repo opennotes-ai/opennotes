@@ -3,11 +3,12 @@
 Flow:
   1. Lowercase and validate email (MX check, 5s timeout) → 400 on failure
   2. Generate opk_<prefix>_<secret> key in memory; compute SHA-256 hash
-  3. Send email with the plaintext key BEFORE any DB write
-     → If send fails: 503, no DB state changes
-  4. BEGIN TXN: advisory lock on hashtext(lower(email)); soft-delete prior active
-     rows; INSERT new row; COMMIT
-  5. Return { ok: true }
+  3. Acquire pg_advisory_lock on a dedicated connection (keyed on email hash)
+  4. Send email with the plaintext key
+     → If send fails: 503, release lock, no DB state changes
+  5. BEGIN TXN: soft-delete prior active rows; INSERT new row; COMMIT
+  6. Release advisory lock
+  7. Return { ok: true }
 
 PII policy: raw email is never logged; rate-limit per-email key uses
 sha256(lower(email))[:16] to avoid PII in the slowapi backend.
@@ -15,11 +16,14 @@ sha256(lower(email))[:16] to avoid PII in the slowapi backend.
 from __future__ import annotations
 
 import asyncio
+import datetime
 import hashlib
 import secrets
+import struct
 from typing import Any
 
 import email_validator
+import uuid_utils
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 from limits import parse as _parse_limit
@@ -44,8 +48,14 @@ _IP_RATE_LIMIT_SCOPE = "vibecheck-key-request-ip"
 
 
 def _ip_key(request: Request) -> str:
-    host = request.client.host if request.client else "unknown"
-    return f"apikey:rl:ip:{host}"
+    xff = request.headers.get("x-forwarded-for", "")
+    if xff:
+        client_ip = xff.split(",")[0].strip()
+    elif request.client:
+        client_ip = request.client.host
+    else:
+        client_ip = "unknown"
+    return f"apikey:rl:ip:{client_ip}"
 
 
 def _email_key_from_header(request: Request) -> str:
@@ -97,6 +107,11 @@ def _error_response(status_code: int, error_code: str, message: str) -> JSONResp
 
 def _hashed_email_key(email: str) -> str:
     return hashlib.sha256(email.lower().encode()).hexdigest()[:16]
+
+
+def _email_lock_key(email_lower: str) -> int:
+    digest = hashlib.sha256(email_lower.encode()).digest()[:8]
+    return struct.unpack(">q", digest)[0]
 
 
 def _generate_key() -> tuple[str, str, str]:
@@ -183,41 +198,48 @@ async def _check_rate_limits(
     return None
 
 
-@router.post("/request", status_code=200, response_model=APIKeyRequestResponse)
-async def request_api_key(
-    request: Request,
-    body: APIKeyRequest,
-) -> Any:
-    """Issue a self-serve API key via email. No authorization required."""
-    email_raw = body.email.lower().strip()
+async def _issue_key_with_lock(
+    pool: Any,
+    email_norm: str,
+    email_service: Any,
+    key_prefix: str,
+    key_hash: str,
+    html_body: str,
+    text_body: str,
+) -> JSONResponse | APIKeyRequestResponse:
+    lock_key = _email_lock_key(email_norm)
+    async with pool.acquire() as lock_conn:
+        await lock_conn.fetchval("SELECT pg_advisory_lock($1::bigint)", lock_key)
+        try:
+            return await _locked_issue(
+                pool, lock_conn, email_norm, email_service, key_prefix, key_hash, html_body, text_body
+            )
+        finally:
+            await lock_conn.fetchval("SELECT pg_advisory_unlock($1::bigint)", lock_key)
 
-    try:
-        email_norm = await _validate_email(email_raw)
-    except (email_validator.EmailNotValidError, TimeoutError, Exception):
-        return _error_response(
-            400,
-            "invalid_email",
-            "The email address is invalid or could not be verified. "
-            "Please check the address and try again.",
+
+async def _locked_issue(
+    pool: Any,
+    lock_conn: Any,
+    email_norm: str,
+    email_service: Any,
+    key_prefix: str,
+    key_hash: str,
+    html_body: str,
+    text_body: str,
+) -> JSONResponse | APIKeyRequestResponse:
+    existing = await lock_conn.fetchrow(
+        "SELECT created_at FROM public.vibecheck_api_keys "
+        "WHERE lower(email) = lower($1) AND deleted_at IS NULL "
+        "ORDER BY created_at DESC LIMIT 1",
+        email_norm,
+    )
+    if existing is not None:
+        age = datetime.datetime.now(datetime.UTC) - existing["created_at"].replace(
+            tzinfo=datetime.UTC
         )
-
-    if email_norm is None:
-        return _error_response(
-            400,
-            "invalid_email",
-            "The email address could not be validated.",
-        )
-
-    email_hash = _hashed_email_key(email_norm)
-    rate_limit_response = await _check_rate_limits(request, email_hash)
-    if rate_limit_response is not None:
-        return rate_limit_response
-
-    full_key, key_prefix, key_hash = _generate_key()
-
-    settings = get_settings()
-    email_service = EmailService(settings)
-    text_body, html_body = _build_email_body(email_norm, full_key)
+        if age.total_seconds() < 30:
+            return APIKeyRequestResponse(ok=True)
 
     try:
         await email_service.send_email(
@@ -234,18 +256,12 @@ async def request_api_key(
         )
 
     try:
-        pool = _get_db_pool(request)
         async with pool.acquire() as conn, conn.transaction():
-            await conn.execute(
-                "SELECT pg_advisory_xact_lock(hashtext($1))",
-                email_norm,
-            )
             await conn.execute(
                 "UPDATE public.vibecheck_api_keys SET deleted_at = now() "
                 "WHERE lower(email) = lower($1) AND deleted_at IS NULL",
                 email_norm,
             )
-            import uuid_utils  # noqa: PLC0415
             new_id = str(uuid_utils.uuid7())
             await conn.execute(
                 "INSERT INTO public.vibecheck_api_keys "
@@ -265,6 +281,43 @@ async def request_api_key(
         )
 
     return APIKeyRequestResponse(ok=True)
+
+
+@router.post("/request", status_code=200, response_model=APIKeyRequestResponse)
+async def request_api_key(
+    request: Request,
+    body: APIKeyRequest,
+) -> Any:
+    """Issue a self-serve API key via email. No authorization required."""
+    email_raw = body.email.lower().strip()
+
+    try:
+        email_norm = await _validate_email(email_raw)
+    except (TimeoutError, email_validator.EmailNotValidError) as exc:
+        return _error_response(
+            400,
+            "invalid_email",
+            str(exc) or "The email address is invalid or could not be verified. "
+            "Please check the address and try again.",
+        )
+
+    if email_norm is None:
+        return _error_response(400, "invalid_email", "The email address could not be validated.")
+
+    email_hash = _hashed_email_key(email_norm)
+    rate_limit_response = await _check_rate_limits(request, email_hash)
+    if rate_limit_response is not None:
+        return rate_limit_response
+
+    full_key, key_prefix, key_hash = _generate_key()
+    settings = get_settings()
+    email_service = EmailService(settings)
+    text_body, html_body = _build_email_body(email_norm, full_key)
+    pool = _get_db_pool(request)
+
+    return await _issue_key_with_lock(
+        pool, email_norm, email_service, key_prefix, key_hash, html_body, text_body
+    )
 
 
 __all__ = ["APIKeyRequest", "APIKeyRequestResponse", "router"]

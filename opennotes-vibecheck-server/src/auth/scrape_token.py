@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import datetime
 import hashlib
 import hmac
 import logging
@@ -57,9 +58,7 @@ async def require_scrape_token(
         raise _INVALID
 
     if row["last_used_at"] is None:
-        import datetime
-
-        threshold = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=48)
+        threshold = datetime.datetime.now(datetime.UTC) - datetime.timedelta(hours=48)
         if row["created_at"] < threshold:
             raise _INVALID
 

@@ -5,7 +5,7 @@ No coupling to private methods or implementation details.
 """
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -102,13 +102,12 @@ class TestSendEmail:
         mock_smtp.__aexit__ = AsyncMock(return_value=False)
         mock_smtp.starttls = AsyncMock(side_effect=aiosmtplib.SMTPConnectError("connection refused"))
 
-        with patch("src.services.email.aiosmtplib.SMTP", return_value=mock_smtp):
-            with pytest.raises(aiosmtplib.SMTPException):
-                await svc.send_email(
-                    to_email="recipient@example.com",
-                    subject="Hello",
-                    html_content="<p>Hello</p>",
-                )
+        with patch("src.services.email.aiosmtplib.SMTP", return_value=mock_smtp), pytest.raises(aiosmtplib.SMTPException):
+            await svc.send_email(
+                to_email="recipient@example.com",
+                subject="Hello",
+                html_content="<p>Hello</p>",
+            )
 
     @pytest.mark.asyncio
     async def test_to_email_not_logged_in_plaintext(self, caplog: pytest.LogCaptureFixture) -> None:
@@ -121,13 +120,12 @@ class TestSendEmail:
         mock_smtp.__aenter__ = AsyncMock(return_value=mock_smtp)
         mock_smtp.__aexit__ = AsyncMock(return_value=False)
 
-        with caplog.at_level(logging.INFO, logger="src.services.email"):
-            with patch("src.services.email.aiosmtplib.SMTP", return_value=mock_smtp):
-                await svc.send_email(
-                    to_email="private@secret.example.com",
-                    subject="Hello",
-                    html_content="<p>Hello</p>",
-                )
+        with caplog.at_level(logging.INFO, logger="src.services.email"), patch("src.services.email.aiosmtplib.SMTP", return_value=mock_smtp):
+            await svc.send_email(
+                to_email="private@secret.example.com",
+                subject="Hello",
+                html_content="<p>Hello</p>",
+            )
 
         for record in caplog.records:
             assert "private@secret.example.com" not in record.getMessage(), (

@@ -19,6 +19,7 @@ ACs verified:
 """
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import socket
 from collections.abc import AsyncIterator, Iterator
@@ -299,7 +300,16 @@ class TestPriorKeyRotation:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         _stub_valid_email(monkeypatch, "rotate@example.com")
-        await client.post("/api/keys/request", json={"email": "rotate@example.com"})
+
+        async with db_pool.acquire() as conn:
+            await conn.execute(
+                "INSERT INTO public.vibecheck_api_keys (email, key_hash, key_prefix, created_at) "
+                "VALUES ($1, $2, $3, now() - interval '60 seconds')",
+                "rotate@example.com",
+                "oldhash1234567890abcdef1234567890abcdef1234567890abcdef1234567890ab",
+                "aabb1122",
+            )
+
         await client.post("/api/keys/request", json={"email": "rotate@example.com"})
 
         total = await _count_api_keys(db_pool, "rotate@example.com")
@@ -314,8 +324,30 @@ class TestPriorKeyRotation:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         _stub_valid_email(monkeypatch, "triple@example.com")
-        for _ in range(3):
-            await client.post("/api/keys/request", json={"email": "triple@example.com"})
+
+        async with db_pool.acquire() as conn:
+            await conn.execute(
+                "INSERT INTO public.vibecheck_api_keys (email, key_hash, key_prefix, created_at) "
+                "VALUES ($1, $2, $3, now() - interval '120 seconds')",
+                "triple@example.com",
+                "triple1234567890abcdef1234567890abcdef1234567890abcdef1234567890ab",
+                "cc001122",
+            )
+            await conn.execute(
+                "UPDATE public.vibecheck_api_keys SET deleted_at = now() "
+                "WHERE email = $1 AND key_prefix = $2",
+                "triple@example.com",
+                "cc001122",
+            )
+            await conn.execute(
+                "INSERT INTO public.vibecheck_api_keys (email, key_hash, key_prefix, created_at) "
+                "VALUES ($1, $2, $3, now() - interval '60 seconds')",
+                "triple@example.com",
+                "triple2abcdef1234567890abcdef1234567890abcdef1234567890abcdef123456",
+                "cc003344",
+            )
+
+        await client.post("/api/keys/request", json={"email": "triple@example.com"})
 
         active = await _count_active_keys(db_pool, "triple@example.com")
         assert active == 1
@@ -519,13 +551,52 @@ class TestRateLimiting:
         assert responses.index(429) >= 5
 
 
+class TestConcurrentRequestsLockOrdering:
+    """P0 — lock must be acquired BEFORE email send so concurrent requests
+    for the same address cannot both slip through to the send step."""
+
+    async def test_only_one_email_sent_on_concurrent_requests(
+        self,
+        db_pool: Any,
+        fake_email: FakeEmailService,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.setattr(api_keys_route, "EmailService", lambda _settings: fake_email)
+        api_keys_route.reset_rate_limit_state_for_testing()
+        app.state.db_pool = db_pool
+
+        _stub_valid_email(monkeypatch, "concurrent@example.com")
+
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://test") as c:
+            results = await asyncio.gather(
+                c.post("/api/keys/request", json={"email": "concurrent@example.com"}),
+                c.post("/api/keys/request", json={"email": "concurrent@example.com"}),
+                c.post("/api/keys/request", json={"email": "concurrent@example.com"}),
+            )
+
+        app.state.db_pool = None
+        api_keys_route.reset_rate_limit_state_for_testing()
+
+        status_codes = [r.status_code for r in results]
+        assert 200 in status_codes, "At least one request should succeed"
+
+        assert len(fake_email.calls) == 1, (
+            f"Expected exactly 1 email send but got {len(fake_email.calls)}. "
+            "The advisory lock must be acquired before email send."
+        )
+
+        active = await _count_active_keys(db_pool, "concurrent@example.com")
+        assert active == 1, "Only one active key row should exist after concurrent requests"
+
+
 class TestAdvisoryLockPresence:
-    async def test_pg_advisory_xact_lock_in_route_code(self) -> None:
+    async def test_pg_advisory_lock_in_route_code(self) -> None:
         import inspect
 
         source = inspect.getsource(api_keys_route)
-        assert "pg_advisory_xact_lock" in source, (
-            "Route must call pg_advisory_xact_lock to serialize concurrent requests per email"
+        assert "pg_advisory_lock" in source, (
+            "Route must call pg_advisory_lock to serialize concurrent requests per email"
         )
 
     async def test_update_soft_deletes_prior_active_rows(
@@ -538,8 +609,8 @@ class TestAdvisoryLockPresence:
 
         async with db_pool.acquire() as conn:
             await conn.execute(
-                "INSERT INTO public.vibecheck_api_keys (email, key_hash, key_prefix) "
-                "VALUES ($1, $2, $3)",
+                "INSERT INTO public.vibecheck_api_keys (email, key_hash, key_prefix, created_at) "
+                "VALUES ($1, $2, $3, now() - interval '60 seconds')",
                 "locktest@example.com",
                 "existinghash1234567890abcdef1234567890abcdef1234567890abcdef12345678",
                 "aabbccdd",
@@ -555,3 +626,99 @@ class TestAdvisoryLockPresence:
 
         total = await _count_api_keys(db_pool, "locktest@example.com")
         assert total == 2
+
+
+class TestIPKeyXFF:
+    """P1.15 — rate-limit key must use X-Forwarded-For, not request.client.host."""
+
+    def test_xff_single_hop_used(self) -> None:
+        from unittest.mock import MagicMock
+
+        req = MagicMock()
+        req.headers = {"x-forwarded-for": "1.2.3.4"}
+        req.client = MagicMock()
+        req.client.host = "10.0.0.1"
+
+        key = api_keys_route._ip_key(req)
+        assert "1.2.3.4" in key, f"XFF left-most IP must appear in rate-limit key, got: {key}"
+        assert "10.0.0.1" not in key, "Internal LB IP must not appear in the key"
+
+    def test_xff_multi_hop_uses_leftmost(self) -> None:
+        from unittest.mock import MagicMock
+
+        req = MagicMock()
+        req.headers = {"x-forwarded-for": "203.0.113.5, 10.0.0.1, 10.0.0.2"}
+        req.client = MagicMock()
+        req.client.host = "172.16.0.1"
+
+        key = api_keys_route._ip_key(req)
+        assert "203.0.113.5" in key, f"Left-most IP must be used; got: {key}"
+
+    def test_no_xff_falls_back_to_client_host(self) -> None:
+        from unittest.mock import MagicMock
+
+        req = MagicMock()
+        req.headers = {}
+        req.client = MagicMock()
+        req.client.host = "9.9.9.9"
+
+        key = api_keys_route._ip_key(req)
+        assert "9.9.9.9" in key, f"Fallback to request.client.host; got: {key}"
+
+
+class TestNarrowExceptionHandling:
+    """P1.16 — only EmailNotValidError and TimeoutError must be caught as 400;
+    unexpected exceptions must propagate (not be silenced as invalid_email)."""
+
+    async def test_unexpected_exception_propagates_not_swallowed_as_400(
+        self,
+        db_pool: Any,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.setattr(api_keys_route, "EmailService", lambda _settings: FakeEmailService())
+        api_keys_route.reset_rate_limit_state_for_testing()
+        app.state.db_pool = db_pool
+
+        async def _crash(_email: str) -> str:
+            raise ValueError("unexpected internal error")
+
+        monkeypatch.setattr(api_keys_route, "_validate_email", _crash)
+
+        transport = httpx.ASGITransport(app=app, raise_app_exceptions=False)
+        async with httpx.AsyncClient(transport=transport, base_url="http://test") as c:
+            resp = await c.post("/api/keys/request", json={"email": "user@example.com"})
+
+        app.state.db_pool = None
+        api_keys_route.reset_rate_limit_state_for_testing()
+
+        assert resp.status_code == 500, (
+            f"Unexpected exceptions must yield 500, not silenced as 400, got {resp.status_code}"
+        )
+
+    async def test_email_not_valid_returns_400(
+        self,
+        client: httpx.AsyncClient,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        import email_validator
+
+        async def _raise(_email: str) -> str:
+            raise email_validator.EmailNotValidError("bad domain")
+
+        monkeypatch.setattr(api_keys_route, "_validate_email", _raise)
+        resp = await client.post("/api/keys/request", json={"email": "bad@bad"})
+        assert resp.status_code == 400
+        assert resp.json()["error_code"] == "invalid_email"
+
+    async def test_timeout_error_returns_400(
+        self,
+        client: httpx.AsyncClient,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        async def _timeout(_email: str) -> str:
+            raise TimeoutError()
+
+        monkeypatch.setattr(api_keys_route, "_validate_email", _timeout)
+        resp = await client.post("/api/keys/request", json={"email": "user@slow.com"})
+        assert resp.status_code == 400
+        assert resp.json()["error_code"] == "invalid_email"
