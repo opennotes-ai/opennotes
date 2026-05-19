@@ -1,5 +1,6 @@
+const BASE_URL = "https://vibecheck.opennotes.ai";
+
 const STORAGE_KEYS = {
-  endpointUrl: "vibecheck_endpoint_url",
   apiKey: "vibecheck_api_key",
   expandAllComments: "vibecheck_expand_all_comments",
 };
@@ -13,7 +14,6 @@ const EXPANSION_FILES = [
   "content/expand.js",
 ];
 
-const endpointInput = document.querySelector("#endpoint-url");
 const apiKeyInput = document.querySelector("#api-key");
 const currentUrlInput = document.querySelector("#current-url");
 const submitButton = document.querySelector("#submit-btn");
@@ -22,18 +22,20 @@ const statusEl = document.querySelector("#status");
 const resultSection = document.querySelector("#result");
 const resultContent = document.querySelector("#result-content");
 const expandStatus = document.querySelector("#expand-status");
+const requestEmailInput = document.querySelector("#request-email");
+const requestKeyButton = document.querySelector("#request-key-btn");
+const requestStatusEl = document.querySelector("#request-status");
 
 const MAX_SCREENSHOT_BASE64_LENGTH = 20 * 1024 * 1024;
 
 let activeTab = null;
 
 document.addEventListener("DOMContentLoaded", async () => {
+  chrome.storage.sync.remove(["vibecheck_endpoint_url"]);
   await loadSettings();
   await loadActiveTab();
 });
 
-endpointInput.addEventListener("change", saveSettings);
-endpointInput.addEventListener("blur", saveSettings);
 apiKeyInput.addEventListener("change", saveSettings);
 apiKeyInput.addEventListener("blur", saveSettings);
 expandCheckbox.addEventListener("change", () => {
@@ -43,22 +45,20 @@ expandCheckbox.addEventListener("change", () => {
   }
 });
 submitButton.addEventListener("click", submitCurrentPage);
+requestKeyButton.addEventListener("click", handleRequestApiKey);
 
 async function loadSettings() {
   const settings = await chrome.storage.sync.get([
-    STORAGE_KEYS.endpointUrl,
     STORAGE_KEYS.apiKey,
     STORAGE_KEYS.expandAllComments,
   ]);
 
-  endpointInput.value = settings[STORAGE_KEYS.endpointUrl] || "";
   apiKeyInput.value = settings[STORAGE_KEYS.apiKey] || "";
   expandCheckbox.checked = Boolean(settings[STORAGE_KEYS.expandAllComments]);
 }
 
 async function saveSettings() {
   await chrome.storage.sync.set({
-    [STORAGE_KEYS.endpointUrl]: endpointInput.value.trim(),
     [STORAGE_KEYS.apiKey]: apiKeyInput.value.trim(),
   });
 }
@@ -88,16 +88,10 @@ async function submitCurrentPage() {
 
   hideResult();
   hideExpandStatus();
-  const endpointUrl = endpointInput.value.trim();
   const apiKey = apiKeyInput.value.trim();
   const shouldExpandComments = expandCheckbox.checked;
 
   try {
-    if (!endpointUrl) {
-      showError("Missing endpoint URL", "Configure the Vibecheck endpoint URL in settings.");
-      return;
-    }
-
     if (!apiKey) {
       showError("Missing API key", "Configure the API key in settings.");
       return;
@@ -108,27 +102,11 @@ async function submitCurrentPage() {
       return;
     }
 
-    let scrapeUrl;
-    try {
-      scrapeUrl = buildScrapeUrl(endpointUrl);
-    } catch (error) {
-      showError("Invalid endpoint URL", error instanceof Error ? error.message : String(error));
-      return;
-    }
+    const scrapeUrl = buildScrapeUrl();
 
-    let hasEndpointAccess;
-    try {
-      hasEndpointAccess = await ensureEndpointPermission(scrapeUrl);
-    } catch (error) {
-      showError(
-        "Endpoint access unavailable",
-        error instanceof Error ? error.message : String(error)
-      );
-      return;
-    }
-
-    if (!hasEndpointAccess) {
-      showError("Endpoint access denied", "Grant access to the configured endpoint origin and try again.");
+    const permGranted = await ensureVibecheckPermission();
+    if (!permGranted) {
+      showError("Permission denied", "Please allow access to vibecheck.opennotes.ai when prompted.");
       return;
     }
 
@@ -182,6 +160,88 @@ async function submitCurrentPage() {
   } finally {
     submitButton.disabled = false;
   }
+}
+
+async function ensureVibecheckPermission() {
+  const origin = `${BASE_URL}/*`;
+  const already = await chrome.permissions.contains({ origins: [origin] });
+  if (already) {
+    return true;
+  }
+  return chrome.permissions.request({ origins: [origin] });
+}
+
+async function handleRequestApiKey() {
+  const email = requestEmailInput.value.trim();
+
+  if (!requestEmailInput.checkValidity() || !/.+@.+\..+/.test(email)) {
+    requestEmailInput.reportValidity();
+    return;
+  }
+
+  requestKeyButton.disabled = true;
+  setRequestStatus("", false);
+
+  try {
+    const granted = await ensureVibecheckPermission();
+    if (!granted) {
+      setRequestStatus("Permission denied. Please allow access to vibecheck.opennotes.ai.", true);
+      return;
+    }
+
+    const response = await fetch(`${BASE_URL}/api/keys/request`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email }),
+    });
+
+    if (response.ok) {
+      setRequestStatus("Check your email for the API key", false);
+      return;
+    }
+
+    if (response.status === 429) {
+      setRequestStatus("Too many requests. Please try again later.", true);
+      return;
+    }
+
+    if (response.status >= 500) {
+      setRequestStatus("Service temporarily unavailable. Please try again.", true);
+      return;
+    }
+
+    if (response.status === 400) {
+      let message = "Invalid request.";
+      try {
+        const body = await response.json();
+        if (body?.message) {
+          message = body.message;
+        }
+      } catch {
+      }
+      setRequestStatus(message, true);
+      return;
+    }
+
+    setRequestStatus("Something went wrong. Please try again.", true);
+  } catch {
+    setRequestStatus("Could not reach the server. Check your connection.", true);
+  } finally {
+    requestKeyButton.disabled = false;
+  }
+}
+
+function setRequestStatus(message, isError) {
+  if (!message) {
+    requestStatusEl.hidden = true;
+    requestStatusEl.textContent = "";
+    requestStatusEl.classList.remove("request-status--error", "request-status--success");
+    return;
+  }
+  requestStatusEl.textContent = message;
+  requestStatusEl.classList.toggle("request-status--error", isError);
+  requestStatusEl.classList.toggle("request-status--success", !isError);
+  requestStatusEl.hidden = false;
 }
 
 async function runExpansion(tabId) {
@@ -389,44 +449,9 @@ async function capturePage(tabId) {
   return injection.result;
 }
 
-function buildScrapeUrl(input) {
-  const url = new URL(input);
-  if (url.protocol !== "http:" && url.protocol !== "https:") {
-    throw new Error("Endpoint URL must start with http:// or https://.");
-  }
-
-  if (url.protocol === "http:" && !isLocalDevelopmentHost(url.hostname)) {
-    throw new Error(
-      "HTTP endpoints are only allowed for localhost or loopback development. Use https:// for remote endpoints."
-    );
-  }
-
-  const normalizedPath = url.pathname.replace(/\/+$/, "");
-
-  if (normalizedPath.endsWith("/api/scrape")) {
-    return url.toString();
-  }
-
-  url.pathname = `${normalizedPath}/api/scrape`.replace(/^\/?/, "/");
+function buildScrapeUrl() {
+  const url = new URL(`${BASE_URL}/api/scrape`);
   return url.toString();
-}
-
-async function ensureEndpointPermission(scrapeUrl) {
-  const originPattern = buildHostPermissionPattern(new URL(scrapeUrl));
-  return chrome.permissions.request({ origins: [originPattern] });
-}
-
-function buildHostPermissionPattern(url) {
-  return `${url.protocol}//${url.hostname}/*`;
-}
-
-function isLocalDevelopmentHost(hostname) {
-  return (
-    hostname === "localhost" ||
-    hostname === "::1" ||
-    hostname === "[::1]" ||
-    /^127(?:\.\d{1,3}){3}$/.test(hostname)
-  );
 }
 
 function compactPayload(payload) {

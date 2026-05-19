@@ -1145,6 +1145,31 @@ ALTER TABLE public.vibecheck_jobs
   );
 
 -- =========================================================================
+-- API key soft-delete sweeper (TASK-1651.01)
+-- =========================================================================
+-- Soft-deletes API keys that have never been used (last_used_at IS NULL) and
+-- were created more than 48 hours ago. This catches leaked or abandoned keys
+-- before they can be exploited. SECURITY DEFINER + OWNER postgres lets the
+-- cron-side caller mutate the RLS-locked table. search_path is pinned to
+-- defeat hijack via untrusted schemas.
+CREATE OR REPLACE FUNCTION public.vibecheck_soft_delete_unused_api_keys()
+RETURNS INT
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, pg_temp
+AS $$
+DECLARE
+    swept INT;
+BEGIN
+    UPDATE public.vibecheck_api_keys SET deleted_at = pg_catalog.now() WHERE deleted_at IS NULL AND last_used_at IS NULL AND created_at < pg_catalog.now() - interval '48 hours';
+    GET DIAGNOSTICS swept = ROW_COUNT;
+    RETURN swept;
+END;
+$$;
+ALTER FUNCTION public.vibecheck_soft_delete_unused_api_keys() OWNER TO postgres;
+REVOKE ALL ON FUNCTION public.vibecheck_soft_delete_unused_api_keys() FROM PUBLIC, anon, authenticated;
+
+-- =========================================================================
 -- pg_cron schedules (idempotent)
 -- =========================================================================
 -- cron.schedule fails on duplicate jobname, so unschedule first when present.
@@ -1168,6 +1193,15 @@ BEGIN
         'vibecheck-purge-terminal',
         '5 * * * *',
         $cron$SELECT public.vibecheck_purge_terminal_jobs();$cron$
+    );
+
+    IF EXISTS (SELECT 1 FROM cron.job WHERE jobname = 'vibecheck-api-key-sweep') THEN
+        PERFORM cron.unschedule('vibecheck-api-key-sweep');
+    END IF;
+    PERFORM cron.schedule(
+        'vibecheck-api-key-sweep',
+        '0 */12 * * *',
+        $cron$SELECT public.vibecheck_soft_delete_unused_api_keys();$cron$
     );
 END
 $$;
@@ -1273,3 +1307,38 @@ CREATE INDEX IF NOT EXISTS vibecheck_feedback_uid_created_idx
   ON public.vibecheck_feedback (uid, created_at DESC);
 CREATE INDEX IF NOT EXISTS vibecheck_feedback_bell_location_idx
   ON public.vibecheck_feedback (bell_location);
+
+-- =========================================================================
+-- vibecheck_api_keys (TASK-1651.01 — service API key auth)
+-- =========================================================================
+-- Stores hashed API keys for service-to-service auth. email is lowercased at
+-- insertion time by the application layer. deleted_at IS NULL means active.
+-- The cron sweeper `vibecheck_soft_delete_unused_api_keys` (defined above)
+-- soft-deletes stale never-used keys every 12 hours. service_role only.
+CREATE TABLE IF NOT EXISTS public.vibecheck_api_keys (
+    id uuid PRIMARY KEY DEFAULT extensions.uuidv7(),
+    email text NOT NULL,
+    key_hash text NOT NULL UNIQUE,
+    key_prefix text NOT NULL,
+    created_at timestamptz NOT NULL DEFAULT pg_catalog.now(),
+    last_used_at timestamptz,
+    deleted_at timestamptz
+);
+
+ALTER TABLE public.vibecheck_api_keys ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.vibecheck_api_keys FORCE ROW LEVEL SECURITY;
+REVOKE ALL ON public.vibecheck_api_keys FROM anon, authenticated;
+
+CREATE INDEX IF NOT EXISTS vibecheck_api_keys_email_active_idx
+    ON public.vibecheck_api_keys (email)
+    WHERE deleted_at IS NULL;
+
+CREATE INDEX IF NOT EXISTS vibecheck_api_keys_key_prefix_idx
+    ON public.vibecheck_api_keys (key_prefix);
+
+CREATE INDEX IF NOT EXISTS vibecheck_api_keys_last_used_at_idx
+    ON public.vibecheck_api_keys (last_used_at);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_vibecheck_api_keys_email_active
+    ON public.vibecheck_api_keys (lower(email))
+    WHERE deleted_at IS NULL;

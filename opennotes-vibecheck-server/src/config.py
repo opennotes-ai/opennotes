@@ -132,10 +132,10 @@ class Settings(BaseSettings):
     # share a budget.
     RATE_LIMIT_POLL_BURST: int = 10
     RATE_LIMIT_POLL_SUSTAINED: int = 300
-    VIBECHECK_SCRAPE_API_TOKEN: str = ""
     VIBECHECK_X_BEARER_TOKEN: str = ""
     VIBECHECK_X_CONSUMER_KEY: str = ""
     VIBECHECK_X_SECRET_KEY: str = ""
+    VIBECHECK_LEGACY_SCRAPE_TOKEN: str | None = None
     VIBECHECK_WEB_URL: str = ""
     VIBECHECK_LIMITER_REDIS_URL: str = ""
     VIBECHECK_LIMITER_REDIS_CA_CERT_PATH: str = ""
@@ -143,6 +143,14 @@ class Settings(BaseSettings):
     VIBECHECK_LIMITER_REDIS_REQUEST_SOCKET_TIMEOUT_SECONDS: float = 1.5
     VIBECHECK_LIMITER_REDIS_REQUEST_CONNECT_TIMEOUT_SECONDS: float = 2.0
     VIBECHECK_LIMITER_KEY_SALT: str = ""
+
+    SMTP_HOST: str = ""
+    SMTP_PORT: int = 587
+    SMTP_USERNAME: str = ""
+    SMTP_PASSWORD: str = ""
+    SMTP_FROM_EMAIL: str = ""
+    SMTP_FROM_NAME: str = "Vibecheck"
+    SMTP_USE_TLS: bool = True
 
     # TASK-1473.35: when set + the public POST carries
     # `X-Vibecheck-Test-Fail-Slug: <slug>`, the orchestrator forces a

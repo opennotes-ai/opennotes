@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Vibecheck Submitter",
   "version": "0.1.0",
-  "description": "Submit the current page to a Vibecheck /api/scrape endpoint.",
+  "description": "Submit the current page to Vibecheck for analysis.",
   "permissions": [
     "activeTab",
     "debugger",
@@ -10,6 +10,7 @@
     "scripting"
   ],
   "optional_host_permissions": [
+    "https://vibecheck.opennotes.ai/*",
     "http://*/*",
     "https://*/*"
   ],
