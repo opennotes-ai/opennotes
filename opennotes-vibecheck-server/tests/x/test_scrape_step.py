@@ -157,3 +157,46 @@ async def test_scrape_step_falls_through_to_firecrawl_when_x_auth_fails(
     assert result.markdown == "Firecrawl content"
     assert scrape_client.scrape_calls == ["https://x.com/alice/status/100"]
     assert all(tier != "x_api" for _, tier, _ in cache.put_calls)
+
+
+@pytest.mark.asyncio
+async def test_scrape_step_logs_when_x_credentials_are_missing(
+    caplog: pytest.LogCaptureFixture,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def fake_bearer(settings: Settings, http: object) -> str | None:
+        del settings, http
+        return None
+
+    monkeypatch.setattr(orchestrator, "get_x_bearer", fake_bearer)
+
+    firecrawl_scrape = ScrapeResult(
+        html="<main>Firecrawl content</main>",
+        markdown="Firecrawl content",
+        metadata=ScrapeMetadata(source_url="https://x.com/alice/status/100"),
+    )
+    scrape_client = _FakeFirecrawlClient(firecrawl_scrape)
+    cache = _FakeScrapeCache()
+
+    with caplog.at_level("INFO", logger="src.jobs.orchestrator"):
+        result = await orchestrator._scrape_step(
+            "https://x.com/alice/status/100",
+            scrape_client,  # pyright: ignore[reportArgumentType]
+            _FakeFirecrawlClient(),  # pyright: ignore[reportArgumentType]
+            cache,  # pyright: ignore[reportArgumentType]
+            settings=Settings(),
+        )
+
+    assert result.markdown == "Firecrawl content"
+    assert scrape_client.scrape_calls == ["https://x.com/alice/status/100"]
+    matching_records = [
+        record
+        for record in caplog.records
+        if record.message == "x api scrape path skipped; no credentials available"
+    ]
+    assert len(matching_records) == 1
+    record = matching_records[0]
+    assert record.platform == "x"
+    assert record.platform_outcome == "x_api_fallthrough_no_bearer"
+    assert record.post_id == "100"
+    assert record.url == "https://x.com/alice/status/100"
