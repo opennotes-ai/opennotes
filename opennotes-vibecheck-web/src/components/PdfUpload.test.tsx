@@ -260,4 +260,24 @@ describe("<PdfUpload />", () => {
       expect(submitImageAnalysisMock).toHaveBeenCalled();
     });
   });
+
+  it("renders a focusable highlighted upload region with context URL", () => {
+    render(() => (
+      <PdfUpload
+        pending={false}
+        highlight
+        contextUrl="https://example.com/article"
+      />
+    ));
+
+    const region = screen.getByTestId("pdf-upload-region") as HTMLElement;
+    expect(region.id).toBe("pdf-upload-region");
+    expect(region.getAttribute("tabindex")).toBe("-1");
+    expect(region.className).toContain("ring-2");
+    expect(
+      screen.getByText(
+        "You tried to analyze https://example.com/article - upload a PDF or screenshot of that page below.",
+      ),
+    ).toBeInTheDocument();
+  });
 });

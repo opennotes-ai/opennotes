@@ -1,7 +1,8 @@
-import { Show, Suspense } from "solid-js";
-import { useSearchParams, useSubmission, createAsync } from "@solidjs/router";
+import { Show, Suspense, createSignal, onCleanup } from "solid-js";
+import { useAction, useSearchParams, useSubmission, createAsync } from "@solidjs/router";
 import { Title, Meta } from "@solidjs/meta";
 import { siteUrl } from "~/lib/site-url";
+import { BlockingSiteWarningDialog } from "~/components/BlockingSiteWarningDialog";
 import PdfUpload from "~/components/PdfUpload";
 import UrlInput from "~/components/UrlInput";
 import RecentlyVibeChecked, {
@@ -51,6 +52,72 @@ export default function HomePage() {
   const urlSubmission = useSubmission(analyzeAction);
   const pdfSubmission = useSubmission(submitPdfAnalysisAction);
   const recentAnalyses = createAsync(() => getRecentAnalyses());
+  const analyzeActionSubmit = useAction(analyzeAction);
+
+  interface BlockingHostInfo {
+    url: string;
+    family: "reddit" | "linkedin";
+    host: string;
+  }
+
+  const [isBlockingDialogOpen, setIsBlockingDialogOpen] =
+    createSignal(false);
+  const [activeBlockingHost, setActiveBlockingHost] =
+    createSignal<BlockingHostInfo | null>(null);
+  const [isUploadHighlighted, setIsUploadHighlighted] =
+    createSignal(false);
+  const [uploadContextUrl, setUploadContextUrl] = createSignal<string | null>(
+    null,
+  );
+  let uploadFocusTimeout: ReturnType<typeof setTimeout> | undefined;
+  const analyzeUrl = (url: string) => {
+    const formData = new FormData();
+    formData.set("url", url);
+    void analyzeActionSubmit(formData);
+  };
+
+  const closeBlockingDialog = () => {
+    setIsBlockingDialogOpen(false);
+    setActiveBlockingHost(null);
+    setIsUploadHighlighted(false);
+    setUploadContextUrl(null);
+  };
+
+  const focusUploadRegion = (url: string) => {
+    if (uploadFocusTimeout) {
+      clearTimeout(uploadFocusTimeout);
+      uploadFocusTimeout = undefined;
+    }
+
+    setUploadContextUrl(url);
+    setIsUploadHighlighted(true);
+
+    const uploadRegion =
+      document.getElementById("pdf-upload-region") as HTMLDivElement | null;
+    if (uploadRegion) {
+      uploadRegion.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      uploadRegion.focus({ preventScroll: true });
+    }
+
+    uploadFocusTimeout = setTimeout(() => {
+      setIsUploadHighlighted(false);
+    }, 2500);
+  };
+
+  const clearUploadPromptState = () => {
+    if (uploadFocusTimeout) {
+      clearTimeout(uploadFocusTimeout);
+      uploadFocusTimeout = undefined;
+    }
+    setIsUploadHighlighted(false);
+    setUploadContextUrl(null);
+  };
+
+  onCleanup(() => {
+    if (uploadFocusTimeout) {
+      clearTimeout(uploadFocusTimeout);
+    }
+  });
 
   const errorMessage = () =>
     errorLabelFor(
@@ -80,15 +147,59 @@ export default function HomePage() {
           <UrlInput
             action={analyzeAction}
             pending={urlSubmission.pending}
+            onBlockingHost={(info) => {
+              setActiveBlockingHost(info);
+              setIsBlockingDialogOpen(true);
+              clearUploadPromptState();
+            }}
             autofocus
           />
           <div id="pdf-upload" class="flex w-full flex-col gap-2">
             <p class="text-sm text-muted-foreground">
               Have a PDF, or hit a paywall? Upload it here:
             </p>
-            <PdfUpload pending={pdfSubmission.pending} />
+            <PdfUpload
+              pending={pdfSubmission.pending}
+              highlight={isUploadHighlighted()}
+              contextUrl={uploadContextUrl()}
+            />
           </div>
         </div>
+
+        <BlockingSiteWarningDialog
+          open={isBlockingDialogOpen()}
+          onOpenChange={(open) => {
+            if (open) {
+              setIsBlockingDialogOpen(true);
+              return;
+            }
+
+            closeBlockingDialog();
+          }}
+          url={activeBlockingHost()?.url ?? ""}
+          hostFamily={activeBlockingHost()?.family ?? "reddit"}
+          onProceedAnyway={() => {
+            const blocked = activeBlockingHost();
+            closeBlockingDialog();
+            if (!blocked) return;
+            analyzeUrl(blocked.url);
+          }}
+          onChoosePdf={() => {
+            const blocked = activeBlockingHost();
+            closeBlockingDialog();
+            if (!blocked) return;
+            focusUploadRegion(blocked.url);
+          }}
+          onChooseScreenshot={() => {
+            const blocked = activeBlockingHost();
+            closeBlockingDialog();
+            if (!blocked) return;
+            focusUploadRegion(blocked.url);
+          }}
+          onCancel={() => {
+            closeBlockingDialog();
+          }}
+        />
 
         <Show when={errorMessage()}>
           {(message) => (

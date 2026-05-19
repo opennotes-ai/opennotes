@@ -1,6 +1,7 @@
 import { createSignal, Show, type JSX } from "solid-js";
 import { Input } from "@opennotes/ui/components/ui/input";
 import { Button } from "@opennotes/ui/components/ui/button";
+import { isBlockingHost, type BlockingFamily } from "~/lib/blocking-hosts";
 
 export type UrlValidationResult =
   | { ok: true; normalized: string }
@@ -42,6 +43,11 @@ export interface UrlInputProps {
   pending?: boolean;
   autofocus?: boolean;
   onValidSubmit?: (url: string) => void;
+  onBlockingHost?: (info: {
+    url: string;
+    family: BlockingFamily;
+    host: string;
+  }) => void;
 }
 
 const FIELD_SIZE = "h-11 text-base";
@@ -59,6 +65,19 @@ export default function UrlInput(props: UrlInputProps) {
       setError(result.reason);
       return;
     }
+
+    const blocking = isBlockingHost(result.normalized);
+    if (blocking.match && props.onBlockingHost) {
+      event.preventDefault();
+      setError(null);
+      props.onBlockingHost({
+        url: result.normalized,
+        family: blocking.family,
+        host: blocking.host,
+      });
+      return;
+    }
+
     setError(null);
     if (props.onValidSubmit) {
       props.onValidSubmit(result.normalized);
