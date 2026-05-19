@@ -1825,6 +1825,15 @@ async def _scrape_step(  # noqa: PLR0911, PLR0912
                         return x_result
                     platform_detected = True
                     platform_outcome = "x_api_fallthrough_no_bearer"
+                    logger.info(
+                        "x api scrape path skipped; no credentials available",
+                        extra={
+                            "platform": "x",
+                            "platform_outcome": platform_outcome,
+                            "post_id": x_ref.post_id,
+                            "url": url,
+                        },
+                    )
 
             # Cache hit: scan URL-scoped Firecrawl tiers before probing
             # Firecrawl. Browser HTML submissions are job-scoped and are loaded
