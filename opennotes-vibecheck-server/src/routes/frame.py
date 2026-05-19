@@ -14,6 +14,7 @@ from pydantic import BaseModel
 from supabase import create_client
 
 from src.cache.scrape_cache import CachedScrape, SupabaseScrapeCache, canonical_cache_key
+from src.cache.scrape_tiers import ARCHIVE_CACHE_TIERS
 from src.cache.screenshot_store import GCSScreenshotStore, InMemoryScreenshotStore, ScreenshotStore
 from src.config import get_settings
 from src.firecrawl_client import (
@@ -46,7 +47,7 @@ _SCREENSHOT_REQUEST_BUDGET_SECONDS = 90.0
 _ARCHIVE_REQUEST_BUDGET_SECONDS = 8.0
 _BLOCKING_XFO_VALUES = {"deny", "sameorigin"}
 _BROWSER_HTML_ARCHIVE_TIER = "browser_html"
-_ARCHIVE_CACHE_TIERS = ("interact", "scrape")
+_ARCHIVE_CACHE_TIERS = ARCHIVE_CACHE_TIERS
 _PERMISSIVE_FRAME_ANCESTOR_TOKENS = {"*", "https:", "http:", "data:"}
 _ALLOWED_GCS_HOSTS = frozenset({
     "storage.googleapis.com",

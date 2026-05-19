@@ -322,10 +322,18 @@ class TestScrapeCacheFunctions:
             in schema_sql
         )
         assert "ON CONFLICT (normalized_url, tier)" in schema_sql
-        assert "WHERE tier IN ('scrape', 'interact')" in schema_sql
+        assert "WHERE tier IN ('scrape', 'interact', 'x_api')" in schema_sql
         assert "DO UPDATE" in schema_sql
         assert "public.vibecheck_scrapes.evicted_at IS NULL" in schema_sql
         assert "RETURN COALESCE(wrote_row, FALSE)" in schema_sql
+
+    def test_x_api_is_url_scoped_scrape_tier(self, schema_sql: str) -> None:
+        assert "CHECK (tier IN ('scrape', 'interact', 'browser_html', 'x_api'))" in schema_sql
+        assert (
+            "vibecheck_scrapes_normalized_url_tier_idx\n"
+            "    ON public.vibecheck_scrapes (normalized_url, tier)\n"
+            "    WHERE tier IN ('scrape', 'interact', 'x_api')"
+        ) in schema_sql
 
     def test_atomic_scrape_upsert_function_is_service_role_only(
         self, schema_sql: str

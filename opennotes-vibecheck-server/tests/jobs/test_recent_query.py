@@ -53,7 +53,7 @@ CREATE TABLE vibecheck_scrapes (
     job_id UUID,
     attempt_id UUID,
     tier TEXT NOT NULL DEFAULT 'scrape'
-        CHECK (tier IN ('scrape', 'interact', 'browser_html')),
+        CHECK (tier IN ('scrape', 'interact', 'browser_html', 'x_api')),
     url TEXT NOT NULL,
     host TEXT NOT NULL,
     page_kind TEXT NOT NULL DEFAULT 'other',
@@ -67,7 +67,7 @@ CREATE TABLE vibecheck_scrapes (
 );
 CREATE UNIQUE INDEX vibecheck_scrapes_normalized_url_tier_idx
     ON vibecheck_scrapes (normalized_url, tier)
-    WHERE tier IN ('scrape', 'interact');
+    WHERE tier IN ('scrape', 'interact', 'x_api');
 CREATE UNIQUE INDEX vibecheck_scrapes_browser_html_job_attempt_idx
     ON vibecheck_scrapes (job_id, attempt_id)
     WHERE tier = 'browser_html';
@@ -807,6 +807,30 @@ class TestListRecentTierPreference:
         result = await list_recent(db_pool, limit=5, signer=_StubSigner())
         assert len(result) == 1
         assert result[0].page_title == "Scrape Only Job Title"
+
+    async def test_picks_x_api_tier_ahead_of_scrape(self, db_pool: Any) -> None:
+        url = "https://x.com/i/status/100"
+        await _seed_job(db_pool, url=url, page_title="X Job Title")
+        await _seed_scrape(
+            db_pool,
+            url=url,
+            tier="scrape",
+            page_title="Firecrawl fallback",
+            storage_key="firecrawl.png",
+        )
+        await _seed_scrape(
+            db_pool,
+            url=url,
+            tier="x_api",
+            page_title="X API content",
+            storage_key="x-api.png",
+        )
+
+        result = await list_recent(db_pool, limit=5, signer=_StubSigner())
+
+        assert len(result) == 1
+        assert result[0].page_title == "X Job Title"
+        assert "x-api.png" in result[0].screenshot_url
 
     async def test_falls_back_to_scrape_when_interact_expired(self, db_pool: Any) -> None:
         """Boundary: a fresh tier='scrape' row beats an expired

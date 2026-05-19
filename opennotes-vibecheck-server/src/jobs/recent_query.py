@@ -44,6 +44,12 @@ from pydantic import ValidationError
 from src.analyses.safety._schemas import SafetyRecommendation
 from src.analyses.schemas import InternalRecentAnalysis, RecentAnalysis
 from src.analyses.synthesis._weather_schemas import WeatherReport
+from src.cache.scrape_tiers import (
+    RECENT_URL_TIER_PRIORITY,
+    URL_SCOPED_SCRAPE_TIERS,
+    sql_literal_list,
+    sql_priority_case,
+)
 from src.utils.url_security import InvalidURL, validate_public_http_url
 
 logger = logging.getLogger(__name__)
@@ -66,6 +72,11 @@ _SECRET_QUERY_PARAM_KEYS = frozenset(
 _SAFE_PORTS = frozenset({80, 443})
 
 _DEFAULT_OVERFETCH_MULTIPLIER = 8
+_URL_SCOPED_TIER_SQL = sql_literal_list(URL_SCOPED_SCRAPE_TIERS)
+_RECENT_TIER_PRIORITY_SQL = sql_priority_case("vs", RECENT_URL_TIER_PRIORITY)
+_RECENT_SUBQUERY_TIER_PRIORITY_SQL = sql_priority_case(
+    "tiered", RECENT_URL_TIER_PRIORITY
+)
 
 # 90% rule lives in SQL so DISTINCT-ON-equivalent dedup is never offered
 # a sub-threshold partial as the "newest" row for a normalized_url. The
@@ -78,7 +89,7 @@ _DEFAULT_OVERFETCH_MULTIPLIER = 8
 # dedups by normalized_url AFTER privacy filtering, picking the newest
 # survivor per URL — which prevents a newer privacy-rejected duplicate
 # from hiding an older qualifying one.
-_RECENT_SQL = """
+_RECENT_SQL = f"""
 SELECT
     j.job_id,
     j.normalized_url,
@@ -107,11 +118,12 @@ INNER JOIN (
         normalized_url,
         screenshot_storage_key,
         expires_at
-    FROM vibecheck_scrapes
+    FROM vibecheck_scrapes tiered
     WHERE screenshot_storage_key IS NOT NULL
       AND expires_at > now()
+      AND tiered.tier IN ({_URL_SCOPED_TIER_SQL})
     ORDER BY normalized_url,
-             CASE WHEN tier = 'interact' THEN 0 ELSE 1 END
+             {_RECENT_SUBQUERY_TIER_PRIORITY_SQL}
 ) s ON s.normalized_url = j.normalized_url
 WHERE j.status IN ('done', 'partial')
   AND (j.source_type IS NULL OR j.source_type = 'url')
@@ -141,7 +153,7 @@ ORDER BY j.finished_at DESC
 LIMIT $1
 """
 
-_RECENT_UNFILTERED_SQL = """
+_RECENT_UNFILTERED_SQL = f"""
 SELECT
     j.job_id,
     COALESCE(j.source_type, 'url') AS source_type,
@@ -173,7 +185,7 @@ LEFT JOIN LATERAL (
         (
           COALESCE(j.source_type, 'url') = 'url'
           AND vs.normalized_url = j.normalized_url
-          AND vs.tier IN ('scrape', 'interact')
+          AND vs.tier IN ({_URL_SCOPED_TIER_SQL})
         )
         OR (
           j.source_type = 'browser_html'
@@ -183,9 +195,8 @@ LEFT JOIN LATERAL (
         )
       )
     ORDER BY CASE
-                 WHEN vs.tier = 'interact' THEN 0
                  WHEN vs.tier = 'browser_html' THEN 0
-                 ELSE 1
+                 ELSE ({_RECENT_TIER_PRIORITY_SQL})
              END
     LIMIT 1
 ) s ON TRUE
