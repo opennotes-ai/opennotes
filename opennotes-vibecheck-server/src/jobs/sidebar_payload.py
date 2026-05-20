@@ -2,7 +2,7 @@
 
 `assemble_sidebar_payload` builds a `SidebarPayload` from any SectionSlot map,
 using neutral defaults for missing, pending, running, or failed slots.
-`payload_for_url_cache` serializes a payload for the legacy 72h cache,
+`payload_for_url_cache` serializes a payload for the 60-day cache,
 stripping job-scoped utterance anchors.
 """
 

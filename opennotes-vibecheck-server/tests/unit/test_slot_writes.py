@@ -1125,7 +1125,7 @@ async def test_finalize_upserts_cache_keyed_by_normalized_url_not_original(
 
     vibecheck_analyses.url must be keyed by vibecheck_jobs.normalized_url so
     subsequent submits of the same URL with different tracking params hit the
-    72h cache. Before the fix, row["url"] (original) was used as the cache key,
+    60-day cache. Before the fix, row["url"] (original) was used as the cache key,
     causing a cache miss on resubmit with different query params.
     """
     original_url = "https://example.com/page?utm_source=foo"

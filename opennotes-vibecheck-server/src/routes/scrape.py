@@ -190,7 +190,7 @@ async def _insert_browser_scrape_and_job(
             VALUES (
                 $1, 'browser_html', $2, $2, $3, 'other',
                 $4, $5, $6, $7, $8, $9, $10,
-                now(), now() + INTERVAL '72 hours', NULL
+                now(), now() + INTERVAL '60 days', NULL
             )
             """,
             normalized_url,

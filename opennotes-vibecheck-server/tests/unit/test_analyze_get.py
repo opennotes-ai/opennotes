@@ -1,6 +1,6 @@
 """Unit tests for GET /api/analyze/{job_id} expired_at surfacing (TASK-1541.02).
 
-The 7-day purge cron (TASK-1541.01) sets `expired_at` on terminal job rows
+The 60-day purge cron (TASK-1541.01) sets `expired_at` on terminal job rows
 and NULLs out heavy payload columns (sidebar_payload, sections). The poll
 endpoint must:
 

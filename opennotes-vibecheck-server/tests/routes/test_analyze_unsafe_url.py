@@ -60,7 +60,7 @@ CREATE TABLE vibecheck_scrapes (
     html TEXT,
     screenshot_storage_key TEXT,
     scraped_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    expires_at TIMESTAMPTZ NOT NULL DEFAULT (now() + INTERVAL '72 hours')
+    expires_at TIMESTAMPTZ NOT NULL DEFAULT (now() + INTERVAL '60 days')
 );
 
 CREATE TABLE vibecheck_job_utterances (

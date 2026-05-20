@@ -2,7 +2,7 @@
 
 The extractor fetches a page's markdown + sanitized HTML + full-page
 screenshot in a single Firecrawl `/v2/scrape` call, persists the bundle in
-`SupabaseScrapeCache` (72h TTL), and hands the markdown to a Gemini agent
+`SupabaseScrapeCache` (60-day TTL), and hands the markdown to a Gemini agent
 for structured utterance extraction. The agent may call `get_html()` or
 `get_screenshot()` as tools when markdown alone is ambiguous.
 

@@ -27,7 +27,7 @@ small enough to back with a Postgres-shaped fake.
 (`get`, `put`, `evict`, `signed_screenshot_url`) but persists into
 `vibecheck_scrapes` via the same asyncpg pool the orchestrator uses. The
 behavior contract is the same: get-after-put returns a CachedScrape; put
-honors the 72h TTL; evict removes the row.
+honors the 60-day TTL; evict removes the row.
 """
 from __future__ import annotations
 
@@ -185,7 +185,7 @@ CREATE TABLE IF NOT EXISTS vibecheck_scrapes (
     raw_html TEXT,
     screenshot_storage_key TEXT,
     scraped_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    expires_at TIMESTAMPTZ NOT NULL DEFAULT (now() + INTERVAL '72 hours'),
+    expires_at TIMESTAMPTZ NOT NULL DEFAULT (now() + INTERVAL '60 days'),
     evicted_at TIMESTAMPTZ,
     CONSTRAINT vibecheck_scrapes_page_kind_check
         CHECK (page_kind IN (
@@ -224,13 +224,13 @@ CREATE TABLE IF NOT EXISTS vibecheck_job_utterances (
 -- vibecheck_pdf_archives mirrors src/cache/schema.sql (PDF raw HTML TTL
 -- cache). RLS / REVOKE are out of scope for the integration test DB as
 -- noted in the file-level comment; the table contract under test is the
--- PK on job_id, the FK cascade from vibecheck_jobs, and the 7-day default
+-- PK on job_id, the FK cascade from vibecheck_jobs, and the 60-day default
 -- expires_at that pdf_extract_step + frame.py rely on.
 CREATE TABLE IF NOT EXISTS vibecheck_pdf_archives (
     job_id UUID PRIMARY KEY REFERENCES vibecheck_jobs(job_id) ON DELETE CASCADE,
     html TEXT NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    expires_at TIMESTAMPTZ NOT NULL DEFAULT (now() + INTERVAL '7 days')
+    expires_at TIMESTAMPTZ NOT NULL DEFAULT (now() + INTERVAL '60 days')
 );
 
 CREATE INDEX IF NOT EXISTS vibecheck_pdf_archives_expires_at_idx
@@ -297,7 +297,7 @@ BEGIN
             last_stage            = NULL
         WHERE status IN ('done', 'partial', 'failed')
           AND finished_at IS NOT NULL
-          AND finished_at < (now() - INTERVAL '7 days')
+          AND finished_at < (now() - INTERVAL '60 days')
           AND expired_at IS NULL
           AND protected = false
         RETURNING job_id
@@ -383,7 +383,7 @@ class AsyncpgScrapeCache:
     """`SupabaseScrapeCache` shape over an asyncpg pool.
 
     Behavior contract is identical to `SupabaseScrapeCache.get/put/evict`:
-    rows live in `vibecheck_scrapes` with a 72h TTL; `get` enforces a
+    rows live in `vibecheck_scrapes` with a 60-day TTL; `get` enforces a
     server-side `expires_at > now()` predicate; `put` UPSERTs on
     normalized_url; `evict` writes tombstones by normalized_url for fence
     protection. We do not exercise
@@ -397,7 +397,7 @@ class AsyncpgScrapeCache:
         self,
         pool: Any,
         *,
-        ttl_hours: int = 72,
+        ttl_hours: int = 1440,
         before_fence_read: Callable[[], Awaitable[None]] | None = None,
         after_fence_read: Callable[[], Awaitable[None]] | None = None,
     ) -> None:

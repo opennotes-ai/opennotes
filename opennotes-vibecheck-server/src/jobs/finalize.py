@@ -7,8 +7,8 @@ commits — the previous `pg_advisory_xact_lock` was not held by slot
 writers and therefore could not prevent half-merged snapshots (codex W1
 P1.4). If every slot is `done` or `failed`, finalize assembles a
 `SidebarPayload` from successful slot fragments, fills failed sections with
-neutral defaults, and UPSERTs into `vibecheck_analyses` (the legacy 72h
-cache).
+neutral defaults, and UPSERTs into `vibecheck_analyses` (the 60-day
+analysis cache).
 """
 from __future__ import annotations
 
@@ -38,7 +38,7 @@ from src.jobs.sidebar_payload import (
     payload_for_url_cache as _payload_for_url_cache,
 )
 
-_CACHE_TTL = timedelta(hours=72)
+_CACHE_TTL = timedelta(days=60)
 
 # SELECT FOR UPDATE serializes concurrent finalizers on the job row and
 # blocks slot writers that grab the same row-level lock for their UPDATE.
@@ -85,7 +85,7 @@ SET sidebar_payload = EXCLUDED.sidebar_payload,
     expires_at = EXCLUDED.expires_at
 """
 
-# After UPSERT into the legacy 72h cache, flip the job row itself to a
+# After UPSERT into the 60-day cache, flip the job row itself to a
 # terminal status. Without this transition the poll endpoint would surface the
 # job as `analyzing` indefinitely even though every slot completed and
 # `vibecheck_analyses` already carries the assembled SidebarPayload
