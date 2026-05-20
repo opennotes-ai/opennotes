@@ -1194,9 +1194,9 @@ async def _cache_put_or_keyless(
     Mirrors the pre-1488.05 fallback pattern from the original `_scrape_step`.
     """
     try:
-        return await scrape_cache.put(
-            url, fresh, tier=tier, screenshot_bytes=screenshot_bytes
-        )
+        if screenshot_bytes is None:
+            return await scrape_cache.put(url, fresh, tier=tier)
+        return await scrape_cache.put(url, fresh, tier=tier, screenshot_bytes=screenshot_bytes)
     except Exception as exc:
         logger.warning(
             "scrape cache put failed for %s (tier=%s): %s", url, tier, exc
