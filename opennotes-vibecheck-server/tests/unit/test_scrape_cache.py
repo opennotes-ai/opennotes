@@ -624,6 +624,28 @@ class TestScreenshotPersistence:
         assert got.screenshot is None
 
     @pytest.mark.asyncio
+    async def test_put_x_api_with_explicit_thumbnail_bytes_uploads_storage_key(
+        self,
+    ) -> None:
+        fake = _FakeSupabaseClient()
+        cache, store = _make_cache(fake)
+        thumbnail_png = b"\x89PNG\r\n\x1a\nx-og-thumbnail"
+        scrape = _make_scrape(screenshot=None, markdown="X API content")
+
+        result = await cache.put(
+            "https://x.com/alice/status/100",
+            scrape,
+            tier="x_api",
+            screenshot_bytes=thumbnail_png,
+        )
+
+        assert result.storage_key is not None
+        assert store.uploads[result.storage_key] == thumbnail_png
+        row = fake._rows[(normalize_url("https://x.com/alice/status/100"), "x_api")]
+        assert row["screenshot_storage_key"] == result.storage_key
+        assert scrape.screenshot is None
+
+    @pytest.mark.asyncio
     async def test_put_without_screenshot_bytes_or_url_stores_null_storage_key(
         self,
     ) -> None:

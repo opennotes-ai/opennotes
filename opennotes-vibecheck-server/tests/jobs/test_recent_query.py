@@ -832,6 +832,39 @@ class TestListRecentTierPreference:
         assert result[0].page_title == "X Job Title"
         assert "x-api.png" in result[0].screenshot_url
 
+    async def test_includes_x_api_tier_when_thumbnail_key_is_stored(self, db_pool: Any) -> None:
+        url = "https://x.com/alice/status/100"
+        job_id = await _seed_job(db_pool, url=url, page_title="X Gallery Title")
+        await _seed_scrape(
+            db_pool,
+            url=url,
+            tier="x_api",
+            page_title="X API content",
+            storage_key="x-og-thumbnail.png",
+        )
+
+        result = await list_recent(db_pool, limit=5, signer=_StubSigner())
+
+        assert len(result) == 1
+        assert result[0].job_id == job_id
+        assert result[0].page_title == "X Gallery Title"
+        assert "x-og-thumbnail.png" in result[0].screenshot_url
+
+    async def test_excludes_x_api_tier_when_thumbnail_key_is_missing(self, db_pool: Any) -> None:
+        url = "https://x.com/alice/status/100"
+        await _seed_job(db_pool, url=url, page_title="X Gallery Title")
+        await _seed_scrape(
+            db_pool,
+            url=url,
+            tier="x_api",
+            page_title="X API content",
+            storage_key=None,
+        )
+
+        result = await list_recent(db_pool, limit=5, signer=_StubSigner())
+
+        assert result == []
+
     async def test_falls_back_to_scrape_when_interact_expired(self, db_pool: Any) -> None:
         """Boundary: a fresh tier='scrape' row beats an expired
         tier='interact' row — the TTL filter applies before the tier
