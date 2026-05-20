@@ -38,7 +38,7 @@ const mockAnalyses: RecentAnalysis[] = [
     source_url: "https://example.com/fallback",
     page_title: null,
     preview_description: "Another description",
-    screenshot_url: null,
+    screenshot_url: "",
     weather_report: null,
     safety_recommendation: null,
     completed_at: "2026-05-09T00:00:00Z",
