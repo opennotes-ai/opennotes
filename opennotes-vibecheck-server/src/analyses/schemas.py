@@ -244,7 +244,7 @@ class SidebarPayload(BaseModel):
 
     Aggregates all four sidebar sections plus identity/metadata fields the
     frontend needs to render the result. `cached=True` indicates the payload
-    was served from the Supabase cache (72h TTL) instead of a freshly run
+    was served from the Supabase cache (60-day TTL) instead of a freshly run
     pipeline.
     """
 
@@ -351,7 +351,7 @@ class JobState(BaseModel):
     expired_at: datetime | None = Field(
         default=None,
         description=(
-            "When set, this job has been soft-deleted by the 7-day purge cron. "
+            "When set, this job has been soft-deleted by the 60-day purge cron. "
             "Heavy payload columns are cleared: sidebar_payload is NULL, sections is "
             "'{}' (empty JSON object). "
             "The job_id permalink remains addressable; clients should render an "

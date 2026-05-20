@@ -120,7 +120,7 @@ CREATE TABLE IF NOT EXISTS public.vibecheck_scrapes (
     raw_html TEXT,
     screenshot_storage_key TEXT,
     scraped_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    expires_at TIMESTAMPTZ NOT NULL DEFAULT (now() + INTERVAL '72 hours'),
+    expires_at TIMESTAMPTZ NOT NULL DEFAULT (now() + INTERVAL '60 days'),
     evicted_at TIMESTAMPTZ,
     CONSTRAINT vibecheck_scrapes_page_kind_check
         CHECK (page_kind IN (

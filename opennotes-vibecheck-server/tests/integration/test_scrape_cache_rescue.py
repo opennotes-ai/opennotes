@@ -5,11 +5,11 @@ Flow:
   1. First job — scrape succeeds, the orchestrator caches the bundle in
      `vibecheck_scrapes`. Then the (stubbed) extractor raises so the job
      terminates as failed/extraction_failed.
-  2. Re-submit the same URL within the 72h TTL — the orchestrator's
+  2. Re-submit the same URL within the 60-day TTL — the orchestrator's
      `_scrape_step` hits the cache and DOES NOT call Firecrawl. The
      stubbed extractor succeeds this time so the second job finalizes.
 
-The contract under test is the spec's "Re-submit within 72h skips
+The contract under test is the spec's "Re-submit within 60 days skips
 Firecrawl" property: cached scrape rescues the second attempt without
 paying the Firecrawl cost. Firecrawl call count is the load-bearing
 assertion.

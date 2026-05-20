@@ -152,7 +152,8 @@ async def test_pdf_extract_stores_html_and_extracts_from_signed_url(
         }
     ]
     assert len(pool.conn.executed) == 1
-    _query, args = pool.conn.executed[0]
+    query, args = pool.conn.executed[0]
+    assert "INTERVAL '60 days'" in query
     assert args == (job_id, "<main><p>Alice opens calmly.</p></main>")
     assert extract_calls[0]["url"] == gcs_key
     cached = cast(Any, extract_calls[0]["scrape"])

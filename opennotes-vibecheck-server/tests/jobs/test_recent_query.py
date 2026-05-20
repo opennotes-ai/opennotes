@@ -63,7 +63,7 @@ CREATE TABLE vibecheck_scrapes (
     html TEXT,
     screenshot_storage_key TEXT,
     scraped_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    expires_at TIMESTAMPTZ NOT NULL DEFAULT (now() + INTERVAL '72 hours')
+    expires_at TIMESTAMPTZ NOT NULL DEFAULT (now() + INTERVAL '60 days')
 );
 CREATE UNIQUE INDEX vibecheck_scrapes_normalized_url_tier_idx
     ON vibecheck_scrapes (normalized_url, tier)
@@ -389,7 +389,7 @@ async def _seed_scrape(
     tier: str = "scrape",
     page_title: str | None = "Example Title",
     storage_key: str | None = "abc/screenshot.png",
-    expires_in: timedelta = timedelta(hours=72),
+    expires_in: timedelta = timedelta(days=60),
     job_id: UUID | None = None,
     attempt_id: UUID | None = None,
 ) -> None:

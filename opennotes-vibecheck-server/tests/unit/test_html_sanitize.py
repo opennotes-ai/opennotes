@@ -167,7 +167,7 @@ def test_extract_archive_strips_event_handler_attributes() -> None:
 
 def test_extract_archive_caches_extraction_output() -> None:
     # P2.6: trafilatura is too slow to run synchronously per request
-    # against 72h cache rows that haven't changed. Hot-path callers see
+    # against 60-day cache rows that haven't changed. Hot-path callers see
     # the same (cached_html, cached_markdown) tuple repeatedly, so a
     # functools.lru_cache wrapper keeps the second-and-later calls O(1).
     # This test patches trafilatura.extract to count invocations.

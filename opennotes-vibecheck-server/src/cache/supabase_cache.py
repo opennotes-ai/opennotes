@@ -21,7 +21,7 @@ _TABLE_NAME = "vibecheck_analyses"
 
 
 class SupabaseCache:
-    def __init__(self, client: Client, ttl_hours: int = 72) -> None:
+    def __init__(self, client: Client, ttl_hours: int = 1440) -> None:
         self._client = client
         self._ttl_hours = ttl_hours
 

@@ -357,7 +357,7 @@ async def test_full_schema_reapply_over_legacy_defaulted_scrape_upsert_function(
         "<html><body><main>new</main></body></html>",
         None,
         now,
-        now + timedelta(hours=72),
+        now + timedelta(days=60),
         now,
         1,
     )
@@ -380,7 +380,7 @@ async def test_full_schema_reapply_over_legacy_defaulted_scrape_upsert_function(
         "<main>legacy</main>",
         None,
         now,
-        now + timedelta(hours=72),
+        now + timedelta(days=60),
         now,
     )
     assert wrote_legacy is True
@@ -468,7 +468,7 @@ async def test_atomic_scrape_upsert_rpc_respects_newer_tombstone(
         None,  # p_raw_html (TASK-1577.01)
         None,  # p_screenshot_storage_key
         now,
-        now + timedelta(hours=72),
+        now + timedelta(days=60),
         now,
         1,
     )
@@ -509,7 +509,7 @@ async def test_atomic_scrape_upsert_rpc_respects_newer_tombstone(
             None,  # p_raw_html (TASK-1577.01)
             None,  # p_screenshot_storage_key
             tombstone_time + timedelta(seconds=1),
-            tombstone_time + timedelta(hours=72),
+            tombstone_time + timedelta(days=60),
             tombstone_time - timedelta(seconds=2),
             1,
         )
@@ -559,7 +559,7 @@ async def test_atomic_scrape_upsert_rpc_writes_raw_html(
         raw_html,
         None,
         now,
-        now + timedelta(hours=72),
+        now + timedelta(days=60),
         now,
         1,
     )
@@ -605,7 +605,7 @@ async def test_atomic_scrape_upsert_rpc_14_arg_shim_writes_null_raw_html(
         "<main>old-replica-html</main>",
         None,  # p_screenshot_storage_key (14-arg form has no p_raw_html)
         now,
-        now + timedelta(hours=72),
+        now + timedelta(days=60),
         now,
         1,
     )
@@ -648,7 +648,7 @@ async def test_x_api_scrape_tier_round_trips_through_schema_rpcs(
         '<article data-utterance-id="100">root tweet</article>',
         None,
         now,
-        now + timedelta(hours=72),
+        now + timedelta(days=60),
         now,
         1,
     )
@@ -673,7 +673,7 @@ async def test_x_api_scrape_tier_round_trips_through_schema_rpcs(
         '<article data-utterance-id="100">replacement</article>',
         None,
         replacement_time,
-        replacement_time + timedelta(hours=72),
+        replacement_time + timedelta(days=60),
         now,
         1,
     )

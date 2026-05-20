@@ -9,7 +9,7 @@ INTEGRATION_DDL fixture omitted the vibecheck_pdf_archives table — every
 write would have raised UndefinedTableError against the testcontainers
 Postgres. This module exercises the round-trip end-to-end with a real
 asyncpg pool so the table contract (PK on job_id, FK cascade from
-vibecheck_jobs, default 7-day expires_at, ON CONFLICT upsert) is covered.
+vibecheck_jobs, default 60-day expires_at, ON CONFLICT upsert) is covered.
 """
 from __future__ import annotations
 
@@ -44,10 +44,10 @@ async def _insert_pdf_job(
     return job_id
 
 
-async def test_store_pdf_archive_inserts_row_with_seven_day_ttl(
+async def test_store_pdf_archive_inserts_row_with_sixty_day_ttl(
     db_pool: Any,
 ) -> None:
-    """_store_pdf_archive writes a row keyed by job_id with ~7d expires_at."""
+    """_store_pdf_archive writes a row keyed by job_id with ~60d expires_at."""
     job_id = await _insert_pdf_job(db_pool)
     html = "<article>persisted PDF body</article>"
 
@@ -67,8 +67,8 @@ async def test_store_pdf_archive_inserts_row_with_seven_day_ttl(
     assert row is not None
     assert row["job_id"] == job_id
     assert row["html"] == html
-    expected_min = before + timedelta(days=7) - timedelta(seconds=5)
-    expected_max = after + timedelta(days=7) + timedelta(seconds=5)
+    expected_min = before + timedelta(days=60) - timedelta(seconds=5)
+    expected_max = after + timedelta(days=60) + timedelta(seconds=5)
     assert expected_min <= row["expires_at"] <= expected_max
 
 

@@ -2,7 +2,7 @@
 --
 -- Two contracts coexist here:
 --
--- 1. `vibecheck_analyses` — the legacy 72h sidebar cache (TASK-1471), keyed
+-- 1. `vibecheck_analyses` — the 60-day sidebar cache (TASK-1471), keyed
 --    by normalized URL. Service-role-only after the lockdown below; the
 --    public policy that allowed anon writes is dropped.
 --
@@ -114,7 +114,7 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp" WITH SCHEMA extensions;
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
 -- =========================================================================
--- vibecheck_analyses (legacy 72h cache, locked down)
+-- vibecheck_analyses (60-day cache, locked down)
 -- =========================================================================
 
 CREATE TABLE IF NOT EXISTS public.vibecheck_analyses (
@@ -470,7 +470,7 @@ CREATE TABLE IF NOT EXISTS public.vibecheck_pdf_archives (
     job_id UUID PRIMARY KEY REFERENCES public.vibecheck_jobs(job_id) ON DELETE CASCADE,
     html TEXT NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT pg_catalog.now(),
-    expires_at TIMESTAMPTZ NOT NULL DEFAULT (pg_catalog.now() + INTERVAL '7 days')
+    expires_at TIMESTAMPTZ NOT NULL DEFAULT (pg_catalog.now() + INTERVAL '60 days')
 );
 
 ALTER TABLE public.vibecheck_pdf_archives ENABLE ROW LEVEL SECURITY;
@@ -497,7 +497,7 @@ CREATE TABLE IF NOT EXISTS public.vibecheck_scrapes (
     html TEXT,
     screenshot_storage_key TEXT,
     scraped_at TIMESTAMPTZ NOT NULL DEFAULT pg_catalog.now(),
-    expires_at TIMESTAMPTZ NOT NULL DEFAULT (pg_catalog.now() + INTERVAL '72 hours'),
+    expires_at TIMESTAMPTZ NOT NULL DEFAULT (pg_catalog.now() + INTERVAL '60 days'),
     CONSTRAINT vibecheck_scrapes_page_kind_check
         CHECK (page_kind IN (
             'blog_post', 'forum_thread', 'hierarchical_thread',
@@ -935,12 +935,12 @@ $$;
 ALTER FUNCTION public.vibecheck_sweep_orphan_jobs() OWNER TO postgres;
 REVOKE ALL ON FUNCTION public.vibecheck_sweep_orphan_jobs() FROM PUBLIC, anon, authenticated;
 
--- Purges terminal jobs older than 7 days. Cascades to job_utterances via FK.
+-- Purges terminal jobs older than 60 days. Cascades to job_utterances via FK.
 -- Scrape bundles are TTL-pruned independently via vibecheck_scrapes.expires_at
 -- (used by future tickets); kept here as a single hourly maintenance pass.
 -- See vibecheck_sweep_orphan_jobs for the SECURITY DEFINER rationale.
 -- expired_at: soft-delete marker set by vibecheck_purge_terminal_jobs (TASK-1541).
--- Terminal jobs older than 7 days have their sensitive payload columns nulled
+-- Terminal jobs older than 60 days have their sensitive payload columns nulled
 -- and `expired_at = now()` set so the row sticks around (preserving job_id +
 -- url + status for audit/idempotency) without retaining user-content payloads.
 ALTER TABLE public.vibecheck_jobs
@@ -986,7 +986,7 @@ BEGIN
             last_stage            = NULL
         WHERE status IN ('done', 'partial', 'failed')
           AND finished_at IS NOT NULL
-          AND finished_at < (pg_catalog.now() - INTERVAL '7 days')
+          AND finished_at < (pg_catalog.now() - INTERVAL '60 days')
           AND expired_at IS NULL
           AND protected = false  -- TASK-1540: skip operator-flagged jobs
         RETURNING job_id
@@ -1008,8 +1008,8 @@ BEGIN
     WHERE expires_at < pg_catalog.now();
 
     -- TASK-1540: protect the pdf_archives row for any protected job, otherwise
-    -- the user-uploaded PDF HTML (which cannot be re-fetched) would vanish 7
-    -- days after upload while the (protected) job row continued to exist,
+    -- the user-uploaded PDF HTML (which cannot be re-fetched) would vanish
+    -- after expiry while the (protected) job row continued to exist,
     -- permanently breaking the `pdf_archive_url` reference.
     DELETE FROM public.vibecheck_pdf_archives
     WHERE expires_at < pg_catalog.now()
@@ -1021,7 +1021,7 @@ BEGIN
 
     -- TASK-1540: protect the analyses cache row for any protected job that
     -- shares the same normalized_url, otherwise the sidebar payload would
-    -- vanish from the cache 72h after the job ran while the (protected)
+    -- vanish from the cache 60 days after the job ran while the (protected)
     -- job row continued to exist.
     DELETE FROM public.vibecheck_analyses
     WHERE expires_at < pg_catalog.now()

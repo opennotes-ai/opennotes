@@ -81,13 +81,17 @@ class Settings(BaseSettings):
     # The web tier is the source of truth; raise this knob (or remove the
     # decorator) before tightening backend enforcement, never the reverse.
     RATE_LIMIT_PER_IP_PER_HOUR: int = 5000
-    CACHE_TTL_HOURS: int = 72
+    # User-visible scrape, archive, and analysis artifacts are retained for
+    # 60 days unless explicitly configured otherwise.
+    CACHE_TTL_HOURS: int = 1440
     MAX_IMAGES_MODERATED: int = 30
     MAX_VIDEOS_MODERATED: int = 5
     VIDEO_MODERATION_PROVIDER: Literal["frame_sample", "video_intelligence"] = "frame_sample"
     VIDEO_MODERATION_MAX_WAIT_SEC: int = 1800
     GCS_VIDEO_STAGING_BUCKET: str | None = None
     YT_DLP_VIDEO_QUALITY: str = "bestvideo[height<=480]+bestaudio/best[height<=480]"
+    # Provider-result safety caches are regeneration caches, not durable
+    # user-visible artifact storage; keep their shorter cost-bounding TTLs.
     WEB_RISK_CACHE_TTL_HOURS: int = 6
     # TASK-1483.24: Vision API SafeSearch results are stable per-URL within
     # the cache window. Cache aggressively (7 days) to bound per-job cost;

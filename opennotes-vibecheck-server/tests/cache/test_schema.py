@@ -399,6 +399,34 @@ class TestPgCronSchedules:
         assert "PERFORM cron.unschedule('vibecheck-purge-terminal')" in schema_sql
 
 
+class TestRetentionDefaults:
+    def test_scrape_rows_default_to_sixty_day_expiration(self, schema_sql: str) -> None:
+        assert re.search(
+            r"CREATE TABLE IF NOT EXISTS public\.vibecheck_scrapes \("
+            r".*?expires_at TIMESTAMPTZ NOT NULL DEFAULT "
+            r"\(pg_catalog\.now\(\) \+ INTERVAL '60 days'\)",
+            schema_sql,
+            re.DOTALL,
+        )
+        assert "INTERVAL '72 hours'" not in schema_sql
+
+    def test_pdf_archive_rows_default_to_sixty_day_expiration(
+        self, schema_sql: str
+    ) -> None:
+        assert re.search(
+            r"CREATE TABLE IF NOT EXISTS public\.vibecheck_pdf_archives \("
+            r".*?expires_at TIMESTAMPTZ NOT NULL DEFAULT "
+            r"\(pg_catalog\.now\(\) \+ INTERVAL '60 days'\)",
+            schema_sql,
+            re.DOTALL,
+        )
+
+    def test_terminal_job_purge_uses_sixty_day_horizon(
+        self, schema_sql: str
+    ) -> None:
+        assert "finished_at < (pg_catalog.now() - INTERVAL '60 days')" in schema_sql
+
+
 class TestIdempotency:
     def test_extension_creation_uses_if_not_exists(self, schema_sql: str) -> None:
         assert "CREATE EXTENSION IF NOT EXISTS pg_cron" in schema_sql

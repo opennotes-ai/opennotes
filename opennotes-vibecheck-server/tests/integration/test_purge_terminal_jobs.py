@@ -2,7 +2,7 @@
 
 The production schema schedules `vibecheck_purge_terminal_jobs()` via
 `pg_cron` once per hour. This test invokes the function directly to
-assert that terminal jobs older than 7 days are soft-deleted via the
+assert that terminal jobs older than 60 days are soft-deleted via the
 `expired_at` marker (with sensitive payload columns nulled and child
 utterances hard-deleted), while fresh terminal jobs are untouched, and
 that the operation is idempotent across repeated calls.
@@ -175,7 +175,7 @@ async def test_old_done_job_soft_deleted_with_payload_nulled(db_pool: Any) -> No
         db_pool,
         url="https://example.com/old-done",
         status="done",
-        finished_delta=timedelta(days=8),
+        finished_delta=timedelta(days=61),
     )
     await _insert_utterance(db_pool, job_id, text="post body")
     await _insert_utterance(db_pool, job_id, text="reply body")
@@ -200,7 +200,7 @@ async def test_fresh_done_job_untouched(db_pool: Any) -> None:
         db_pool,
         url="https://example.com/fresh-done",
         status="done",
-        finished_delta=timedelta(days=1),
+        finished_delta=timedelta(days=59),
     )
     await _insert_utterance(db_pool, job_id, text="post body")
 
@@ -220,7 +220,7 @@ async def test_purge_is_idempotent(db_pool: Any) -> None:
         db_pool,
         url="https://example.com/idempotent",
         status="done",
-        finished_delta=timedelta(days=10),
+        finished_delta=timedelta(days=61),
     )
 
     first = await _purge(db_pool)
@@ -243,7 +243,7 @@ async def test_old_partial_job_soft_deleted(db_pool: Any) -> None:
         db_pool,
         url="https://example.com/partial",
         status="partial",
-        finished_delta=timedelta(days=8),
+        finished_delta=timedelta(days=61),
     )
 
     purged = await _purge(db_pool)
@@ -261,7 +261,7 @@ async def test_old_failed_job_soft_deleted(db_pool: Any) -> None:
         db_pool,
         url="https://example.com/failed",
         status="failed",
-        finished_delta=timedelta(days=8),
+        finished_delta=timedelta(days=61),
     )
 
     purged = await _purge(db_pool)
@@ -313,7 +313,7 @@ async def test_analyses_row_survives_when_matching_job_is_protected(
         db_pool,
         url=url,
         status="done",
-        finished_delta=timedelta(days=8),
+        finished_delta=timedelta(days=61),
         protected=True,
     )
     await _insert_analyses_row(
@@ -350,7 +350,7 @@ async def test_unprotected_job_still_soft_deleted(db_pool: Any) -> None:
         db_pool,
         url="https://example.com/unprotected",
         status="done",
-        finished_delta=timedelta(days=8),
+        finished_delta=timedelta(days=61),
         protected=False,
     )
 
@@ -371,7 +371,7 @@ async def test_unprotecting_job_lets_next_purge_soft_delete(db_pool: Any) -> Non
         db_pool,
         url="https://example.com/unprotect-flip",
         status="done",
-        finished_delta=timedelta(days=8),
+        finished_delta=timedelta(days=61),
         protected=True,
     )
 

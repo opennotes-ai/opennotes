@@ -4,7 +4,7 @@ The scrape cache persists the full Firecrawl `ScrapeResult` bundle so retried
 or finalize-path jobs can resume without repaying the Firecrawl cost. Two
 resources are coordinated per entry:
 
-- A row in `vibecheck_scrapes` (keyed by normalized URL, 72h TTL) storing
+- A row in `vibecheck_scrapes` (keyed by normalized URL, 60-day TTL) storing
   markdown + sanitized HTML + metadata.
 - An object in the configured GCS bucket holding the PNG bytes (see
   `screenshot_store.py`). Only the storage key is stored in the row —
@@ -130,7 +130,7 @@ def screenshot_storage_key_for(url: str) -> str:
 
 
 class SupabaseScrapeCache:
-    """72h-TTL cache for Firecrawl ScrapeResult bundles + screenshots.
+    """60-day TTL cache for Firecrawl ScrapeResult bundles + screenshots.
 
     Hybrid: Supabase Postgres holds the row, an external `ScreenshotStore`
     (GCS in production) holds the PNG bytes. The two are coordinated by
@@ -141,7 +141,7 @@ class SupabaseScrapeCache:
         self,
         client: Client,
         screenshot_store: ScreenshotStore,
-        ttl_hours: int = 72,
+        ttl_hours: int = 1440,
     ) -> None:
         self._client = client
         self._store = screenshot_store

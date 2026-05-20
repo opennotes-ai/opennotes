@@ -380,6 +380,48 @@
         }
       }
     },
+    "/api/keys/request": {
+      "post": {
+        "tags": [
+          "api-keys"
+        ],
+        "summary": "Request Api Key",
+        "description": "Issue a self-serve API key via email. No authorization required.",
+        "operationId": "request_api_key_api_keys_request_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/APIKeyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIKeyRequestResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/feedback": {
       "post": {
         "tags": [
@@ -465,7 +507,9 @@
               "application/json": {
                 "schema": {
                   "type": "object",
-                  "additionalProperties": true,
+                  "additionalProperties": {
+                    "type": "string"
+                  },
                   "title": "Response Submit Feedback Api Feedback  Feedback Id  Patch"
                 }
               }
@@ -1135,6 +1179,32 @@
   },
   "components": {
     "schemas": {
+      "APIKeyRequest": {
+        "properties": {
+          "email": {
+            "type": "string",
+            "title": "Email"
+          }
+        },
+        "type": "object",
+        "required": [
+          "email"
+        ],
+        "title": "APIKeyRequest"
+      },
+      "APIKeyRequestResponse": {
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "title": "Ok"
+          }
+        },
+        "type": "object",
+        "required": [
+          "ok"
+        ],
+        "title": "APIKeyRequestResponse"
+      },
       "AnalyzeImagesRequest": {
         "properties": {
           "job_id": {
@@ -2381,7 +2451,7 @@
               }
             ],
             "title": "Expired At",
-            "description": "When set, this job has been soft-deleted by the 7-day purge cron. Heavy payload columns are cleared: sidebar_payload is NULL, sections is '{}' (empty JSON object). The job_id permalink remains addressable; clients should render an 'analysis expired \u2014 re-analyze' card instead of the standard sidebar."
+            "description": "When set, this job has been soft-deleted by the 60-day purge cron. Heavy payload columns are cleared: sidebar_payload is NULL, sections is '{}' (empty JSON object). The job_id permalink remains addressable; clients should render an 'analysis expired \u2014 re-analyze' card instead of the standard sidebar."
           }
         },
         "type": "object",
@@ -3306,7 +3376,7 @@
           "opinions_sentiments"
         ],
         "title": "SidebarPayload",
-        "description": "Top-level response for `POST /api/analyze`.\n\nAggregates all four sidebar sections plus identity/metadata fields the\nfrontend needs to render the result. `cached=True` indicates the payload\nwas served from the Supabase cache (72h TTL) instead of a freshly run\npipeline."
+        "description": "Top-level response for `POST /api/analyze`.\n\nAggregates all four sidebar sections plus identity/metadata fields the\nfrontend needs to render the result. `cached=True` indicates the payload\nwas served from the Supabase cache (60-day TTL) instead of a freshly run\npipeline."
       },
       "SourceKind": {
         "type": "string",

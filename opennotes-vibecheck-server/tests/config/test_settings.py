@@ -18,9 +18,12 @@ def test_defaults():
     assert s.VIBECHECK_LIMITER_REDIS_REQUEST_CONNECT_TIMEOUT_SECONDS == 2.0
     assert s.VERTEX_LEASE_ACQUIRE_TIMEOUT_MS == 30_000
     assert s.VERTEX_LEASE_TTL_MS == 300_000
+    assert s.CACHE_TTL_HOURS == 1440
     assert s.MAX_IMAGES_MODERATED == 30
     assert s.MAX_VIDEOS_MODERATED == 5
     assert s.WEB_RISK_CACHE_TTL_HOURS == 6
+    assert s.VISION_IMAGE_CACHE_TTL_HOURS == 168
+    assert s.VISION_VIDEO_CACHE_TTL_HOURS == 168
     assert s.VIBECHECK_LEGACY_SCRAPE_TOKEN is None
     assert s.VIBECHECK_WEB_URL == ""
 

@@ -228,6 +228,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/keys/request": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Request Api Key
+         * @description Issue a self-serve API key via email. No authorization required.
+         */
+        post: operations["request_api_key_api_keys_request_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/feedback": {
         parameters: {
             query?: never;
@@ -549,6 +569,16 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** APIKeyRequest */
+        APIKeyRequest: {
+            /** Email */
+            email: string;
+        };
+        /** APIKeyRequestResponse */
+        APIKeyRequestResponse: {
+            /** Ok */
+            ok: boolean;
+        };
         /** AnalyzeImagesRequest */
         AnalyzeImagesRequest: {
             /**
@@ -1136,7 +1166,7 @@ export interface components {
             utterance_count: number;
             /**
              * Expired At
-             * @description When set, this job has been soft-deleted by the 7-day purge cron. Heavy payload columns are cleared: sidebar_payload is NULL, sections is '{}' (empty JSON object). The job_id permalink remains addressable; clients should render an 'analysis expired — re-analyze' card instead of the standard sidebar.
+             * @description When set, this job has been soft-deleted by the 60-day purge cron. Heavy payload columns are cleared: sidebar_payload is NULL, sections is '{}' (empty JSON object). The job_id permalink remains addressable; clients should render an 'analysis expired — re-analyze' card instead of the standard sidebar.
              */
             expired_at?: string | null;
         };
@@ -1533,7 +1563,7 @@ export interface components {
          *
          *     Aggregates all four sidebar sections plus identity/metadata fields the
          *     frontend needs to render the result. `cached=True` indicates the payload
-         *     was served from the Supabase cache (72h TTL) instead of a freshly run
+         *     was served from the Supabase cache (60-day TTL) instead of a freshly run
          *     pipeline.
          */
         SidebarPayload: {
@@ -2144,6 +2174,39 @@ export interface operations {
             };
         };
     };
+    request_api_key_api_keys_request_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["APIKeyRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIKeyRequestResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     open_or_combined_feedback_api_feedback_post: {
         parameters: {
             query?: never;
@@ -2199,7 +2262,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        [key: string]: unknown;
+                        [key: string]: string;
                     };
                 };
             };

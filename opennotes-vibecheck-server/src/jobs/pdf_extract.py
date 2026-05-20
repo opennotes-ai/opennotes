@@ -24,7 +24,7 @@ logger = get_logger(__name__)
 
 _STORE_PDF_ARCHIVE_SQL = """
 INSERT INTO vibecheck_pdf_archives (job_id, html, expires_at)
-VALUES ($1, $2, now() + INTERVAL '7 days')
+VALUES ($1, $2, now() + INTERVAL '60 days')
 ON CONFLICT (job_id) DO UPDATE
 SET html = EXCLUDED.html,
     expires_at = EXCLUDED.expires_at

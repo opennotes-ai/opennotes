@@ -40,7 +40,7 @@ CREATE TABLE vibecheck_scrapes (
     screenshot_storage_key TEXT,
     tier TEXT NOT NULL DEFAULT 'scrape',
     scraped_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    expires_at TIMESTAMPTZ NOT NULL DEFAULT (now() + INTERVAL '72 hours')
+    expires_at TIMESTAMPTZ NOT NULL DEFAULT (now() + INTERVAL '60 days')
 );
 CREATE UNIQUE INDEX vibecheck_scrapes_normalized_url_tier_idx
     ON vibecheck_scrapes (normalized_url, tier)
@@ -136,7 +136,7 @@ async def _seed_job_and_scrape(
             INSERT INTO vibecheck_scrapes
                 (normalized_url, url, host, page_title, screenshot_storage_key,
                  expires_at)
-            VALUES ($1, $1, 'example.com', 'Sample Page', $2, now() + INTERVAL '72 hours')
+            VALUES ($1, $1, 'example.com', 'Sample Page', $2, now() + INTERVAL '60 days')
             """,
             url,
             f"{url.removeprefix('https://').removeprefix('http://')}.png",
@@ -245,7 +245,7 @@ class TestInternalRecentUnfilteredShape:
                      page_title, screenshot_storage_key, expires_at)
                 VALUES ($1, $2, $3, 'browser_html', $1, 'news.example',
                         'Inline', 'browser/endpoint.png',
-                        now() + INTERVAL '72 hours')
+                        now() + INTERVAL '60 days')
                 """,
                 url,
                 row["job_id"],

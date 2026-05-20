@@ -531,6 +531,20 @@ class TestRoundTrip:
 
         assert got is not None
 
+    @pytest.mark.asyncio
+    async def test_put_uses_sixty_day_default_expiration(self) -> None:
+        fake = _FakeSupabaseClient()
+        cache, _ = _make_cache(fake)
+        before = datetime.now(UTC)
+
+        await cache.put("https://example.com/retention", _make_scrape())
+
+        row = fake.store[normalize_url("https://example.com/retention")]
+        expires_at = datetime.fromisoformat(row["expires_at"])
+        expected_min = before + timedelta(days=60) - timedelta(seconds=5)
+        expected_max = datetime.now(UTC) + timedelta(days=60) + timedelta(seconds=5)
+        assert expected_min <= expires_at <= expected_max
+
 
 # ---------------------------------------------------------------------------
 # AC#4 — HTML sanitation
