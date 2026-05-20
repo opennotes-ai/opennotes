@@ -13,10 +13,9 @@ import type { components } from "~/lib/generated-types";
 import {
   formatWeatherExpansion,
   formatWeatherLabel,
-  formatWeatherVariant,
-  getVariantHex,
   AXIS_DEFINITIONS,
 } from "~/lib/weather-labels";
+import { safetyLevel, lobeColors } from "~/lib/weather-symbol-derive";
 import { useSidebarStore } from "../SidebarStoreProvider";
 import type { SectionGroupLabel, SidebarStore } from "../sidebar-store";
 
@@ -66,19 +65,6 @@ const AXES: AxisDefinition[] = [
   { axisType: "relevance", heading: AXIS_DEFINITIONS.relevance.heading },
   { axisType: "sentiment", heading: AXIS_DEFINITIONS.sentiment.heading },
 ];
-
-function variantHex(label: string): string {
-  const variant = formatWeatherVariant(label);
-  return getVariantHex(variant);
-}
-
-function safetyLevel(rec: SafetyRecommendation | null | undefined): SafetyLevel {
-  const level = rec?.level;
-  if (level === "safe" || level === "mild" || level === "caution" || level === "unsafe") {
-    return level;
-  }
-  return "unknown";
-}
 
 function formatLogprobProbability(value: number | null | undefined): string | null {
   if (value == null || !Number.isFinite(value)) {
@@ -487,15 +473,7 @@ export default function WeatherReport(props: WeatherReportProps): JSX.Element {
       fallback={<WeatherReportSkeleton class={props.class} />}
     >
       {(report) => {
-        const truthLabel = () => report().truth?.label ?? "";
-        const relevanceLabel = () => report().relevance?.label ?? "";
-        const sentimentLabel = () => report().sentiment?.label ?? "";
-
-        const lobeColors = (): [string, string, string] => [
-          variantHex(truthLabel()),
-          variantHex(relevanceLabel()),
-          variantHex(sentimentLabel()),
-        ];
+        const reportLobeColors = (): [string, string, string] => lobeColors(report());
 
         const level = () => safetyLevel(props.safetyRecommendation);
 
@@ -639,7 +617,7 @@ export default function WeatherReport(props: WeatherReportProps): JSX.Element {
             >
               <WeatherSymbol
                 level={level()}
-                lobeColors={lobeColors()}
+                lobeColors={reportLobeColors()}
                 size="100%"
                 class="block w-full h-auto weather-symbol-shape-effect"
                 hoveredAxis={effectiveHovered()}
