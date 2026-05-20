@@ -200,7 +200,9 @@ from src.x import (
     XApiError,
     detect_x_status_url,
     fetch_x_conversation,
+    fetch_x_og_image_url,
     get_x_bearer,
+    materialize_og_image_png,
     merge_x_into_scrape,
     synthesize_x_scrape,
 )
@@ -1185,13 +1187,16 @@ async def _cache_put_or_keyless(
     fresh: Any,
     *,
     tier: ScrapeTier,
+    screenshot_bytes: bytes | None = None,
 ) -> CachedScrape:
     """Persist `fresh` under `(url, tier)`; on DB failure fall back to a
     keyless `CachedScrape` wrapper so the caller still has usable bytes.
     Mirrors the pre-1488.05 fallback pattern from the original `_scrape_step`.
     """
     try:
-        return await scrape_cache.put(url, fresh, tier=tier)
+        return await scrape_cache.put(
+            url, fresh, tier=tier, screenshot_bytes=screenshot_bytes
+        )
     except Exception as exc:
         logger.warning(
             "scrape cache put failed for %s (tier=%s): %s", url, tier, exc
@@ -1692,9 +1697,25 @@ async def _try_x_api_path(
         if bearer is None:
             return None
         conversation = await fetch_x_conversation(ref.post_id, bearer=bearer, http=http)
-    scrape = synthesize_x_scrape(conversation.root, ref.canonical_url)
+        og_image_url = await fetch_x_og_image_url(ref.canonical_url, http=http)
+        thumbnail_png = (
+            await materialize_og_image_png(og_image_url, http=http)
+            if og_image_url is not None
+            else None
+        )
+    scrape = synthesize_x_scrape(
+        conversation.root,
+        ref.canonical_url,
+        og_image_url=og_image_url,
+    )
     merged = merge_x_into_scrape(scrape, conversation)
-    return await _cache_put_or_keyless(scrape_cache, url, merged, tier="x_api")
+    return await _cache_put_or_keyless(
+        scrape_cache,
+        url,
+        merged,
+        tier="x_api",
+        screenshot_bytes=thumbnail_png,
+    )
 
 
 async def _scrape_step(  # noqa: PLR0911, PLR0912

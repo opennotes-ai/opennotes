@@ -15,7 +15,11 @@ def test_synthesize_x_scrape_builds_safe_scrape_result() -> None:
         in_reply_to_status_id=None,
     )
 
-    scrape = synthesize_x_scrape(root, "https://x.com/i/status/100")
+    scrape = synthesize_x_scrape(
+        root,
+        "https://x.com/i/status/100",
+        og_image_url="https://pbs.twimg.com/media/post.jpg",
+    )
 
     assert scrape.html is not None
     assert 'data-utterance-id="100"' in scrape.html
@@ -27,3 +31,5 @@ def test_synthesize_x_scrape_builds_safe_scrape_result() -> None:
     assert scrape.metadata.model_extra["platform"] == "x"
     assert scrape.metadata.model_extra["canonical_url"] == "https://x.com/i/status/100"
     assert scrape.metadata.model_extra["og:title"] == "@alice on X"
+    assert scrape.metadata.model_extra["og:image"] == "https://pbs.twimg.com/media/post.jpg"
+    assert scrape.screenshot is None

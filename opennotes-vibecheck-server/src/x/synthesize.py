@@ -6,7 +6,12 @@ from src.firecrawl_client import ScrapeMetadata, ScrapeResult
 from src.x.api import XTweet
 
 
-def synthesize_x_scrape(root: XTweet, canonical_url: str) -> ScrapeResult:
+def synthesize_x_scrape(
+    root: XTweet,
+    canonical_url: str,
+    *,
+    og_image_url: str | None = None,
+) -> ScrapeResult:
     body_html = html.escape(root.text, quote=True).replace("\n", "<br>")
     handle = html.escape(root.author_handle, quote=True)
     name = html.escape(root.author_name, quote=True)
@@ -21,17 +26,18 @@ def synthesize_x_scrape(root: XTweet, canonical_url: str) -> ScrapeResult:
         f'<div class="opennotes-x-root__body">{body_html}</div>'
         "</article>"
     )
-    metadata = ScrapeMetadata.model_validate(
-        {
-            "title": f"@{root.author_handle} on X",
-            "description": root.text[:280],
-            "platform": "x",
-            "canonical_url": canonical_url,
-            "og:title": f"@{root.author_handle} on X",
-            "og:description": root.text[:280],
-            "source_url": canonical_url,
-        }
-    )
+    metadata_values = {
+        "title": f"@{root.author_handle} on X",
+        "description": root.text[:280],
+        "platform": "x",
+        "canonical_url": canonical_url,
+        "og:title": f"@{root.author_handle} on X",
+        "og:description": root.text[:280],
+        "source_url": canonical_url,
+    }
+    if og_image_url is not None:
+        metadata_values["og:image"] = og_image_url
+    metadata = ScrapeMetadata.model_validate(metadata_values)
     return ScrapeResult(
         markdown=(
             f"# @{root.author_handle} ({root.author_name})\n\n"
