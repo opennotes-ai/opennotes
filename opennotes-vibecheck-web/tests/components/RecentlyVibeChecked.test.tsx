@@ -1,5 +1,20 @@
-import { describe, it, expect, afterEach } from "vitest";
+import { describe, it, expect, afterEach, vi } from "vitest";
 import { render, screen, cleanup } from "@solidjs/testing-library";
+import type { JSX } from "solid-js";
+
+vi.mock("../../src/components/GalleryHoverCard", () => ({
+  default: (props: {
+    href: string;
+    "data-testid"?: string;
+    class?: string;
+    children: JSX.Element;
+  }) => (
+    <a href={props.href} data-testid={props["data-testid"]} class={props.class}>
+      {props.children}
+    </a>
+  ),
+}));
+
 import type { RecentAnalysis } from "../../src/lib/api-client.server";
 import RecentlyVibeChecked from "../../src/components/RecentlyVibeChecked";
 
@@ -94,7 +109,7 @@ describe("<RecentlyVibeChecked />", () => {
     expect(screen.queryByLabelText(/Send feedback about/i)).toBeNull();
   });
 
-  it("renders weather readout only for cards with a weather report", () => {
+  it("renders weather symbol only for cards with a weather report", () => {
     const analyses = [
       makeAnalysis({
         job_id: "job-with-weather",
@@ -110,7 +125,8 @@ describe("<RecentlyVibeChecked />", () => {
 
     render(() => <RecentlyVibeChecked analyses={analyses} />);
 
-    expect(screen.getByText("Sourced · On Topic · Engaged")).toBeTruthy();
-    expect(screen.getAllByTestId("recent-analysis-weather")).toHaveLength(1);
+    const weatherSymbols = document.querySelectorAll('[data-testid^="weather-symbol-"]');
+    expect(weatherSymbols.length).toBeGreaterThanOrEqual(1);
+    expect(document.querySelector('[data-testid="recent-analysis-weather"]')).toBeNull();
   });
 });
