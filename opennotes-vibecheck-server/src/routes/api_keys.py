@@ -217,7 +217,10 @@ async def _issue_key_with_lock(
                 pool, lock_conn, email_norm, email_service, key_prefix, key_hash, html_body, text_body
             )
         finally:
-            await lock_conn.fetchval("SELECT pg_advisory_unlock($1::bigint)", lock_key)
+            try:
+                await lock_conn.fetchval("SELECT pg_advisory_unlock($1::bigint)", lock_key)
+            except (asyncpg.PostgresError, asyncpg.InterfaceError, OSError) as exc:
+                logger.warning("advisory unlock failed: %s", type(exc).__name__)
 
 
 async def _locked_issue(
@@ -250,7 +253,7 @@ async def _locked_issue(
             html_content=html_body,
             text_content=text_body,
         )
-    except (TimeoutError, ConfigurationError, aiosmtplib.SMTPException, OSError) as exc:
+    except (ConfigurationError, aiosmtplib.SMTPException, OSError) as exc:
         logger.exception(
             "email send failed for email_hash=%s error_code=%s",
             _hashed_email_key(email_norm),
@@ -279,7 +282,7 @@ async def _locked_issue(
                 key_prefix,
                 key_hash,
             )
-    except (asyncpg.PostgresError, OSError) as exc:
+    except (asyncpg.PostgresError, asyncpg.InterfaceError, OSError, TimeoutError) as exc:
         logger.exception(
             "api key db write failed for email_hash=%s error_code=%s",
             _hashed_email_key(email_norm),

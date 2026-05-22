@@ -528,34 +528,40 @@ class TestEmailSendFailure:
 
 
 class _FakePoolFailOnSecondAcquire:
-    """Proxy pool that passes through the first acquire() and raises PostgresError on the second.
+    """Proxy pool that passes through the first acquire() and raises on the second.
 
     The first acquire() is the advisory-lock connection; the second is the write transaction.
     asyncpg.Pool.acquire() is read-only so we wrap the pool instead of patching it.
+
+    `fail_with` controls which exception class the second acquire raises — defaults to
+    PostgresError but tests can pass InterfaceError or TimeoutError to cover
+    closed-pool / pool-exhausted paths.
     """
 
-    def __init__(self, real_pool: Any) -> None:
+    def __init__(self, real_pool: Any, fail_with: type[BaseException] = asyncpg.PostgresError) -> None:
         self._real_pool = real_pool
         self._call_count = 0
+        self._fail_with = fail_with
 
     def acquire(self) -> _ProxyCtx:
         self._call_count += 1
         should_fail = self._call_count > 1
         real_ctx = self._real_pool.acquire()
-        return _ProxyCtx(real_ctx, should_fail)
+        return _ProxyCtx(real_ctx, should_fail, self._fail_with)
 
     def __getattr__(self, name: str) -> Any:
         return getattr(self._real_pool, name)
 
 
 class _ProxyCtx:
-    def __init__(self, real_ctx: Any, should_fail: bool) -> None:
+    def __init__(self, real_ctx: Any, should_fail: bool, fail_with: type[BaseException]) -> None:
         self._real_ctx = real_ctx
         self._should_fail = should_fail
+        self._fail_with = fail_with
 
     async def __aenter__(self) -> Any:
         if self._should_fail:
-            raise asyncpg.PostgresError("forced db error")
+            raise self._fail_with("forced db error")
         return await self._real_ctx.__aenter__()
 
     async def __aexit__(self, *args: Any) -> None:
@@ -598,6 +604,46 @@ class TestDbWriteFailure:
         )
         assert all("dblogcheck@example.com" not in r.getMessage() for r in caplog.records), (
             "raw email leaked into logs"
+        )
+
+    async def test_db_write_interface_error_logged_and_503(
+        self,
+        client: httpx.AsyncClient,
+        db_pool: Any,
+        fake_email: FakeEmailService,
+        monkeypatch: pytest.MonkeyPatch,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """Closed pool / 'another operation in progress' raises InterfaceError, not PostgresError."""
+        _stub_valid_email(monkeypatch, "iface@example.com")
+        fake_pool = _FakePoolFailOnSecondAcquire(db_pool, fail_with=asyncpg.InterfaceError)
+        monkeypatch.setattr(api_keys_route, "_get_db_pool", lambda _req: fake_pool)
+        with caplog.at_level("ERROR", logger="src.routes.api_keys"):
+            resp = await client.post("/api/keys/request", json={"email": "iface@example.com"})
+        assert resp.status_code == 503
+        assert resp.json()["error_code"] == "db_write_failed"
+        assert any("InterfaceError" in r.getMessage() for r in caplog.records), (
+            f"expected InterfaceError tag in ERROR logs; got: {[r.getMessage() for r in caplog.records]}"
+        )
+
+    async def test_db_write_timeout_error_logged_and_503(
+        self,
+        client: httpx.AsyncClient,
+        db_pool: Any,
+        fake_email: FakeEmailService,
+        monkeypatch: pytest.MonkeyPatch,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """pool.acquire() timing out (exhausted pool) raises TimeoutError, not a Postgres class."""
+        _stub_valid_email(monkeypatch, "pooltimeout@example.com")
+        fake_pool = _FakePoolFailOnSecondAcquire(db_pool, fail_with=TimeoutError)
+        monkeypatch.setattr(api_keys_route, "_get_db_pool", lambda _req: fake_pool)
+        with caplog.at_level("ERROR", logger="src.routes.api_keys"):
+            resp = await client.post("/api/keys/request", json={"email": "pooltimeout@example.com"})
+        assert resp.status_code == 503
+        assert resp.json()["error_code"] == "db_write_failed"
+        assert any("TimeoutError" in r.getMessage() for r in caplog.records), (
+            f"expected TimeoutError tag in ERROR logs; got: {[r.getMessage() for r in caplog.records]}"
         )
 
 
