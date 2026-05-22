@@ -22,6 +22,8 @@ import secrets
 import struct
 from typing import Any
 
+import aiosmtplib
+import asyncpg
 import email_validator
 import uuid_utils
 from fastapi import APIRouter, Request
@@ -32,7 +34,7 @@ from pydantic import BaseModel
 
 from src.config import get_settings
 from src.monitoring import get_logger
-from src.services.email import EmailService
+from src.services.email import ConfigurationError, EmailService
 from src.services.limiter_storage import (
     build_limiter_storage,
     build_slowapi_limiter,
@@ -215,7 +217,10 @@ async def _issue_key_with_lock(
                 pool, lock_conn, email_norm, email_service, key_prefix, key_hash, html_body, text_body
             )
         finally:
-            await lock_conn.fetchval("SELECT pg_advisory_unlock($1::bigint)", lock_key)
+            try:
+                await lock_conn.fetchval("SELECT pg_advisory_unlock($1::bigint)", lock_key)
+            except (asyncpg.PostgresError, asyncpg.InterfaceError, OSError) as exc:
+                logger.warning("advisory unlock failed: %s", type(exc).__name__)
 
 
 async def _locked_issue(
@@ -248,7 +253,12 @@ async def _locked_issue(
             html_content=html_body,
             text_content=text_body,
         )
-    except Exception:
+    except (ConfigurationError, aiosmtplib.SMTPException, OSError) as exc:
+        logger.exception(
+            "email send failed for email_hash=%s error_code=%s",
+            _hashed_email_key(email_norm),
+            type(exc).__name__,
+        )
         return _error_response(
             503,
             "email_send_failed",
@@ -272,7 +282,12 @@ async def _locked_issue(
                 key_prefix,
                 key_hash,
             )
-    except Exception:
+    except (asyncpg.PostgresError, asyncpg.InterfaceError, OSError, TimeoutError) as exc:
+        logger.exception(
+            "api key db write failed for email_hash=%s error_code=%s",
+            _hashed_email_key(email_norm),
+            type(exc).__name__,
+        )
         return _error_response(
             503,
             "db_write_failed",
