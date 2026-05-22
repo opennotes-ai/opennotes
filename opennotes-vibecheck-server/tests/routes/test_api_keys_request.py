@@ -480,8 +480,10 @@ class TestEmailSendFailure:
         fake_email: FakeEmailService,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
+        import aiosmtplib
+
         _stub_valid_email(monkeypatch, "sendfail@example.com")
-        fake_email.raise_on_send = RuntimeError("SMTP connection refused")
+        fake_email.raise_on_send = aiosmtplib.SMTPException("SMTP connection refused")
         resp = await client.post("/api/keys/request", json={"email": "sendfail@example.com"})
         assert resp.status_code == 503
         assert resp.json()["error_code"] == "email_send_failed"
@@ -493,12 +495,110 @@ class TestEmailSendFailure:
         fake_email: FakeEmailService,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
+        import aiosmtplib
+
         _stub_valid_email(monkeypatch, "sendfailnowrite@example.com")
-        fake_email.raise_on_send = RuntimeError("SMTP connection refused")
+        fake_email.raise_on_send = aiosmtplib.SMTPException("SMTP connection refused")
         before = await _count_api_keys(db_pool, "sendfailnowrite@example.com")
         await client.post("/api/keys/request", json={"email": "sendfailnowrite@example.com"})
         after = await _count_api_keys(db_pool, "sendfailnowrite@example.com")
         assert after == before
+
+    async def test_send_failure_logs_exception_with_hashed_email(
+        self,
+        client: httpx.AsyncClient,
+        fake_email: FakeEmailService,
+        monkeypatch: pytest.MonkeyPatch,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        import aiosmtplib
+
+        _stub_valid_email(monkeypatch, "logcheck@example.com")
+        fake_email.raise_on_send = aiosmtplib.SMTPException("forced failure")
+        with caplog.at_level("ERROR", logger="src.routes.api_keys"):
+            resp = await client.post("/api/keys/request", json={"email": "logcheck@example.com"})
+        assert resp.status_code == 503
+        hashed = hashlib.sha256("logcheck@example.com".encode()).hexdigest()[:16]
+        assert any(hashed in r.getMessage() for r in caplog.records), (
+            f"expected hashed email {hashed} in ERROR logs; got: {[r.getMessage() for r in caplog.records]}"
+        )
+        assert all("logcheck@example.com" not in r.getMessage() for r in caplog.records), (
+            "raw email leaked into logs"
+        )
+
+
+class _FakePoolFailOnSecondAcquire:
+    """Proxy pool that passes through the first acquire() and raises PostgresError on the second.
+
+    The first acquire() is the advisory-lock connection; the second is the write transaction.
+    asyncpg.Pool.acquire() is read-only so we wrap the pool instead of patching it.
+    """
+
+    def __init__(self, real_pool: Any) -> None:
+        self._real_pool = real_pool
+        self._call_count = 0
+
+    def acquire(self) -> "_ProxyCtx":
+        self._call_count += 1
+        should_fail = self._call_count > 1
+        real_ctx = self._real_pool.acquire()
+        return _ProxyCtx(real_ctx, should_fail)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._real_pool, name)
+
+
+class _ProxyCtx:
+    def __init__(self, real_ctx: Any, should_fail: bool) -> None:
+        self._real_ctx = real_ctx
+        self._should_fail = should_fail
+
+    async def __aenter__(self) -> Any:
+        if self._should_fail:
+            raise asyncpg.PostgresError("forced db error")
+        return await self._real_ctx.__aenter__()
+
+    async def __aexit__(self, *args: Any) -> None:
+        if not self._should_fail:
+            await self._real_ctx.__aexit__(*args)
+
+
+class TestDbWriteFailure:
+    async def test_db_write_failure_returns_503(
+        self,
+        client: httpx.AsyncClient,
+        db_pool: Any,
+        fake_email: FakeEmailService,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        _stub_valid_email(monkeypatch, "dbfail@example.com")
+        fake_pool = _FakePoolFailOnSecondAcquire(db_pool)
+        monkeypatch.setattr(api_keys_route, "_get_db_pool", lambda _req: fake_pool)
+        resp = await client.post("/api/keys/request", json={"email": "dbfail@example.com"})
+        assert resp.status_code == 503
+        assert resp.json()["error_code"] == "db_write_failed"
+
+    async def test_db_write_failure_logs_exception_with_hashed_email(
+        self,
+        client: httpx.AsyncClient,
+        db_pool: Any,
+        fake_email: FakeEmailService,
+        monkeypatch: pytest.MonkeyPatch,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        _stub_valid_email(monkeypatch, "dblogcheck@example.com")
+        fake_pool = _FakePoolFailOnSecondAcquire(db_pool)
+        monkeypatch.setattr(api_keys_route, "_get_db_pool", lambda _req: fake_pool)
+        with caplog.at_level("ERROR", logger="src.routes.api_keys"):
+            resp = await client.post("/api/keys/request", json={"email": "dblogcheck@example.com"})
+        assert resp.status_code == 503
+        hashed = hashlib.sha256("dblogcheck@example.com".encode()).hexdigest()[:16]
+        assert any(hashed in r.getMessage() for r in caplog.records), (
+            f"expected hashed email {hashed} in ERROR logs; got: {[r.getMessage() for r in caplog.records]}"
+        )
+        assert all("dblogcheck@example.com" not in r.getMessage() for r in caplog.records), (
+            "raw email leaked into logs"
+        )
 
 
 class TestRateLimiting:
