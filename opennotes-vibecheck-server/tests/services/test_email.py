@@ -45,7 +45,7 @@ class TestSendEmail:
         mock_smtp.__aenter__ = AsyncMock(return_value=mock_smtp)
         mock_smtp.__aexit__ = AsyncMock(return_value=False)
 
-        with patch("src.services.email.aiosmtplib.SMTP", return_value=mock_smtp):
+        with patch("src.services.email.aiosmtplib.SMTP", return_value=mock_smtp) as smtp_cls:
             await svc.send_email(
                 to_email="recipient@example.com",
                 subject="Hello",
@@ -53,7 +53,8 @@ class TestSendEmail:
                 text_content="Hello",
             )
 
-        mock_smtp.starttls.assert_called_once()
+        smtp_cls.assert_called_once()
+        assert smtp_cls.call_args.kwargs.get("start_tls") is True
         mock_smtp.send_message.assert_called_once()
 
     @pytest.mark.asyncio
@@ -98,9 +99,8 @@ class TestSendEmail:
         svc = EmailService(settings)
 
         mock_smtp = AsyncMock()
-        mock_smtp.__aenter__ = AsyncMock(return_value=mock_smtp)
+        mock_smtp.__aenter__ = AsyncMock(side_effect=aiosmtplib.SMTPConnectError("connection refused"))
         mock_smtp.__aexit__ = AsyncMock(return_value=False)
-        mock_smtp.starttls = AsyncMock(side_effect=aiosmtplib.SMTPConnectError("connection refused"))
 
         with patch("src.services.email.aiosmtplib.SMTP", return_value=mock_smtp), pytest.raises(aiosmtplib.SMTPException):
             await svc.send_email(
