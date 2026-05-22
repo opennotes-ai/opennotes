@@ -518,7 +518,7 @@ class TestEmailSendFailure:
         with caplog.at_level("ERROR", logger="src.routes.api_keys"):
             resp = await client.post("/api/keys/request", json={"email": "logcheck@example.com"})
         assert resp.status_code == 503
-        hashed = hashlib.sha256("logcheck@example.com".encode()).hexdigest()[:16]
+        hashed = hashlib.sha256(b"logcheck@example.com").hexdigest()[:16]
         assert any(hashed in r.getMessage() for r in caplog.records), (
             f"expected hashed email {hashed} in ERROR logs; got: {[r.getMessage() for r in caplog.records]}"
         )
@@ -538,7 +538,7 @@ class _FakePoolFailOnSecondAcquire:
         self._real_pool = real_pool
         self._call_count = 0
 
-    def acquire(self) -> "_ProxyCtx":
+    def acquire(self) -> _ProxyCtx:
         self._call_count += 1
         should_fail = self._call_count > 1
         real_ctx = self._real_pool.acquire()
@@ -592,7 +592,7 @@ class TestDbWriteFailure:
         with caplog.at_level("ERROR", logger="src.routes.api_keys"):
             resp = await client.post("/api/keys/request", json={"email": "dblogcheck@example.com"})
         assert resp.status_code == 503
-        hashed = hashlib.sha256("dblogcheck@example.com".encode()).hexdigest()[:16]
+        hashed = hashlib.sha256(b"dblogcheck@example.com").hexdigest()[:16]
         assert any(hashed in r.getMessage() for r in caplog.records), (
             f"expected hashed email {hashed} in ERROR logs; got: {[r.getMessage() for r in caplog.records]}"
         )

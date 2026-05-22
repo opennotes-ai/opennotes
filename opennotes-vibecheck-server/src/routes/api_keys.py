@@ -250,7 +250,7 @@ async def _locked_issue(
             html_content=html_body,
             text_content=text_body,
         )
-    except (ConfigurationError, aiosmtplib.SMTPException, OSError, asyncio.TimeoutError) as exc:
+    except (TimeoutError, ConfigurationError, aiosmtplib.SMTPException, OSError) as exc:
         logger.exception(
             "email send failed for email_hash=%s error_code=%s",
             _hashed_email_key(email_norm),
