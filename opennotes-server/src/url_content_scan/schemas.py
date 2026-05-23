@@ -7,7 +7,7 @@ from enum import StrEnum
 from typing import Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from src.url_content_scan.analyses.synthesis.weather_report_schemas import (
     OverallDecision,
@@ -94,6 +94,7 @@ class AnalyzeRequest(BaseModel):
 
 
 class AnalyzeResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
     job_id: UUID
     status: JobStatus
     cached: bool = False
@@ -112,12 +113,14 @@ class BrowserScrapeRequest(BaseModel):
 
 
 class RetryResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
     job_id: UUID
     slug: SectionSlug
     attempt_id: UUID
 
 
 class FrameCompatResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
     can_iframe: bool
     blocking_header: str | None = None
     csp_frame_ancestors: str | None = None
@@ -125,6 +128,7 @@ class FrameCompatResponse(BaseModel):
 
 
 class ScreenshotResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
     screenshot_url: str
 
 

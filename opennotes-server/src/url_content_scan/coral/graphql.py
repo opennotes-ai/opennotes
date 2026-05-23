@@ -113,6 +113,7 @@ class _CoralPayload(BaseModel):
 
 
 class _GraphqlResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
     data: _CoralPayload
 
 

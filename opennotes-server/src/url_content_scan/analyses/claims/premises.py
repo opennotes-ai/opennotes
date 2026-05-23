@@ -19,7 +19,7 @@ import re
 from collections.abc import Awaitable, Callable
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from pydantic_ai import Agent
 from pydantic_ai.settings import ModelSettings
 
@@ -48,6 +48,7 @@ class _PremiseExtractionItem(BaseModel):
 
 
 class _PremiseExtractionResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
     results: list[_PremiseExtractionItem] = Field(default_factory=list)
 
 

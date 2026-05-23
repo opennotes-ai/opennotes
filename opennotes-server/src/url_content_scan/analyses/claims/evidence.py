@@ -21,7 +21,7 @@ from collections.abc import Awaitable, Callable
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from pydantic_ai import Agent
 from pydantic_ai.capabilities import WebSearch
 from pydantic_ai.settings import ModelSettings
@@ -59,6 +59,7 @@ class _ExternalEvidenceItem(BaseModel):
 
 
 class _ExternalEvidenceResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
     facts: list[_ExternalEvidenceItem] = Field(default_factory=list)
 
 
@@ -73,10 +74,12 @@ class _ClaimGroup(BaseModel):
 
 
 class _ClusterResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
     groups: list[_ClaimGroup] = Field(default_factory=list)
 
 
 class _SanityResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
     candidates: list[_ExternalEvidenceCandidate] = Field(default_factory=list)
 
 
@@ -87,6 +90,7 @@ class _CurateFact(BaseModel):
 
 
 class _CurateResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
     facts: list[_CurateFact] = Field(default_factory=list)
 
 

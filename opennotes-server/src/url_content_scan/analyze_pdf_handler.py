@@ -21,7 +21,7 @@ from uuid import UUID, uuid4
 
 from fastapi import Request
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.config import get_settings
@@ -48,6 +48,7 @@ _ALLOWED_IMAGE_TYPES = frozenset(
 
 
 class UploadPDFResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
     gcs_key: str
     upload_url: str
 
@@ -79,6 +80,7 @@ class ImageUploadUrl(BaseModel):
 
 
 class UploadImagesResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
     batch_id: UUID
     images: list[ImageUploadUrl]
 

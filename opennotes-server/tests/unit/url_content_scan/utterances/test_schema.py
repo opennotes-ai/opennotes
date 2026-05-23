@@ -30,4 +30,4 @@ def test_utterances_payload_uses_url_scan_page_kind_and_anchor_shape() -> None:
     anchor = UtteranceAnchor(position=1, utterance_id="root-1")
 
     assert payload.page_kind is PageKind.FORUM_THREAD
-    assert anchor.model_dump() == {"position": 1, "utterance_id": "root-1"}
+    assert anchor.model_dump() == {"position": 1, "utterance_id": "root-1", "timestamp": None}

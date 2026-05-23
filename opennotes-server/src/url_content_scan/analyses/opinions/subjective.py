@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Awaitable, Callable
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from pydantic_ai import Agent
 from pydantic_ai.settings import ModelSettings
 
@@ -43,6 +43,7 @@ class _SubjectiveClaimOutput(BaseModel):
 
 
 class _SubjectiveExtractionResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
     claims: list[_SubjectiveClaimOutput] = Field(default_factory=list)
 
 

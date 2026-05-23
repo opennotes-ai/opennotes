@@ -25,6 +25,10 @@ from .analysis_attributes import AnalysisAttributes
 from .analysis_resource import AnalysisResource
 from .analysis_response import AnalysisResponse
 from .analysis_response_jsonapi import AnalysisResponseJsonapi
+from .analyze_images_request import AnalyzeImagesRequest
+from .analyze_pdf_request import AnalyzePDFRequest
+from .analyze_request import AnalyzeRequest
+from .analyze_response import AnalyzeResponse
 from .api_key_create import APIKeyCreate
 from .api_key_response import APIKeyResponse
 from .audit_log_response import AuditLogResponse
@@ -76,6 +80,8 @@ from .candidate_status import CandidateStatus
 from .circuit_breakers_status_health_circuit_breakers_get_response_circuit_breakers_status_health_circuit_breakers_get import (
     CircuitBreakersStatusHealthCircuitBreakersGetResponseCircuitBreakersStatusHealthCircuitBreakersGet,
 )
+from .claim_category import ClaimCategory
+from .claim_opposition import ClaimOpposition
 from .claim_relevance_check_attributes import ClaimRelevanceCheckAttributes
 from .claim_relevance_check_create_data import ClaimRelevanceCheckCreateData
 from .claim_relevance_check_request import ClaimRelevanceCheckRequest
@@ -83,6 +89,8 @@ from .claim_relevance_check_response import ClaimRelevanceCheckResponse
 from .claim_relevance_check_response_jsonapi import ClaimRelevanceCheckResponseJsonapi
 from .claim_relevance_check_result_attributes import ClaimRelevanceCheckResultAttributes
 from .claim_relevance_check_result_resource import ClaimRelevanceCheckResultResource
+from .claim_trend import ClaimTrend
+from .claims_report import ClaimsReport
 from .clear_preview_response import ClearPreviewResponse
 from .clear_response import ClearResponse
 from .community_admin_response import CommunityAdminResponse
@@ -157,6 +165,7 @@ from .create_community_server_api_v1_community_servers_post_response_403 import 
 from .create_community_server_api_v1_community_servers_post_response_409 import (
     CreateCommunityServerApiV1CommunityServersPostResponse409,
 )
+from .deduped_claim import DedupedClaim
 from .delete_dataset_fusion_weight_api_v1_admin_fusion_weights_dataset_delete_response_delete_dataset_fusion_weight_api_v1_admin_fusion_weights_dataset_delete import (
     DeleteDatasetFusionWeightApiV1AdminFusionWeightsDatasetDeleteResponseDeleteDatasetFusionWeightApiV1AdminFusionWeightsDatasetDelete,
 )
@@ -179,7 +188,10 @@ from .discord_o_auth_register_request import DiscordOAuthRegisterRequest
 from .distributed_health_check_health_distributed_get_response_distributed_health_check_health_distributed_get import (
     DistributedHealthCheckHealthDistributedGetResponseDistributedHealthCheckHealthDistributedGet,
 )
+from .divergence import Divergence
+from .divergence_direction import DivergenceDirection
 from .enrollment_data import EnrollmentData
+from .error_code import ErrorCode
 from .explanation_create_attributes import ExplanationCreateAttributes
 from .explanation_create_data import ExplanationCreateData
 from .explanation_create_request import ExplanationCreateRequest
@@ -187,11 +199,16 @@ from .explanation_result_attributes import ExplanationResultAttributes
 from .explanation_result_resource import ExplanationResultResource
 from .explanation_result_response import ExplanationResultResponse
 from .explanation_result_response_jsonapi import ExplanationResultResponseJsonapi
+from .fact_check_match import FactCheckMatch
 from .fact_check_match_resource import FactCheckMatchResource
+from .facts_claims_section import FactsClaimsSection
 from .flagged_message_attributes import FlaggedMessageAttributes
 from .flagged_message_resource import FlaggedMessageResource
 from .flashpoint_detection_update_request import FlashpointDetectionUpdateRequest
 from .flashpoint_detection_update_response import FlashpointDetectionUpdateResponse
+from .flashpoint_match import FlashpointMatch
+from .frame_compat_response import FrameCompatResponse
+from .frame_finding import FrameFinding
 from .fusion_weight_response import FusionWeightResponse
 from .fusion_weight_update import FusionWeightUpdate
 from .get_community_server_stats_api_v1_webhooks_stats_platform_community_server_id_get_response_get_community_server_stats_api_v1_webhooks_stats_platform_community_server_id_get import (
@@ -206,9 +223,16 @@ from .get_simulation_detailed_analysis_api_v2_simulations_simulation_id_analysis
 from .get_simulation_timeline_api_v2_simulations_simulation_id_analysis_timeline_get_bucket_size import (
     GetSimulationTimelineApiV2SimulationsSimulationIdAnalysisTimelineGetBucketSize,
 )
+from .harmful_content_match import HarmfulContentMatch
+from .harmful_content_match_categories import HarmfulContentMatchCategories
+from .harmful_content_match_scores import HarmfulContentMatchScores
+from .harmful_content_match_source import HarmfulContentMatchSource
+from .headline_summary import HeadlineSummary
+from .headline_summary_kind import HeadlineSummaryKind
 from .health_check_response import HealthCheckResponse
 from .health_check_response_components import HealthCheckResponseComponents
 from .helpfulness_level import HelpfulnessLevel
+from .highlights_threshold_info import HighlightsThresholdInfo
 from .http_validation_error import HTTPValidationError
 from .hybrid_search_create_attributes import HybridSearchCreateAttributes
 from .hybrid_search_create_data import HybridSearchCreateData
@@ -230,6 +254,10 @@ from .identity_list_response_jsonapi import IdentityListResponseJsonapi
 from .identity_resource import IdentityResource
 from .identity_single_response import IdentitySingleResponse
 from .identity_single_response_jsonapi import IdentitySingleResponseJsonapi
+from .image_moderation_match import ImageModerationMatch
+from .image_moderation_section import ImageModerationSection
+from .image_upload_item import ImageUploadItem
+from .image_upload_url import ImageUploadUrl
 from .import_fact_check_bureau_request import ImportFactCheckBureauRequest
 from .instance_health_check_health_instances_instance_id_get_response_instance_health_check_health_instances_instance_id_get import (
     InstanceHealthCheckHealthInstancesInstanceIdGetResponseInstanceHealthCheckHealthInstancesInstanceIdGet,
@@ -237,6 +265,9 @@ from .instance_health_check_health_instances_instance_id_get_response_instance_h
 from .instances_health_check_health_instances_get_response_instances_health_check_health_instances_get import (
     InstancesHealthCheckHealthInstancesGetResponseInstancesHealthCheckHealthInstancesGet,
 )
+from .job_state import JobState
+from .job_state_sections import JobStateSections
+from .job_status import JobStatus
 from .jsonapi_links import JSONAPILinks
 from .jsonapi_meta import JSONAPIMeta
 from .latest_scan_attributes import LatestScanAttributes
@@ -354,6 +385,10 @@ from .note_update_request import NoteUpdateRequest
 from .open_ai_moderation_match import OpenAIModerationMatch
 from .open_ai_moderation_match_categories import OpenAIModerationMatchCategories
 from .open_ai_moderation_match_scores import OpenAIModerationMatchScores
+from .opinions_highlight import OpinionsHighlight
+from .opinions_highlights_report import OpinionsHighlightsReport
+from .opinions_report import OpinionsReport
+from .opinions_section import OpinionsSection
 from .orchestrator_attributes import OrchestratorAttributes
 from .orchestrator_attributes_scoring_config_type_0 import (
     OrchestratorAttributesScoringConfigType0,
@@ -375,6 +410,9 @@ from .orchestrator_update_attributes_scoring_config_type_0 import (
 )
 from .orchestrator_update_data import OrchestratorUpdateData
 from .orchestrator_update_request import OrchestratorUpdateRequest
+from .overall_decision import OverallDecision
+from .overall_verdict import OverallVerdict
+from .page_kind import PageKind
 from .participant_stats_attributes import ParticipantStatsAttributes
 from .participant_stats_resource import ParticipantStatsResource
 from .participant_stats_single_response import ParticipantStatsSingleResponse
@@ -393,6 +431,9 @@ from .playground_note_request_job_response import PlaygroundNoteRequestJobRespon
 from .playground_note_request_job_response_jsonapi import (
     PlaygroundNoteRequestJobResponseJsonapi,
 )
+from .premise import Premise
+from .premises_registry import PremisesRegistry
+from .premises_registry_premises import PremisesRegistryPremises
 from .previously_seen_check_attributes import PreviouslySeenCheckAttributes
 from .previously_seen_check_data import PreviouslySeenCheckData
 from .previously_seen_check_request import PreviouslySeenCheckRequest
@@ -462,6 +503,7 @@ from .rating_update_request import RatingUpdateRequest
 from .readiness_check_health_ready_get_response_readiness_check_health_ready_get import (
     ReadinessCheckHealthReadyGetResponseReadinessCheckHealthReadyGet,
 )
+from .recent_analysis import RecentAnalysis
 from .recent_scan_attributes import RecentScanAttributes
 from .recent_scan_resource import RecentScanResource
 from .recent_scan_response import RecentScanResponse
@@ -496,11 +538,18 @@ from .results_list_response_jsonapi import ResultsListResponseJsonapi
 from .resume_attributes import ResumeAttributes
 from .resume_data import ResumeData
 from .resume_request import ResumeRequest
+from .retry_response import RetryResponse
 from .review_group import ReviewGroup
 from .risk_level import RiskLevel
+from .safety_level import SafetyLevel
+from .safety_recommendation import SafetyRecommendation
+from .safety_row_preview import SafetyRowPreview
+from .safety_section import SafetySection
 from .scan_error_info_schema import ScanErrorInfoSchema
 from .scan_error_summary_schema import ScanErrorSummarySchema
 from .scan_error_summary_schema_error_types import ScanErrorSummarySchemaErrorTypes
+from .scd_report import SCDReport
+from .scd_report_per_speaker_notes import SCDReportPerSpeakerNotes
 from .score_community_response import ScoreCommunityResponse
 from .score_confidence import ScoreConfidence
 from .scoring_analysis_attributes import ScoringAnalysisAttributes
@@ -560,12 +609,21 @@ from .scoring_status_jsonapi_response import ScoringStatusJSONAPIResponse
 from .scoring_status_jsonapi_response_jsonapi import ScoringStatusJSONAPIResponseJsonapi
 from .scoring_status_resource import ScoringStatusResource
 from .scrape_processing_request import ScrapeProcessingRequest
+from .screenshot_response import ScreenshotResponse
+from .section_slot import SectionSlot
+from .section_slot_data_type_0 import SectionSlotDataType0
+from .section_slug import SectionSlug
+from .section_state import SectionState
+from .sentiment_score import SentimentScore
+from .sentiment_score_label import SentimentScoreLabel
+from .sentiment_stats_report import SentimentStatsReport
 from .service_status import ServiceStatus
 from .service_status_details_type_0 import ServiceStatusDetailsType0
 from .set_config_request import SetConfigRequest
 from .set_rating_attributes import SetRatingAttributes
 from .set_rating_data import SetRatingData
 from .set_rating_request import SetRatingRequest
+from .sidebar_payload import SidebarPayload
 from .sim_agent_attributes import SimAgentAttributes
 from .sim_agent_attributes_memory_compaction_config_type_0 import (
     SimAgentAttributesMemoryCompactionConfigType0,
@@ -631,6 +689,11 @@ from .simulation_single_response_jsonapi import SimulationSingleResponseJsonapi
 from .simulation_update_attributes import SimulationUpdateAttributes
 from .simulation_update_data import SimulationUpdateData
 from .simulation_update_request import SimulationUpdateRequest
+from .source_kind import SourceKind
+from .speaker_arc import SpeakerArc
+from .subjective_claim import SubjectiveClaim
+from .subjective_claim_stance import SubjectiveClaimStance
+from .supporting_fact import SupportingFact
 from .tier_info import TierInfo
 from .tier_threshold import TierThreshold
 from .timeline_attributes import TimelineAttributes
@@ -643,6 +706,11 @@ from .timeline_response_jsonapi import TimelineResponseJsonapi
 from .token import Token
 from .token_hold_detail import TokenHoldDetail
 from .token_pool_status import TokenPoolStatus
+from .tone_dynamics_section import ToneDynamicsSection
+from .trends_oppositions_report import TrendsOppositionsReport
+from .upload_images_request import UploadImagesRequest
+from .upload_images_response import UploadImagesResponse
+from .upload_pdf_response import UploadPDFResponse
 from .user_create import UserCreate
 from .user_identity_response import UserIdentityResponse
 from .user_profile_lookup_attributes import UserProfileLookupAttributes
@@ -653,8 +721,42 @@ from .user_profile_response import UserProfileResponse
 from .user_profile_self_update import UserProfileSelfUpdate
 from .user_response import UserResponse
 from .user_update import UserUpdate
+from .utterance_anchor import UtteranceAnchor
+from .utterance_stream_type import UtteranceStreamType
 from .validation_error import ValidationError
 from .version_response import VersionResponse
+from .video_moderation_match import VideoModerationMatch
+from .video_moderation_section import VideoModerationSection
+from .weather_axis_alternative_literalinsightful_on_topic_chatty_drifting_off_topic import (
+    WeatherAxisAlternativeLiteralinsightfulOnTopicChattyDriftingOffTopic,
+)
+from .weather_axis_alternative_literalinsightful_on_topic_chatty_drifting_off_topic_label import (
+    WeatherAxisAlternativeLiteralinsightfulOnTopicChattyDriftingOffTopicLabel,
+)
+from .weather_axis_alternative_literalsourced_factual_claims_first_person_hearsay_misleading import (
+    WeatherAxisAlternativeLiteralsourcedFactualClaimsFirstPersonHearsayMisleading,
+)
+from .weather_axis_alternative_literalsourced_factual_claims_first_person_hearsay_misleading_label import (
+    WeatherAxisAlternativeLiteralsourcedFactualClaimsFirstPersonHearsayMisleadingLabel,
+)
+from .weather_axis_alternativestr import WeatherAxisAlternativestr
+from .weather_axis_literalinsightful_on_topic_chatty_drifting_off_topic import (
+    WeatherAxisLiteralinsightfulOnTopicChattyDriftingOffTopic,
+)
+from .weather_axis_literalinsightful_on_topic_chatty_drifting_off_topic_label import (
+    WeatherAxisLiteralinsightfulOnTopicChattyDriftingOffTopicLabel,
+)
+from .weather_axis_literalsourced_factual_claims_first_person_hearsay_misleading import (
+    WeatherAxisLiteralsourcedFactualClaimsFirstPersonHearsayMisleading,
+)
+from .weather_axis_literalsourced_factual_claims_first_person_hearsay_misleading_label import (
+    WeatherAxisLiteralsourcedFactualClaimsFirstPersonHearsayMisleadingLabel,
+)
+from .weather_axisstr import WeatherAxisstr
+from .weather_report import WeatherReport
+from .web_risk_finding import WebRiskFinding
+from .web_risk_finding_threat_types_item import WebRiskFindingThreatTypesItem
+from .web_risk_section import WebRiskSection
 from .webhook_config_response import WebhookConfigResponse
 from .webhook_config_secure import WebhookConfigSecure
 from .webhook_create_request import WebhookCreateRequest
@@ -688,6 +790,10 @@ __all__ = (
     "AnalysisResource",
     "AnalysisResponse",
     "AnalysisResponseJsonapi",
+    "AnalyzeImagesRequest",
+    "AnalyzePDFRequest",
+    "AnalyzeRequest",
+    "AnalyzeResponse",
     "APIKeyCreate",
     "APIKeyResponse",
     "AuditLogResponse",
@@ -729,6 +835,8 @@ __all__ = (
     "CandidateSingleResponseJsonapi",
     "CandidateStatus",
     "CircuitBreakersStatusHealthCircuitBreakersGetResponseCircuitBreakersStatusHealthCircuitBreakersGet",
+    "ClaimCategory",
+    "ClaimOpposition",
     "ClaimRelevanceCheckAttributes",
     "ClaimRelevanceCheckCreateData",
     "ClaimRelevanceCheckRequest",
@@ -736,6 +844,8 @@ __all__ = (
     "ClaimRelevanceCheckResponseJsonapi",
     "ClaimRelevanceCheckResultAttributes",
     "ClaimRelevanceCheckResultResource",
+    "ClaimsReport",
+    "ClaimTrend",
     "ClearPreviewResponse",
     "ClearResponse",
     "CommunityAdminResponse",
@@ -776,6 +886,7 @@ __all__ = (
     "CreateCommunityServerApiV1CommunityServersPostResponse401",
     "CreateCommunityServerApiV1CommunityServersPostResponse403",
     "CreateCommunityServerApiV1CommunityServersPostResponse409",
+    "DedupedClaim",
     "DeleteDatasetFusionWeightApiV1AdminFusionWeightsDatasetDeleteResponseDeleteDatasetFusionWeightApiV1AdminFusionWeightsDatasetDelete",
     "DeleteWebhookApiV1WebhooksWebhookIdDeleteResponseDeleteWebhookApiV1WebhooksWebhookIdDelete",
     "DetailedAnalysisMeta",
@@ -790,7 +901,10 @@ __all__ = (
     "DiscordOAuthLoginRequest",
     "DiscordOAuthRegisterRequest",
     "DistributedHealthCheckHealthDistributedGetResponseDistributedHealthCheckHealthDistributedGet",
+    "Divergence",
+    "DivergenceDirection",
     "EnrollmentData",
+    "ErrorCode",
     "ExplanationCreateAttributes",
     "ExplanationCreateData",
     "ExplanationCreateRequest",
@@ -798,20 +912,32 @@ __all__ = (
     "ExplanationResultResource",
     "ExplanationResultResponse",
     "ExplanationResultResponseJsonapi",
+    "FactCheckMatch",
     "FactCheckMatchResource",
+    "FactsClaimsSection",
     "FlaggedMessageAttributes",
     "FlaggedMessageResource",
     "FlashpointDetectionUpdateRequest",
     "FlashpointDetectionUpdateResponse",
+    "FlashpointMatch",
+    "FrameCompatResponse",
+    "FrameFinding",
     "FusionWeightResponse",
     "FusionWeightUpdate",
     "GetCommunityServerStatsApiV1WebhooksStatsPlatformCommunityServerIdGetResponseGetCommunityServerStatsApiV1WebhooksStatsPlatformCommunityServerIdGet",
     "GetOpennotesAdminStatusApiV1AdminProfilesProfileIdOpennotesAdminGetResponseGetOpennotesAdminStatusApiV1AdminProfilesProfileIdOpennotesAdminGet",
     "GetSimulationDetailedAnalysisApiV2SimulationsSimulationIdAnalysisDetailedGetSortBy",
     "GetSimulationTimelineApiV2SimulationsSimulationIdAnalysisTimelineGetBucketSize",
+    "HarmfulContentMatch",
+    "HarmfulContentMatchCategories",
+    "HarmfulContentMatchScores",
+    "HarmfulContentMatchSource",
+    "HeadlineSummary",
+    "HeadlineSummaryKind",
     "HealthCheckResponse",
     "HealthCheckResponseComponents",
     "HelpfulnessLevel",
+    "HighlightsThresholdInfo",
     "HTTPValidationError",
     "HybridSearchCreateAttributes",
     "HybridSearchCreateData",
@@ -831,9 +957,16 @@ __all__ = (
     "IdentityResource",
     "IdentitySingleResponse",
     "IdentitySingleResponseJsonapi",
+    "ImageModerationMatch",
+    "ImageModerationSection",
+    "ImageUploadItem",
+    "ImageUploadUrl",
     "ImportFactCheckBureauRequest",
     "InstanceHealthCheckHealthInstancesInstanceIdGetResponseInstanceHealthCheckHealthInstancesInstanceIdGet",
     "InstancesHealthCheckHealthInstancesGetResponseInstancesHealthCheckHealthInstancesGet",
+    "JobState",
+    "JobStateSections",
+    "JobStatus",
     "JSONAPILinks",
     "JSONAPIMeta",
     "LatestScanAttributes",
@@ -931,6 +1064,10 @@ __all__ = (
     "OpenAIModerationMatch",
     "OpenAIModerationMatchCategories",
     "OpenAIModerationMatchScores",
+    "OpinionsHighlight",
+    "OpinionsHighlightsReport",
+    "OpinionsReport",
+    "OpinionsSection",
     "OrchestratorAttributes",
     "OrchestratorAttributesScoringConfigType0",
     "OrchestratorCreateAttributes",
@@ -946,6 +1083,9 @@ __all__ = (
     "OrchestratorUpdateAttributesScoringConfigType0",
     "OrchestratorUpdateData",
     "OrchestratorUpdateRequest",
+    "OverallDecision",
+    "OverallVerdict",
+    "PageKind",
     "ParticipantStatsAttributes",
     "ParticipantStatsResource",
     "ParticipantStatsSingleResponse",
@@ -960,6 +1100,9 @@ __all__ = (
     "PlaygroundNoteRequestJobResource",
     "PlaygroundNoteRequestJobResponse",
     "PlaygroundNoteRequestJobResponseJsonapi",
+    "Premise",
+    "PremisesRegistry",
+    "PremisesRegistryPremises",
     "PreviouslySeenCheckAttributes",
     "PreviouslySeenCheckData",
     "PreviouslySeenCheckRequest",
@@ -1013,6 +1156,7 @@ __all__ = (
     "RatingUpdateData",
     "RatingUpdateRequest",
     "ReadinessCheckHealthReadyGetResponseReadinessCheckHealthReadyGet",
+    "RecentAnalysis",
     "RecentScanAttributes",
     "RecentScanResource",
     "RecentScanResponse",
@@ -1043,11 +1187,18 @@ __all__ = (
     "ResumeAttributes",
     "ResumeData",
     "ResumeRequest",
+    "RetryResponse",
     "ReviewGroup",
     "RiskLevel",
+    "SafetyLevel",
+    "SafetyRecommendation",
+    "SafetyRowPreview",
+    "SafetySection",
     "ScanErrorInfoSchema",
     "ScanErrorSummarySchema",
     "ScanErrorSummarySchemaErrorTypes",
+    "SCDReport",
+    "SCDReportPerSpeakerNotes",
     "ScoreCommunityResponse",
     "ScoreConfidence",
     "ScoringAnalysisAttributes",
@@ -1087,12 +1238,21 @@ __all__ = (
     "ScoringStatusJSONAPIResponseJsonapi",
     "ScoringStatusResource",
     "ScrapeProcessingRequest",
+    "ScreenshotResponse",
+    "SectionSlot",
+    "SectionSlotDataType0",
+    "SectionSlug",
+    "SectionState",
+    "SentimentScore",
+    "SentimentScoreLabel",
+    "SentimentStatsReport",
     "ServiceStatus",
     "ServiceStatusDetailsType0",
     "SetConfigRequest",
     "SetRatingAttributes",
     "SetRatingData",
     "SetRatingRequest",
+    "SidebarPayload",
     "SimAgentAttributes",
     "SimAgentAttributesMemoryCompactionConfigType0",
     "SimAgentAttributesModelParamsType0",
@@ -1140,6 +1300,11 @@ __all__ = (
     "SimulationUpdateAttributes",
     "SimulationUpdateData",
     "SimulationUpdateRequest",
+    "SourceKind",
+    "SpeakerArc",
+    "SubjectiveClaim",
+    "SubjectiveClaimStance",
+    "SupportingFact",
     "TierInfo",
     "TierThreshold",
     "TimelineAttributes",
@@ -1152,6 +1317,11 @@ __all__ = (
     "Token",
     "TokenHoldDetail",
     "TokenPoolStatus",
+    "ToneDynamicsSection",
+    "TrendsOppositionsReport",
+    "UploadImagesRequest",
+    "UploadImagesResponse",
+    "UploadPDFResponse",
     "UserCreate",
     "UserIdentityResponse",
     "UserProfileLookupAttributes",
@@ -1162,12 +1332,30 @@ __all__ = (
     "UserProfileSelfUpdate",
     "UserResponse",
     "UserUpdate",
+    "UtteranceAnchor",
+    "UtteranceStreamType",
     "ValidationError",
     "VersionResponse",
+    "VideoModerationMatch",
+    "VideoModerationSection",
+    "WeatherAxisAlternativeLiteralinsightfulOnTopicChattyDriftingOffTopic",
+    "WeatherAxisAlternativeLiteralinsightfulOnTopicChattyDriftingOffTopicLabel",
+    "WeatherAxisAlternativeLiteralsourcedFactualClaimsFirstPersonHearsayMisleading",
+    "WeatherAxisAlternativeLiteralsourcedFactualClaimsFirstPersonHearsayMisleadingLabel",
+    "WeatherAxisAlternativestr",
+    "WeatherAxisLiteralinsightfulOnTopicChattyDriftingOffTopic",
+    "WeatherAxisLiteralinsightfulOnTopicChattyDriftingOffTopicLabel",
+    "WeatherAxisLiteralsourcedFactualClaimsFirstPersonHearsayMisleading",
+    "WeatherAxisLiteralsourcedFactualClaimsFirstPersonHearsayMisleadingLabel",
+    "WeatherAxisstr",
+    "WeatherReport",
     "WebhookConfigResponse",
     "WebhookConfigSecure",
     "WebhookCreateRequest",
     "WebhookUpdateRequest",
+    "WebRiskFinding",
+    "WebRiskFindingThreatTypesItem",
+    "WebRiskSection",
     "WelcomeMessageUpdateRequest",
     "WelcomeMessageUpdateResponse",
 )

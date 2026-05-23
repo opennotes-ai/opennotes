@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from pydantic_ai import Agent
 from pydantic_ai.models.instrumented import InstrumentedModel
 from pydantic_ai.settings import ModelSettings
@@ -32,6 +32,7 @@ Rules:
 
 
 class _ClaimExtractionResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
     claims: list[ExtractedClaim] = Field(default_factory=list)
 
 
