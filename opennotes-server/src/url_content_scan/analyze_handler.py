@@ -522,16 +522,28 @@ async def _insert_unsafe_job(
 async def _fetch_utterances_for_normalized_url(
     session: AsyncSession,
     normalized_url: str,
+    *,
+    exclude_job_id: UUID | None = None,
 ) -> list[UrlScanUtterance]:
-    result = await session.execute(
-        select(UrlScanUtterance)
-        .join(UrlScanState, UrlScanState.job_id == UrlScanUtterance.job_id)
-        .join(BatchJob, BatchJob.id == UrlScanUtterance.job_id)
-        .where(
-            UrlScanState.normalized_url == normalized_url,
-            BatchJob.status == BatchJobStatus.COMPLETED.value,
-        )
+    where_clauses = [
+        UrlScanState.normalized_url == normalized_url,
+        BatchJob.status == BatchJobStatus.COMPLETED.value,
+        UrlScanState.deleted_at.is_(None),
+    ]
+    if exclude_job_id is not None:
+        where_clauses.append(BatchJob.id != exclude_job_id)
+    latest_job_row = await session.execute(
+        select(BatchJob.id)
+        .join(UrlScanState, UrlScanState.job_id == BatchJob.id)
+        .where(*where_clauses)
         .order_by(BatchJob.created_at.desc())
+        .limit(1)
+    )
+    latest_job_id = latest_job_row.scalar_one_or_none()
+    if latest_job_id is None:
+        return []
+    result = await session.execute(
+        select(UrlScanUtterance).where(UrlScanUtterance.job_id == latest_job_id)
     )
     return list(result.scalars().all())
 
@@ -579,7 +591,9 @@ async def _insert_cached_job(
             finished_at=now,
         )
     )
-    source_utterances = await _fetch_utterances_for_normalized_url(session, normalized_url)
+    source_utterances = await _fetch_utterances_for_normalized_url(
+        session, normalized_url, exclude_job_id=job.id
+    )
     seen_ids: set[str] = set()
     for src in source_utterances:
         if src.utterance_id in seen_ids:

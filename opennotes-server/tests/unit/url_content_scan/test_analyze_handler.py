@@ -28,6 +28,9 @@ class _FakeResult:
     def scalar_one(self):
         return self._value
 
+    def scalar_one_or_none(self):
+        return self._value
+
     def first(self):
         return self._value
 
@@ -112,7 +115,7 @@ class _FakeSession:
             return self.web_risk_lookups.get(key)
         raise TypeError(f"unsupported get: {model!r}")
 
-    async def execute(self, statement, params=None):
+    async def execute(self, statement, params=None):  # noqa: PLR0911
         sql = str(statement)
         if "pg_try_advisory_xact_lock" in sql:
             value = self.advisory_lock_results.pop(0)
@@ -146,15 +149,43 @@ class _FakeSession:
             ]
             matches.sort(key=lambda row: self.jobs[row[0]].created_at, reverse=True)
             return _FakeResult(matches[0] if matches else None)
-        if "url_scan_utterances" in sql and "url_scan_state" in sql:
+        if (
+            "batch_jobs" in sql
+            and "url_scan_state" in sql
+            and "url_scan_utterances" not in sql
+            and "url_scan_state.normalized_url" in sql
+        ):
             normalized_url = params_or_normalized(statement, params)
-            source_rows = [
-                row
-                for row in self.utterances.values()
-                if (state := self.states.get(row.job_id)) is not None
+            compiled_params = statement.compile().params
+            exclude_id = None
+            for key, value in compiled_params.items():
+                if "id_" in key and "job_id" not in key and "normalized_url" not in key:
+                    exclude_id = value
+                    break
+            completed_non_deleted = [
+                job
+                for job in self.jobs.values()
+                if job.status == BatchJobStatus.COMPLETED.value
+                and (state := self.states.get(job.id)) is not None
                 and state.normalized_url == normalized_url
-                and self.jobs.get(row.job_id) is not None
-                and self.jobs[row.job_id].status == BatchJobStatus.COMPLETED.value
+                and getattr(state, "deleted_at", None) is None
+                and (exclude_id is None or str(job.id) != str(exclude_id))
+            ]
+            if not completed_non_deleted:
+                return _FakeResult(None)
+            completed_non_deleted.sort(key=lambda j: j.created_at, reverse=True)
+            return _FakeResult(completed_non_deleted[0].id)
+        if "url_scan_utterances" in sql and "url_scan_state" not in sql:
+            compiled = statement.compile()
+            job_id_param = None
+            for key, value in compiled.params.items():
+                if "job_id" in key:
+                    job_id_param = value
+                    break
+            if job_id_param is None:
+                return _FakeResult([])
+            source_rows = [
+                row for (jid, _), row in self.utterances.items() if str(jid) == str(job_id_param)
             ]
             return _FakeResult(source_rows)
         raise AssertionError(f"unexpected statement: {sql}")
@@ -622,3 +653,82 @@ async def test_cache_hit_coral_utterance_materialization_is_idempotent() -> None
     all_utterance_keys = list(session.utterances.keys())
     total_utt_count = len(all_utterance_keys)
     assert total_utt_count == 9, f"expected 3 source + 3 job1 + 3 job2 = 9, got {total_utt_count}"
+
+
+@pytest.mark.asyncio
+async def test_cache_hit_skips_soft_deleted_source_jobs() -> None:
+    session = _FakeSession()
+    normalized_url = "https://example.com/coral-article"
+    session.sidebar_cache[normalized_url] = _cache_row_with_coral_utterances(normalized_url)
+    source_job_id = _seed_source_job_with_utterances(session, normalized_url)
+    source_state = session.states[source_job_id]
+    source_state.deleted_at = datetime.now(UTC)
+
+    response = await submit_url_scan(
+        session,
+        _request(),
+        AnalyzeRequest(url="https://example.com/coral-article"),
+        web_risk=fake_web_risk_none,
+        dispatch=None,
+    )
+
+    assert response.status == JobStatus.DONE
+    assert response.cached is True
+
+    new_job_id = response.job_id
+    new_utterances = [utt for (jid, _), utt in session.utterances.items() if jid == new_job_id]
+    assert new_utterances == [], "soft-deleted source job must not be used for utterance copy"
+
+
+@pytest.mark.asyncio
+async def test_cache_hit_uses_only_latest_completed_job_for_utterance_source() -> None:
+    session = _FakeSession()
+    normalized_url = "https://example.com/coral-article"
+    session.sidebar_cache[normalized_url] = _cache_row_with_coral_utterances(normalized_url)
+    now = datetime.now(UTC)
+
+    old_job_id = uuid4()
+    session.jobs[old_job_id] = BatchJob(
+        id=old_job_id,
+        job_type="url_scan",
+        status=BatchJobStatus.COMPLETED.value,
+        total_tasks=len(SectionSlug),
+        completed_tasks=len(SectionSlug),
+        failed_tasks=0,
+        metadata_={},
+        created_at=now - timedelta(hours=5),
+    )
+    session.states[old_job_id] = UrlScanState(
+        job_id=old_job_id,
+        source_url=normalized_url,
+        normalized_url=normalized_url,
+        host="example.com",
+        attempt_id=uuid4(),
+        utterance_count=1,
+        finished_at=now - timedelta(hours=4),
+    )
+    session.utterances[(old_job_id, "old-utt")] = UrlScanUtterance(
+        job_id=old_job_id,
+        utterance_id="old-utt",
+        payload={"utterance_id": "old-utt", "kind": "post", "text": "old text"},
+    )
+
+    _seed_source_job_with_utterances(session, normalized_url)
+
+    response = await submit_url_scan(
+        session,
+        _request(),
+        AnalyzeRequest(url="https://example.com/coral-article"),
+        web_risk=fake_web_risk_none,
+        dispatch=None,
+    )
+
+    assert response.status == JobStatus.DONE
+    new_job_id = response.job_id
+    new_utterances = {
+        uid: utt for (jid, uid), utt in session.utterances.items() if jid == new_job_id
+    }
+    assert "old-utt" not in new_utterances, "stale job utterances must not be copied"
+    assert "post-0" in new_utterances, "only latest job utterances should be copied"
+    assert "coral-comment-1" in new_utterances
+    assert len(new_utterances) == 3
