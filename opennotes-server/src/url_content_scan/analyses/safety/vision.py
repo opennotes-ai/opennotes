@@ -111,7 +111,8 @@ async def annotate_image_bytes(
 
     if response.status_code == 429 or response.status_code >= 500:
         raise VisionTransientError(f"vision {response.status_code}")
-    response.raise_for_status()
+    if response.status_code >= 400:
+        return None
     item = ((response.json().get("responses") or [{}])[0]) or {}
     if item.get("error") is not None:
         return None

@@ -156,3 +156,35 @@ class UrlScanSidebarCache(Base):
         server_default=func.now(),
     )
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class UrlScanImageAnalysisCache(Base):
+    """Per-URL Vision SafeSearch result cache."""
+
+    __tablename__ = "url_scan_image_analysis_cache"
+    __table_args__ = (Index("ix_url_scan_image_analysis_cache_expires_at", "expires_at"),)
+
+    image_url: Mapped[str] = mapped_column(Text, primary_key=True)
+    result_payload: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False)
+    checked_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class UrlScanVideoAnalysisCache(Base):
+    """Per-URL Vision frame findings cache for video moderation."""
+
+    __tablename__ = "url_scan_video_analysis_cache"
+    __table_args__ = (Index("ix_url_scan_video_analysis_cache_expires_at", "expires_at"),)
+
+    video_url: Mapped[str] = mapped_column(Text, primary_key=True)
+    frame_findings_payload: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False)
+    checked_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

@@ -18,9 +18,11 @@ from src.batch_jobs.models import BatchJob
 from src.config import settings
 from src.monitoring import get_logger
 from src.url_content_scan.models import (
+    UrlScanImageAnalysisCache,
     UrlScanScrape,
     UrlScanSidebarCache,
     UrlScanState,
+    UrlScanVideoAnalysisCache,
     UrlScanWebRiskLookup,
 )
 from src.utils.async_compat import run_sync
@@ -141,6 +143,16 @@ def _purge_expired_url_scan_data_sync(
                 .where(UrlScanSidebarCache.expires_at < now)
                 .returning(UrlScanSidebarCache.normalized_url)
             )
+            expired_image_cache = await session.execute(
+                delete(UrlScanImageAnalysisCache)
+                .where(UrlScanImageAnalysisCache.expires_at < now)
+                .returning(UrlScanImageAnalysisCache.image_url)
+            )
+            expired_video_cache = await session.execute(
+                delete(UrlScanVideoAnalysisCache)
+                .where(UrlScanVideoAnalysisCache.expires_at < now)
+                .returning(UrlScanVideoAnalysisCache.video_url)
+            )
             purged_jobs = await session.execute(
                 delete(BatchJob)
                 .where(
@@ -159,6 +171,8 @@ def _purge_expired_url_scan_data_sync(
             "expired_scrapes_count": len(expired_scrapes.all()),
             "expired_web_risk_count": len(expired_web_risk.all()),
             "expired_sidebar_cache_count": len(expired_sidebar.all()),
+            "expired_image_cache_count": len(expired_image_cache.all()),
+            "expired_video_cache_count": len(expired_video_cache.all()),
             "purged_terminal_jobs_count": len(purged_jobs.all()),
             "terminal_job_retention_days": terminal_job_retention.days,
             "executed_at": now.isoformat(),
@@ -302,6 +316,8 @@ def url_scan_purge_expired_data_workflow(
                 "expired_scrapes_count": result["expired_scrapes_count"],
                 "expired_web_risk_count": result["expired_web_risk_count"],
                 "expired_sidebar_cache_count": result["expired_sidebar_cache_count"],
+                "expired_image_cache_count": result["expired_image_cache_count"],
+                "expired_video_cache_count": result["expired_video_cache_count"],
                 "purged_terminal_jobs_count": result["purged_terminal_jobs_count"],
             },
         )
