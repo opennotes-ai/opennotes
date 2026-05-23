@@ -30,9 +30,15 @@ Web Risk, image SafeSearch, and video SafeSearch. Return one SafetyRecommendatio
 
 Use these levels:
 - safe: all available inputs are clear.
-- caution: partial data, inconclusive sampling, or one isolated flag.
-- unsafe: verified high-risk signals such as Web Risk MALWARE, multiple high-score text flags,
-  or high image/video max_likelihood scores from real frames.
+- mild: exactly one supported low-severity signal after context review, such as
+  a topic-match-only moderation hit, one isolated Web Risk
+  POTENTIALLY_HARMFUL_APPLICATION finding, or one low image/video
+  max_likelihood score from verified frames.
+- caution: partial data, unavailable inputs, or multiple low-severity signals
+  together when at least one remains supported after context review.
+- unsafe: verified high-risk signals such as Web Risk MALWARE, multiple
+  high-score text flags, or high image/video max_likelihood scores from real
+  frames.
 
 Important caveats:
 - A video match with max_likelihood=1.0 and no frame_findings means sampling was
@@ -187,6 +193,83 @@ def _is_only_inconclusive_video_caution(
     return bool(inputs.video_moderation_matches) and all(
         m.max_likelihood == 1.0 and not m.frame_findings for m in inputs.video_moderation_matches
     )
+
+
+_FALSE_POSITIVE_TOP_SIGNAL = "Text moderation flags triggered, but judged to be false positives."
+
+
+def _discounted_text_signal_count(
+    recommendation: SafetyRecommendation,
+    inputs: SafetyRecommendationInputs,
+) -> int:
+    if not inputs.harmful_content_matches:
+        return 0
+    if not recommendation.divergences and recommendation.top_signals == [
+        _FALSE_POSITIVE_TOP_SIGNAL
+    ]:
+        return len(inputs.harmful_content_matches)
+    discounted = sum(
+        1
+        for divergence in recommendation.divergences
+        if divergence.direction == "discounted" and divergence.signal_source == "Text moderation"
+    )
+    return min(discounted, len(inputs.harmful_content_matches))
+
+
+def _has_guardrail_downgrade_blocker(
+    recommendation: SafetyRecommendation,
+    inputs: SafetyRecommendationInputs,
+) -> bool:
+    if inputs.unavailable_inputs:
+        return True
+    if inputs.web_risk_findings:
+        return True
+    return any(divergence.direction == "escalated" for divergence in recommendation.divergences)
+
+
+def _apply_discounted_signals_guardrail(
+    recommendation: SafetyRecommendation,
+    inputs: SafetyRecommendationInputs,
+) -> tuple[SafetyRecommendation, str | None]:
+    if recommendation.level is not SafetyLevel.CAUTION or _has_guardrail_downgrade_blocker(
+        recommendation, inputs
+    ):
+        return recommendation, None
+
+    discounted_text_signals = _discounted_text_signal_count(recommendation, inputs)
+    total_text_signals = len(inputs.harmful_content_matches)
+    supported_text_signals = total_text_signals - discounted_text_signals
+
+    if not inputs.harmful_content_matches:
+        return recommendation, None
+
+    if supported_text_signals == 0:
+        return (
+            recommendation.model_copy(
+                update={
+                    "level": SafetyLevel.SAFE,
+                    "rationale": (
+                        "Raw safety signals were discounted by context; no supported "
+                        "safety concern remains."
+                    ),
+                    "top_signals": [],
+                }
+            ),
+            "all_text_signals_discounted",
+        )
+
+    if supported_text_signals == 1:
+        return (
+            recommendation.model_copy(
+                update={
+                    "level": SafetyLevel.MILD,
+                    "rationale": ("One low-severity safety signal remains after context review."),
+                }
+            ),
+            "one_supported_low_severity_signal",
+        )
+
+    return recommendation, None
 
 
 def _collect_web_risk_signals(

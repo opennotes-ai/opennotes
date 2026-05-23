@@ -27692,6 +27692,7 @@
         "type": "string",
         "enum": [
           "safe",
+          "mild",
           "caution",
           "unsafe"
         ],
@@ -27726,6 +27727,11 @@
             },
             "type": "array",
             "title": "Divergences"
+          },
+          "display": {
+            "type": "string",
+            "title": "Display",
+            "default": ""
           }
         },
         "type": "object",

@@ -3,11 +3,19 @@ from __future__ import annotations
 from enum import StrEnum
 from typing import Literal
 
-from pydantic import AliasChoices, BaseModel, ConfigDict, Field
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field, model_validator
+
+_SAFETY_LEVEL_DISPLAY: dict[str, str] = {
+    "safe": "Safe",
+    "mild": "Mild concern",
+    "caution": "Use caution",
+    "unsafe": "High risk",
+}
 
 
 class SafetyLevel(StrEnum):
     SAFE = "safe"
+    MILD = "mild"
     CAUTION = "caution"
     UNSAFE = "unsafe"
 
@@ -34,6 +42,13 @@ class SafetyRecommendation(BaseModel):
     top_signals: list[str] = Field(default_factory=list)
     unavailable_inputs: list[str] = Field(default_factory=list)
     divergences: list[Divergence] = Field(default_factory=list)
+    display: str = Field(default="")
+
+    @model_validator(mode="after")
+    def _populate_display(self) -> SafetyRecommendation:
+        if not self.display:
+            self.display = _SAFETY_LEVEL_DISPLAY.get(self.level.value, self.level.value)
+        return self
 
 
 class HarmfulContentMatch(BaseModel):
