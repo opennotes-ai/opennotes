@@ -107,7 +107,7 @@ async def run_web_risk(
         )
         if finding is not None:
             findings.append(finding)
-    return WebRiskSection(findings=findings)
+    return WebRiskSection(findings=findings, urls_checked=len(seen_normalized))
 
 
 async def _lookup_url(

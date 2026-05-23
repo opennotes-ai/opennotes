@@ -114,6 +114,9 @@ class SafetySection(BaseModel):
 
 class WebRiskSection(BaseModel):
     findings: list[WebRiskFinding] = Field(default_factory=list)
+    urls_checked: int = Field(
+        default=0, ge=0, description="Number of unique URLs evaluated by Web Risk"
+    )
 
 
 class ImageModerationSection(BaseModel):

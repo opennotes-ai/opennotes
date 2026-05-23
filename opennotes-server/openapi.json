@@ -30430,6 +30430,13 @@
             },
             "type": "array",
             "title": "Findings"
+          },
+          "urls_checked": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Urls Checked",
+            "description": "Number of unique URLs evaluated by Web Risk",
+            "default": 0
           }
         },
         "type": "object",

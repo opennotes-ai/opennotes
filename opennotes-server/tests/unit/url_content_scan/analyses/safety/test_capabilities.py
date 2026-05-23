@@ -220,6 +220,62 @@ async def test_run_web_risk_dedupes_urls_and_reuses_preenqueue_cache() -> None:
         "https://example.com/page",
         "https://example.com/bad",
     ]
+    assert section.urls_checked == 2
+
+
+async def test_run_web_risk_reports_urls_checked_when_no_findings() -> None:
+    from src.url_content_scan.analyses.safety import run_web_risk
+
+    client = AsyncMock()
+    client.check_url.return_value = None
+
+    section = await run_web_risk(
+        page_url="https://example.com/page",
+        mentioned_urls=["https://example.com/other", "https://example.com/another"],
+        media_urls=[],
+        web_risk_client=client,
+    )
+
+    assert section.findings == []
+    assert section.urls_checked == 3
+
+
+async def test_run_web_risk_reports_urls_checked_when_findings_present() -> None:
+    from src.url_content_scan.analyses.safety import run_web_risk
+    from src.url_content_scan.safety_schemas import WebRiskFinding
+
+    client = AsyncMock()
+    client.check_url.side_effect = [
+        WebRiskFinding(url="https://example.com/bad1", threat_types=["MALWARE"]),
+        None,
+        WebRiskFinding(url="https://example.com/bad2", threat_types=["SOCIAL_ENGINEERING"]),
+    ]
+
+    section = await run_web_risk(
+        page_url="https://example.com/bad1",
+        mentioned_urls=["https://example.com/safe", "https://example.com/bad2"],
+        media_urls=[],
+        web_risk_client=client,
+    )
+
+    assert len(section.findings) == 2
+    assert section.urls_checked == 3
+
+
+async def test_run_web_risk_skips_invalid_urls_in_count() -> None:
+    from src.url_content_scan.analyses.safety import run_web_risk
+
+    client = AsyncMock()
+    client.check_url.return_value = None
+
+    section = await run_web_risk(
+        page_url="not-a-valid-url",
+        mentioned_urls=["https://example.com/valid1", "https://example.com/valid2"],
+        media_urls=[],
+        web_risk_client=client,
+    )
+
+    assert section.urls_checked == 2
 
 
 async def test_run_image_moderation_dedupes_safe_search_by_content_hash() -> None:
