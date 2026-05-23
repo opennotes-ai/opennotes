@@ -40,6 +40,7 @@ SELECT
         st.sidebar_payload #>> '{headline,text}',
         st.page_title
     ) AS preview_description,
+    st.sidebar_payload #>> '{x_og_thumbnail}' AS x_og_thumbnail_url,
     slots.sections,
     j.status,
     st.page_title,
@@ -106,6 +107,10 @@ class RecentAnalysis(BaseModel):
     page_title: str | None = None
     screenshot_url: str = Field(description="Signed screenshot URL for the gallery card.")
     preview_description: str = Field(description="Short non-null gallery blurb.")
+    og_thumbnail_url: str | None = Field(
+        default=None,
+        description="X (Twitter) OG thumbnail URL stored during scan; None for non-X URLs.",
+    )
     completed_at: datetime
 
 
@@ -221,6 +226,8 @@ async def list_recent(
             if str(raw_preview_description or "") == source_url
             else str(raw_preview_description or sanitized_source_url)
         )
+        raw_og_thumbnail = row.get("x_og_thumbnail_url")
+        og_thumbnail_url = str(raw_og_thumbnail) if raw_og_thumbnail else None
         out.append(
             RecentAnalysis(
                 job_id=row["job_id"],
@@ -228,6 +235,7 @@ async def list_recent(
                 page_title=row.get("page_title"),
                 screenshot_url=signed,
                 preview_description=preview_description,
+                og_thumbnail_url=og_thumbnail_url,
                 completed_at=row["finished_at"],
             )
         )

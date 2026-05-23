@@ -710,6 +710,36 @@ class Settings(BaseSettings):
         description="Maximum number of opinion clusters sent to the trends/oppositions LLM. "
         "Clusters are sorted descending by occurrence_count before capping.",
     )
+    X_API_BEARER_TOKEN: str | None = Field(
+        default=None,
+        repr=False,
+        description="X (Twitter) API bearer token for conversation fetch augmentation. "
+        "When absent, X augmentation is skipped and a structured warning is logged.",
+    )
+    EVIDENCE_MAX_EXTERNAL_CLAIMS: int = Field(
+        default=10,
+        ge=0,
+        description="Maximum number of factual claims to gather external evidence for per scan job. "
+        "Claims beyond this cap are skipped for external evidence lookup.",
+    )
+    EVIDENCE_SYNTHESIS_CANDIDATE_CAP: int = Field(
+        default=60,
+        ge=1,
+        description="Maximum number of candidate external facts fed to the curation step. "
+        "Controls prompt size for the sanity/curate LLM calls.",
+    )
+    EVIDENCE_GROUNDED_FETCH_GROUPS_PER_CALL: int = Field(
+        default=1,
+        ge=1,
+        description="Number of claim groups bundled into a single grounded-fetch LLM call. "
+        "Batching reduces round-trips at the cost of larger prompts.",
+    )
+    PREMISES_MAX_CLAIMS_PER_BATCH: int = Field(
+        default=30,
+        ge=1,
+        description="Maximum number of claims sent to the premises LLM in a single batch call. "
+        "Larger batches reduce round-trips; smaller batches reduce context length.",
+    )
 
     @field_validator("URL_SCAN_EXTRACTOR_SAMPLE_RATE", mode="before")
     @classmethod

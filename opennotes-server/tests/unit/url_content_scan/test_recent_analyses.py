@@ -64,6 +64,7 @@ def _row(
     preview_description: str = "Preview text",
     finished_at: datetime | None = None,
     deleted_at: datetime | None = None,
+    x_og_thumbnail_url: str | None = None,
 ):
     return {
         "job_id": uuid4(),
@@ -76,6 +77,7 @@ def _row(
         "preview_description": preview_description,
         "finished_at": finished_at or datetime.now(UTC),
         "deleted_at": deleted_at,
+        "x_og_thumbnail_url": x_og_thumbnail_url,
     }
 
 
@@ -327,3 +329,42 @@ async def test_list_recent_includes_non_soft_deleted_job() -> None:
 def test_recent_sql_selects_page_metadata_from_url_scan_state() -> None:
     assert "st.page_title" in _RECENT_SQL
     assert "st.page_kind" in _RECENT_SQL
+
+
+def test_recent_sql_extracts_x_og_thumbnail_from_sidebar_payload() -> None:
+    assert "x_og_thumbnail" in _RECENT_SQL
+
+
+@pytest.mark.asyncio
+async def test_list_recent_surfaces_x_og_thumbnail_url() -> None:
+    pool = _FakePool(
+        [
+            _row(
+                normalized_url="https://x.com/i/status/111",
+                source_url="https://x.com/user/status/111",
+                x_og_thumbnail_url="https://pbs.twimg.com/media/example.jpg",
+            )
+        ]
+    )
+
+    result = await list_recent(pool, limit=5, signer=_StubSigner())
+
+    assert len(result) == 1
+    assert result[0].og_thumbnail_url == "https://pbs.twimg.com/media/example.jpg"
+
+
+@pytest.mark.asyncio
+async def test_list_recent_og_thumbnail_url_is_none_for_non_x_rows() -> None:
+    pool = _FakePool(
+        [
+            _row(
+                normalized_url="https://example.com/article",
+                x_og_thumbnail_url=None,
+            )
+        ]
+    )
+
+    result = await list_recent(pool, limit=5, signer=_StubSigner())
+
+    assert len(result) == 1
+    assert result[0].og_thumbnail_url is None

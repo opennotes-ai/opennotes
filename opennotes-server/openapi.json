@@ -26302,6 +26302,18 @@
             "title": "Preview Description",
             "description": "Short non-null gallery blurb."
           },
+          "og_thumbnail_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Og Thumbnail Url",
+            "description": "X (Twitter) OG thumbnail URL stored during scan; None for non-X URLs."
+          },
           "completed_at": {
             "type": "string",
             "format": "date-time",

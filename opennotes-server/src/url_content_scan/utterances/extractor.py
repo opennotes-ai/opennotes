@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import re
 from collections.abc import Iterable
 from datetime import UTC, datetime
@@ -11,6 +12,7 @@ import httpx
 from lxml import html as lxml_html
 from lxml.html import HtmlElement
 
+from src.config import Settings
 from src.services.firecrawl_client import ScrapeResult
 from src.url_content_scan.coral import (
     CoralFetchError,
@@ -27,10 +29,18 @@ from src.url_content_scan.viafoura import (
     fetch_viafoura_comments,
     merge_viafoura_into_scrape,
 )
+from src.url_content_scan.x import (
+    XApiError,
+    detect_x_status_url,
+    fetch_x_conversation,
+    merge_x_into_scrape,
+)
 from src.utils.async_compat import run_sync
 
 from .media_extraction import extract_image_urls, extract_video_urls, normalize_public_url
 from .schema import Utterance, UtterancesPayload
+
+logger = logging.getLogger(__name__)
 
 _UTTERANCE_CONTAINER_XPATH = ".//*[@data-comment-id or @data-reply-id or @data-node-id or @data-entry-id or @data-role='post']"
 _WHITESPACE_RE = re.compile(r"\s+")
@@ -41,9 +51,15 @@ _CORAL_HEADER_RE = re.compile(
 )
 
 
-def extract_utterances(scrape: ScrapeResult, source_url: str) -> UtterancesPayload:
+def extract_utterances(
+    scrape: ScrapeResult,
+    source_url: str,
+    *,
+    settings: Settings | None = None,
+) -> UtterancesPayload:
     scrape = _merge_coral_comments_if_available(scrape)
     scrape = _merge_viafoura_comments_if_available(scrape, source_url)
+    scrape = _merge_x_conversations_if_available(scrape, source_url, settings=settings)
     root = _parse_html(scrape.html)
     page_kind = _classify_page_kind(scrape, root)
     page_title = _page_title(scrape, root)
@@ -182,6 +198,44 @@ def _merge_viafoura_comments_if_available(scrape: ScrapeResult, source_url: str)
 
         return run_sync(_fetch())
     except (ViafouraFetchError, ViafouraUnsupportedError):
+        return scrape
+
+
+def _merge_x_conversations_if_available(
+    scrape: ScrapeResult,
+    source_url: str,
+    *,
+    settings: Settings | None,
+) -> ScrapeResult:
+    ref = detect_x_status_url(source_url)
+    if ref is None:
+        return scrape
+    if settings is None:
+        settings = Settings()
+    bearer = settings.X_API_BEARER_TOKEN
+    if not bearer or not bearer.strip():
+        logger.warning(
+            "x_augmentation_skipped",
+            extra={"reason": "X_API_BEARER_TOKEN not configured", "source_url": source_url},
+        )
+        return scrape
+    try:
+
+        async def _fetch() -> ScrapeResult:
+            async with httpx.AsyncClient(timeout=15.0) as client:
+                conversation = await fetch_x_conversation(
+                    ref.post_id,
+                    bearer=bearer,
+                    http=client,
+                )
+            return merge_x_into_scrape(scrape, conversation)
+
+        return run_sync(_fetch())
+    except XApiError as exc:
+        logger.warning(
+            "x_augmentation_failed",
+            extra={"reason": str(exc), "source_url": source_url},
+        )
         return scrape
 
 
