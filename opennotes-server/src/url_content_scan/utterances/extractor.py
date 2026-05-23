@@ -43,6 +43,15 @@ from .schema import Utterance, UtterancesPayload
 logger = logging.getLogger(__name__)
 
 _UTTERANCE_CONTAINER_XPATH = ".//*[@data-comment-id or @data-reply-id or @data-node-id or @data-entry-id or @data-role='post']"
+
+_DEFAULT_EXTRACTOR_MODEL = "google-vertex:gemini-3.1-flash-lite-preview"
+
+
+def get_extractor_model(settings: Settings | None = None) -> str:
+    cfg = settings if settings is not None else Settings()
+    return cfg.VERTEXAI_EXTRACTOR_MODEL
+
+
 _WHITESPACE_RE = re.compile(r"\s+")
 _URL_TAG_RE = re.compile(r"<a\b[^>]*\bhref=[\"'](?P<url>[^\"']+)[\"']", re.IGNORECASE)
 _CORAL_HEADER_RE = re.compile(

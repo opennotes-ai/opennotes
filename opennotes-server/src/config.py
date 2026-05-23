@@ -849,6 +849,11 @@ class Settings(BaseSettings):
         description="GCP region for Vertex AI API calls. 'global' required for Gemini 3 preview SKUs.",
         validation_alias=AliasChoices("VERTEXAI_LOCATION", "GOOGLE_CLOUD_LOCATION"),
     )
+    VERTEXAI_EXTRACTOR_MODEL: str = Field(
+        default="google-vertex:gemini-3.1-flash-lite-preview",
+        description="Vertex AI model for the utterance extractor. Separate from the synthesis and fast "
+        "model tiers so the extractor can be tuned independently.",
+    )
 
     SMTP_HOST: str = Field(default="localhost", description="SMTP server hostname")
     SMTP_PORT: int = Field(default=587, description="SMTP server port (587 for TLS, 465 for SSL)")

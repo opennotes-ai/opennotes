@@ -10,7 +10,11 @@ import pytest
 from src.services.firecrawl_client import ScrapeResult
 from src.url_content_scan.coral.graphql import CoralComments, CoralFetchError
 from src.url_content_scan.schemas import PageKind
-from src.url_content_scan.utterances.extractor import extract_utterances
+from src.url_content_scan.utterances.extractor import (
+    _DEFAULT_EXTRACTOR_MODEL,
+    extract_utterances,
+    get_extractor_model,
+)
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
 
@@ -442,3 +446,43 @@ def test_extract_utterances_reads_latimes_style_copied_coral_comments() -> None:
     assert payload.utterances[1].parent_id == "post-1"
     assert payload.utterances[2].author == "Bob"
     assert payload.utterances[2].parent_id == "comment-1"
+
+
+@pytest.mark.unit
+def test_get_extractor_model_returns_default_when_settings_unset() -> None:
+    from unittest.mock import MagicMock
+
+    settings = MagicMock()
+    settings.VERTEXAI_EXTRACTOR_MODEL = _DEFAULT_EXTRACTOR_MODEL
+
+    model = get_extractor_model(settings)
+
+    assert model == _DEFAULT_EXTRACTOR_MODEL
+
+
+@pytest.mark.unit
+def test_get_extractor_model_returns_custom_when_setting_overridden() -> None:
+    from unittest.mock import MagicMock
+
+    custom_model = "google-vertex:gemini-3.1-pro-preview"
+    settings = MagicMock()
+    settings.VERTEXAI_EXTRACTOR_MODEL = custom_model
+
+    model = get_extractor_model(settings)
+
+    assert model == custom_model
+    assert model != _DEFAULT_EXTRACTOR_MODEL
+
+
+@pytest.mark.unit
+def test_get_extractor_model_is_separate_from_default_mini_model() -> None:
+    from unittest.mock import MagicMock
+
+    settings = MagicMock()
+    settings.VERTEXAI_EXTRACTOR_MODEL = _DEFAULT_EXTRACTOR_MODEL
+    settings.DEFAULT_MINI_MODEL = MagicMock()
+
+    extractor_model = get_extractor_model(settings)
+
+    assert extractor_model == _DEFAULT_EXTRACTOR_MODEL
+    assert "gemini-3.1-flash-lite" in extractor_model
