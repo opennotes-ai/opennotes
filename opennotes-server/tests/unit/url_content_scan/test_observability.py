@@ -118,3 +118,50 @@ def test_builtin_scrub_patterns_non_empty():
     assert len(URL_SCAN_LOGFIRE_BUILTIN_SCRUB_PATTERNS) > 0
     assert any("token=" in p for p in URL_SCAN_LOGFIRE_BUILTIN_SCRUB_PATTERNS)
     assert any("bearer" in p.lower() for p in URL_SCAN_LOGFIRE_BUILTIN_SCRUB_PATTERNS)
+
+
+def test_augment_logfire_installs_scrubbing_even_when_content_disabled():
+    from src.url_content_scan import observability
+
+    mock_logfire = MagicMock()
+    mock_scrubbing_options = MagicMock()
+    mock_logfire.ScrubbingOptions.return_value = mock_scrubbing_options
+
+    original_state = list(observability._instrument_pydantic_ai_state)
+    try:
+        observability._instrument_pydantic_ai_state[0] = False
+        with patch.dict("sys.modules", {"logfire": mock_logfire}):
+            from src.url_content_scan.observability import augment_logfire
+
+            augment_logfire(enable_content=False)
+
+        mock_logfire.configure.assert_called_once()
+        configure_kwargs = mock_logfire.configure.call_args.kwargs
+        assert "scrubbing" in configure_kwargs
+        mock_logfire.ScrubbingOptions.assert_called_once()
+        scrub_call = mock_logfire.ScrubbingOptions.call_args
+        assert scrub_call.kwargs.get("callback") is not None
+    finally:
+        observability._instrument_pydantic_ai_state[0] = original_state[0]
+
+
+def test_augment_logfire_installs_scrubbing_when_content_enabled():
+    from src.url_content_scan import observability
+
+    mock_logfire = MagicMock()
+    mock_scrubbing_options = MagicMock()
+    mock_logfire.ScrubbingOptions.return_value = mock_scrubbing_options
+
+    original_state = list(observability._instrument_pydantic_ai_state)
+    try:
+        observability._instrument_pydantic_ai_state[0] = False
+        with patch.dict("sys.modules", {"logfire": mock_logfire}):
+            from src.url_content_scan.observability import augment_logfire
+
+            augment_logfire(enable_content=True)
+
+        mock_logfire.configure.assert_called_once()
+        configure_kwargs = mock_logfire.configure.call_args.kwargs
+        assert "scrubbing" in configure_kwargs
+    finally:
+        observability._instrument_pydantic_ai_state[0] = original_state[0]

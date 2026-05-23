@@ -95,18 +95,17 @@ def augment_logfire(
         if extra_patterns:
             all_patterns.extend(extra_patterns)
 
-        if enable_content:
-            logfire.configure(
-                scrubbing=logfire.ScrubbingOptions(
-                    extra_patterns=all_patterns,
-                    callback=_url_scan_scrub_callback,
-                ),
-            )
+        logfire.configure(
+            scrubbing=logfire.ScrubbingOptions(
+                extra_patterns=all_patterns,
+                callback=_url_scan_scrub_callback,
+            ),
+        )
 
         with _instrument_pydantic_ai_lock:
             if not _instrument_pydantic_ai_state[0]:
                 logfire.instrument_pydantic_ai(
-                    include_content=False,
+                    include_content=enable_content,
                     include_binary_content=False,
                 )
                 _instrument_pydantic_ai_state[0] = True
