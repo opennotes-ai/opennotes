@@ -188,3 +188,78 @@ class UrlScanVideoAnalysisCache(Base):
         server_default=func.now(),
     )
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class UrlScanImageUploadBatch(Base):
+    """Per-job image batch for PDF conversion pipeline.
+
+    Tracks a set of images uploaded by the client that will be combined into
+    a single PDF for analysis via the image_conversion_workflow DBOS workflow.
+    """
+
+    __tablename__ = "url_scan_image_upload_batches"
+    __table_args__ = (Index("ix_url_scan_image_upload_batches_job_id", "job_id", unique=True),)
+
+    id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        primary_key=True,
+        server_default=text("uuidv7()"),
+    )
+    job_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("batch_jobs.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    images: Mapped[list[object]] = mapped_column(JSONB, nullable=False)
+    conversion_status: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+        server_default=text("'awaiting_upload'"),
+    )
+    generated_pdf_gcs_key: Mapped[str | None] = mapped_column(Text, nullable=True)
+    error_code: Mapped[str | None] = mapped_column(Text, nullable=True)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+
+
+class UrlScanPdfArchive(Base):
+    """Cached HTML extracted from a PDF scan job.
+
+    Stores the final rendered HTML output for 60 days so the archive-preview
+    endpoint can serve it without re-running the full scan pipeline.
+    """
+
+    __tablename__ = "url_scan_pdf_archives"
+    __table_args__ = (Index("ix_url_scan_pdf_archives_expires_at", "expires_at"),)
+
+    id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        primary_key=True,
+        server_default=text("uuidv7()"),
+    )
+    job_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("batch_jobs.id", ondelete="CASCADE"),
+        nullable=False,
+        unique=True,
+    )
+    html: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+    expires_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("(pg_catalog.now() + INTERVAL '60 days')"),
+    )

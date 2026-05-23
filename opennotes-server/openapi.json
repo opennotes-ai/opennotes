@@ -13667,6 +13667,252 @@
         }
       }
     },
+    "/api/v1/url_scan/upload-pdf": {
+      "post": {
+        "tags": [
+          "url_scan"
+        ],
+        "summary": "Upload Pdf",
+        "operationId": "upload_pdf_api_v1_url_scan_upload_pdf_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UploadPDFResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/url_scan/analyze-pdf": {
+      "post": {
+        "tags": [
+          "url_scan"
+        ],
+        "summary": "Analyze Pdf",
+        "operationId": "analyze_pdf_api_v1_url_scan_analyze_pdf_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AnalyzePDFRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnalyzeResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/url_scan/upload-images": {
+      "post": {
+        "tags": [
+          "url_scan"
+        ],
+        "summary": "Upload Images",
+        "operationId": "upload_images_api_v1_url_scan_upload_images_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UploadImagesRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UploadImagesResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/url_scan/analyze-images": {
+      "post": {
+        "tags": [
+          "url_scan"
+        ],
+        "summary": "Analyze Images",
+        "operationId": "analyze_images_api_v1_url_scan_analyze_images_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AnalyzeImagesRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnalyzeResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/url_scan/_schema_anchor": {
       "get": {
         "tags": [
@@ -16108,6 +16354,44 @@
           "data"
         ],
         "title": "AnalysisResponse"
+      },
+      "AnalyzeImagesRequest": {
+        "properties": {
+          "batch_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Batch Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "batch_id"
+        ],
+        "title": "AnalyzeImagesRequest"
+      },
+      "AnalyzePDFRequest": {
+        "properties": {
+          "gcs_key": {
+            "type": "string",
+            "title": "Gcs Key"
+          },
+          "filename": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Filename"
+          }
+        },
+        "type": "object",
+        "required": [
+          "gcs_key"
+        ],
+        "title": "AnalyzePDFRequest"
       },
       "AnalyzeRequest": {
         "properties": {
@@ -20717,6 +21001,59 @@
         },
         "type": "object",
         "title": "ImageModerationSection"
+      },
+      "ImageUploadItem": {
+        "properties": {
+          "filename": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Filename"
+          },
+          "content_type": {
+            "type": "string",
+            "title": "Content Type"
+          },
+          "size_bytes": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Size Bytes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "content_type",
+          "size_bytes"
+        ],
+        "title": "ImageUploadItem"
+      },
+      "ImageUploadUrl": {
+        "properties": {
+          "ordinal": {
+            "type": "integer",
+            "title": "Ordinal"
+          },
+          "gcs_key": {
+            "type": "string",
+            "title": "Gcs Key"
+          },
+          "upload_url": {
+            "type": "string",
+            "title": "Upload Url"
+          }
+        },
+        "type": "object",
+        "required": [
+          "ordinal",
+          "gcs_key",
+          "upload_url"
+        ],
+        "title": "ImageUploadUrl"
       },
       "ImportFactCheckBureauRequest": {
         "properties": {
@@ -30128,6 +30465,63 @@
           "skipped_for_cap"
         ],
         "title": "TrendsOppositionsReport"
+      },
+      "UploadImagesRequest": {
+        "properties": {
+          "images": {
+            "items": {
+              "$ref": "#/components/schemas/ImageUploadItem"
+            },
+            "type": "array",
+            "minItems": 1,
+            "title": "Images"
+          }
+        },
+        "type": "object",
+        "required": [
+          "images"
+        ],
+        "title": "UploadImagesRequest"
+      },
+      "UploadImagesResponse": {
+        "properties": {
+          "batch_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Batch Id"
+          },
+          "images": {
+            "items": {
+              "$ref": "#/components/schemas/ImageUploadUrl"
+            },
+            "type": "array",
+            "title": "Images"
+          }
+        },
+        "type": "object",
+        "required": [
+          "batch_id",
+          "images"
+        ],
+        "title": "UploadImagesResponse"
+      },
+      "UploadPDFResponse": {
+        "properties": {
+          "gcs_key": {
+            "type": "string",
+            "title": "Gcs Key"
+          },
+          "upload_url": {
+            "type": "string",
+            "title": "Upload Url"
+          }
+        },
+        "type": "object",
+        "required": [
+          "gcs_key",
+          "upload_url"
+        ],
+        "title": "UploadPDFResponse"
       },
       "UserCreate": {
         "properties": {

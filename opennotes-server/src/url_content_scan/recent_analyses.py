@@ -100,6 +100,44 @@ ORDER BY COALESCE(st.finished_at, j.completed_at) DESC
 _RECENT_SQL = f"{_RECENT_SQL_BODY}\nLIMIT $1"
 _RECENT_SQL_SQLALCHEMY = f"{_RECENT_SQL_BODY}\nLIMIT :limit"
 
+_RECENT_UNFILTERED_SQL_BODY = """
+SELECT
+    j.id AS job_id,
+    st.normalized_url,
+    st.source_url,
+    COALESCE(st.finished_at, j.completed_at) AS finished_at,
+    COALESCE(
+        st.sidebar_payload #>> '{headline,text}',
+        st.page_title
+    ) AS preview_description,
+    st.sidebar_payload #>> '{x_og_thumbnail}' AS x_og_thumbnail_url,
+    j.status,
+    st.page_title,
+    st.page_kind,
+    s.screenshot_storage_key
+FROM batch_jobs j
+INNER JOIN url_scan_state st
+    ON st.job_id = j.id
+LEFT JOIN (
+    SELECT DISTINCT ON (normalized_url)
+        normalized_url,
+        screenshot_storage_key,
+        expires_at
+    FROM url_scan_scrapes
+    WHERE screenshot_storage_key IS NOT NULL
+      AND expires_at > now()
+    ORDER BY normalized_url,
+             CASE WHEN tier = 'interact' THEN 0 ELSE 1 END,
+             scraped_at DESC
+) s ON s.normalized_url = st.normalized_url
+WHERE j.status IN ('completed', 'partial')
+  AND COALESCE(st.finished_at, j.completed_at) IS NOT NULL
+  AND st.deleted_at IS NULL
+ORDER BY COALESCE(st.finished_at, j.completed_at) DESC
+"""
+_RECENT_UNFILTERED_SQL = f"{_RECENT_UNFILTERED_SQL_BODY}\nLIMIT $1"
+_RECENT_UNFILTERED_SQL_SQLALCHEMY = f"{_RECENT_UNFILTERED_SQL_BODY}\nLIMIT :limit"
+
 
 class RecentAnalysis(BaseModel):
     job_id: UUID = Field(description="batch_jobs.id for the analysis job.")
@@ -111,6 +149,26 @@ class RecentAnalysis(BaseModel):
         default=None,
         description="X (Twitter) OG thumbnail URL stored during scan; None for non-X URLs.",
     )
+    completed_at: datetime
+
+
+class InternalRecentAnalysis(BaseModel):
+    job_id: UUID = Field(description="batch_jobs.id for the analysis job.")
+    source_url: str
+    page_title: str | None = None
+    screenshot_url: str | None = Field(
+        default=None,
+        description="Signed screenshot URL when available; None for jobs without a scrape.",
+    )
+    preview_description: str | None = Field(
+        default=None,
+        description="Gallery blurb when available; None if no headline or page title.",
+    )
+    og_thumbnail_url: str | None = Field(
+        default=None,
+        description="X (Twitter) OG thumbnail URL stored during scan; None for non-X URLs.",
+    )
+    status: str = Field(description="batch_jobs.status (completed or partial).")
     completed_at: datetime
 
 
@@ -246,12 +304,71 @@ async def list_recent(
     return out
 
 
+async def _fetch_rows_unfiltered(pool_or_session: Any, *, limit: int) -> list[Mapping[str, Any]]:
+    if hasattr(pool_or_session, "acquire"):
+        async with pool_or_session.acquire() as conn:
+            rows = await conn.fetch(_RECENT_UNFILTERED_SQL, limit)
+            return [dict(row) for row in rows]
+    if hasattr(pool_or_session, "fetch"):
+        rows = await pool_or_session.fetch(_RECENT_UNFILTERED_SQL, limit)
+        return [dict(row) for row in rows]
+    if hasattr(pool_or_session, "execute"):
+        result = await pool_or_session.execute(
+            text(_RECENT_UNFILTERED_SQL_SQLALCHEMY), {"limit": limit}
+        )
+        return [dict(row) for row in result.mappings().all()]
+    raise TypeError(
+        "list_recent_unfiltered requires an asyncpg-style pool/connection or SQLAlchemy async session"
+    )
+
+
+async def list_recent_unfiltered(
+    pool_or_session: Any,
+    *,
+    limit: int,
+    signer: ScreenshotSigner,
+) -> list[InternalRecentAnalysis]:
+    if limit <= 0:
+        return []
+
+    rows = await _fetch_rows_unfiltered(pool_or_session, limit=limit)
+
+    out: list[InternalRecentAnalysis] = []
+    for row in rows:
+        storage_key = row.get("screenshot_storage_key")
+        signed_url: str | None = None
+        if storage_key:
+            signed_result = signer.sign_screenshot_key(storage_key)
+            signed_url = await signed_result if isawaitable(signed_result) else signed_result
+        raw_og_thumbnail = row.get("x_og_thumbnail_url")
+        og_thumbnail_url = str(raw_og_thumbnail) if raw_og_thumbnail else None
+        raw_preview = row.get("preview_description")
+        preview_description = str(raw_preview) if raw_preview else None
+        out.append(
+            InternalRecentAnalysis(
+                job_id=row["job_id"],
+                source_url=str(row["source_url"]),
+                page_title=row.get("page_title"),
+                screenshot_url=signed_url,
+                preview_description=preview_description,
+                og_thumbnail_url=og_thumbnail_url,
+                status=str(row["status"]),
+                completed_at=row["finished_at"],
+            )
+        )
+
+    return out
+
+
 __all__ = [
     "_RECENT_SQL",
+    "_RECENT_UNFILTERED_SQL",
+    "InternalRecentAnalysis",
     "RecentAnalysis",
     "ScreenshotSigner",
     "_has_secret_query_param",
     "_is_blocked_url",
     "_passes_partial_threshold",
     "list_recent",
+    "list_recent_unfiltered",
 ]

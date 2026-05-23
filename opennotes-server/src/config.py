@@ -13,6 +13,7 @@ from pydantic import (
     AliasChoices,
     BeforeValidator,
     Field,
+    SecretStr,
     computed_field,
     field_validator,
     model_validator,
@@ -532,6 +533,12 @@ class Settings(BaseSettings):
         description="GCS bucket name for URL-scan screenshots. When empty, screenshot upload helpers "
         "must be configured explicitly by the caller.",
     )
+    URL_SCAN_PDF_UPLOAD_BUCKET: str = Field(
+        default="",
+        description="GCS bucket name for URL-scan PDF and image uploads. When empty, "
+        "PDF/image upload endpoints return a configuration error. "
+        "Reuses the same staging bucket as screenshot storage when appropriate.",
+    )
 
     ENABLE_METRICS: bool = Field(default=True, description="Enable metrics middleware")
     ENABLE_TRACING: bool = Field(default=True, description="Enable OpenTelemetry tracing")
@@ -709,6 +716,13 @@ class Settings(BaseSettings):
         ge=0,
         description="Maximum number of opinion clusters sent to the trends/oppositions LLM. "
         "Clusters are sorted descending by occurrence_count before capping.",
+    )
+    URL_SCAN_PRIVATE_PATH_PREFIX: SecretStr | None = Field(
+        default=None,
+        repr=False,
+        description="Secret path segment that gates the internal unfiltered gallery route. "
+        "When None (unset) the private route is not registered and returns 404. "
+        "Generate with: python -c 'import secrets; print(secrets.token_urlsafe(32))'",
     )
     X_API_BEARER_TOKEN: str | None = Field(
         default=None,

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import timedelta
+from typing import Any
 from uuid import UUID
 
 import httpx
@@ -15,13 +16,29 @@ from src.config import settings
 from src.database import get_db, get_session_maker
 from src.services.firecrawl_client import FirecrawlClient, FirecrawlError
 from src.url_content_scan.analyze_handler import AnalyzeSubmissionError, submit_url_scan
+from src.url_content_scan.analyze_pdf_handler import (
+    AnalyzeImagesRequest,
+    AnalyzePDFRequest,
+    UploadImagesRequest,
+    UploadImagesResponse,
+    UploadPDFResponse,
+    handle_analyze_images,
+    handle_analyze_pdf,
+    handle_upload_images,
+    handle_upload_pdf,
+)
 from src.url_content_scan.auth import get_url_scan_api_key
 from src.url_content_scan.frame import archive_preview, frame_compat, lookup_screenshot
 from src.url_content_scan.models import UrlScanState
 from src.url_content_scan.normalize import canonical_cache_key
 from src.url_content_scan.poll_handler import JOB_EXPIRED, load_job_state
 from src.url_content_scan.rate_limiter import RateLimitStatus, UrlScanRateLimiter
-from src.url_content_scan.recent_analyses import RecentAnalysis, list_recent
+from src.url_content_scan.recent_analyses import (
+    InternalRecentAnalysis,
+    RecentAnalysis,
+    list_recent,
+    list_recent_unfiltered,
+)
 from src.url_content_scan.retry_handler import prepare_section_retry
 from src.url_content_scan.schemas import (
     AnalyzeRequest,
@@ -392,6 +409,60 @@ async def archive_preview_route(  # noqa: PLR0911
     )
 
 
+@router.post(
+    "/upload-pdf",
+    response_model=UploadPDFResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def upload_pdf(
+    request: Request,
+    _api_key: APIKey = Depends(get_url_scan_api_key),
+) -> UploadPDFResponse | JSONResponse:
+    return await handle_upload_pdf(request)
+
+
+@router.post(
+    "/analyze-pdf",
+    response_model=AnalyzeResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def analyze_pdf(
+    body: AnalyzePDFRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    _api_key: APIKey = Depends(get_url_scan_api_key),
+) -> AnalyzeResponse | JSONResponse:
+    return await handle_analyze_pdf(request, body, db)
+
+
+@router.post(
+    "/upload-images",
+    response_model=UploadImagesResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def upload_images(
+    body: UploadImagesRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    _api_key: APIKey = Depends(get_url_scan_api_key),
+) -> UploadImagesResponse | JSONResponse:
+    return await handle_upload_images(request, body, db)
+
+
+@router.post(
+    "/analyze-images",
+    response_model=AnalyzeResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def analyze_images(
+    body: AnalyzeImagesRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    _api_key: APIKey = Depends(get_url_scan_api_key),
+) -> AnalyzeResponse | JSONResponse:
+    return await handle_analyze_images(request, body, db)
+
+
 @router.get(
     "/_schema_anchor",
     response_model=JobState,
@@ -412,3 +483,32 @@ async def schema_anchor() -> JobState:
 )
 async def sidebar_schema_anchor() -> SidebarPayload:
     raise HTTPException(status_code=410, detail="schema-anchor placeholder")
+
+
+def register_private_url_scan_routes(app: Any) -> bool:
+    prefix_secret = settings.URL_SCAN_PRIVATE_PATH_PREFIX
+    if prefix_secret is None:
+        return False
+    prefix = prefix_secret.get_secret_value()
+    if not prefix:
+        return False
+
+    private_router = APIRouter(
+        prefix=f"/api/v1/url_scan/{prefix}",
+        tags=["url_scan_internal"],
+        include_in_schema=False,
+    )
+
+    @private_router.get("/analyses/recent", response_model=list[InternalRecentAnalysis])
+    async def internal_recent_analyses(
+        request: Request,
+        limit: int = Query(default=25, ge=1, le=200),
+        db: AsyncSession = Depends(get_db),
+    ) -> list[InternalRecentAnalysis]:
+        signer = getattr(request.app.state, "recent_signer", None)
+        if signer is None:
+            signer = _RecentScreenshotSigner(get_screenshot_store(request))
+        return await list_recent_unfiltered(db, limit=limit, signer=signer)
+
+    app.include_router(private_router)
+    return True
