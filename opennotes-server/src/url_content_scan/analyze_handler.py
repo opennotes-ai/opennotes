@@ -335,7 +335,7 @@ async def _insert_unsafe_job(
             expires_at=now + _WEB_RISK_LOOKUP_TTL,
         )
     )
-    sidebar_payload = _build_unsafe_sidebar_payload(source_url, finding, now)
+    sidebar_payload = _build_unsafe_sidebar_payload(finding, now)
     job = BatchJob(
         job_type=_URL_SCAN_JOB_TYPE,
         status=BatchJobStatus.FAILED.value,
@@ -386,7 +386,7 @@ async def _insert_cached_job(
 ) -> UUID:
     now = datetime.now(UTC)
     payload, page_title, page_kind, utterance_count = _hydrate_cached_sidebar_payload(
-        source_url, cache_row, now
+        cache_row, now
     )
     job = BatchJob(
         job_type=_URL_SCAN_JOB_TYPE,
@@ -523,44 +523,41 @@ def _job_status_from_batch_status(status: str) -> JobStatus:
 
 
 def _hydrate_cached_sidebar_payload(
-    source_url: str,
     cache_row: UrlScanSidebarCache,
     now: datetime,
 ) -> tuple[dict[str, Any], str | None, str | None, int]:
+    raw_payload = dict(cache_row.sidebar_payload)
+    page_title: str | None = raw_payload.get("page_title")
+    page_kind: str | None = raw_payload.get("page_kind")
     try:
-        payload = SidebarPayload.model_validate(cache_row.sidebar_payload).model_copy(
+        payload = SidebarPayload.model_validate(raw_payload).model_copy(
             update={
-                "source_url": source_url,
                 "cached": True,
                 "cached_at": cache_row.created_at,
             }
         )
         return (
             payload.model_dump(mode="json"),
-            payload.page_title,
-            payload.page_kind.value,
+            page_title,
+            page_kind,
             len(payload.utterances),
         )
     except Exception:
-        raw_payload = dict(cache_row.sidebar_payload)
-        raw_payload["source_url"] = source_url
         raw_payload["cached"] = True
         raw_payload["cached_at"] = cache_row.created_at.isoformat()
         return (
             raw_payload,
-            raw_payload.get("page_title"),
-            raw_payload.get("page_kind"),
+            page_title,
+            page_kind,
             len(raw_payload.get("utterances") or []),
         )
 
 
 def _build_unsafe_sidebar_payload(
-    source_url: str,
     finding: WebRiskFinding,
     now: datetime,
 ) -> dict[str, Any]:
     sidebar = SidebarPayload(
-        source_url=source_url,
         scraped_at=now,
         safety=SafetySection(),
         tone_dynamics=ToneDynamicsSection.model_validate(

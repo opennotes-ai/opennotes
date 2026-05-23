@@ -322,3 +322,8 @@ async def test_list_recent_includes_non_soft_deleted_job() -> None:
 
     assert len(result) == 1
     assert result[0].source_url == "https://example.com/active"
+
+
+def test_recent_sql_selects_page_metadata_from_url_scan_state() -> None:
+    assert "st.page_title" in _RECENT_SQL
+    assert "st.page_kind" in _RECENT_SQL

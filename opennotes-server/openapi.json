@@ -17485,6 +17485,46 @@
         "title": "ClaimCategory",
         "description": "5-way taxonomy for claim classification.\n\nMirrors vibecheck-server's `ClaimCategory` so downstream premises/evidence\ntooling can use a shared vocabulary (TASK-1657.04 depends on these keys)."
       },
+      "ClaimOpposition": {
+        "properties": {
+          "topic": {
+            "type": "string",
+            "title": "Topic"
+          },
+          "supporting_cluster_texts": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Supporting Cluster Texts"
+          },
+          "opposing_cluster_texts": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Opposing Cluster Texts"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          }
+        },
+        "type": "object",
+        "required": [
+          "topic",
+          "supporting_cluster_texts",
+          "opposing_cluster_texts"
+        ],
+        "title": "ClaimOpposition"
+      },
       "ClaimRelevanceCheckAttributes": {
         "properties": {
           "original_message": {
@@ -17631,6 +17671,32 @@
         ],
         "title": "ClaimRelevanceCheckResultResource",
         "description": "JSON:API resource object for claim relevance check results."
+      },
+      "ClaimTrend": {
+        "properties": {
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "cluster_texts": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Cluster Texts"
+          },
+          "summary": {
+            "type": "string",
+            "title": "Summary"
+          }
+        },
+        "type": "object",
+        "required": [
+          "label",
+          "cluster_texts",
+          "summary"
+        ],
+        "title": "ClaimTrend"
       },
       "ClaimsReport": {
         "properties": {
@@ -19128,6 +19194,41 @@
         "title": "DiscordOAuthRegisterRequest",
         "description": "Request schema for Discord OAuth2 registration."
       },
+      "Divergence": {
+        "properties": {
+          "direction": {
+            "type": "string",
+            "enum": [
+              "discounted",
+              "escalated"
+            ],
+            "title": "Direction"
+          },
+          "signal_source": {
+            "type": "string",
+            "title": "Signal Source",
+            "description": "Short display-ready source label, such as Text moderation, Web Risk, Image moderation, Video moderation, or Combined signals."
+          },
+          "signal_detail": {
+            "type": "string",
+            "title": "Signal Detail",
+            "description": "Short display-ready description of the adjusted signal."
+          },
+          "reason": {
+            "type": "string",
+            "title": "Reason",
+            "description": "User-readable reason the raw signal was discounted or escalated."
+          }
+        },
+        "type": "object",
+        "required": [
+          "direction",
+          "signal_source",
+          "signal_detail",
+          "reason"
+        ],
+        "title": "Divergence"
+      },
       "EnrollmentData": {
         "properties": {
           "participantId": {
@@ -20010,6 +20111,34 @@
           "NOT_HELPFUL"
         ],
         "title": "HelpfulnessLevel"
+      },
+      "HighlightsThresholdInfo": {
+        "properties": {
+          "total_authors": {
+            "type": "integer",
+            "title": "Total Authors"
+          },
+          "total_utterances": {
+            "type": "integer",
+            "title": "Total Utterances"
+          },
+          "min_authors_required": {
+            "type": "integer",
+            "title": "Min Authors Required"
+          },
+          "min_occurrences_required": {
+            "type": "integer",
+            "title": "Min Occurrences Required"
+          }
+        },
+        "type": "object",
+        "required": [
+          "total_authors",
+          "total_utterances",
+          "min_authors_required",
+          "min_occurrences_required"
+        ],
+        "title": "HighlightsThresholdInfo"
       },
       "HybridSearchCreateAttributes": {
         "properties": {
@@ -23839,6 +23968,58 @@
         "title": "OpenAIModerationMatch",
         "description": "Match result from OpenAI moderation scan."
       },
+      "OpinionsHighlight": {
+        "properties": {
+          "cluster": {
+            "$ref": "#/components/schemas/DedupedClaim"
+          },
+          "crossed_scaled_threshold": {
+            "type": "boolean",
+            "title": "Crossed Scaled Threshold"
+          }
+        },
+        "type": "object",
+        "required": [
+          "cluster",
+          "crossed_scaled_threshold"
+        ],
+        "title": "OpinionsHighlight"
+      },
+      "OpinionsHighlightsReport": {
+        "properties": {
+          "highlights": {
+            "items": {
+              "$ref": "#/components/schemas/OpinionsHighlight"
+            },
+            "type": "array",
+            "title": "Highlights"
+          },
+          "threshold": {
+            "$ref": "#/components/schemas/HighlightsThresholdInfo"
+          },
+          "fallback_engaged": {
+            "type": "boolean",
+            "title": "Fallback Engaged"
+          },
+          "floor_eligible_count": {
+            "type": "integer",
+            "title": "Floor Eligible Count"
+          },
+          "total_input_count": {
+            "type": "integer",
+            "title": "Total Input Count"
+          }
+        },
+        "type": "object",
+        "required": [
+          "highlights",
+          "threshold",
+          "fallback_engaged",
+          "floor_eligible_count",
+          "total_input_count"
+        ],
+        "title": "OpinionsHighlightsReport"
+      },
       "OpinionsReport": {
         "properties": {
           "sentiment_stats": {
@@ -23863,6 +24044,26 @@
         "properties": {
           "opinions_report": {
             "$ref": "#/components/schemas/OpinionsReport"
+          },
+          "trends_oppositions": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TrendsOppositionsReport"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "highlights": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OpinionsHighlightsReport"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "type": "object",
@@ -27081,6 +27282,13 @@
             },
             "type": "array",
             "title": "Unavailable Inputs"
+          },
+          "divergences": {
+            "items": {
+              "$ref": "#/components/schemas/Divergence"
+            },
+            "type": "array",
+            "title": "Divergences"
           }
         },
         "type": "object",
@@ -27953,7 +28161,9 @@
           "facts_claims__dedup",
           "facts_claims__known_misinfo",
           "opinions_sentiments__sentiment",
-          "opinions_sentiments__subjective"
+          "opinions_sentiments__subjective",
+          "opinions_sentiments__trends_oppositions",
+          "opinions_sentiments__highlights"
         ],
         "title": "SectionSlug"
       },
@@ -28201,25 +28411,6 @@
       },
       "SidebarPayload": {
         "properties": {
-          "source_url": {
-            "type": "string",
-            "title": "Source Url"
-          },
-          "page_title": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Page Title"
-          },
-          "page_kind": {
-            "$ref": "#/components/schemas/PageKind",
-            "default": "other"
-          },
           "scraped_at": {
             "type": "string",
             "format": "date-time",
@@ -28283,7 +28474,6 @@
         },
         "type": "object",
         "required": [
-          "source_url",
           "scraped_at",
           "safety",
           "tone_dynamics",
@@ -29796,6 +29986,40 @@
         ],
         "title": "ToneDynamicsSection"
       },
+      "TrendsOppositionsReport": {
+        "properties": {
+          "trends": {
+            "items": {
+              "$ref": "#/components/schemas/ClaimTrend"
+            },
+            "type": "array",
+            "title": "Trends"
+          },
+          "oppositions": {
+            "items": {
+              "$ref": "#/components/schemas/ClaimOpposition"
+            },
+            "type": "array",
+            "title": "Oppositions"
+          },
+          "input_cluster_count": {
+            "type": "integer",
+            "title": "Input Cluster Count"
+          },
+          "skipped_for_cap": {
+            "type": "integer",
+            "title": "Skipped For Cap"
+          }
+        },
+        "type": "object",
+        "required": [
+          "trends",
+          "oppositions",
+          "input_cluster_count",
+          "skipped_for_cap"
+        ],
+        "title": "TrendsOppositionsReport"
+      },
       "UserCreate": {
         "properties": {
           "username": {
@@ -30302,6 +30526,19 @@
             "type": "string",
             "title": "Utterance Id",
             "description": "Stable utterance id stored for transcript jumps."
+          },
+          "timestamp": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Timestamp",
+            "description": "Wall-clock timestamp for the utterance when the source thread exposed one."
           }
         },
         "type": "object",

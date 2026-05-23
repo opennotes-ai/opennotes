@@ -10,7 +10,11 @@ from uuid import UUID
 from pydantic import BaseModel, Field
 
 from src.url_content_scan.claims_schemas import ClaimsReport, FactCheckMatch
-from src.url_content_scan.opinions_schemas import OpinionsReport
+from src.url_content_scan.opinions_schemas import (
+    OpinionsHighlightsReport,
+    OpinionsReport,
+    TrendsOppositionsReport,
+)
 from src.url_content_scan.safety_schemas import (
     HarmfulContentMatch,
     ImageModerationMatch,
@@ -41,6 +45,8 @@ class SectionSlug(StrEnum):
     FACTS_CLAIMS_KNOWN_MISINFO = "facts_claims__known_misinfo"
     OPINIONS_SENTIMENTS_SENTIMENT = "opinions_sentiments__sentiment"
     OPINIONS_SENTIMENTS_SUBJECTIVE = "opinions_sentiments__subjective"
+    OPINIONS_SENTIMENTS_TRENDS_OPPOSITIONS = "opinions_sentiments__trends_oppositions"
+    OPINIONS_SENTIMENTS_HIGHLIGHTS = "opinions_sentiments__highlights"
 
 
 class SectionState(StrEnum):
@@ -139,6 +145,8 @@ class FactsClaimsSection(BaseModel):
 
 class OpinionsSection(BaseModel):
     opinions_report: OpinionsReport
+    trends_oppositions: TrendsOppositionsReport | None = None
+    highlights: OpinionsHighlightsReport | None = None
 
 
 class HeadlineSummary(BaseModel):
@@ -150,12 +158,13 @@ class HeadlineSummary(BaseModel):
 class UtteranceAnchor(BaseModel):
     position: int = Field(description="1-indexed utterance position in the extracted thread.")
     utterance_id: str = Field(description="Stable utterance id stored for transcript jumps.")
+    timestamp: datetime | None = Field(
+        default=None,
+        description="Wall-clock timestamp for the utterance when the source thread exposed one.",
+    )
 
 
 class SidebarPayload(BaseModel):
-    source_url: str
-    page_title: str | None = None
-    page_kind: PageKind = PageKind.OTHER
     scraped_at: datetime
     cached: bool = False
     cached_at: datetime | None = None
@@ -205,6 +214,7 @@ __all__ = [
     "ImageModerationSection",
     "JobState",
     "JobStatus",
+    "OpinionsHighlightsReport",
     "OpinionsSection",
     "PageKind",
     "RetryResponse",
@@ -216,6 +226,7 @@ __all__ = [
     "SectionState",
     "SidebarPayload",
     "ToneDynamicsSection",
+    "TrendsOppositionsReport",
     "UtteranceAnchor",
     "VideoModerationSection",
     "WebRiskSection",

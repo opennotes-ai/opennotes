@@ -694,6 +694,22 @@ class Settings(BaseSettings):
         description="Escape hatch for environment-specific scrub patterns appended to the built-in "
         "url_content_scan token scrubber list. Defaults to None so only built-ins ship.",
     )
+    URL_SCAN_OPINIONS_HIGHLIGHTS_AUTHOR_DIVISOR: float = Field(
+        default=2.0,
+        description="Denominator for the sqrt-scaled author threshold in opinion highlights. "
+        "Higher value → lower threshold → more clusters surface as highlights.",
+    )
+    URL_SCAN_OPINIONS_HIGHLIGHTS_OCCURRENCE_MULTIPLIER: float = Field(
+        default=1.5,
+        description="Multiplier for the log2-scaled occurrence threshold in opinion highlights. "
+        "Higher value → higher threshold → fewer clusters surface as highlights.",
+    )
+    URL_SCAN_TRENDS_OPPOSITIONS_MAX_CLUSTERS: int = Field(
+        default=50,
+        ge=0,
+        description="Maximum number of opinion clusters sent to the trends/oppositions LLM. "
+        "Clusters are sorted descending by occurrence_count before capping.",
+    )
 
     @field_validator("URL_SCAN_EXTRACTOR_SAMPLE_RATE", mode="before")
     @classmethod

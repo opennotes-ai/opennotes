@@ -42,7 +42,8 @@ SELECT
     ) AS preview_description,
     slots.sections,
     j.status,
-    s.page_title,
+    st.page_title,
+    st.page_kind,
     s.screenshot_storage_key
 FROM batch_jobs j
 INNER JOIN url_scan_state st

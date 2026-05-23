@@ -29,6 +29,8 @@ from src.services.firecrawl_client import (
 from src.url_content_scan.analyses.claims import run_claims_dedup, run_known_misinfo
 from src.url_content_scan.analyses.claims.known_misinfo import EmbeddingServiceKnownMisinfoAdapter
 from src.url_content_scan.analyses.opinions import run_sentiment, run_subjective
+from src.url_content_scan.analyses.opinions.highlights import compute_highlights
+from src.url_content_scan.analyses.opinions.trends_oppositions import run_trends_oppositions
 from src.url_content_scan.analyses.safety import (
     run_image_moderation,
     run_safety_moderation,
@@ -45,7 +47,13 @@ from src.url_content_scan.models import (
     UrlScanUtterance,
 )
 from src.url_content_scan.normalize import canonical_cache_key
-from src.url_content_scan.opinions_schemas import SentimentStatsReport, SubjectiveClaim
+from src.url_content_scan.opinions_schemas import (
+    OpinionsHighlightsReport,
+    SentimentStatsReport,
+    SubjectiveClaim,
+    TrendsOppositionsReport,
+    empty_trends_oppositions_report,
+)
 from src.url_content_scan.safety_schemas import (
     HarmfulContentMatch,
     ImageModerationMatch,
@@ -343,6 +351,51 @@ async def _run_subjective_section(inputs: UrlScanWorkflowInputs) -> Any:
     )
 
 
+async def _run_trends_oppositions_section(inputs: UrlScanWorkflowInputs) -> Any:
+    if inputs.claims_report is None:
+        return empty_trends_oppositions_report().model_dump(mode="json")
+    return await run_trends_oppositions(
+        inputs.claims_report.deduped_claims,
+    )
+
+
+async def _run_highlights_section(inputs: UrlScanWorkflowInputs) -> Any:
+    from src.config import get_settings
+
+    if inputs.claims_report is None:
+        from src.url_content_scan.analyses.opinions.highlights import (
+            OpinionsHighlightsReport,
+        )
+        from src.url_content_scan.opinions_schemas import HighlightsThresholdInfo
+
+        return OpinionsHighlightsReport(
+            highlights=[],
+            threshold=HighlightsThresholdInfo(
+                total_authors=0,
+                total_utterances=0,
+                min_authors_required=2,
+                min_occurrences_required=3,
+            ),
+            fallback_engaged=False,
+            floor_eligible_count=0,
+            total_input_count=0,
+        ).model_dump(mode="json")
+
+    settings = get_settings()
+    utterances = inputs.utterances
+    total_utterances = len(utterances)
+    total_authors = len(
+        {getattr(u, "author", None) for u in utterances if getattr(u, "author", None)}
+    )
+    report = compute_highlights(
+        inputs.claims_report.deduped_claims,
+        total_authors=total_authors,
+        total_utterances=total_utterances,
+        settings=settings,
+    )
+    return report.model_dump(mode="json")
+
+
 _SECTION_RUNNERS = {
     SectionSlug.SAFETY_MODERATION: _run_safety_moderation_section,
     SectionSlug.SAFETY_WEB_RISK: _run_web_risk_section,
@@ -354,6 +407,8 @@ _SECTION_RUNNERS = {
     SectionSlug.FACTS_CLAIMS_KNOWN_MISINFO: _run_known_misinfo_section,
     SectionSlug.OPINIONS_SENTIMENTS_SENTIMENT: _run_sentiment_section,
     SectionSlug.OPINIONS_SENTIMENTS_SUBJECTIVE: _run_subjective_section,
+    SectionSlug.OPINIONS_SENTIMENTS_TRENDS_OPPOSITIONS: _run_trends_oppositions_section,
+    SectionSlug.OPINIONS_SENTIMENTS_HIGHLIGHTS: _run_highlights_section,
 }
 
 
@@ -680,9 +735,6 @@ def _slot_unavailable_inputs(slot_results: dict[str, Any], slugs: list[SectionSl
 
 def _build_sidebar_payload(
     *,
-    source_url: str,
-    page_title: str | None,
-    page_kind: PageKind,
     utterances: list[Utterance],
     scraped_at: str,
     slot_payloads: dict[str, Any],
@@ -715,10 +767,19 @@ def _build_sidebar_payload(
     )
     subjective_claims = slot_payloads.get(SectionSlug.OPINIONS_SENTIMENTS_SUBJECTIVE.value, [])
 
+    raw_trends = slot_payloads.get(SectionSlug.OPINIONS_SENTIMENTS_TRENDS_OPPOSITIONS.value)
+    trends_oppositions = (
+        TrendsOppositionsReport.model_validate(raw_trends) if raw_trends is not None else None
+    )
+
+    raw_highlights = slot_payloads.get(SectionSlug.OPINIONS_SENTIMENTS_HIGHLIGHTS.value)
+    highlights = (
+        OpinionsHighlightsReport.model_validate(raw_highlights)
+        if raw_highlights is not None
+        else None
+    )
+
     return SidebarPayload(
-        source_url=source_url,
-        page_title=page_title,
-        page_kind=page_kind,
         scraped_at=datetime.fromisoformat(scraped_at),
         safety=SafetySection(
             harmful_content_matches=safety_matches,
@@ -736,7 +797,9 @@ def _build_sidebar_payload(
             opinions_report={
                 "sentiment_stats": sentiment_stats,
                 "subjective_claims": subjective_claims,
-            }
+            },
+            trends_oppositions=trends_oppositions,
+            highlights=highlights,
         ),
         web_risk=WebRiskSection(
             findings=[
@@ -879,18 +942,19 @@ async def _finalize_async(
         }
         sidebar_payload = None
         if extracted_payload is not None:
+            final_page_title = extracted_payload.get("page_title") or state.page_title
+            final_page_kind = PageKind(
+                extracted_payload.get("page_kind") or state.page_kind or "other"
+            )
             sidebar_payload = _build_sidebar_payload(
-                source_url=state.source_url,
-                page_title=(extracted_payload.get("page_title") or state.page_title),
-                page_kind=PageKind(
-                    extracted_payload.get("page_kind") or state.page_kind or "other"
-                ),
                 utterances=utterances,
                 scraped_at=extracted_payload["scraped_at"],
                 slot_payloads=slot_payloads,
                 recommendation_payload=(safety_result or {}).get("recommendation"),
                 headline_payload=(headline_result or {}).get("headline"),
             )
+            state.page_title = final_page_title
+            state.page_kind = final_page_kind.value
 
         fatal_or_slot_error = fatal_error_code or None
         status = _terminal_batch_status_for_results(
@@ -1587,6 +1651,17 @@ def _hydrate_section_inputs(
             hydrated,
             sentiment_stats=SentimentStatsReport.model_validate(payload),
         )
+    if (
+        slug
+        in {
+            SectionSlug.OPINIONS_SENTIMENTS_TRENDS_OPPOSITIONS,
+            SectionSlug.OPINIONS_SENTIMENTS_HIGHLIGHTS,
+        }
+        and hydrated.claims_report is None
+    ):
+        payload = load_url_scan_section_payload_step(job_id, SectionSlug.FACTS_CLAIMS_DEDUP.value)
+        if payload is not None:
+            hydrated = replace(hydrated, claims_report=ClaimsReport.model_validate(payload))
     return hydrated
 
 

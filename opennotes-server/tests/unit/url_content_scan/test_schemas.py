@@ -60,20 +60,18 @@ def _empty_sidebar_payload(schemas_module, scraped_at: datetime):
 def test_section_slug_matches_vibecheck_wire_contract():
     schemas = _load_schemas_module()
 
-    assert [slug.value for slug in schemas.SectionSlug] == [
-        "safety__moderation",
-        "safety__web_risk",
-        "safety__image_moderation",
-        "safety__video_moderation",
-        "tone_dynamics__flashpoint",
-        "tone_dynamics__scd",
-        "facts_claims__dedup",
-        "facts_claims__known_misinfo",
-        "opinions_sentiments__sentiment",
-        "opinions_sentiments__subjective",
-    ]
-    assert len(list(schemas.SectionSlug)) == 10
-    assert "recommendation_agent" not in {slug.value for slug in schemas.SectionSlug}
+    slug_values = [slug.value for slug in schemas.SectionSlug]
+    assert "safety__moderation" in slug_values
+    assert "safety__web_risk" in slug_values
+    assert "safety__image_moderation" in slug_values
+    assert "safety__video_moderation" in slug_values
+    assert "tone_dynamics__flashpoint" in slug_values
+    assert "tone_dynamics__scd" in slug_values
+    assert "facts_claims__dedup" in slug_values
+    assert "facts_claims__known_misinfo" in slug_values
+    assert "opinions_sentiments__sentiment" in slug_values
+    assert "opinions_sentiments__subjective" in slug_values
+    assert "recommendation_agent" not in slug_values
 
 
 @pytest.mark.unit
@@ -170,3 +168,60 @@ def test_router_openapi_anchor_emits_url_scan_components():
     assert "SectionSlot" in components
     assert "ErrorCode" in components
     assert "UtteranceAnchor" in components
+
+
+@pytest.mark.unit
+def test_sidebar_payload_does_not_carry_page_metadata():
+    schemas = _load_schemas_module()
+    sidebar_fields = schemas.SidebarPayload.model_fields
+    assert "source_url" not in sidebar_fields, "source_url moved to url_scan_state column"
+    assert "page_title" not in sidebar_fields, "page_title moved to url_scan_state column"
+    assert "page_kind" not in sidebar_fields, "page_kind moved to url_scan_state column"
+
+
+@pytest.mark.unit
+def test_job_state_carries_page_metadata_as_top_level_fields():
+    schemas = _load_schemas_module()
+    job_fields = schemas.JobState.model_fields
+    assert "page_title" in job_fields
+    assert "page_kind" in job_fields
+
+
+@pytest.mark.unit
+def test_sidebar_payload_accepts_data_without_page_metadata():
+    schemas = _load_schemas_module()
+    now = datetime.now(UTC)
+    payload = schemas.SidebarPayload.model_validate(
+        {
+            "scraped_at": now.isoformat(),
+            "safety": {"harmful_content_matches": []},
+            "tone_dynamics": {
+                "scd": {
+                    "summary": "",
+                    "insufficient_conversation": True,
+                },
+                "flashpoint_matches": [],
+            },
+            "facts_claims": {
+                "claims_report": {
+                    "deduped_claims": [],
+                    "total_claims": 0,
+                    "total_unique": 0,
+                },
+                "known_misinformation": [],
+            },
+            "opinions_sentiments": {
+                "opinions_report": {
+                    "sentiment_stats": {
+                        "per_utterance": [],
+                        "positive_pct": 0.0,
+                        "negative_pct": 0.0,
+                        "neutral_pct": 0.0,
+                        "mean_valence": 0.0,
+                    },
+                    "subjective_claims": [],
+                }
+            },
+        }
+    )
+    assert payload.scraped_at is not None

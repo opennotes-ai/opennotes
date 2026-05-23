@@ -42,9 +42,7 @@ class _FakeBlob:
     ) -> str:
         assert version == "v4"
         assert method == "GET"
-        self.signed_calls.append(
-            (self.path, expiration, service_account_email, access_token)
-        )
+        self.signed_calls.append((self.path, expiration, service_account_email, access_token))
         return f"https://signed.example/{self.path}?ttl={int(expiration.total_seconds())}"
 
 
