@@ -2,8 +2,9 @@
 
 Verifies:
 - Public /analyses/recent route still uses filtered list_recent
-- Private /{prefix}/analyses/recent route returns unfiltered results
-- Public route is NOT reachable at the private prefix path
+- Private /internal/analyses/recent route returns unfiltered results when
+  X-Internal-Prefix header matches the configured secret
+- Missing or wrong X-Internal-Prefix header returns 404
 - Without URL_SCAN_PRIVATE_PATH_PREFIX, register_private_url_scan_routes
   returns False and the private route is absent (404)
 """
@@ -103,9 +104,9 @@ class TestPublicRecentRoute:
         assert resp.status_code == 200
         mock_list_recent.assert_called_once()
 
-    def test_public_recent_route_not_reachable_at_private_prefix(self) -> None:
+    def test_public_recent_route_not_reachable_at_old_prefix_path(self) -> None:
         _, client = _make_app_with_prefix(SECRET_PREFIX)
-        resp = client.get(f"/api/v1/url_scan/{SECRET_PREFIX}/analyses/recent-via-public")
+        resp = client.get(f"/api/v1/url_scan/{SECRET_PREFIX}/analyses/recent")
         assert resp.status_code == 404
 
 
@@ -165,7 +166,7 @@ class TestPrivateRouteRegistration:
             resp = client.get(f"/api/v1/url_scan/{SECRET_PREFIX}/analyses/recent")
         assert resp.status_code == 404
 
-    def test_private_route_path_contains_secret_prefix(self) -> None:
+    def test_private_route_path_uses_fixed_internal_path(self) -> None:
         from fastapi import FastAPI as _FastAPI
 
         from src.url_content_scan.router import register_private_url_scan_routes
@@ -178,10 +179,11 @@ class TestPrivateRouteRegistration:
             register_private_url_scan_routes(app)
 
         route_paths = [r.path for r in app.routes]
-        assert any(SECRET_PREFIX in p for p in route_paths)
+        assert any("/internal/" in p for p in route_paths)
+        assert not any(SECRET_PREFIX in p for p in route_paths)
 
     @pytest.mark.asyncio
-    async def test_private_route_calls_list_recent_unfiltered(self) -> None:
+    async def test_private_route_calls_list_recent_unfiltered_with_correct_header(self) -> None:
         from fastapi import FastAPI as _FastAPI
 
         from src.database import get_db
@@ -210,12 +212,78 @@ class TestPrivateRouteRegistration:
             patch("src.url_content_scan.router.get_screenshot_store"),
             TestClient(app) as client,
         ):
-            resp = client.get(f"/api/v1/url_scan/{SECRET_PREFIX}/analyses/recent")
+            resp = client.get(
+                "/api/v1/url_scan/internal/analyses/recent",
+                headers={"X-Internal-Prefix": SECRET_PREFIX},
+            )
 
         assert resp.status_code == 200
         mock_unfiltered.assert_called_once()
 
-    def test_public_recent_route_not_accessible_at_private_prefix(self) -> None:
+    @pytest.mark.asyncio
+    async def test_private_route_returns_404_when_header_missing(self) -> None:
+        from fastapi import FastAPI as _FastAPI
+
+        from src.database import get_db
+        from src.url_content_scan.router import register_private_url_scan_routes, router
+
+        app = _FastAPI()
+        app.include_router(router)
+
+        async def _fake_db():
+            return AsyncMock()
+
+        app.dependency_overrides[get_db] = _fake_db
+
+        with patch("src.url_content_scan.router.settings") as mock_settings:
+            secret = MagicMock()
+            secret.get_secret_value.return_value = SECRET_PREFIX
+            mock_settings.URL_SCAN_PRIVATE_PATH_PREFIX = secret
+            register_private_url_scan_routes(app)
+
+        with (
+            patch("src.url_content_scan.router.list_recent_unfiltered", new_callable=AsyncMock),
+            patch("src.url_content_scan.router.get_screenshot_store"),
+            TestClient(app, raise_server_exceptions=False) as client,
+        ):
+            resp = client.get("/api/v1/url_scan/internal/analyses/recent")
+
+        assert resp.status_code == 404
+
+    @pytest.mark.asyncio
+    async def test_private_route_returns_404_when_header_wrong(self) -> None:
+        from fastapi import FastAPI as _FastAPI
+
+        from src.database import get_db
+        from src.url_content_scan.router import register_private_url_scan_routes, router
+
+        app = _FastAPI()
+        app.include_router(router)
+
+        async def _fake_db():
+            return AsyncMock()
+
+        app.dependency_overrides[get_db] = _fake_db
+
+        with patch("src.url_content_scan.router.settings") as mock_settings:
+            secret = MagicMock()
+            secret.get_secret_value.return_value = SECRET_PREFIX
+            mock_settings.URL_SCAN_PRIVATE_PATH_PREFIX = secret
+            register_private_url_scan_routes(app)
+
+        with (
+            patch("src.url_content_scan.router.list_recent_unfiltered", new_callable=AsyncMock),
+            patch("src.url_content_scan.router.get_screenshot_store"),
+            TestClient(app, raise_server_exceptions=False) as client,
+        ):
+            resp = client.get(
+                "/api/v1/url_scan/internal/analyses/recent",
+                headers={"X-Internal-Prefix": "wrong-secret"},
+            )
+
+        assert resp.status_code == 404
+
+    def test_public_recent_route_not_accessible_at_internal_path_without_header(self) -> None:
         from fastapi import FastAPI as _FastAPI
 
         from src.url_content_scan.router import register_private_url_scan_routes, router
@@ -230,5 +298,5 @@ class TestPrivateRouteRegistration:
             register_private_url_scan_routes(app)
 
         with TestClient(app, raise_server_exceptions=False) as client:
-            resp = client.get(f"/api/v1/url_scan/{SECRET_PREFIX}/jobs/some-uuid")
+            resp = client.get("/api/v1/url_scan/internal/jobs/some-uuid")
         assert resp.status_code == 404

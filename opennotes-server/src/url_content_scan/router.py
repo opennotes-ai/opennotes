@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hmac
 from datetime import timedelta
 from typing import Any
 from uuid import UUID
@@ -491,12 +492,12 @@ def register_private_url_scan_routes(app: Any) -> bool:
     prefix_secret = settings.URL_SCAN_PRIVATE_PATH_PREFIX
     if prefix_secret is None:
         return False
-    prefix = prefix_secret.get_secret_value()
-    if not prefix:
+    expected = prefix_secret.get_secret_value()
+    if not expected:
         return False
 
     private_router = APIRouter(
-        prefix=f"/api/v1/url_scan/{prefix}",
+        prefix="/api/v1/url_scan/internal",
         tags=["url_scan_internal"],
         include_in_schema=False,
     )
@@ -507,6 +508,9 @@ def register_private_url_scan_routes(app: Any) -> bool:
         limit: int = Query(default=25, ge=1, le=200),
         db: AsyncSession = Depends(get_db),
     ) -> list[InternalRecentAnalysis]:
+        header_value = request.headers.get("X-Internal-Prefix", "")
+        if not hmac.compare_digest(expected.encode(), header_value.encode()):
+            raise HTTPException(status_code=404, detail="Not found")
         signer = getattr(request.app.state, "recent_signer", None)
         if signer is None:
             signer = _RecentScreenshotSigner(get_screenshot_store(request))
