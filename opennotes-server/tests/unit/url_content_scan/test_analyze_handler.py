@@ -14,6 +14,7 @@ from src.url_content_scan.models import (
     UrlScanSectionSlot,
     UrlScanSidebarCache,
     UrlScanState,
+    UrlScanUtterance,
     UrlScanWebRiskLookup,
 )
 from src.url_content_scan.safety_schemas import WebRiskFinding
@@ -29,6 +30,15 @@ class _FakeResult:
 
     def first(self):
         return self._value
+
+    def scalars(self):
+        return self
+
+    def all(self):
+        value = self._value
+        if isinstance(value, list):
+            return value
+        return [] if value is None else [value]
 
 
 class _FakeTransaction(AbstractAsyncContextManager["_FakeTransaction"]):
@@ -57,6 +67,7 @@ class _FakeSession:
         self.sidebar_cache: dict[str, UrlScanSidebarCache] = {}
         self.web_risk_lookups: dict[str, UrlScanWebRiskLookup] = {}
         self.section_slots: list[UrlScanSectionSlot] = []
+        self.utterances: dict[tuple[UUID, str], UrlScanUtterance] = {}
 
     def begin(self) -> _FakeTransaction:
         return _FakeTransaction(self)
@@ -75,6 +86,9 @@ class _FakeSession:
             return
         if isinstance(obj, UrlScanSectionSlot):
             self.section_slots.append(obj)
+            return
+        if isinstance(obj, UrlScanUtterance):
+            self.utterances[(obj.job_id, obj.utterance_id)] = obj
             return
         raise TypeError(f"unsupported add: {type(obj)!r}")
 
@@ -132,6 +146,17 @@ class _FakeSession:
             ]
             matches.sort(key=lambda row: self.jobs[row[0]].created_at, reverse=True)
             return _FakeResult(matches[0] if matches else None)
+        if "url_scan_utterances" in sql and "url_scan_state" in sql:
+            normalized_url = params_or_normalized(statement, params)
+            source_rows = [
+                row
+                for row in self.utterances.values()
+                if (state := self.states.get(row.job_id)) is not None
+                and state.normalized_url == normalized_url
+                and self.jobs.get(row.job_id) is not None
+                and self.jobs[row.job_id].status == BatchJobStatus.COMPLETED.value
+            ]
+            return _FakeResult(source_rows)
         raise AssertionError(f"unexpected statement: {sql}")
 
 
@@ -411,3 +436,189 @@ async def test_submit_url_scan_marks_job_failed_when_post_commit_dispatch_fails(
     assert state.error_code == "internal"
     assert state.error_message == "dispatch failed"
     assert state.finished_at is not None
+
+
+def _cache_row_with_coral_utterances(url: str) -> UrlScanSidebarCache:
+    now = datetime.now(UTC)
+    return UrlScanSidebarCache(
+        normalized_url=url,
+        sidebar_payload={
+            "source_url": url,
+            "page_title": "Coral Article",
+            "page_kind": "article",
+            "scraped_at": now.isoformat(),
+            "cached": False,
+            "cached_at": None,
+            "safety": {"harmful_content_matches": [], "recommendation": None},
+            "tone_dynamics": {
+                "scd": {"summary": "", "insufficient_conversation": True},
+                "flashpoint_matches": [],
+            },
+            "facts_claims": {
+                "claims_report": {
+                    "deduped_claims": [],
+                    "total_claims": 0,
+                    "total_unique": 0,
+                },
+                "known_misinformation": [],
+            },
+            "opinions_sentiments": {
+                "opinions_report": {
+                    "sentiment_stats": {
+                        "per_utterance": [],
+                        "positive_pct": 0.0,
+                        "negative_pct": 0.0,
+                        "neutral_pct": 0.0,
+                        "mean_valence": 0.0,
+                    },
+                    "subjective_claims": [],
+                }
+            },
+            "web_risk": {"findings": []},
+            "image_moderation": {"matches": []},
+            "video_moderation": {"matches": []},
+            "utterances": [
+                {"position": 1, "utterance_id": "post-0"},
+                {"position": 2, "utterance_id": "coral-comment-1"},
+                {"position": 3, "utterance_id": "coral-reply-1"},
+            ],
+        },
+        created_at=now - timedelta(minutes=5),
+        expires_at=now + timedelta(hours=1),
+    )
+
+
+def _seed_source_job_with_utterances(
+    session: _FakeSession,
+    normalized_url: str,
+) -> UUID:
+    source_job_id = uuid4()
+    now = datetime.now(UTC)
+    session.jobs[source_job_id] = BatchJob(
+        id=source_job_id,
+        job_type="url_scan",
+        status=BatchJobStatus.COMPLETED.value,
+        total_tasks=len(SectionSlug),
+        completed_tasks=len(SectionSlug),
+        failed_tasks=0,
+        metadata_={},
+        created_at=now - timedelta(hours=2),
+    )
+    session.states[source_job_id] = UrlScanState(
+        job_id=source_job_id,
+        source_url=normalized_url,
+        normalized_url=normalized_url,
+        host="example.com",
+        attempt_id=uuid4(),
+        utterance_count=3,
+        finished_at=now - timedelta(hours=1),
+    )
+    for uid, kind, text in [
+        ("post-0", "post", "Article body text"),
+        ("coral-comment-1", "comment", "A top-level coral comment"),
+        ("coral-reply-1", "reply", "A reply to the coral comment"),
+    ]:
+        session.utterances[(source_job_id, uid)] = UrlScanUtterance(
+            job_id=source_job_id,
+            utterance_id=uid,
+            payload={
+                "utterance_id": uid,
+                "kind": kind,
+                "text": text,
+                "author": None,
+                "parent_id": None,
+                "mentioned_urls": [],
+                "mentioned_images": [],
+                "mentioned_videos": [],
+            },
+        )
+    return source_job_id
+
+
+@pytest.mark.asyncio
+async def test_cache_hit_coral_url_materializes_utterances() -> None:
+    session = _FakeSession()
+    normalized_url = "https://example.com/coral-article"
+    session.sidebar_cache[normalized_url] = _cache_row_with_coral_utterances(normalized_url)
+    _seed_source_job_with_utterances(session, normalized_url)
+
+    response = await submit_url_scan(
+        session,
+        _request(),
+        AnalyzeRequest(url="https://example.com/coral-article"),
+        web_risk=fake_web_risk_none,
+        dispatch=None,
+    )
+
+    assert response.status == JobStatus.DONE
+    assert response.cached is True
+
+    new_job_id = response.job_id
+    new_utterances = {
+        uid: utt for (jid, uid), utt in session.utterances.items() if jid == new_job_id
+    }
+    assert len(new_utterances) == 3, (
+        f"expected 3 utterances for cache-hit job, got {len(new_utterances)}"
+    )
+    assert "post-0" in new_utterances
+    assert "coral-comment-1" in new_utterances
+    assert "coral-reply-1" in new_utterances
+    assert new_utterances["coral-comment-1"].payload["text"] == "A top-level coral comment"
+    assert new_utterances["coral-reply-1"].payload["text"] == "A reply to the coral comment"
+
+
+@pytest.mark.asyncio
+async def test_cache_hit_non_coral_url_no_utterances_to_copy() -> None:
+    session = _FakeSession()
+    normalized_url = "https://example.com/post"
+    session.sidebar_cache[normalized_url] = _cache_row(normalized_url)
+
+    response = await submit_url_scan(
+        session,
+        _request(),
+        AnalyzeRequest(url="https://example.com/post"),
+        web_risk=fake_web_risk_none,
+        dispatch=None,
+    )
+
+    assert response.status == JobStatus.DONE
+    assert response.cached is True
+
+    new_job_id = response.job_id
+    new_utterances = [utt for (jid, _), utt in session.utterances.items() if jid == new_job_id]
+    assert new_utterances == [], "non-Coral cached job should have no utterances to copy"
+
+
+@pytest.mark.asyncio
+async def test_cache_hit_coral_utterance_materialization_is_idempotent() -> None:
+    session = _FakeSession(advisory_lock_results=[True, True])
+    normalized_url = "https://example.com/coral-article"
+    session.sidebar_cache[normalized_url] = _cache_row_with_coral_utterances(normalized_url)
+    _seed_source_job_with_utterances(session, normalized_url)
+
+    response1 = await submit_url_scan(
+        session,
+        _request(),
+        AnalyzeRequest(url="https://example.com/coral-article"),
+        web_risk=fake_web_risk_none,
+        dispatch=None,
+    )
+    response2 = await submit_url_scan(
+        session,
+        _request(),
+        AnalyzeRequest(url="https://example.com/coral-article"),
+        web_risk=fake_web_risk_none,
+        dispatch=None,
+    )
+
+    assert response1.status == JobStatus.DONE
+    assert response2.status == JobStatus.DONE
+
+    job1_utterances = [(jid, uid) for (jid, uid) in session.utterances if jid == response1.job_id]
+    job2_utterances = [(jid, uid) for (jid, uid) in session.utterances if jid == response2.job_id]
+    assert len(job1_utterances) == 3
+    assert len(job2_utterances) == 3
+
+    all_utterance_keys = list(session.utterances.keys())
+    total_utt_count = len(all_utterance_keys)
+    assert total_utt_count == 9, f"expected 3 source + 3 job1 + 3 job2 = 9, got {total_utt_count}"

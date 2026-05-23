@@ -24,6 +24,7 @@ from src.url_content_scan.models import (
     UrlScanSectionSlot,
     UrlScanSidebarCache,
     UrlScanState,
+    UrlScanUtterance,
     UrlScanWebRiskLookup,
 )
 from src.url_content_scan.normalize import canonical_cache_key
@@ -518,6 +519,23 @@ async def _insert_unsafe_job(
     return job.id
 
 
+async def _fetch_utterances_for_normalized_url(
+    session: AsyncSession,
+    normalized_url: str,
+) -> list[UrlScanUtterance]:
+    result = await session.execute(
+        select(UrlScanUtterance)
+        .join(UrlScanState, UrlScanState.job_id == UrlScanUtterance.job_id)
+        .join(BatchJob, BatchJob.id == UrlScanUtterance.job_id)
+        .where(
+            UrlScanState.normalized_url == normalized_url,
+            BatchJob.status == BatchJobStatus.COMPLETED.value,
+        )
+        .order_by(BatchJob.created_at.desc())
+    )
+    return list(result.scalars().all())
+
+
 async def _insert_cached_job(
     session: AsyncSession,
     *,
@@ -561,6 +579,19 @@ async def _insert_cached_job(
             finished_at=now,
         )
     )
+    source_utterances = await _fetch_utterances_for_normalized_url(session, normalized_url)
+    seen_ids: set[str] = set()
+    for src in source_utterances:
+        if src.utterance_id in seen_ids:
+            continue
+        seen_ids.add(src.utterance_id)
+        session.add(
+            UrlScanUtterance(
+                job_id=job.id,
+                utterance_id=src.utterance_id,
+                payload=src.payload,
+            )
+        )
     return job.id
 
 
