@@ -13,8 +13,9 @@ from __future__ import annotations
 import logging
 import os
 import threading
+from collections.abc import Callable, Sequence
 from contextlib import AbstractContextManager
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from fastapi import FastAPI
@@ -26,7 +27,7 @@ _observability_lock = threading.Lock()
 _observability_initialized = False
 
 
-def setup_observability(
+def setup_observability(  # noqa: PLR0912
     service_name: str,
     service_version: str = "0.0.1",
     environment: str = "development",
@@ -38,6 +39,8 @@ def setup_observability(
     enable_console_export: bool = False,
     tail_level_threshold: LevelName | None = "warning",
     tail_duration_threshold: float | None = 5.0,
+    post_configure_hook: Callable[[Any], None] | None = None,
+    extra_scrub_patterns: Sequence[str] | None = None,
 ) -> bool:
     """Initialize observability with Logfire + Cloud Trace dual export.
 
@@ -129,6 +132,16 @@ def setup_observability(
                 tail_duration_threshold=tail_duration_threshold,
             )
 
+            scrubbing_options: logfire.ScrubbingOptions | bool | None
+            if trace_content:
+                scrubbing_options = False
+            elif extra_scrub_patterns:
+                scrubbing_options = logfire.ScrubbingOptions(
+                    extra_patterns=list(extra_scrub_patterns),
+                )
+            else:
+                scrubbing_options = None
+
             logfire.configure(
                 token=logfire_token,
                 service_name=service_name,
@@ -140,8 +153,14 @@ def setup_observability(
                     head=1.0,
                     tail=tail_sampler,
                 ),
-                scrubbing=False if trace_content else None,
+                scrubbing=scrubbing_options,
             )
+
+            if post_configure_hook is not None:
+                try:
+                    post_configure_hook(logfire)
+                except Exception as hook_exc:
+                    logger.warning(f"post_configure_hook raised an error: {hook_exc}")
 
             logfire.instrument_anthropic()
             logfire.instrument_openai()

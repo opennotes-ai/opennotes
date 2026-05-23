@@ -677,6 +677,35 @@ class Settings(BaseSettings):
         "If absent, Logfire operates in if-token-present mode (no remote export).",
     )
 
+    URL_SCAN_LOGFIRE_CONTENT: bool = Field(
+        default=False,
+        description="When True, url_content_scan Agents emit prompt/completion bodies to Logfire. "
+        "Defaulted False (conservative; opt-in per environment).",
+    )
+    URL_SCAN_EXTRACTOR_SAMPLE_RATE: float = Field(
+        default=0.05,
+        ge=0.0,
+        le=1.0,
+        description="Per-call include_content sampling rate for the url_content_scan extractor agent. "
+        "Float in [0.0, 1.0]. Default 0.05 (5%) to limit Logfire ingestion cost on the hot path.",
+    )
+    URL_SCAN_LOGFIRE_EXTRA_SCRUB_PATTERNS: list[str] | None = Field(
+        default=None,
+        description="Escape hatch for environment-specific scrub patterns appended to the built-in "
+        "url_content_scan token scrubber list. Defaults to None so only built-ins ship.",
+    )
+
+    @field_validator("URL_SCAN_EXTRACTOR_SAMPLE_RATE", mode="before")
+    @classmethod
+    def validate_extractor_sample_rate(cls, v: Any) -> Any:
+        try:
+            fv = float(v)
+        except (TypeError, ValueError):
+            return v
+        if not (0.0 <= fv <= 1.0):
+            raise ValueError("URL_SCAN_EXTRACTOR_SAMPLE_RATE must be in [0.0, 1.0]")
+        return fv
+
     OTEL_SERVICE_NAME: str | None = Field(
         default=None,
         description="Service name for OpenTelemetry. Defaults to PROJECT_NAME if not set.",

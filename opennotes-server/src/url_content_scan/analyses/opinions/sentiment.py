@@ -8,6 +8,7 @@ from pydantic_ai import Agent
 from pydantic_ai.settings import ModelSettings
 
 from src.config import Settings, get_settings
+from src.url_content_scan.observability import url_scan_instrumentation
 from src.url_content_scan.opinions_schemas import SentimentScore, SentimentStatsReport
 from src.url_content_scan.utterances.schema import Utterance
 
@@ -36,7 +37,7 @@ class _SentimentAgentOutput(SentimentClassification):
 _SENTIMENT_AGENT: Agent[None, _SentimentAgentOutput] = Agent(
     name="url-content-scan-sentiment",
     output_type=_SentimentAgentOutput,
-    instrument=True,
+    capabilities=[url_scan_instrumentation()],
 )
 
 

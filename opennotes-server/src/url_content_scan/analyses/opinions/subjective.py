@@ -8,6 +8,7 @@ from pydantic_ai import Agent
 from pydantic_ai.settings import ModelSettings
 
 from src.config import Settings, get_settings
+from src.url_content_scan.observability import url_scan_instrumentation
 from src.url_content_scan.opinions_schemas import (
     OpinionsReport,
     SentimentStatsReport,
@@ -48,7 +49,7 @@ class _SubjectiveExtractionResponse(BaseModel):
 _SUBJECTIVE_AGENT: Agent[None, _SubjectiveExtractionResponse] = Agent(
     name="url-content-scan-subjective",
     output_type=_SubjectiveExtractionResponse,
-    instrument=True,
+    capabilities=[url_scan_instrumentation()],
 )
 
 

@@ -20,6 +20,13 @@ _otel_settings = get_settings()
 
 if _otel_settings.ENABLE_TRACING and _otel_settings.LOGFIRE_ENABLED and not _otel_settings.TESTING:
     from src.monitoring.observability import setup_observability
+    from src.url_content_scan.observability import augment_logfire
+
+    def _url_scan_post_configure_hook(_logfire: Any) -> None:
+        augment_logfire(
+            extra_patterns=_otel_settings.URL_SCAN_LOGFIRE_EXTRA_SCRUB_PATTERNS,
+            enable_content=_otel_settings.URL_SCAN_LOGFIRE_CONTENT,
+        )
 
     setup_observability(
         service_name=_otel_settings.OTEL_SERVICE_NAME or _otel_settings.PROJECT_NAME,
@@ -33,6 +40,8 @@ if _otel_settings.ENABLE_TRACING and _otel_settings.LOGFIRE_ENABLED and not _ote
         enable_console_export=_otel_settings.ENABLE_CONSOLE_TRACING,
         tail_level_threshold=_otel_settings.LOGFIRE_TAIL_LEVEL_THRESHOLD,
         tail_duration_threshold=_otel_settings.LOGFIRE_TAIL_DURATION_THRESHOLD,
+        post_configure_hook=_url_scan_post_configure_hook,
+        extra_scrub_patterns=_otel_settings.URL_SCAN_LOGFIRE_EXTRA_SCRUB_PATTERNS,
     )
 
 from src.admin.api_key_admin_router import router as api_key_admin_router

@@ -9,7 +9,9 @@ from typing import Any, cast
 from pydantic_ai import Agent
 from pydantic_ai.settings import ModelSettings
 
+from src.llm_config.model_factory import build_url_scan_vertex_model
 from src.llm_config.model_id import ModelId
+from src.url_content_scan.observability import url_scan_instrumentation
 from src.url_content_scan.safety_schemas import (
     HarmfulContentMatch,
     ImageModerationMatch,
@@ -53,7 +55,7 @@ RecommendationRunner = Callable[[SafetyRecommendationInputs], Awaitable[SafetyRe
 recommendation_agent: Agent[None, SafetyRecommendation] = Agent(
     name="url-scan-safety-recommendation",
     output_type=SafetyRecommendation,
-    instrument=True,
+    capabilities=[url_scan_instrumentation()],
 )
 
 
@@ -87,7 +89,10 @@ async def _run_default_recommendation_agent(
 
 
 def _default_recommendation_model() -> Any:
-    return ModelId.from_pydantic_ai(DEFAULT_RECOMMENDATION_MODEL).to_pydantic_ai_model()
+    try:
+        return build_url_scan_vertex_model(DEFAULT_RECOMMENDATION_MODEL)
+    except Exception:
+        return ModelId.from_pydantic_ai(DEFAULT_RECOMMENDATION_MODEL).to_pydantic_ai_model()
 
 
 def _model_dump(value: Any) -> Any:

@@ -10,6 +10,7 @@ from uuid import UUID, uuid4
 
 from dbos import DBOS, Queue, SetEnqueueOptions, SetWorkflowID
 from fastapi.encoders import jsonable_encoder
+from opentelemetry import trace
 from sqlalchemy import delete, func, select, update
 
 from src.batch_jobs.schemas import BatchJobStatus
@@ -86,6 +87,8 @@ url_scan_section_queue = Queue(
     worker_concurrency=10,
     concurrency=20,
 )
+
+_tracer = trace.get_tracer(__name__)
 
 _SCRAPE_FORMATS = ["markdown", "html", "screenshot@fullPage"]
 _SIDEBAR_CACHE_TTL = timedelta(hours=24)
@@ -1241,56 +1244,73 @@ def _fan_out_slots(job_id: str, section_inputs: UrlScanWorkflowInputs) -> dict[s
 
 @DBOS.step()
 def _run_safety_recommendation(job_id: str, slot_results: dict[str, Any]) -> dict[str, Any]:
-    slots = slot_results.get("slots", {})
-    unavailable_inputs = _slot_unavailable_inputs(
-        slot_results,
-        [
-            SectionSlug.SAFETY_MODERATION,
-            SectionSlug.SAFETY_WEB_RISK,
-            SectionSlug.SAFETY_IMAGE_MODERATION,
-            SectionSlug.SAFETY_VIDEO_MODERATION,
-        ],
-    )
-    try:
-        recommendation = run_sync(
-            run_safety_recommendation(
-                import_module(
-                    "src.url_content_scan.analyses.safety.recommendation"
-                ).SafetyRecommendationInputs(
-                    harmful_content_matches=[
-                        HarmfulContentMatch.model_validate(item)
-                        for item in slots.get(SectionSlug.SAFETY_MODERATION.value, {})
-                        .get("data", {})
-                        .get("harmful_content_matches", [])
-                    ],
-                    web_risk_findings=[
-                        WebRiskFinding.model_validate(item)
-                        for item in slots.get(SectionSlug.SAFETY_WEB_RISK.value, {})
-                        .get("data", {})
-                        .get("findings", [])
-                    ],
-                    image_moderation_matches=[
-                        ImageModerationMatch.model_validate(item)
-                        for item in slots.get(SectionSlug.SAFETY_IMAGE_MODERATION.value, {})
-                        .get("data", {})
-                        .get("matches", [])
-                    ],
-                    video_moderation_matches=[
-                        VideoModerationMatch.model_validate(item)
-                        for item in slots.get(SectionSlug.SAFETY_VIDEO_MODERATION.value, {})
-                        .get("data", {})
-                        .get("matches", [])
-                    ],
-                    unavailable_inputs=unavailable_inputs,
+    with _tracer.start_as_current_span("url_scan.with_utterances.safety_recommendation"):
+        slots = slot_results.get("slots", {})
+        unavailable_inputs = _slot_unavailable_inputs(
+            slot_results,
+            [
+                SectionSlug.SAFETY_MODERATION,
+                SectionSlug.SAFETY_WEB_RISK,
+                SectionSlug.SAFETY_IMAGE_MODERATION,
+                SectionSlug.SAFETY_VIDEO_MODERATION,
+            ],
+        )
+        try:
+            recommendation = run_sync(
+                run_safety_recommendation(
+                    import_module(
+                        "src.url_content_scan.analyses.safety.recommendation"
+                    ).SafetyRecommendationInputs(
+                        harmful_content_matches=[
+                            HarmfulContentMatch.model_validate(item)
+                            for item in slots.get(SectionSlug.SAFETY_MODERATION.value, {})
+                            .get("data", {})
+                            .get("harmful_content_matches", [])
+                        ],
+                        web_risk_findings=[
+                            WebRiskFinding.model_validate(item)
+                            for item in slots.get(SectionSlug.SAFETY_WEB_RISK.value, {})
+                            .get("data", {})
+                            .get("findings", [])
+                        ],
+                        image_moderation_matches=[
+                            ImageModerationMatch.model_validate(item)
+                            for item in slots.get(SectionSlug.SAFETY_IMAGE_MODERATION.value, {})
+                            .get("data", {})
+                            .get("matches", [])
+                        ],
+                        video_moderation_matches=[
+                            VideoModerationMatch.model_validate(item)
+                            for item in slots.get(SectionSlug.SAFETY_VIDEO_MODERATION.value, {})
+                            .get("data", {})
+                            .get("matches", [])
+                        ],
+                        unavailable_inputs=unavailable_inputs,
+                    )
                 )
             )
-        )
-        return {"recommendation": recommendation.model_dump(mode="json")}
-    except Exception as exc:
-        return {"recommendation": None, "error": str(exc), "job_id": job_id}
+            return {"recommendation": recommendation.model_dump(mode="json")}
+        except Exception as exc:
+            return {"recommendation": None, "error": str(exc), "job_id": job_id}
 
 
 def _maybe_run_headline_summary(
+    *,
+    job_id: str,
+    extracted_payload: dict[str, Any],
+    slot_results: dict[str, Any],
+    safety_result: dict[str, Any] | None,
+) -> dict[str, Any]:
+    with _tracer.start_as_current_span("url_scan.with_utterances.headline_summary"):
+        return _run_headline_summary_inner(
+            job_id=job_id,
+            extracted_payload=extracted_payload,
+            slot_results=slot_results,
+            safety_result=safety_result,
+        )
+
+
+def _run_headline_summary_inner(
     *,
     job_id: str,
     extracted_payload: dict[str, Any],

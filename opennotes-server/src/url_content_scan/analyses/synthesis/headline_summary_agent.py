@@ -10,8 +10,10 @@ from uuid import UUID
 from pydantic_ai import Agent
 from pydantic_ai.settings import ModelSettings
 
+from src.llm_config.model_factory import build_url_scan_vertex_model
 from src.llm_config.model_id import ModelId
 from src.url_content_scan.claims_schemas import ClaimsReport, FactCheckMatch
+from src.url_content_scan.observability import url_scan_instrumentation
 from src.url_content_scan.opinions_schemas import SentimentStatsReport, SubjectiveClaim
 from src.url_content_scan.safety_schemas import (
     HarmfulContentMatch,
@@ -99,7 +101,7 @@ class HeadlineSummaryInputs:
 headline_summary_agent: Agent[None, HeadlineSummary] = Agent(
     name="url-content-scan-headline-summary",
     output_type=HeadlineSummary,
-    instrument=True,
+    capabilities=[url_scan_instrumentation()],
 )
 
 
@@ -191,7 +193,10 @@ def _serialize_inputs(inputs: HeadlineSummaryInputs) -> str:
 
 
 def _default_headline_model(_settings: Settings | object) -> Any:
-    return ModelId.from_pydantic_ai(DEFAULT_HEADLINE_MODEL).to_pydantic_ai_model()
+    try:
+        return build_url_scan_vertex_model(DEFAULT_HEADLINE_MODEL)
+    except Exception:
+        return ModelId.from_pydantic_ai(DEFAULT_HEADLINE_MODEL).to_pydantic_ai_model()
 
 
 async def _run_default_headline_summary_agent(
