@@ -43,6 +43,8 @@ class SectionSlug(StrEnum):
     TONE_DYNAMICS_SCD = "tone_dynamics__scd"
     FACTS_CLAIMS_DEDUP = "facts_claims__dedup"
     FACTS_CLAIMS_KNOWN_MISINFO = "facts_claims__known_misinfo"
+    FACTS_CLAIMS_PREMISES = "facts_claims__premises"
+    FACTS_CLAIMS_EVIDENCE = "facts_claims__evidence"
     OPINIONS_SENTIMENTS_SENTIMENT = "opinions_sentiments__sentiment"
     OPINIONS_SENTIMENTS_SUBJECTIVE = "opinions_sentiments__subjective"
     OPINIONS_SENTIMENTS_TRENDS_OPPOSITIONS = "opinions_sentiments__trends_oppositions"
@@ -77,6 +79,12 @@ class ErrorCode(StrEnum):
     INTERNAL = "internal"
 
 
+class ScreenshotMissReason(StrEnum):
+    QUEUED = "queued"
+    NOT_CAPTURED = "not_captured"
+    AVAILABLE = "available"
+
+
 class AnalyzeRequest(BaseModel):
     url: str = Field(..., description="HTTP(S) URL of the page to analyze.")
 
@@ -85,6 +93,18 @@ class AnalyzeResponse(BaseModel):
     job_id: UUID
     status: JobStatus
     cached: bool = False
+
+
+class BrowserScrapeRequest(BaseModel):
+    url: str = Field(..., description="HTTP(S) source URL of the scraped page")
+    html: str = Field(..., description="Raw HTML from the browser extension")
+    markdown: str | None = Field(default=None)
+    title: str | None = Field(default=None)
+    description: str | None = Field(default=None)
+    screenshot_base64: str | None = Field(
+        default=None,
+        description="Base64-encoded PNG screenshot without a data: prefix",
+    )
 
 
 class RetryResponse(BaseModel):
@@ -207,6 +227,7 @@ class JobState(BaseModel):
 __all__ = [
     "AnalyzeRequest",
     "AnalyzeResponse",
+    "BrowserScrapeRequest",
     "ErrorCode",
     "FactsClaimsSection",
     "FrameCompatResponse",
@@ -220,6 +241,7 @@ __all__ = [
     "RetryResponse",
     "SafetyRecommendation",
     "SafetySection",
+    "ScreenshotMissReason",
     "ScreenshotResponse",
     "SectionSlot",
     "SectionSlug",

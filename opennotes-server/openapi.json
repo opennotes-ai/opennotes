@@ -28172,6 +28172,8 @@
           "tone_dynamics__scd",
           "facts_claims__dedup",
           "facts_claims__known_misinfo",
+          "facts_claims__premises",
+          "facts_claims__evidence",
           "opinions_sentiments__sentiment",
           "opinions_sentiments__subjective",
           "opinions_sentiments__trends_oppositions",

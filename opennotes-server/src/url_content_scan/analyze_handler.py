@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import asyncio
+import base64
+import binascii
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from inspect import isawaitable
@@ -15,7 +17,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.batch_jobs.models import BatchJob
 from src.batch_jobs.schemas import BatchJobStatus
 from src.dbos_workflows.url_scan_workflow import dispatch_url_scan_workflow
+from src.services.firecrawl_client import ScrapeMetadata, ScrapeResult
 from src.url_content_scan.analyses.safety.web_risk import run_pre_enqueue_web_risk
+from src.url_content_scan.html_sanitize import strip_for_display
 from src.url_content_scan.models import (
     UrlScanSectionSlot,
     UrlScanSidebarCache,
@@ -27,6 +31,7 @@ from src.url_content_scan.safety_schemas import WebRiskFinding
 from src.url_content_scan.schemas import (
     AnalyzeRequest,
     AnalyzeResponse,
+    BrowserScrapeRequest,
     ErrorCode,
     FactsClaimsSection,
     JobStatus,
@@ -39,6 +44,8 @@ from src.url_content_scan.schemas import (
     WebRiskSection,
 )
 from src.utils.url_security import InvalidURL, validate_public_http_url
+
+_MAX_SCREENSHOT_BYTES = 20 * 1024 * 1024
 
 _LOCK_RETRY_DELAY_SECONDS = 1.0
 _URL_SCAN_JOB_TYPE = "url_scan"
@@ -68,6 +75,25 @@ class AnalyzeSubmissionError(Exception):
         self.headers = headers or {}
 
 
+class _ScrapeCacheLike(Protocol):
+    async def put(
+        self,
+        url: str,
+        scrape: ScrapeResult,
+        screenshot_bytes: bytes | None = None,
+        *,
+        tier: str = "scrape",
+    ) -> Any: ...
+
+    async def cache_extension_screenshot(
+        self,
+        url: str,
+        screenshot_bytes: bytes,
+        *,
+        content_type: str = "image/png",
+    ) -> str | None: ...
+
+
 class _SleepFn(Protocol):
     async def __call__(self, delay: float) -> None: ...
 
@@ -91,6 +117,123 @@ class _LockedSubmitResult:
     response: AnalyzeResponse
     dispatch_job_id: UUID | None = None
     dispatch_attempt_id: UUID | None = None
+
+
+def _decode_extension_screenshot(value: str | None) -> bytes | None:
+    if not value:
+        return None
+    try:
+        decoded = base64.b64decode(value, validate=True)
+    except (binascii.Error, ValueError) as exc:
+        raise AnalyzeSubmissionError(
+            400,
+            ErrorCode.INVALID_URL,
+            "screenshot_base64 is not valid base64",
+        ) from exc
+    if len(decoded) > _MAX_SCREENSHOT_BYTES:
+        raise AnalyzeSubmissionError(
+            413,
+            ErrorCode.INVALID_URL,
+            "screenshot_base64 exceeds 20MB decoded limit",
+        )
+    return decoded or None
+
+
+async def submit_browser_scrape(
+    session: AsyncSession,
+    request: Request,
+    payload: BrowserScrapeRequest,
+    *,
+    dispatch: _DispatchFn = dispatch_url_scan_workflow,
+    web_risk: _WebRiskFn = run_pre_enqueue_web_risk,
+    sleep: _SleepFn = asyncio.sleep,
+    scrape_cache: _ScrapeCacheLike | None = None,
+) -> AnalyzeResponse:
+    """Submit a browser-extension scrape (HTML + optional screenshot) as a URL scan job.
+
+    The extension provides the full raw HTML of the page it visited. We:
+    1. Validate the URL and run web-risk pre-check.
+    2. Sanitize the HTML for display (strip scripts/comments); keep raw_html verbatim.
+    3. Store both in the scrape cache under the ``browser_html`` tier.
+    4. Upload the extension-provided screenshot to the cache (if any).
+    5. Insert a pending batch job and dispatch the workflow.
+    """
+    safe_url, normalized_url, host = _canonicalize_submission_url(payload.url)
+
+    screenshot_bytes = _decode_extension_screenshot(payload.screenshot_base64)
+
+    sanitized_html = strip_for_display(payload.html) or ""
+    scrape = ScrapeResult(
+        html=sanitized_html,
+        raw_html=payload.html,
+        markdown=payload.markdown,
+        metadata=ScrapeMetadata(
+            title=payload.title,
+            source_url=safe_url,
+        ),
+    )
+
+    if scrape_cache is not None:
+        try:
+            await scrape_cache.put(safe_url, scrape, tier="browser_html")
+        except Exception:
+            pass
+        if screenshot_bytes is not None:
+            try:
+                await scrape_cache.cache_extension_screenshot(
+                    safe_url,
+                    screenshot_bytes,
+                    content_type="image/png",
+                )
+            except Exception:
+                pass
+
+    locked_result: _LockedSubmitResult | None = None
+    got_lock = False
+    for attempt in range(2):
+        async with session.begin():
+            got_lock = await _try_advisory_lock(session, normalized_url)
+            if got_lock:
+                locked_result = await _handle_locked_submit(
+                    session,
+                    request=request,
+                    source_url=safe_url,
+                    normalized_url=normalized_url,
+                    host=host,
+                    web_risk=web_risk,
+                )
+        if got_lock:
+            break
+        if attempt == 0:
+            await sleep(_LOCK_RETRY_DELAY_SECONDS)
+
+    if not got_lock or locked_result is None:
+        raise AnalyzeSubmissionError(
+            503,
+            ErrorCode.RATE_LIMITED,
+            "advisory lock contended; retry shortly",
+            headers={"Retry-After": "2"},
+        )
+
+    if locked_result.dispatch_job_id is not None and locked_result.dispatch_attempt_id is not None:
+        try:
+            workflow_id = await dispatch(
+                locked_result.dispatch_job_id,
+                safe_url,
+                normalized_url,
+                locked_result.dispatch_attempt_id,
+            )
+            if workflow_id is None:
+                raise RuntimeError("dispatch returned no workflow id")
+        except Exception as exc:
+            await _mark_dispatch_failure(session, locked_result.dispatch_job_id, str(exc))
+            raise AnalyzeSubmissionError(
+                500,
+                ErrorCode.INTERNAL,
+                "failed to dispatch url scan workflow",
+            ) from exc
+
+    return locked_result.response
 
 
 async def submit_url_scan(

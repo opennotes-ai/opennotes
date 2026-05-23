@@ -30,10 +30,15 @@ class ScreenshotStore:
     def _bucket(self) -> Any:
         return self._client.bucket(self._bucket_name)
 
-    async def upload(self, storage_key: str, screenshot_bytes: bytes) -> str:
+    async def upload(
+        self,
+        storage_key: str,
+        screenshot_bytes: bytes,
+        content_type: str = "image/png",
+    ) -> str:
         def _upload() -> str:
             blob = self._bucket().blob(storage_key)
-            blob.upload_from_string(screenshot_bytes, content_type="image/png")
+            blob.upload_from_string(screenshot_bytes, content_type=content_type)
             return storage_key
 
         return await asyncio.to_thread(_upload)

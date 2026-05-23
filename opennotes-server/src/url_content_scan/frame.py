@@ -13,6 +13,7 @@ from src.url_content_scan.html_sanitize import (
     extract_archive_main_content,
     strip_for_display,
 )
+from src.url_content_scan.schemas import ScreenshotMissReason
 from src.url_content_scan.scrape_quality import ScrapeQuality, classify_scrape
 from src.url_content_scan.utterances.annotate_html import annotate_utterances_in_html
 from src.url_content_scan.utterances.schema import Utterance
@@ -396,9 +397,49 @@ async def lookup_screenshot(
     return None
 
 
+async def lookup_screenshot_typed(
+    url: str,
+    *,
+    scrape_cache: ScrapeCacheLike,
+    screenshot_store: ScreenshotStoreLike,
+) -> dict[str, Any]:
+    """Cache-first screenshot lookup returning a typed-miss reason.
+
+    Returns a dict with at minimum a ``reason`` key set to a
+    ``ScreenshotMissReason`` value so the frontend can distinguish between
+    three states:
+
+    - ``available`` — screenshot found; ``screenshot_url`` is also set.
+    - ``not_captured`` — a scrape exists for this URL but no screenshot was
+      taken (e.g. Firecrawl did not return one, or it was a browser_html scrape
+      with no screenshot upload from the extension).
+    - ``queued`` — no scrape exists yet; the job is still in progress.
+    """
+    safe_url = validate_public_http_url(url)
+    found_any_tier = False
+    for tier in _ARCHIVE_CACHE_TIERS:
+        cached = await scrape_cache.get(safe_url, tier=tier)
+        if not cached:
+            continue
+        found_any_tier = True
+        storage_key = getattr(cached, "storage_key", None)
+        if not isinstance(storage_key, str) or not storage_key:
+            continue
+        signed_url = await screenshot_store.sign_url(storage_key, ttl=_SCREENSHOT_URL_TTL)
+        if signed_url:
+            return {
+                "reason": ScreenshotMissReason.AVAILABLE,
+                "screenshot_url": signed_url,
+            }
+    if found_any_tier:
+        return {"reason": ScreenshotMissReason.NOT_CAPTURED}
+    return {"reason": ScreenshotMissReason.QUEUED}
+
+
 __all__ = [
     "FrameCompatResult",
     "archive_preview",
     "frame_compat",
     "lookup_screenshot",
+    "lookup_screenshot_typed",
 ]

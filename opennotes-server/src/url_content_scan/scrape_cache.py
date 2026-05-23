@@ -188,6 +188,69 @@ class ScrapeCache:
             storage_key=storage_key,
         )
 
+    async def cache_extension_screenshot(
+        self,
+        url: str,
+        screenshot_bytes: bytes,
+        *,
+        content_type: str = "image/png",
+    ) -> str | None:
+        """Store a browser-extension-submitted screenshot and update the DB row.
+
+        Called from the scrape-submit handler after the browser extension
+        uploads raw bytes alongside HTML. The screenshot is stored under the
+        ``browser_html`` tier so ``lookup_screenshot`` / ``lookup_screenshot_typed``
+        find it immediately without waiting for a Firecrawl screenshot pass.
+
+        Returns the storage key on success, None on failure.
+        """
+        normalized_url = canonical_cache_key(url)
+        storage_key = self._storage_key_for(normalized_url, "browser_html")
+        try:
+            await self._screenshot_store.upload(storage_key, screenshot_bytes, content_type)
+        except Exception:
+            logger.warning(
+                "extension screenshot upload failed for %s", normalized_url, exc_info=True
+            )
+            return None
+
+        expires_at = datetime.now(UTC) + self._ttl
+        try:
+            async with self._session_factory() as session:
+                existing = await session.get(UrlScanScrape, (normalized_url, "browser_html"))
+                row = (
+                    UrlScanScrape(
+                        normalized_url=normalized_url,
+                        tier="browser_html",
+                        source_url=url,
+                        host=urlparse(normalized_url).netloc,
+                        page_kind="other",
+                        screenshot_storage_key=storage_key,
+                        scraped_at=datetime.now(UTC),
+                        expires_at=expires_at,
+                    )
+                    if existing is None
+                    else existing
+                )
+                if existing is not None:
+                    existing.screenshot_storage_key = storage_key
+                    existing.expires_at = expires_at
+                await session.merge(row)
+                await session.commit()
+        except Exception:
+            logger.warning(
+                "extension screenshot db update failed for %s", normalized_url, exc_info=True
+            )
+            try:
+                await self._screenshot_store.delete(storage_key)
+            except Exception:
+                logger.warning(
+                    "extension screenshot cleanup failed for %s", storage_key, exc_info=True
+                )
+            return None
+
+        return storage_key
+
     async def signed_screenshot_url(self, cached: CachedScrape) -> str | None:
         if not cached.storage_key:
             return None
