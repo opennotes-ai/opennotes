@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import html
 from collections import defaultdict
 from collections.abc import Sequence
 from datetime import datetime
@@ -10,6 +11,7 @@ from urllib.parse import quote
 
 from lxml import html as lxml_html
 from lxml.html import HtmlElement
+from lxml.html.clean import Cleaner
 
 
 class _CommentLike(Protocol):
@@ -108,3 +110,84 @@ def render_to_markdown(nodes: Sequence[_CommentLike]) -> str:
     if not lines:
         return "## Comments\n"
     return "\n".join(["## Comments", *lines])
+
+
+_COMMENT_BODY_CLEANER = Cleaner(
+    safe_attrs_only=True,
+    safe_attrs=frozenset({"href", "rel"}),
+    allow_tags=frozenset({"a", "blockquote", "br", "code", "em", "li", "ol", "p", "strong", "ul"}),
+    remove_unknown_tags=False,
+    page_structure=False,
+    links=False,
+    javascript=True,
+    scripts=True,
+    style=True,
+    embedded=True,
+    frames=True,
+    forms=True,
+    annoying_tags=True,
+)
+
+
+def _sanitize_comment_body_html(body: str) -> str:
+    if not body or not body.strip():
+        return ""
+    try:
+        return _COMMENT_BODY_CLEANER.clean_html(body)
+    except Exception:
+        return html.escape(body)
+
+
+def _comment_tree(
+    nodes: Sequence[_CommentLike],
+) -> tuple[dict[str | None, list[_CommentLike]], list[_CommentLike]]:
+    by_id: dict[str, _CommentLike] = {node.id: node for node in nodes}
+    children: dict[str | None, list[_CommentLike]] = defaultdict(list)
+    for node in nodes:
+        parent_id = node.parent_id
+        if parent_id is not None and parent_id not in by_id:
+            parent_id = None
+        children[parent_id].append(node)
+    for group in children.values():
+        group.sort(key=lambda comment: comment.created_at)
+    return children, children.get(None, [])
+
+
+def render_comments_to_html(nodes: Sequence[_CommentLike]) -> str:
+    """Render comment nodes as semantic, sanitized HTML for archive display."""
+    children, roots = _comment_tree(nodes)
+    if not roots:
+        return ""
+
+    def render_article(node: _CommentLike) -> str:
+        comment_id = html.escape(node.id, quote=True)
+        author = html.escape(node.author_username or "anonymous")
+        created_at = html.escape(node.created_at.isoformat(), quote=True)
+        parent_id = node.parent_id or ""
+        parent_ref = (
+            '<span class="opennotes-comment__parent">'
+            f'in reply to <a href="#cmt-{html.escape(parent_id, quote=True)}">'
+            f"{html.escape(parent_id)}</a></span>"
+            if parent_id
+            else ""
+        )
+        body = _sanitize_comment_body_html(node.body or "")
+        replies = "".join(
+            f"<li>{render_article(child)}</li>" for child in children.get(node.id, [])
+        )
+        replies_list = f'<ol class="opennotes-comment__replies">{replies}</ol>' if replies else ""
+        return (
+            f'<article id="cmt-{comment_id}" data-utterance-id="{comment_id}" '
+            'class="opennotes-comment">'
+            '<header class="opennotes-comment__header">'
+            f'<span class="opennotes-comment__author">{author}</span>'
+            f'<time datetime="{created_at}">{created_at}</time>'
+            f"{parent_ref}"
+            "</header>"
+            f'<div class="opennotes-comment__body">{body}</div>'
+            f"{replies_list}"
+            "</article>"
+        )
+
+    items = "".join(f"<li>{render_article(root)}</li>" for root in roots)
+    return f'<ol class="opennotes-comments">{items}</ol>'

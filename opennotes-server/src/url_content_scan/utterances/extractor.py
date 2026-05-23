@@ -7,6 +7,7 @@ from hashlib import sha1
 from html import unescape
 from urllib.parse import unquote
 
+import httpx
 from lxml import html as lxml_html
 from lxml.html import HtmlElement
 
@@ -19,6 +20,13 @@ from src.url_content_scan.coral import (
     merge_coral_into_scrape,
 )
 from src.url_content_scan.schemas import PageKind
+from src.url_content_scan.viafoura import (
+    ViafouraFetchError,
+    ViafouraUnsupportedError,
+    detect_viafoura,
+    fetch_viafoura_comments,
+    merge_viafoura_into_scrape,
+)
 from src.utils.async_compat import run_sync
 
 from .media_extraction import extract_image_urls, extract_video_urls, normalize_public_url
@@ -35,6 +43,7 @@ _CORAL_HEADER_RE = re.compile(
 
 def extract_utterances(scrape: ScrapeResult, source_url: str) -> UtterancesPayload:
     scrape = _merge_coral_comments_if_available(scrape)
+    scrape = _merge_viafoura_comments_if_available(scrape, source_url)
     root = _parse_html(scrape.html)
     page_kind = _classify_page_kind(scrape, root)
     page_title = _page_title(scrape, root)
@@ -155,6 +164,25 @@ def _merge_coral_comments_if_available(scrape: ScrapeResult) -> ScrapeResult:
     except (CoralFetchError, CoralUnsupportedError):
         return scrape
     return merge_coral_into_scrape(scrape, comments.comments_markdown)
+
+
+def _merge_viafoura_comments_if_available(scrape: ScrapeResult, source_url: str) -> ScrapeResult:
+    html_text = scrape.html
+    if not html_text or not html_text.strip():
+        return scrape
+    signal = detect_viafoura(html_text)
+    if signal is None or not signal.container_id:
+        return scrape
+    try:
+
+        async def _fetch() -> ScrapeResult:
+            async with httpx.AsyncClient(timeout=15.0) as client:
+                comments = await fetch_viafoura_comments(signal, source_url, client=client)
+            return merge_viafoura_into_scrape(scrape, comments)
+
+        return run_sync(_fetch())
+    except (ViafouraFetchError, ViafouraUnsupportedError):
+        return scrape
 
 
 def _extract_coral_utterances(
