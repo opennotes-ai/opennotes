@@ -6,7 +6,7 @@ from pydantic_ai.models.instrumented import InstrumentedModel
 from pydantic_ai.settings import ModelSettings
 
 from src.config import Settings, get_settings
-from src.url_content_scan.analyses.claims.dedup import ExtractedClaim
+from src.url_content_scan.claims_schemas import ClaimCategory, ExtractedClaim
 from src.url_content_scan.observability import (
     url_scan_extractor_instrumentation,
     url_scan_instrumentation,
@@ -14,14 +14,20 @@ from src.url_content_scan.observability import (
 from src.url_content_scan.utterances.schema import Utterance
 
 _SYSTEM_PROMPT = """\
-You extract atomic verifiable factual claims from short user-generated text.
+You extract atomic claims from short user-generated text and classify each one.
+
+Categories (use exactly these values):
+- potentially_factual: a claim that can be checked against external evidence
+- self_claims: personal anecdotes or first-person statements about oneself
+- predictions: forward-looking or speculative assertions about future events
+- subjective: opinions, evaluations, or preferences not verifiable externally
+- other: commands, questions, jokes, or anything that does not fit above
 
 Rules:
-- Extract only factual claims that could be checked against external evidence.
-- Omit opinions, preferences, questions, jokes, commands, and emotional reactions.
 - Rewrite each claim as a concise standalone assertion.
 - Split compound assertions into separate atomic claims when needed.
-- Return an empty list when the utterance contains no verifiable claim.
+- Return an empty list when the utterance contains no discernible claim.
+- Always assign one of the five categories above.
 """
 
 
@@ -58,6 +64,7 @@ async def extract_claims(
 
 
 __all__ = [
+    "ClaimCategory",
     "ExtractedClaim",
     "extract_claims",
 ]

@@ -17473,6 +17473,18 @@
         "title": "CandidateStatus",
         "description": "Status values for fact-checked item candidates."
       },
+      "ClaimCategory": {
+        "type": "string",
+        "enum": [
+          "potentially_factual",
+          "self_claims",
+          "predictions",
+          "subjective",
+          "other"
+        ],
+        "title": "ClaimCategory",
+        "description": "5-way taxonomy for claim classification.\n\nMirrors vibecheck-server's `ClaimCategory` so downstream premises/evidence\ntooling can use a shared vocabulary (TASK-1657.04 depends on these keys)."
+      },
       "ClaimRelevanceCheckAttributes": {
         "properties": {
           "original_message": {
@@ -18730,6 +18742,10 @@
           "canonical_text": {
             "type": "string",
             "title": "Canonical Text"
+          },
+          "category": {
+            "$ref": "#/components/schemas/ClaimCategory",
+            "default": "potentially_factual"
           },
           "occurrence_count": {
             "type": "integer",
@@ -27002,6 +27018,30 @@
             "type": "boolean",
             "title": "Insufficient Conversation",
             "default": false
+          },
+          "upstream_stream_type": {
+            "$ref": "#/components/schemas/UtteranceStreamType",
+            "description": "Extractor-provided advisory utterance stream type.",
+            "default": "unknown"
+          },
+          "observed_stream_type": {
+            "$ref": "#/components/schemas/UtteranceStreamType",
+            "description": "SCD model's own classification of the utterance stream shape.",
+            "default": "unknown"
+          },
+          "observed_confidence": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Observed Confidence",
+            "description": "Confidence in observed_stream_type, from 0.0 to 1.0.",
+            "default": 0.0
+          },
+          "disagreement_rationale": {
+            "type": "string",
+            "title": "Disagreement Rationale",
+            "description": "Short rationale when observed_stream_type differs from upstream_stream_type.",
+            "default": ""
           }
         },
         "type": "object",
@@ -30270,6 +30310,18 @@
           "utterance_id"
         ],
         "title": "UtteranceAnchor"
+      },
+      "UtteranceStreamType": {
+        "type": "string",
+        "enum": [
+          "dialogue",
+          "comment_section",
+          "article_or_monologue",
+          "mixed",
+          "unknown"
+        ],
+        "title": "UtteranceStreamType",
+        "description": "Discourse shape observed in the extracted utterance stream."
       },
       "ValidationError": {
         "properties": {

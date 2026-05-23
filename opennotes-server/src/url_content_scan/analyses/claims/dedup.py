@@ -5,18 +5,11 @@ import importlib
 import math
 from collections.abc import Awaitable, Callable
 
-from pydantic import BaseModel, Field
-
-from src.url_content_scan.claims_schemas import ClaimsReport, DedupedClaim
+from src.url_content_scan.claims_schemas import ClaimsReport, DedupedClaim, ExtractedClaim
 from src.url_content_scan.utterances.schema import Utterance
 
 DEFAULT_CLAIMS_SIMILARITY_THRESHOLD = 0.85
 DEFAULT_CLAIMS_CONCURRENCY = 8
-
-
-class ExtractedClaim(BaseModel):
-    claim_text: str
-    confidence: float = Field(ge=0.0, le=1.0)
 
 
 ClaimExtractor = Callable[[Utterance], Awaitable[list[ExtractedClaim]]]
@@ -145,6 +138,7 @@ def _to_deduped_claim(
 
     return DedupedClaim(
         canonical_text=canonical_claim.claim_text,
+        category=canonical_claim.category,
         occurrence_count=len(members),
         author_count=len(seen_authors),
         utterance_ids=utterance_ids,

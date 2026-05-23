@@ -14,6 +14,16 @@ class RiskLevel(StrEnum):
     DANGEROUS = "Dangerous"
 
 
+class UtteranceStreamType(StrEnum):
+    """Discourse shape observed in the extracted utterance stream."""
+
+    DIALOGUE = "dialogue"
+    COMMENT_SECTION = "comment_section"
+    ARTICLE_OR_MONOLOGUE = "article_or_monologue"
+    MIXED = "mixed"
+    UNKNOWN = "unknown"
+
+
 class FlashpointMatch(BaseModel):
     scan_type: Literal["conversation_flashpoint"] = "conversation_flashpoint"
     utterance_id: str = Field(
@@ -78,3 +88,21 @@ class SCDReport(BaseModel):
     tone_labels: list[str] = Field(default_factory=list)
     per_speaker_notes: dict[str, str] = Field(default_factory=dict)
     insufficient_conversation: bool = Field(default=False)
+    upstream_stream_type: UtteranceStreamType = Field(
+        default=UtteranceStreamType.UNKNOWN,
+        description="Extractor-provided advisory utterance stream type.",
+    )
+    observed_stream_type: UtteranceStreamType = Field(
+        default=UtteranceStreamType.UNKNOWN,
+        description="SCD model's own classification of the utterance stream shape.",
+    )
+    observed_confidence: float = Field(
+        default=0.0,
+        ge=0.0,
+        le=1.0,
+        description="Confidence in observed_stream_type, from 0.0 to 1.0.",
+    )
+    disagreement_rationale: str = Field(
+        default="",
+        description="Short rationale when observed_stream_type differs from upstream_stream_type.",
+    )

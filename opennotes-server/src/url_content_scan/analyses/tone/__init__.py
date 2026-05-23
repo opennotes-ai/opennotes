@@ -18,7 +18,12 @@ from src.bulk_content_scan.flashpoint_service import (
     get_flashpoint_service,
 )
 from src.url_content_scan.schemas import PageKind
-from src.url_content_scan.tone_schemas import FlashpointMatch, SCDReport, SpeakerArc
+from src.url_content_scan.tone_schemas import (
+    FlashpointMatch,
+    SCDReport,
+    SpeakerArc,
+    UtteranceStreamType,
+)
 from src.url_content_scan.utterances.schema import Utterance
 
 _MAX_FLASHPOINT_CONCURRENCY = 8
@@ -192,8 +197,17 @@ def _tone_labels(stats: _ConversationStats, speaker_shares: dict[str, float]) ->
     return labels
 
 
-async def run_scd(utterances: list[Utterance]) -> SCDReport:
-    """Compute statistical conversation-dynamics output without using an LM."""
+async def run_scd(
+    utterances: list[Utterance],
+    *,
+    utterance_stream_type: UtteranceStreamType = UtteranceStreamType.UNKNOWN,
+) -> SCDReport:
+    """Compute statistical conversation-dynamics output without using an LM.
+
+    The `utterance_stream_type` is treated as an advisory prior from the
+    extractor.  Since this implementation is statistics-based (no LLM), it
+    echoes the upstream value unchanged and reports full confidence.
+    """
     if not utterances:
         return SCDReport(
             narrative="No conversation was available for tone-dynamics analysis.",
@@ -205,6 +219,12 @@ async def run_scd(utterances: list[Utterance]) -> SCDReport:
             tone_labels=["insufficient_conversation"],
             per_speaker_notes={},
             insufficient_conversation=True,
+            upstream_stream_type=utterance_stream_type,
+            observed_stream_type=utterance_stream_type,
+            observed_confidence=1.0
+            if utterance_stream_type is not UtteranceStreamType.UNKNOWN
+            else 0.0,
+            disagreement_rationale="",
         )
 
     stats = _compute_conversation_stats(utterances)
@@ -256,7 +276,13 @@ async def run_scd(utterances: list[Utterance]) -> SCDReport:
         tone_labels=labels,
         per_speaker_notes=per_speaker_notes,
         insufficient_conversation=insufficient,
+        upstream_stream_type=utterance_stream_type,
+        observed_stream_type=utterance_stream_type,
+        observed_confidence=1.0
+        if utterance_stream_type is not UtteranceStreamType.UNKNOWN
+        else 0.0,
+        disagreement_rationale="",
     )
 
 
-__all__ = ["run_flashpoint", "run_scd"]
+__all__ = ["UtteranceStreamType", "run_flashpoint", "run_scd"]
