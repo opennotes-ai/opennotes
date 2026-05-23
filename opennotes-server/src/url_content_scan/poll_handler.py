@@ -124,7 +124,10 @@ async def _soft_delete_job(session: Any, job_id: UUID) -> None:
     now = datetime.now(UTC)
     await session.execute(
         update(models.UrlScanState)
-        .where(models.UrlScanState.job_id == job_id)
+        .where(
+            models.UrlScanState.job_id == job_id,
+            models.UrlScanState.deleted_at.is_(None),
+        )
         .values(deleted_at=now)
     )
     await session.commit()

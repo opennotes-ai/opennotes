@@ -371,3 +371,52 @@ async def test_load_job_state_soft_delete_is_idempotent() -> None:
 
     assert result is job_expired
     assert session.committed is False
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_soft_delete_job_update_gates_on_deleted_at_is_null() -> None:
+    module = _load_poll_handler()
+    _soft_delete_job = module._soft_delete_job
+
+    job_id = uuid4()
+    now = datetime.now(UTC)
+    scan_state = _scan_state(job_id, attempt_id=uuid4(), now=now)
+    session = _WritingFakeSession(
+        batch_job=_batch_job(job_id, status="completed", now=now),
+        scan_state=scan_state,
+        slots=[],
+    )
+
+    await _soft_delete_job(session, job_id)
+
+    assert session.committed is True
+    assert len(session.execute_calls) == 1
+    update_sql = str(session.execute_calls[0])
+    assert "url_scan_state" in update_sql
+    assert "deleted_at" in update_sql.lower()
+    assert "IS NULL" in update_sql or "is null" in update_sql.lower()
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_soft_delete_job_second_call_is_no_op_due_to_guard() -> None:
+    module = _load_poll_handler()
+    _soft_delete_job = module._soft_delete_job
+
+    job_id = uuid4()
+    now = datetime.now(UTC)
+    first_deleted_at = now - timedelta(seconds=5)
+    scan_state = _scan_state(job_id, attempt_id=uuid4(), now=now, deleted_at=first_deleted_at)
+    session = _WritingFakeSession(
+        batch_job=_batch_job(job_id, status="completed", now=now),
+        scan_state=scan_state,
+        slots=[],
+    )
+
+    await _soft_delete_job(session, job_id)
+
+    update_sql = str(session.execute_calls[0])
+    assert "IS NULL" in update_sql or "is null" in update_sql.lower(), (
+        "UPDATE must gate on deleted_at IS NULL so concurrent second call is a no-op"
+    )
