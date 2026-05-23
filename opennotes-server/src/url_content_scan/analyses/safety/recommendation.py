@@ -146,11 +146,46 @@ def _fallback_recommendation(inputs: SafetyRecommendationInputs) -> SafetyRecomm
         level = SafetyLevel.SAFE
         rationale = "All available safety checks were clear."
 
-    return SafetyRecommendation(
+    recommendation = SafetyRecommendation(
         level=level,
         rationale=rationale,
         top_signals=top_signals[:3],
         unavailable_inputs=list(inputs.unavailable_inputs),
+    )
+
+    return _apply_fail_open_guardrail(recommendation, inputs)
+
+
+def _apply_fail_open_guardrail(
+    recommendation: SafetyRecommendation,
+    inputs: SafetyRecommendationInputs,
+) -> SafetyRecommendation:
+    if not _is_only_inconclusive_video_caution(recommendation, inputs):
+        return recommendation
+    return SafetyRecommendation(
+        level=SafetyLevel.SAFE,
+        rationale="Video analysis was inconclusive; no verified safety concern remains.",
+        top_signals=[],
+        unavailable_inputs=list(inputs.unavailable_inputs),
+    )
+
+
+def _is_only_inconclusive_video_caution(
+    recommendation: SafetyRecommendation,
+    inputs: SafetyRecommendationInputs,
+) -> bool:
+    if recommendation.level is not SafetyLevel.CAUTION:
+        return False
+    if inputs.unavailable_inputs:
+        return False
+    if inputs.web_risk_findings:
+        return False
+    if inputs.harmful_content_matches:
+        return False
+    if inputs.image_moderation_matches and any(m.flagged for m in inputs.image_moderation_matches):
+        return False
+    return bool(inputs.video_moderation_matches) and all(
+        m.max_likelihood == 1.0 and not m.frame_findings for m in inputs.video_moderation_matches
     )
 
 

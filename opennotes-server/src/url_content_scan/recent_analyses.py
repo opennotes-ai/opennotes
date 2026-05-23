@@ -72,6 +72,7 @@ INNER JOIN (
 ) s ON s.normalized_url = st.normalized_url
 WHERE j.status IN ('completed', 'partial')
   AND COALESCE(st.finished_at, j.completed_at) IS NOT NULL
+  AND st.deleted_at IS NULL
   AND (
     j.status = 'completed'
     OR (
@@ -198,6 +199,8 @@ async def list_recent(
     out: list[RecentAnalysis] = []
     seen_normalized: set[str] = set()
     for row in rows:
+        if row.get("deleted_at") is not None:
+            continue
         normalized = str(row["normalized_url"])
         if normalized in seen_normalized:
             continue

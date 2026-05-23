@@ -63,6 +63,7 @@ def _row(
     page_title: str = "Example Title",
     preview_description: str = "Preview text",
     finished_at: datetime | None = None,
+    deleted_at: datetime | None = None,
 ):
     return {
         "job_id": uuid4(),
@@ -74,6 +75,7 @@ def _row(
         "page_title": page_title,
         "preview_description": preview_description,
         "finished_at": finished_at or datetime.now(UTC),
+        "deleted_at": deleted_at,
     }
 
 
@@ -283,3 +285,40 @@ async def test_list_recent_overfetches_limit_times_eight() -> None:
 def test_recent_sql_prefers_interact_tier() -> None:
     assert "SELECT DISTINCT ON (normalized_url)" in _RECENT_SQL
     assert "CASE WHEN tier = 'interact' THEN 0 ELSE 1 END" in _RECENT_SQL
+
+
+def test_recent_sql_excludes_soft_deleted_rows() -> None:
+    assert "deleted_at IS NULL" in _RECENT_SQL
+
+
+@pytest.mark.asyncio
+async def test_list_recent_excludes_soft_deleted_job() -> None:
+    pool = _FakePool(
+        [
+            _row(
+                normalized_url="https://example.com/deleted",
+                deleted_at=datetime.now(UTC) - timedelta(days=1),
+            )
+        ]
+    )
+
+    result = await list_recent(pool, limit=5, signer=_StubSigner())
+
+    assert result == []
+
+
+@pytest.mark.asyncio
+async def test_list_recent_includes_non_soft_deleted_job() -> None:
+    pool = _FakePool(
+        [
+            _row(
+                normalized_url="https://example.com/active",
+                deleted_at=None,
+            )
+        ]
+    )
+
+    result = await list_recent(pool, limit=5, signer=_StubSigner())
+
+    assert len(result) == 1
+    assert result[0].source_url == "https://example.com/active"

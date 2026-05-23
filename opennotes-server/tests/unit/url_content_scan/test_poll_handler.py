@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import types
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from functools import lru_cache
 from pathlib import Path
@@ -146,7 +146,13 @@ def _batch_job(job_id: UUID, *, status: str, now: datetime) -> BatchJob:
     return job
 
 
-def _scan_state(job_id: UUID, *, attempt_id: UUID, now: datetime) -> types.SimpleNamespace:
+def _scan_state(
+    job_id: UUID,
+    *,
+    attempt_id: UUID,
+    now: datetime,
+    deleted_at: datetime | None = None,
+) -> types.SimpleNamespace:
     return types.SimpleNamespace(
         job_id=job_id,
         source_url="https://example.com/article",
@@ -162,6 +168,7 @@ def _scan_state(job_id: UUID, *, attempt_id: UUID, now: datetime) -> types.Simpl
         utterance_count=3,
         heartbeat_at=now,
         finished_at=None,
+        deleted_at=deleted_at,
     )
 
 
@@ -209,6 +216,20 @@ class _FakeSession:
 
     async def execute(self, _statement: object) -> _FakeResult:
         return _FakeResult(self._slots)
+
+
+class _WritingFakeSession(_FakeSession):
+    def __init__(self, **kwargs: object) -> None:
+        super().__init__(**kwargs)  # type: ignore[arg-type]
+        self.execute_calls: list[object] = []
+        self.committed = False
+
+    async def execute(self, statement: object) -> _FakeResult:
+        self.execute_calls.append(statement)
+        return _FakeResult(self._slots)
+
+    async def commit(self) -> None:
+        self.committed = True
 
 
 @pytest.mark.unit
@@ -286,3 +307,67 @@ async def test_load_job_state_returns_none_when_header_rows_are_missing() -> Non
     session = _FakeSession(batch_job=None, scan_state=None, slots=[])
 
     assert await load_job_state(session, job_id) is None
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_load_job_state_returns_expired_sentinel_when_job_is_past_ttl() -> None:
+    module = _load_poll_handler()
+    load_job_state = module.load_job_state
+    job_expired = module.JOB_EXPIRED
+
+    now = datetime.now(UTC)
+    job_id = uuid4()
+    attempt_id = uuid4()
+    batch_job = _batch_job(job_id, status="completed", now=now)
+    scan_state = _scan_state(job_id, attempt_id=attempt_id, now=now)
+    scan_state.finished_at = now - timedelta(days=31)
+    session = _WritingFakeSession(batch_job=batch_job, scan_state=scan_state, slots=[])
+
+    result = await load_job_state(session, job_id, job_ttl_days=30)
+
+    assert result is job_expired
+    assert session.committed is True
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_load_job_state_returns_job_state_when_within_ttl() -> None:
+    module = _load_poll_handler()
+    load_job_state = module.load_job_state
+    job_expired = module.JOB_EXPIRED
+
+    now = datetime.now(UTC)
+    job_id = uuid4()
+    attempt_id = uuid4()
+    batch_job = _batch_job(job_id, status="completed", now=now)
+    scan_state = _scan_state(job_id, attempt_id=attempt_id, now=now)
+    scan_state.finished_at = now - timedelta(days=5)
+    session = _FakeSession(batch_job=batch_job, scan_state=scan_state, slots=[])
+
+    result = await load_job_state(session, job_id, job_ttl_days=30)
+
+    assert result is not job_expired
+    assert result is not None
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_load_job_state_soft_delete_is_idempotent() -> None:
+    module = _load_poll_handler()
+    load_job_state = module.load_job_state
+    job_expired = module.JOB_EXPIRED
+
+    now = datetime.now(UTC)
+    job_id = uuid4()
+    attempt_id = uuid4()
+    batch_job = _batch_job(job_id, status="completed", now=now)
+    already_deleted = now - timedelta(days=1)
+    scan_state = _scan_state(job_id, attempt_id=attempt_id, now=now, deleted_at=already_deleted)
+    scan_state.finished_at = now - timedelta(days=31)
+    session = _WritingFakeSession(batch_job=batch_job, scan_state=scan_state, slots=[])
+
+    result = await load_job_state(session, job_id, job_ttl_days=30)
+
+    assert result is job_expired
+    assert session.committed is False

@@ -353,6 +353,13 @@ class TestWorkerWorkflowRegistration:
                 "run_playground_url_extraction",
                 "score_community_server",
                 "copy_requests_workflow",
+                "url_scan_orchestration_workflow",
+                "url_scan_section_workflow",
+                "url_scan_section_retry_workflow",
+                "url_scan_orphan_jobs_workflow",
+                "url_scan_purge_expired_data_workflow",
+                "url_scan_purge_orphan_screenshots_workflow",
+                "url_scan_video_poll_workflow",
             }
             assert workflow_names == expected
 

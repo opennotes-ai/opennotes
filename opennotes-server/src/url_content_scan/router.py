@@ -19,7 +19,7 @@ from src.url_content_scan.auth import get_url_scan_api_key
 from src.url_content_scan.frame import archive_preview, frame_compat, lookup_screenshot
 from src.url_content_scan.models import UrlScanState
 from src.url_content_scan.normalize import canonical_cache_key
-from src.url_content_scan.poll_handler import load_job_state
+from src.url_content_scan.poll_handler import JOB_EXPIRED, load_job_state
 from src.url_content_scan.rate_limiter import RateLimitStatus, UrlScanRateLimiter
 from src.url_content_scan.recent_analyses import RecentAnalysis, list_recent
 from src.url_content_scan.retry_handler import prepare_section_retry
@@ -232,6 +232,8 @@ async def poll_job(
     state = await load_job_state(db, job_id)
     if state is None:
         return _error_response(status.HTTP_404_NOT_FOUND, "not_found", "job not found")
+    if state is JOB_EXPIRED:
+        return _error_response(status.HTTP_410_GONE, "expired", "job has expired")
     return state
 
 

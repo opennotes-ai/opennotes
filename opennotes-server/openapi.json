@@ -30428,7 +30428,6 @@
         "required": [
           "utterance_id",
           "video_url",
-          "frame_findings",
           "flagged",
           "max_likelihood"
         ],

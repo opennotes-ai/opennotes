@@ -32,6 +32,11 @@ class UrlScanState(Base):
             "finished_at",
             postgresql_where=text("finished_at IS NOT NULL"),
         ),
+        Index(
+            "ix_url_scan_state_deleted_at",
+            "deleted_at",
+            postgresql_where=text("deleted_at IS NOT NULL"),
+        ),
     )
 
     job_id: Mapped[UUID] = mapped_column(
@@ -56,6 +61,7 @@ class UrlScanState(Base):
     )
     heartbeat_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class UrlScanSectionSlot(Base, TimestampMixin):

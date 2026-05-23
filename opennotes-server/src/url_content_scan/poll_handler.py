@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
 from importlib import import_module
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 
 from src.batch_jobs.models import BatchJob
 
@@ -30,6 +31,10 @@ _ACTIVITY_LABEL_BY_STATUS = {
     "analyzing": "Running section analyses",
 }
 
+_DEFAULT_JOB_TTL_DAYS = 30
+
+JOB_EXPIRED = object()
+
 
 def _load_schemas() -> Any:
     return import_module("src.url_content_scan.schemas")
@@ -45,6 +50,16 @@ def _wire_status(raw_status: str) -> str:
 
 def _coerce_section_state(raw_state: str, schemas: Any) -> Any:
     return schemas.SectionState(raw_state.lower())
+
+
+def _is_terminal_status(status: str) -> bool:
+    return status in {"completed", "done", "partial", "failed", "cancelled"}
+
+
+def _finished_at(batch_job: BatchJob, scan_state: Any) -> datetime | None:
+    if scan_state.finished_at is not None:
+        return scan_state.finished_at
+    return getattr(batch_job, "completed_at", None)
 
 
 def build_job_state(
@@ -104,7 +119,23 @@ def build_job_state(
     )
 
 
-async def load_job_state(session: Any, job_id: UUID) -> Any | None:
+async def _soft_delete_job(session: Any, job_id: UUID) -> None:
+    models = _load_models()
+    now = datetime.now(UTC)
+    await session.execute(
+        update(models.UrlScanState)
+        .where(models.UrlScanState.job_id == job_id)
+        .values(deleted_at=now)
+    )
+    await session.commit()
+
+
+async def load_job_state(
+    session: Any,
+    job_id: UUID,
+    *,
+    job_ttl_days: int = _DEFAULT_JOB_TTL_DAYS,
+) -> Any | None:
     batch_job = await session.get(BatchJob, job_id)
     if batch_job is None:
         return None
@@ -113,6 +144,15 @@ async def load_job_state(session: Any, job_id: UUID) -> Any | None:
     scan_state = await session.get(models.UrlScanState, job_id)
     if scan_state is None:
         return None
+
+    if _is_terminal_status(batch_job.status):
+        finished = _finished_at(batch_job, scan_state)
+        if finished is not None:
+            cutoff = datetime.now(UTC) - timedelta(days=job_ttl_days)
+            if finished < cutoff:
+                if getattr(scan_state, "deleted_at", None) is None:
+                    await _soft_delete_job(session, job_id)
+                return JOB_EXPIRED
 
     result = await session.execute(
         select(models.UrlScanSectionSlot)
