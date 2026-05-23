@@ -754,6 +754,31 @@ class Settings(BaseSettings):
         description="Maximum number of claims sent to the premises LLM in a single batch call. "
         "Larger batches reduce round-trips; smaller batches reduce context length.",
     )
+    URL_SCAN_UTTERANCE_BATCH_THRESHOLD_BYTES: int = Field(
+        default=800_000,
+        ge=0,
+        description="HTML byte length above which the batched utterance extractor is used instead "
+        "of the single-pass extractor. Matches vibecheck VIBECHECK_BATCH_HTML_BYTES default.",
+    )
+    URL_SCAN_UTTERANCE_BATCH_MAX_BATCHES: int = Field(
+        default=10,
+        ge=1,
+        description="Maximum number of HTML sections the batched utterance extractor will create. "
+        "Sections beyond this cap are dropped (oldest-first: only the first MAX_BATCHES cuts "
+        "are used, so the tail of the document is truncated).",
+    )
+    URL_SCAN_UTTERANCE_BATCH_SECTION_TARGET_BYTES: int = Field(
+        default=80_000,
+        ge=1,
+        description="Target byte size per section when partitioning oversized HTML for batched "
+        "utterance extraction. Matches vibecheck VIBECHECK_BATCH_SECTION_TARGET_BYTES default.",
+    )
+    URL_SCAN_UTTERANCE_BATCH_OVERLAP_BYTES: int = Field(
+        default=2_000,
+        ge=0,
+        description="Number of bytes to repeat from the tail of the previous section at the start "
+        "of the next section, so utterances straddling a boundary are still captured.",
+    )
 
     @field_validator("URL_SCAN_EXTRACTOR_SAMPLE_RATE", mode="before")
     @classmethod

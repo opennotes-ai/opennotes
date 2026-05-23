@@ -57,6 +57,20 @@ def extract_utterances(
     *,
     settings: Settings | None = None,
 ) -> UtterancesPayload:
+    if settings is None:
+        settings = Settings()
+    html_bytes = len((scrape.html or "").encode("utf-8"))
+    if html_bytes > settings.URL_SCAN_UTTERANCE_BATCH_THRESHOLD_BYTES:
+        return _extract_batched(scrape, source_url, settings=settings)
+    return _extract_direct(scrape, source_url, settings=settings)
+
+
+def _extract_direct(
+    scrape: ScrapeResult,
+    source_url: str,
+    *,
+    settings: Settings | None = None,
+) -> UtterancesPayload:
     scrape = _merge_coral_comments_if_available(scrape)
     scrape = _merge_viafoura_comments_if_available(scrape, source_url)
     scrape = _merge_x_conversations_if_available(scrape, source_url, settings=settings)
@@ -77,6 +91,48 @@ def extract_utterances(
         page_title=page_title,
         page_kind=page_kind,
     )
+
+
+def _extract_batched(
+    scrape: ScrapeResult,
+    source_url: str,
+    *,
+    settings: Settings,
+) -> UtterancesPayload:
+    from src.url_content_scan.utterances.batched import (  # noqa: PLC0415
+        merge_section_payloads,
+        partition_html,
+    )
+
+    html = scrape.html or ""
+    sections = partition_html(
+        html,
+        target_bytes=settings.URL_SCAN_UTTERANCE_BATCH_SECTION_TARGET_BYTES,
+        overlap_bytes=settings.URL_SCAN_UTTERANCE_BATCH_OVERLAP_BYTES,
+        max_batches=settings.URL_SCAN_UTTERANCE_BATCH_MAX_BATCHES,
+    )
+
+    section_payloads = []
+    for section in sections:
+        section_scrape = ScrapeResult(
+            markdown=scrape.markdown,
+            html=section.html_slice,
+            raw_html=scrape.raw_html,
+            screenshot=scrape.screenshot,
+            links=scrape.links,
+            metadata=scrape.metadata,
+            warning=scrape.warning,
+            actions=scrape.actions,
+        )
+        section_payload = _extract_direct(section_scrape, source_url, settings=settings)
+        section_payloads.append(section_payload)
+
+    merged = merge_section_payloads(section_payloads, source_url=source_url)
+
+    if not merged.utterances:
+        merged.utterances = [_fallback_utterance(scrape, source_url)]
+
+    return merged
 
 
 def _parse_html(html_text: str | None) -> HtmlElement | None:
