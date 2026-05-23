@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from collections.abc import Mapping
 from datetime import datetime
 from inspect import isawaitable
@@ -8,10 +9,17 @@ from typing import Any, Protocol
 from urllib.parse import parse_qs, urlsplit
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 from sqlalchemy import text
 
+from src.url_content_scan.analyses.synthesis.weather_report_schemas import WeatherReport
+from src.url_content_scan.safety_schemas import SafetyLevel, SafetyRecommendation
 from src.utils.url_security import InvalidURL, validate_public_http_url
+
+logger = logging.getLogger(__name__)
+
+_HEADLINE_PREVIEW_MAX_LEN = 140
+_ELLIPSIS = "…"
 
 _SECRET_QUERY_PARAM_KEYS = frozenset(
     {
@@ -41,6 +49,9 @@ SELECT
         st.page_title
     ) AS preview_description,
     st.sidebar_payload #>> '{x_og_thumbnail}' AS x_og_thumbnail_url,
+    st.sidebar_payload #>> '{headline,text}' AS headline_summary_text,
+    st.sidebar_payload -> 'weather_report' AS weather_report_json,
+    st.sidebar_payload -> 'safety' -> 'recommendation' AS safety_recommendation_json,
     slots.sections,
     j.status,
     st.page_title,
@@ -111,6 +122,9 @@ SELECT
         st.page_title
     ) AS preview_description,
     st.sidebar_payload #>> '{x_og_thumbnail}' AS x_og_thumbnail_url,
+    st.sidebar_payload #>> '{headline,text}' AS headline_summary_text,
+    st.sidebar_payload -> 'weather_report' AS weather_report_json,
+    st.sidebar_payload -> 'safety' -> 'recommendation' AS safety_recommendation_json,
     j.status,
     st.page_title,
     st.page_kind,
@@ -139,6 +153,10 @@ _RECENT_UNFILTERED_SQL = f"{_RECENT_UNFILTERED_SQL_BODY}\nLIMIT $1"
 _RECENT_UNFILTERED_SQL_SQLALCHEMY = f"{_RECENT_UNFILTERED_SQL_BODY}\nLIMIT :limit"
 
 
+class SafetyRowPreview(BaseModel):
+    level: SafetyLevel = Field(description="Safety level: safe, caution, or unsafe.")
+
+
 class RecentAnalysis(BaseModel):
     job_id: UUID = Field(description="batch_jobs.id for the analysis job.")
     source_url: str
@@ -148,6 +166,20 @@ class RecentAnalysis(BaseModel):
     og_thumbnail_url: str | None = Field(
         default=None,
         description="X (Twitter) OG thumbnail URL stored during scan; None for non-X URLs.",
+    )
+    headline_preview: str | None = Field(
+        default=None,
+        description="Truncated headline summary text from sidebar_payload; None when absent.",
+    )
+    weather_preview: str | None = Field(
+        default=None,
+        description=(
+            "Compact weather-report label string (truth · relevance · sentiment); None when absent."
+        ),
+    )
+    safety_row: SafetyRowPreview | None = Field(
+        default=None,
+        description="Minimal safety summary for gallery row; None when no recommendation stored.",
     )
     completed_at: datetime
 
@@ -168,12 +200,72 @@ class InternalRecentAnalysis(BaseModel):
         default=None,
         description="X (Twitter) OG thumbnail URL stored during scan; None for non-X URLs.",
     )
+    headline_preview: str | None = Field(
+        default=None,
+        description="Truncated headline summary text from sidebar_payload; None when absent.",
+    )
+    weather_preview: str | None = Field(
+        default=None,
+        description=(
+            "Compact weather-report label string (truth · relevance · sentiment); None when absent."
+        ),
+    )
+    safety_row: SafetyRowPreview | None = Field(
+        default=None,
+        description="Minimal safety summary for gallery row; None when no recommendation stored.",
+    )
     status: str = Field(description="batch_jobs.status (completed or partial).")
     completed_at: datetime
 
 
 class ScreenshotSigner(Protocol):
     def sign_screenshot_key(self, storage_key: str | None) -> str | None: ...
+
+
+def _truncate_preview(text: str) -> str:
+    text = text.strip()
+    if not text:
+        return ""
+    if len(text) <= _HEADLINE_PREVIEW_MAX_LEN:
+        return text
+    return text[: _HEADLINE_PREVIEW_MAX_LEN - 1].rstrip() + _ELLIPSIS
+
+
+def _headline_preview_from_row(value: Any) -> str | None:
+    if not value:
+        return None
+    truncated = _truncate_preview(str(value))
+    return truncated if truncated else None
+
+
+def _weather_preview_from_row(value: Any, *, job_id: UUID) -> str | None:
+    if value is None:
+        return None
+    data = json.loads(value) if isinstance(value, str) else value
+    try:
+        report = WeatherReport.model_validate(data)
+    except ValidationError:
+        logger.warning(
+            "Invalid weather_report payload on job %s; omitting weather_preview.",
+            job_id,
+        )
+        return None
+    return f"{report.truth.label} · {report.relevance.label} · {report.sentiment.label}"
+
+
+def _safety_row_from_row(value: Any, *, job_id: UUID) -> SafetyRowPreview | None:
+    if value is None:
+        return None
+    data = json.loads(value) if isinstance(value, str) else value
+    try:
+        rec = SafetyRecommendation.model_validate(data)
+    except ValidationError:
+        logger.warning(
+            "Invalid safety recommendation payload on job %s; omitting safety_row.",
+            job_id,
+        )
+        return None
+    return SafetyRowPreview(level=rec.level)
 
 
 def _has_secret_query_param(query: str) -> bool:
@@ -286,14 +378,22 @@ async def list_recent(
         )
         raw_og_thumbnail = row.get("x_og_thumbnail_url")
         og_thumbnail_url = str(raw_og_thumbnail) if raw_og_thumbnail else None
+        job_id: UUID = row["job_id"]
         out.append(
             RecentAnalysis(
-                job_id=row["job_id"],
+                job_id=job_id,
                 source_url=sanitized_source_url,
                 page_title=row.get("page_title"),
                 screenshot_url=signed,
                 preview_description=preview_description,
                 og_thumbnail_url=og_thumbnail_url,
+                headline_preview=_headline_preview_from_row(row.get("headline_summary_text")),
+                weather_preview=_weather_preview_from_row(
+                    row.get("weather_report_json"), job_id=job_id
+                ),
+                safety_row=_safety_row_from_row(
+                    row.get("safety_recommendation_json"), job_id=job_id
+                ),
                 completed_at=row["finished_at"],
             )
         )
@@ -344,14 +444,22 @@ async def list_recent_unfiltered(
         og_thumbnail_url = str(raw_og_thumbnail) if raw_og_thumbnail else None
         raw_preview = row.get("preview_description")
         preview_description = str(raw_preview) if raw_preview else None
+        job_id: UUID = row["job_id"]
         out.append(
             InternalRecentAnalysis(
-                job_id=row["job_id"],
+                job_id=job_id,
                 source_url=str(row["source_url"]),
                 page_title=row.get("page_title"),
                 screenshot_url=signed_url,
                 preview_description=preview_description,
                 og_thumbnail_url=og_thumbnail_url,
+                headline_preview=_headline_preview_from_row(row.get("headline_summary_text")),
+                weather_preview=_weather_preview_from_row(
+                    row.get("weather_report_json"), job_id=job_id
+                ),
+                safety_row=_safety_row_from_row(
+                    row.get("safety_recommendation_json"), job_id=job_id
+                ),
                 status=str(row["status"]),
                 completed_at=row["finished_at"],
             )
@@ -365,6 +473,7 @@ __all__ = [
     "_RECENT_UNFILTERED_SQL",
     "InternalRecentAnalysis",
     "RecentAnalysis",
+    "SafetyRowPreview",
     "ScreenshotSigner",
     "_has_secret_query_param",
     "_is_blocked_url",

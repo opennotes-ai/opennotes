@@ -26739,6 +26739,41 @@
             "title": "Og Thumbnail Url",
             "description": "X (Twitter) OG thumbnail URL stored during scan; None for non-X URLs."
           },
+          "headline_preview": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Headline Preview",
+            "description": "Truncated headline summary text from sidebar_payload; None when absent."
+          },
+          "weather_preview": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Weather Preview",
+            "description": "Compact weather-report label string (truth \u00b7 relevance \u00b7 sentiment); None when absent."
+          },
+          "safety_row": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SafetyRowPreview"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Minimal safety summary for gallery row; None when no recommendation stored."
+          },
           "completed_at": {
             "type": "string",
             "format": "date-time",
@@ -27740,6 +27775,19 @@
           "rationale"
         ],
         "title": "SafetyRecommendation"
+      },
+      "SafetyRowPreview": {
+        "properties": {
+          "level": {
+            "$ref": "#/components/schemas/SafetyLevel",
+            "description": "Safety level: safe, caution, or unsafe."
+          }
+        },
+        "type": "object",
+        "required": [
+          "level"
+        ],
+        "title": "SafetyRowPreview"
       },
       "SafetySection": {
         "properties": {
