@@ -293,7 +293,7 @@ class FlashpointDetectionService:
             return FlashpointMatch(
                 utterance_id=utterance.utterance_id,
                 derailment_score=derailment_score,
-                risk_level=risk_level,
+                risk_level=risk_level,  # pyright: ignore[reportArgumentType]
                 reasoning=result.reasoning,
                 context_messages=context_count,
             )

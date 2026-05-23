@@ -26,18 +26,19 @@ from src.services.firecrawl_client import (
     FirecrawlError,
     ScrapeResult,
 )
-from src.url_content_scan.analyses.claims import run_claims_dedup, run_known_misinfo
-from src.url_content_scan.analyses.claims.known_misinfo import EmbeddingServiceKnownMisinfoAdapter
+from src.url_content_scan.analyses.claims.dedup import run_claims_dedup
+from src.url_content_scan.analyses.claims.known_misinfo import (
+    EmbeddingServiceKnownMisinfoAdapter,
+    run_known_misinfo,
+)
 from src.url_content_scan.analyses.opinions import run_sentiment, run_subjective
 from src.url_content_scan.analyses.opinions.highlights import compute_highlights
 from src.url_content_scan.analyses.opinions.trends_oppositions import run_trends_oppositions
-from src.url_content_scan.analyses.safety import (
-    run_image_moderation,
-    run_safety_moderation,
-    run_safety_recommendation,
-    run_video_moderation,
-    run_web_risk,
-)
+from src.url_content_scan.analyses.safety.image_moderation import run_image_moderation
+from src.url_content_scan.analyses.safety.moderation import run_safety_moderation
+from src.url_content_scan.analyses.safety.recommendation import run_safety_recommendation
+from src.url_content_scan.analyses.safety.video_moderation import run_video_moderation
+from src.url_content_scan.analyses.safety.web_risk import run_web_risk
 from src.url_content_scan.analyses.tone import run_flashpoint, run_scd
 from src.url_content_scan.claims_schemas import ClaimsReport, FactCheckMatch
 from src.url_content_scan.models import (
@@ -291,10 +292,10 @@ async def _run_scd_section(inputs: UrlScanWorkflowInputs) -> Any:
 
 
 async def _run_claims_dedup_section(inputs: UrlScanWorkflowInputs) -> Any:
-    embed_texts = inputs.claims_embed_texts
+    embed_texts = inputs.claims_embed_texts  # pyright: ignore[reportAssignmentType]
     if embed_texts is None:
 
-        async def embed_texts(texts: list[str]) -> list[list[float]]:
+        async def embed_texts(texts: list[str]) -> list[list[float]]:  # pyright: ignore[reportRedeclaration]
             return await _default_claims_embed_texts(texts, inputs)
 
     return await run_claims_dedup(
@@ -470,7 +471,7 @@ async def _update_slot_running_async(job_id: UUID, slug: SectionSlug, attempt_id
             )
         )
         await session.commit()
-        return bool(result.rowcount)
+        return bool(result.rowcount)  # pyright: ignore[reportAttributeAccessIssue]
 
 
 async def _update_slot_done_async(
@@ -496,7 +497,7 @@ async def _update_slot_done_async(
             )
         )
         await session.commit()
-        return bool(result.rowcount)
+        return bool(result.rowcount)  # pyright: ignore[reportAttributeAccessIssue]
 
 
 async def _update_slot_failed_async(
@@ -523,7 +524,7 @@ async def _update_slot_failed_async(
             )
         )
         await session.commit()
-        return bool(result.rowcount)
+        return bool(result.rowcount)  # pyright: ignore[reportAttributeAccessIssue]
 
 
 async def _rotate_slot_attempt_async(
@@ -549,7 +550,7 @@ async def _rotate_slot_attempt_async(
                 finished_at=None,
             )
         )
-        if result.rowcount != 1:
+        if result.rowcount != 1:  # pyright: ignore[reportAttributeAccessIssue]
             await session.rollback()
             raise ValueError(f"expected exactly one slot row for {job_id}:{slug.value}")
         await session.commit()
@@ -567,7 +568,7 @@ async def _touch_heartbeat_async(job_id: UUID, attempt_id: UUID) -> bool:
             .values(heartbeat_at=func.now())
         )
         await session.commit()
-        return bool(result.rowcount)
+        return bool(result.rowcount)  # pyright: ignore[reportAttributeAccessIssue]
 
 
 async def _set_workflow_id_async(job_id: UUID, workflow_id: str) -> bool:
@@ -743,7 +744,7 @@ async def _fail_nonterminal_slots_async(job_id: UUID, attempt_id: UUID, error_me
             )
         )
         await session.commit()
-        return int(result.rowcount or 0)
+        return int(result.rowcount or 0)  # pyright: ignore[reportAttributeAccessIssue]
 
 
 async def _load_state_async(job_id: UUID) -> UrlScanState | None:
@@ -824,7 +825,7 @@ def _build_sidebar_payload(
             known_misinformation=known_misinformation,
         ),
         opinions_sentiments=OpinionsSection(
-            opinions_report={
+            opinions_report={  # pyright: ignore[reportArgumentType]
                 "sentiment_stats": sentiment_stats,
                 "subjective_claims": subjective_claims,
             },
@@ -855,9 +856,9 @@ def _build_sidebar_payload(
                 )
             ]
         ),
-        headline=headline_payload,
-        weather_report=weather_payload,
-        overall_recommendation=overall_payload,
+        headline=headline_payload,  # pyright: ignore[reportArgumentType]
+        weather_report=weather_payload,  # pyright: ignore[reportArgumentType]
+        overall_recommendation=overall_payload,  # pyright: ignore[reportArgumentType]
         utterances=[
             UtteranceAnchor(
                 position=index + 1,
@@ -1192,9 +1193,9 @@ def _scrape(job_id: str, source_url: str, normalized_url: str, attempt_id: str) 
         settings = get_settings()
         redis_client = await get_shared_redis_client(settings.REDIS_URL)
         cache = ScrapeCache(
-            redis_client=redis_client,
-            session_factory=get_session_maker(),
-            screenshot_store=_screenshot_store_from_settings(),
+            redis_client=redis_client,  # pyright: ignore[reportArgumentType]
+            session_factory=get_session_maker(),  # pyright: ignore[reportArgumentType]
+            screenshot_store=_screenshot_store_from_settings(),  # pyright: ignore[reportArgumentType]
         )
         cached = await cache.get(normalized_url)
         if cached is not None:

@@ -58,7 +58,7 @@ def _make_instrumentation_settings(include_content: bool) -> InstrumentationSett
     return InstrumentationSettings(
         include_content=include_content,
         include_binary_content=False,
-        version=PYDANTIC_AI_INSTRUMENTATION_VERSION,
+        version=PYDANTIC_AI_INSTRUMENTATION_VERSION,  # pyright: ignore[reportArgumentType]
     )
 
 

@@ -37,7 +37,7 @@ class VisionCache:
 
     async def get_image(self, image_url: str) -> SafeSearchResult | None:
         async with self._session_factory() as session:
-            row: UrlScanImageAnalysisCache | None = await session.get(
+            row: UrlScanImageAnalysisCache | None = await session.get(  # pyright: ignore[reportAssignmentType]
                 UrlScanImageAnalysisCache, image_url
             )
         if row is None:
@@ -48,7 +48,7 @@ class VisionCache:
         if isinstance(payload, str):
             payload = json.loads(payload)
         filtered = {k: v for k, v in payload.items() if k in _KNOWN_SAFE_SEARCH_FIELDS}
-        return SafeSearchResult(**filtered)
+        return SafeSearchResult(**filtered)  # pyright: ignore[reportArgumentType]
 
     async def put_image(
         self,
@@ -72,7 +72,7 @@ class VisionCache:
 
     async def get_video(self, video_url: str) -> list[FrameFinding] | None:
         async with self._session_factory() as session:
-            row: UrlScanVideoAnalysisCache | None = await session.get(
+            row: UrlScanVideoAnalysisCache | None = await session.get(  # pyright: ignore[reportAssignmentType]
                 UrlScanVideoAnalysisCache, video_url
             )
         if row is None:
@@ -82,7 +82,7 @@ class VisionCache:
         payload = row.frame_findings_payload
         if isinstance(payload, str):
             payload = json.loads(payload)
-        return [FrameFinding.model_validate(_normalize_cached_finding(f)) for f in payload]
+        return [FrameFinding.model_validate(_normalize_cached_finding(f)) for f in payload]  # pyright: ignore[reportArgumentType]
 
     async def put_video(
         self,

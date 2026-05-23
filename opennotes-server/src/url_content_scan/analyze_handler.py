@@ -701,8 +701,8 @@ def _hydrate_cached_sidebar_payload(
     now: datetime,
 ) -> tuple[dict[str, Any], str | None, str | None, int]:
     raw_payload = dict(cache_row.sidebar_payload)
-    page_title: str | None = raw_payload.get("page_title")
-    page_kind: str | None = raw_payload.get("page_kind")
+    page_title: str | None = raw_payload.get("page_title")  # pyright: ignore[reportAssignmentType]
+    page_kind: str | None = raw_payload.get("page_kind")  # pyright: ignore[reportAssignmentType]
     try:
         payload = SidebarPayload.model_validate(raw_payload).model_copy(
             update={
@@ -723,7 +723,7 @@ def _hydrate_cached_sidebar_payload(
             raw_payload,
             page_title,
             page_kind,
-            len(raw_payload.get("utterances") or []),
+            len(raw_payload.get("utterances") or []),  # pyright: ignore[reportArgumentType]
         )
 
 

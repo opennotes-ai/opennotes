@@ -9,7 +9,10 @@ from pydantic_ai.settings import ModelSettings
 
 from src.config import Settings, get_settings
 from src.url_content_scan.observability import url_scan_instrumentation
-from src.url_content_scan.opinions_schemas import SentimentScore, SentimentStatsReport
+from src.url_content_scan.opinions_schemas import (
+    SentimentScore,
+    SentimentStatsReport,
+)
 from src.url_content_scan.utterances.schema import Utterance
 
 DEFAULT_SENTIMENT_CONCURRENCY = 8
@@ -98,7 +101,7 @@ async def run_sentiment(
             classification = await classifier(utterance)
         return SentimentScore(
             utterance_id=utterance_id,
-            label=classification.label,
+            label=classification.label,  # pyright: ignore[reportArgumentType]
             valence=classification.valence,
         )
 

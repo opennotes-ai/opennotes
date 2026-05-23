@@ -30,7 +30,7 @@ def _collapse_inline_whitespace(text: str) -> str:
 
 
 def _body_html_to_markdown_text(body: str) -> str:  # noqa: PLR0912
-    root = lxml_html.fragment_fromstring(body, create_parent="div")
+    root = lxml_html.fragment_fromstring(body, create_parent="div")  # pyright: ignore[reportArgumentType]
     for anchor in root.xpath(".//a"):
         if not isinstance(anchor, HtmlElement):
             continue

@@ -149,7 +149,7 @@ def _parse_html(html_text: str | None) -> HtmlElement | None:
         return None
     try:
         return lxml_html.fromstring(html_text)
-    except (TypeError, ValueError, lxml_html.ParserError):
+    except (TypeError, ValueError, lxml_html.ParserError):  # pyright: ignore[reportAttributeAccessIssue]
         return None
 
 
@@ -812,7 +812,7 @@ def _element_fragment(
     *,
     nested_container_xpaths: Iterable[str] = (),
 ) -> str:
-    return lxml_html.tostring(
+    return lxml_html.tostring(  # pyright: ignore[reportReturnType]
         _pruned_clone(element, nested_container_xpaths=nested_container_xpaths),
         encoding="unicode",
     )

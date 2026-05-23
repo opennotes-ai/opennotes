@@ -90,7 +90,9 @@ def _http_exception_response(exc: HTTPException) -> JSONResponse:
         error_code = "invalid_url"
     elif exc.status_code == status.HTTP_503_SERVICE_UNAVAILABLE:
         error_code = "upstream_error"
-    return _error_response(exc.status_code, error_code, message, headers=exc.headers)
+    return _error_response(
+        exc.status_code, error_code, message, headers=dict(exc.headers) if exc.headers else None
+    )
 
 
 def _parse_job_id(job_id: str | None) -> UUID | None:
@@ -144,7 +146,7 @@ def get_scrape_cache(request: Request) -> ScrapeCache:
         raise HTTPException(status_code=503, detail="URL scan cache is not configured")
     return ScrapeCache(
         redis_client=redis,
-        session_factory=get_session_maker(),
+        session_factory=get_session_maker(),  # pyright: ignore[reportArgumentType]
         screenshot_store=ScreenshotStore.from_settings(),
     )
 
@@ -283,7 +285,7 @@ async def recent_analyses(
     signer = getattr(request.app.state, "recent_signer", None)
     if signer is None:
         signer = _RecentScreenshotSigner(get_screenshot_store(request))
-    return await list_recent(db, limit=limit, signer=signer)
+    return await list_recent(db, limit=limit, signer=signer)  # pyright: ignore[reportArgumentType]
 
 
 @router.get("/frame-compat", response_model=FrameCompatResponse)
@@ -508,7 +510,7 @@ def register_private_url_scan_routes(app: Any) -> bool:
         signer = getattr(request.app.state, "recent_signer", None)
         if signer is None:
             signer = _RecentScreenshotSigner(get_screenshot_store(request))
-        return await list_recent_unfiltered(db, limit=limit, signer=signer)
+        return await list_recent_unfiltered(db, limit=limit, signer=signer)  # pyright: ignore[reportArgumentType]
 
     app.include_router(private_router)
     return True

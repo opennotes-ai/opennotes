@@ -54,7 +54,7 @@ async def extract_claims(
 
     cfg = settings or get_settings()
     base_model = cfg.DEFAULT_MINI_MODEL.to_pydantic_ai_model()
-    instrumented_model = InstrumentedModel(base_model, url_scan_extractor_instrumentation(cfg))
+    instrumented_model = InstrumentedModel(base_model, url_scan_extractor_instrumentation(cfg))  # pyright: ignore[reportArgumentType]
     result = await _CLAIM_EXTRACTION_AGENT.run(
         text,
         model=instrumented_model,

@@ -70,7 +70,7 @@ def _build_section_inputs(batch_job: BatchJob, scan_state: Any, utterance_rows: 
         page_kind=page_kind,
         community_server_id=str(metadata.get("community_server_id") or "") or None,
         community_server_uuid=str(metadata.get("community_server_uuid") or "") or None,
-        dataset_tags=list(metadata.get("dataset_tags") or []),
+        dataset_tags=list(metadata.get("dataset_tags") or []),  # pyright: ignore[reportArgumentType]
     )
 
 

@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from typing import Any
 from uuid import UUID, uuid4
 
 from fastapi import Request
@@ -251,13 +252,14 @@ async def handle_analyze_images(  # noqa: PLR0911,PLR0912
 
     try:
         for img in images:
-            metadata = await store.get_metadata(str(img["gcs_key"]))
+            img_dict: dict[str, Any] = img  # pyright: ignore[reportAssignmentType]
+            metadata = await store.get_metadata(str(img_dict["gcs_key"]))
             if metadata is None:
                 return _validation_error(
                     "upload_not_found",
                     "one or more images were not uploaded",
                 )
-            if metadata.get("size") != img["size_bytes"]:
+            if metadata.get("size") != img_dict["size_bytes"]:
                 return _validation_error(
                     "upload_not_found",
                     "one or more images were not uploaded",

@@ -150,6 +150,8 @@ def _level_fallback_reason(level: SafetyLevel) -> str:
             return "Multiple low-severity concerns"
         case SafetyLevel.UNSAFE:
             return "Significant safety concerns"
+        case _:
+            return "Unknown safety level"
 
 
 def _derive_reason(recommendation: SafetyRecommendation) -> str | None:

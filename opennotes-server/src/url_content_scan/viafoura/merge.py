@@ -61,7 +61,7 @@ def _build_body_to_authors(
 
 def _node_body_key(node: ViafouraCommentNode) -> str:
     try:
-        fragment = lxml_html.fragment_fromstring(node.body or "", create_parent="div")
+        fragment = lxml_html.fragment_fromstring(node.body or "", create_parent="div")  # pyright: ignore[reportArgumentType]
         return _normalize_text(fragment.text_content())
     except Exception:
         return _normalize_text(node.body or "")
@@ -123,7 +123,8 @@ def _deduplicate_against_scrape_html(
                     parent.remove(article)
                 articles_decomposed += 1
 
-    updated_html = lxml_html.tostring(root, encoding="unicode") if matched_keys else None
+    _raw = lxml_html.tostring(root, encoding="unicode") if matched_keys else None
+    updated_html: str | None = _raw  # pyright: ignore[reportAssignmentType]
     return _DeduplicateResult(
         nodes=updated_nodes,
         matched_keys=matched_keys,

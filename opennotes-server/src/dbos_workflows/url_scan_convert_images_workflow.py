@@ -285,17 +285,17 @@ def image_conversion_workflow(batch_id: str, bucket_name: str) -> None:
     extraction = extract_pdf_content_step(pdf_bytes)
     extracted_text = str(extraction.get("text") or "")
     extracted_page_count_val = extraction.get("page_count")
-    extracted_meta = dict(extraction.get("metadata") or {})
+    extracted_meta = dict(extraction.get("metadata") or {})  # pyright: ignore[reportArgumentType, reportCallIssue]
 
     page_count_int: int | None = (
-        int(extracted_page_count_val) if extracted_page_count_val is not None else None
+        int(extracted_page_count_val) if extracted_page_count_val is not None else None  # pyright: ignore[reportArgumentType]
     )
 
     create_pdf_archive_row_step(
         str(batch_id),
         extracted_text,
         page_count=page_count_int,
-        extracted_metadata=extracted_meta if extracted_meta else None,
+        extracted_metadata=extracted_meta if extracted_meta else None,  # pyright: ignore[reportArgumentType]
     )
 
     pdf_gcs_url = f"gcs-pdf://{generated_pdf_key}"

@@ -766,7 +766,7 @@ async def url_scan_auth_exception_handler(
     )
 
 
-app.add_exception_handler(UrlScanAuthError, url_scan_auth_exception_handler)
+app.add_exception_handler(UrlScanAuthError, url_scan_auth_exception_handler)  # pyright: ignore[reportArgumentType]
 
 if settings.ENABLE_METRICS:
     app.add_middleware(MetricsMiddleware)

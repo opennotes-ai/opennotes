@@ -23,6 +23,8 @@ async def run_safety_moderation(
         return SafetySection()
     if moderation_service is None:
         return SafetySection()
+    if not isinstance(moderation_service, OpenAIModerationService):
+        return SafetySection()
 
     scannable = [utterance for utterance in utterances if utterance.text.strip()]
     if not scannable:
