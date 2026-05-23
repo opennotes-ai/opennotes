@@ -215,7 +215,9 @@ async def test_archive_preview_prefers_cached_interact_html() -> None:
 
     result = await archive_preview("https://example.com/article", scrape_cache=cache)
 
-    assert result == "<main><p>keep</p></main>"
+    assert result is not None
+    assert "<p>keep</p>" in result
+    assert "<script" not in result.lower()
     assert cache.get_calls == [
         ("https://example.com/article", "browser_html"),
         ("https://example.com/article", "interact"),
@@ -240,9 +242,11 @@ async def test_archive_preview_generates_and_stores_when_requested() -> None:
         generate=True,
     )
 
-    assert result == "<main><p>keep</p></main>"
+    assert result is not None
+    assert "<p>keep</p>" in result
+    assert "<script" not in result.lower()
     assert scraper.calls == [
-        ("https://example.com/article", ("html",), True),
+        ("https://example.com/article", ("html", "markdown"), True),
     ]
     assert cache.put_calls == [("https://example.com/article", "scrape")]
 
@@ -297,3 +301,97 @@ async def test_lookup_screenshot_returns_none_when_storage_key_missing() -> None
         ("https://example.com/article", "interact"),
         ("https://example.com/article", "scrape"),
     ]
+
+
+@pytest.mark.asyncio
+async def test_frame_compat_reports_html_extracted_for_interact_tier() -> None:
+    client = _FakeHttpClient(
+        {
+            ("HEAD", "https://example.com/article"): _FakeResponse(
+                status_code=200,
+                headers={"x-frame-options": "DENY"},
+            )
+        }
+    )
+    cache = _FakeScrapeCache(cached_by_tier={"interact": _scrape()})
+
+    result = await frame_compat("https://example.com/article", client=client, scrape_cache=cache)
+
+    assert result.has_archive is True
+    assert result.archive_render_mode == "html_extracted"
+
+
+@pytest.mark.asyncio
+async def test_frame_compat_reports_html_full_page_for_browser_html_tier() -> None:
+    client = _FakeHttpClient(
+        {
+            ("HEAD", "https://example.com/article"): _FakeResponse(
+                status_code=200,
+                headers={"x-frame-options": "DENY"},
+            )
+        }
+    )
+    cache = _FakeScrapeCache(cached_by_tier={"browser_html": _scrape()})
+
+    result = await frame_compat("https://example.com/article", client=client, scrape_cache=cache)
+
+    assert result.has_archive is True
+    assert result.archive_render_mode == "html_full_page"
+
+
+@pytest.mark.asyncio
+async def test_frame_compat_reports_none_render_mode_when_no_archive() -> None:
+    client = _FakeHttpClient(
+        {
+            ("HEAD", "https://example.com/article"): _FakeResponse(
+                status_code=200,
+                headers={},
+            )
+        }
+    )
+    cache = _FakeScrapeCache()
+
+    result = await frame_compat("https://example.com/article", client=client, scrape_cache=cache)
+
+    assert result.has_archive is False
+    assert result.archive_render_mode is None
+
+
+@pytest.mark.asyncio
+async def test_archive_preview_injects_display_styles() -> None:
+    cache = _FakeScrapeCache(
+        cached_by_tier={"scrape": _scrape(html="<html><body><p>Text</p></body></html>")}
+    )
+
+    result = await archive_preview("https://example.com/article", scrape_cache=cache)
+
+    assert result is not None
+    assert "img{max-width:100%!important" in result
+
+
+@pytest.mark.asyncio
+async def test_archive_preview_content_format_text_returns_markdown() -> None:
+    cache = _FakeScrapeCache(
+        cached_by_tier={"scrape": _scrape(html="<p>body</p>", markdown="# Title\n\nBody")}
+    )
+
+    result = await archive_preview(
+        "https://example.com/article",
+        scrape_cache=cache,
+        content_format="text",
+    )
+
+    assert result == "# Title\n\nBody"
+
+
+@pytest.mark.asyncio
+async def test_archive_preview_content_format_text_falls_back_to_html_when_no_markdown() -> None:
+    cache = _FakeScrapeCache(cached_by_tier={"scrape": _scrape(html="<p>body</p>", markdown=None)})
+
+    result = await archive_preview(
+        "https://example.com/article",
+        scrape_cache=cache,
+        content_format="text",
+    )
+
+    assert result == "<p>body</p>"

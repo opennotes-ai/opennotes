@@ -14,7 +14,7 @@ from uuid import uuid4
 from pydantic import ConfigDict, Field
 
 from src.services.firecrawl_client import ScrapeMetadata, ScrapeResult
-from src.url_content_scan.html_sanitize import strip_noise
+from src.url_content_scan.html_sanitize import strip_for_display
 from src.url_content_scan.models import UrlScanScrape
 from src.url_content_scan.normalize import canonical_cache_key
 from src.url_content_scan.screenshot_store import ScreenshotStore
@@ -165,7 +165,7 @@ class ScrapeCache:
                 json.dumps(
                     {
                         "markdown": scrape.markdown,
-                        "html": strip_noise(scrape.html),
+                        "html": strip_for_display(scrape.html),
                     }
                 ).encode("utf-8"),
             )
@@ -179,7 +179,7 @@ class ScrapeCache:
 
         return CachedScrape(
             markdown=scrape.markdown,
-            html=strip_noise(scrape.html),
+            html=strip_for_display(scrape.html),
             metadata=scrape.metadata,
             warning=scrape.warning,
             links=scrape.links,
