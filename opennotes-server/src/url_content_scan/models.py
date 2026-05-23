@@ -236,6 +236,10 @@ class UrlScanPdfArchive(Base):
 
     Stores the final rendered HTML output for 60 days so the archive-preview
     endpoint can serve it without re-running the full scan pipeline.
+
+    TASK-1657.28 adds ``page_count`` and ``extracted_metadata`` so the
+    pdf_extract step can persist per-page text counts and document-level
+    PDF metadata (author, title, creator, …).
     """
 
     __tablename__ = "url_scan_pdf_archives"
@@ -253,6 +257,8 @@ class UrlScanPdfArchive(Base):
         unique=True,
     )
     html: Mapped[str] = mapped_column(Text, nullable=False)
+    page_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    extracted_metadata: Mapped[dict[str, object] | None] = mapped_column(JSONB, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,

@@ -108,7 +108,14 @@ async def _mark_failed_async(batch_id: UUID, error_code: str, error_message: str
             batch.error_message = error_message
 
 
-async def _create_pdf_archive_async(job_id: UUID, html: str, *, expires_days: int = 60) -> None:
+async def _create_pdf_archive_async(
+    job_id: UUID,
+    html: str,
+    *,
+    page_count: int | None = None,
+    extracted_metadata: dict[str, object] | None = None,
+    expires_days: int = 60,
+) -> None:
     import pendulum
 
     from src.database import get_session_maker
@@ -119,6 +126,8 @@ async def _create_pdf_archive_async(job_id: UUID, html: str, *, expires_days: in
         archive = UrlScanPdfArchive(
             job_id=job_id,
             html=html,
+            page_count=page_count,
+            extracted_metadata=extracted_metadata,
             expires_at=expires_at,
         )
         session.add(archive)
@@ -169,8 +178,37 @@ def mark_failed_step(batch_id: str, error_code: str, error_message: str) -> None
 
 
 @DBOS.step()
-def create_pdf_archive_row_step(job_id: str, html: str) -> None:
-    run_sync(_create_pdf_archive_async(UUID(job_id), html))
+def extract_pdf_content_step(pdf_bytes: bytes) -> dict[str, object]:
+    from src.url_content_scan.pdf_extract import PdfExtractionError, extract_pdf_content
+
+    try:
+        content = extract_pdf_content(pdf_bytes)
+    except PdfExtractionError as exc:
+        logger.warning("pdf_extract_step: extraction failed: %s", exc)
+        return {"text": "", "page_count": 0, "page_texts": [], "metadata": {}}
+    return {
+        "text": content.text,
+        "page_count": content.page_count,
+        "page_texts": content.page_texts,
+        "metadata": content.metadata,
+    }
+
+
+@DBOS.step()
+def create_pdf_archive_row_step(
+    job_id: str,
+    html: str,
+    page_count: int | None = None,
+    extracted_metadata: dict[str, object] | None = None,
+) -> None:
+    run_sync(
+        _create_pdf_archive_async(
+            UUID(job_id),
+            html,
+            page_count=page_count,
+            extracted_metadata=extracted_metadata,
+        )
+    )
 
 
 @DBOS.step()
@@ -243,6 +281,22 @@ def image_conversion_workflow(batch_id: str, bucket_name: str) -> None:
         return
 
     mark_converted_step(batch_id, generated_pdf_key)
+
+    extraction = extract_pdf_content_step(pdf_bytes)
+    extracted_text = str(extraction.get("text") or "")
+    extracted_page_count_val = extraction.get("page_count")
+    extracted_meta = dict(extraction.get("metadata") or {})
+
+    page_count_int: int | None = (
+        int(extracted_page_count_val) if extracted_page_count_val is not None else None
+    )
+
+    create_pdf_archive_row_step(
+        str(batch_id),
+        extracted_text,
+        page_count=page_count_int,
+        extracted_metadata=extracted_meta if extracted_meta else None,
+    )
 
     pdf_gcs_url = f"gcs-pdf://{generated_pdf_key}"
     dispatch_url_scan_for_pdf_step(str(batch_id), pdf_gcs_url, batch_id)

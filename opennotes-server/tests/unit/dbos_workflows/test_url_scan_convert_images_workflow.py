@@ -189,6 +189,96 @@ class TestCreatePdfArchiveAsync:
         assert archive.html == "<html>extracted</html>"
         assert archive.expires_at is not None
 
+    @pytest.mark.asyncio
+    async def test_creates_pdf_archive_row_with_extraction_metadata(self):
+        from src.dbos_workflows.url_scan_convert_images_workflow import _create_pdf_archive_async
+        from src.url_content_scan.models import UrlScanPdfArchive
+
+        job_id = uuid4()
+        fake_session = _FakeSessionWithBatch()
+        maker = _make_session_maker(fake_session)
+
+        with patch("src.database.get_session_maker", return_value=maker):
+            await _create_pdf_archive_async(
+                job_id,
+                "extracted text content",
+                page_count=3,
+                extracted_metadata={"Author": "Test Author", "Title": "Test PDF"},
+            )
+
+        assert len(fake_session.added) == 1
+        archive = fake_session.added[0]
+        assert isinstance(archive, UrlScanPdfArchive)
+        assert archive.html == "extracted text content"
+        assert archive.page_count == 3
+        assert archive.extracted_metadata == {"Author": "Test Author", "Title": "Test PDF"}
+
+    @pytest.mark.asyncio
+    async def test_creates_pdf_archive_row_empty_extraction(self):
+        from src.dbos_workflows.url_scan_convert_images_workflow import _create_pdf_archive_async
+
+        job_id = uuid4()
+        fake_session = _FakeSessionWithBatch()
+        maker = _make_session_maker(fake_session)
+
+        with patch("src.database.get_session_maker", return_value=maker):
+            await _create_pdf_archive_async(
+                job_id,
+                "",
+                page_count=0,
+                extracted_metadata=None,
+            )
+
+        assert len(fake_session.added) == 1
+        archive = fake_session.added[0]
+        assert archive.html == ""
+        assert archive.page_count == 0
+        assert archive.extracted_metadata is None
+
+
+class TestExtractPdfContentStep:
+    def test_extract_step_returns_dict_on_success(self):
+        from src.dbos_workflows.url_scan_convert_images_workflow import extract_pdf_content_step
+        from src.url_content_scan.pdf_extract import PdfContent
+
+        fake_content = PdfContent(
+            text="page one\npage two",
+            page_count=2,
+            page_texts=["page one", "page two"],
+            metadata={"Author": "Test"},
+        )
+
+        with patch(
+            "src.url_content_scan.pdf_extract.extract_pdf_content",
+            return_value=fake_content,
+        ):
+            result = extract_pdf_content_step(b"%PDF-fake")
+
+        assert result["text"] == "page one\npage two"
+        assert result["page_count"] == 2
+        assert result["page_texts"] == ["page one", "page two"]
+        assert result["metadata"] == {"Author": "Test"}
+
+    def test_extract_step_returns_empty_dict_on_extraction_error(self):
+        from src.dbos_workflows.url_scan_convert_images_workflow import extract_pdf_content_step
+        from src.url_content_scan.pdf_extract import PdfExtractionError
+
+        with patch(
+            "src.url_content_scan.pdf_extract.extract_pdf_content",
+            side_effect=PdfExtractionError("malformed PDF"),
+        ):
+            result = extract_pdf_content_step(b"not a pdf")
+
+        assert result["text"] == ""
+        assert result["page_count"] == 0
+        assert result["page_texts"] == []
+        assert result["metadata"] == {}
+
+    def test_extract_step_is_callable(self):
+        from src.dbos_workflows.url_scan_convert_images_workflow import extract_pdf_content_step
+
+        assert callable(extract_pdf_content_step)
+
 
 class TestImageConversionWorkflowIntegration:
     def test_workflow_is_registered_as_dbos_workflow(self):

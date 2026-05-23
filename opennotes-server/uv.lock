@@ -3728,6 +3728,7 @@ dependencies = [
     { name = "pydantic-ai-slim", extra = ["anthropic", "dbos", "evals", "google", "groq", "mcp", "openai", "retries"] },
     { name = "pydantic-settings" },
     { name = "pyjwt" },
+    { name = "pypdf" },
     { name = "pyroscope-io" },
     { name = "python-jose", extra = ["cryptography"] },
     { name = "python-json-logger" },
@@ -3868,6 +3869,7 @@ requires-dist = [
     { name = "pydantic-ai-slim", extras = ["openai", "google", "anthropic", "groq", "dbos", "mcp", "retries", "evals"], specifier = ">=1.96.0,<2.0.0" },
     { name = "pydantic-settings", specifier = ">=2.1.0" },
     { name = "pyjwt", specifier = ">=2.10.1" },
+    { name = "pypdf", specifier = ">=4.0.0" },
     { name = "pyroscope-io", specifier = ">=0.8.0" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=7.4.3" },
     { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.21.1" },
@@ -5364,6 +5366,15 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/f3/91/9c6ee907786a473bf81c5f53cf703ba0957b23ab84c264080fb5a450416f/pyparsing-3.3.2.tar.gz", hash = "sha256:c777f4d763f140633dcb6d8a3eda953bf7a214dc4eff598413c070bcdc117cbc", size = 6851574, upload-time = "2026-01-21T03:57:59.36Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/10/bd/c038d7cc38edc1aa5bf91ab8068b63d4308c66c4c8bb3cbba7dfbc049f9c/pyparsing-3.3.2-py3-none-any.whl", hash = "sha256:850ba148bd908d7e2411587e247a1e4f0327839c40e2e5e6d05a007ecc69911d", size = 122781, upload-time = "2026-01-21T03:57:55.912Z" },
+]
+
+[[package]]
+name = "pypdf"
+version = "6.12.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/54/4d/39e48f5294a5a6bb78313839aae820666c2d30daeadb652ed50bd46cafac/pypdf-6.12.1.tar.gz", hash = "sha256:3953a097b9f26d4e0ead5ff95943d9971377557662a91d8872186053cd71d30a", size = 6467595, upload-time = "2026-05-22T10:07:59.979Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/5e/aa/4d17fe9ff165d1341878c570b14f5b7291106d63411adf640942a7e638aa/pypdf-6.12.1-py3-none-any.whl", hash = "sha256:8fa2a2321cf16247ed848bd7c97f193a60c08670d04abed5b0138327e51c43b0", size = 343787, upload-time = "2026-05-22T10:07:57.801Z" },
 ]
 
 [[package]]
