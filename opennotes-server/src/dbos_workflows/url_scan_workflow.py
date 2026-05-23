@@ -396,6 +396,32 @@ async def _run_highlights_section(inputs: UrlScanWorkflowInputs) -> Any:
     return report.model_dump(mode="json")
 
 
+async def _run_claims_premises_section(inputs: UrlScanWorkflowInputs) -> Any:
+    from src.config import get_settings
+    from src.url_content_scan.analyses.claims.premises_slot import run_claims_premises
+
+    if inputs.claims_report is None:
+        return ClaimsReport(deduped_claims=[], total_claims=0, total_unique=0).model_dump(
+            mode="json"
+        )
+    settings = get_settings()
+    payload = inputs.claims_report.model_dump(mode="json")
+    return await run_claims_premises(payload, settings)
+
+
+async def _run_claims_evidence_section(inputs: UrlScanWorkflowInputs) -> Any:
+    from src.config import get_settings
+    from src.url_content_scan.analyses.claims.evidence_slot import run_claims_evidence
+
+    if inputs.claims_report is None:
+        return ClaimsReport(deduped_claims=[], total_claims=0, total_unique=0).model_dump(
+            mode="json"
+        )
+    settings = get_settings()
+    payload = inputs.claims_report.model_dump(mode="json")
+    return await run_claims_evidence(payload, settings)
+
+
 _SECTION_RUNNERS = {
     SectionSlug.SAFETY_MODERATION: _run_safety_moderation_section,
     SectionSlug.SAFETY_WEB_RISK: _run_web_risk_section,
@@ -405,6 +431,8 @@ _SECTION_RUNNERS = {
     SectionSlug.TONE_DYNAMICS_SCD: _run_scd_section,
     SectionSlug.FACTS_CLAIMS_DEDUP: _run_claims_dedup_section,
     SectionSlug.FACTS_CLAIMS_KNOWN_MISINFO: _run_known_misinfo_section,
+    SectionSlug.FACTS_CLAIMS_PREMISES: _run_claims_premises_section,
+    SectionSlug.FACTS_CLAIMS_EVIDENCE: _run_claims_evidence_section,
     SectionSlug.OPINIONS_SENTIMENTS_SENTIMENT: _run_sentiment_section,
     SectionSlug.OPINIONS_SENTIMENTS_SUBJECTIVE: _run_subjective_section,
     SectionSlug.OPINIONS_SENTIMENTS_TRENDS_OPPOSITIONS: _run_trends_oppositions_section,
@@ -1639,6 +1667,13 @@ def _hydrate_section_inputs(
         if payload is None:
             raise ValueError("facts_claims__dedup payload is required for known-misinfo retries")
         hydrated = replace(hydrated, claims_report=ClaimsReport.model_validate(payload))
+    if (
+        slug in {SectionSlug.FACTS_CLAIMS_PREMISES, SectionSlug.FACTS_CLAIMS_EVIDENCE}
+        and hydrated.claims_report is None
+    ):
+        payload = load_url_scan_section_payload_step(job_id, SectionSlug.FACTS_CLAIMS_DEDUP.value)
+        if payload is not None:
+            hydrated = replace(hydrated, claims_report=ClaimsReport.model_validate(payload))
     if slug is SectionSlug.OPINIONS_SENTIMENTS_SUBJECTIVE and hydrated.sentiment_stats is None:
         payload = load_url_scan_section_payload_step(
             job_id, SectionSlug.OPINIONS_SENTIMENTS_SENTIMENT.value

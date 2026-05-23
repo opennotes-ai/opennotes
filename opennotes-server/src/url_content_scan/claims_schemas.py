@@ -20,6 +20,34 @@ class ClaimCategory(StrEnum):
     OTHER = "other"
 
 
+class SourceKind(StrEnum):
+    """Origin of a supporting fact used by the evidence slot."""
+
+    UTTERANCE = "utterance"
+    EXTERNAL = "external"
+
+
+class SupportingFact(BaseModel):
+    """A single supporting statement for a deduped claim."""
+
+    statement: str
+    source_kind: SourceKind
+    source_ref: str
+
+
+class Premise(BaseModel):
+    """A premise statement attached to one or more claims."""
+
+    premise_id: str
+    statement: str
+
+
+class PremisesRegistry(BaseModel):
+    """Global registry of unique premises discovered across all claims."""
+
+    premises: dict[str, Premise] = Field(default_factory=dict)
+
+
 class Claim(BaseModel):
     """A single verifiable factual claim extracted from an utterance."""
 
@@ -44,12 +72,16 @@ class DedupedClaim(BaseModel):
     author_count: int = Field(ge=0)
     utterance_ids: list[str]
     representative_authors: list[str]
+    supporting_facts: list[SupportingFact] = Field(default_factory=list)
+    premise_ids: list[str] = Field(default_factory=list)
+    facts_to_verify: int = Field(default=0, ge=0)
 
 
 class ClaimsReport(BaseModel):
     deduped_claims: list[DedupedClaim]
     total_claims: int
     total_unique: int
+    premises: PremisesRegistry | None = None
 
 
 class FactCheckMatch(BaseModel):

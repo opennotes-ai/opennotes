@@ -17714,6 +17714,16 @@
           "total_unique": {
             "type": "integer",
             "title": "Total Unique"
+          },
+          "premises": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PremisesRegistry"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "type": "object",
@@ -18836,6 +18846,26 @@
             },
             "type": "array",
             "title": "Representative Authors"
+          },
+          "supporting_facts": {
+            "items": {
+              "$ref": "#/components/schemas/SupportingFact"
+            },
+            "type": "array",
+            "title": "Supporting Facts"
+          },
+          "premise_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Premise Ids"
+          },
+          "facts_to_verify": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Facts To Verify",
+            "default": 0
           }
         },
         "type": "object",
@@ -24922,6 +24952,39 @@
         ],
         "title": "PlaygroundNoteRequestJobResponse"
       },
+      "Premise": {
+        "properties": {
+          "premise_id": {
+            "type": "string",
+            "title": "Premise Id"
+          },
+          "statement": {
+            "type": "string",
+            "title": "Statement"
+          }
+        },
+        "type": "object",
+        "required": [
+          "premise_id",
+          "statement"
+        ],
+        "title": "Premise",
+        "description": "A premise statement attached to one or more claims."
+      },
+      "PremisesRegistry": {
+        "properties": {
+          "premises": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/Premise"
+            },
+            "type": "object",
+            "title": "Premises"
+          }
+        },
+        "type": "object",
+        "title": "PremisesRegistry",
+        "description": "Global registry of unique premises discovered across all claims."
+      },
       "PreviouslySeenCheckAttributes": {
         "properties": {
           "message_text": {
@@ -29660,6 +29723,15 @@
         ],
         "title": "SimulationUpdateRequest"
       },
+      "SourceKind": {
+        "type": "string",
+        "enum": [
+          "utterance",
+          "external"
+        ],
+        "title": "SourceKind",
+        "description": "Origin of a supporting fact used by the evidence slot."
+      },
       "SpeakerArc": {
         "properties": {
           "speaker": {
@@ -29725,6 +29797,29 @@
           "stance"
         ],
         "title": "SubjectiveClaim"
+      },
+      "SupportingFact": {
+        "properties": {
+          "statement": {
+            "type": "string",
+            "title": "Statement"
+          },
+          "source_kind": {
+            "$ref": "#/components/schemas/SourceKind"
+          },
+          "source_ref": {
+            "type": "string",
+            "title": "Source Ref"
+          }
+        },
+        "type": "object",
+        "required": [
+          "statement",
+          "source_kind",
+          "source_ref"
+        ],
+        "title": "SupportingFact",
+        "description": "A single supporting statement for a deduped claim."
       },
       "TierInfo": {
         "properties": {
