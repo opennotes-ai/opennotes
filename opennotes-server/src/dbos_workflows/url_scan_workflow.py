@@ -768,6 +768,8 @@ def _build_sidebar_payload(
     slot_payloads: dict[str, Any],
     recommendation_payload: dict[str, Any] | None,
     headline_payload: dict[str, Any] | None,
+    weather_payload: dict[str, Any] | None = None,
+    overall_payload: dict[str, Any] | None = None,
 ) -> SidebarPayload | None:
     if any(slug not in slot_payloads for slug in _REQUIRED_SIDEBAR_SLOTS):
         return None
@@ -854,6 +856,8 @@ def _build_sidebar_payload(
             ]
         ),
         headline=headline_payload,
+        weather_report=weather_payload,
+        overall_recommendation=overall_payload,
         utterances=[
             UtteranceAnchor(
                 position=index + 1,
@@ -939,6 +943,8 @@ async def _finalize_async(
     slot_results: dict[str, Any],
     safety_result: dict[str, Any] | None,
     headline_result: dict[str, Any] | None,
+    weather_result: dict[str, Any] | None = None,
+    overall_result: dict[str, Any] | None = None,
     extracted_payload: dict[str, Any] | None,
     fatal_error_code: str | None,
     fatal_error_message: str | None,
@@ -980,6 +986,8 @@ async def _finalize_async(
                 slot_payloads=slot_payloads,
                 recommendation_payload=(safety_result or {}).get("recommendation"),
                 headline_payload=(headline_result or {}).get("headline"),
+                weather_payload=(weather_result or {}).get("weather_report"),
+                overall_payload=(overall_result or {}).get("overall_recommendation"),
             )
             state.page_title = final_page_title
             state.page_kind = final_page_kind.value
@@ -1501,6 +1509,26 @@ def _run_headline_summary_inner(
                     page_title=extracted_payload.get("page_title"),
                     page_kind=PageKind(extracted_payload.get("page_kind", PageKind.OTHER.value)),
                     unavailable_inputs=unavailable_inputs,
+                    trends_oppositions=(
+                        TrendsOppositionsReport.model_validate(
+                            slots[SectionSlug.OPINIONS_SENTIMENTS_TRENDS_OPPOSITIONS.value]["data"]
+                        )
+                        if slots.get(
+                            SectionSlug.OPINIONS_SENTIMENTS_TRENDS_OPPOSITIONS.value, {}
+                        ).get("data")
+                        is not None
+                        else None
+                    ),
+                    highlights=(
+                        OpinionsHighlightsReport.model_validate(
+                            slots[SectionSlug.OPINIONS_SENTIMENTS_HIGHLIGHTS.value]["data"]
+                        )
+                        if slots.get(SectionSlug.OPINIONS_SENTIMENTS_HIGHLIGHTS.value, {}).get(
+                            "data"
+                        )
+                        is not None
+                        else None
+                    ),
                 ),
                 settings=import_module("src.config").get_settings(),
                 job_id=UUID(job_id),
@@ -1519,6 +1547,8 @@ def _finalize(
     slot_results: dict[str, Any],
     safety_result: dict[str, Any] | None,
     headline_result: dict[str, Any] | None,
+    weather_result: dict[str, Any] | None = None,
+    overall_result: dict[str, Any] | None = None,
     extracted_payload: dict[str, Any] | None,
     fatal_error_code: str | None = None,
     fatal_error_message: str | None = None,
@@ -1531,12 +1561,177 @@ def _finalize(
             slot_results=slot_results,
             safety_result=safety_result,
             headline_result=headline_result,
+            weather_result=weather_result,
+            overall_result=overall_result,
             extracted_payload=extracted_payload,
             fatal_error_code=fatal_error_code,
             fatal_error_message=fatal_error_message,
             fatal_error_host=fatal_error_host,
         )
     )
+
+
+@DBOS.step()
+def _run_weather_report(
+    job_id: str,
+    *,
+    slot_results: dict[str, Any],
+    safety_result: dict[str, Any] | None,
+    extracted_payload: dict[str, Any] | None,
+) -> dict[str, Any]:
+    try:
+        synthesis_module = import_module("src.url_content_scan.analyses.synthesis")
+    except Exception as exc:
+        return {"weather_report": None, "error": str(exc)}
+
+    evaluate_weather_fn = getattr(synthesis_module, "evaluate_weather", None)
+    weather_inputs_type = getattr(synthesis_module, "WeatherInputs", None)
+    if evaluate_weather_fn is None or weather_inputs_type is None:
+        return {"weather_report": None, "error": "weather synthesis entrypoint missing"}
+
+    slots = slot_results.get("slots", {})
+    unavailable_inputs: list[str] = _slot_unavailable_inputs(slot_results, list(SectionSlug))
+    try:
+        from src.url_content_scan.claims_schemas import ClaimsReport
+        from src.url_content_scan.opinions_schemas import (
+            OpinionsHighlightsReport,
+            SentimentStatsReport,
+            SubjectiveClaim,
+            TrendsOppositionsReport,
+        )
+        from src.url_content_scan.tone_schemas import FlashpointMatch, SCDReport
+
+        transcript_excerpt = (extracted_payload or {}).get("transcript_excerpt") or ""
+        page_title = (extracted_payload or {}).get("page_title")
+        page_kind = PageKind((extracted_payload or {}).get("page_kind", PageKind.OTHER.value))
+
+        weather_inputs = weather_inputs_type(
+            page_title=page_title,
+            page_kind=page_kind,
+            transcript_excerpt=transcript_excerpt,
+            claims_report=(
+                ClaimsReport.model_validate(slots[SectionSlug.FACTS_CLAIMS_DEDUP.value]["data"])
+                if slots.get(SectionSlug.FACTS_CLAIMS_DEDUP.value, {}).get("data") is not None
+                else None
+            ),
+            highlights=(
+                OpinionsHighlightsReport.model_validate(
+                    slots[SectionSlug.OPINIONS_SENTIMENTS_HIGHLIGHTS.value]["data"]
+                )
+                if slots.get(SectionSlug.OPINIONS_SENTIMENTS_HIGHLIGHTS.value, {}).get("data")
+                is not None
+                else None
+            ),
+            trends_oppositions=(
+                TrendsOppositionsReport.model_validate(
+                    slots[SectionSlug.OPINIONS_SENTIMENTS_TRENDS_OPPOSITIONS.value]["data"]
+                )
+                if slots.get(SectionSlug.OPINIONS_SENTIMENTS_TRENDS_OPPOSITIONS.value, {}).get(
+                    "data"
+                )
+                is not None
+                else None
+            ),
+            sentiment_stats=(
+                SentimentStatsReport.model_validate(
+                    slots[SectionSlug.OPINIONS_SENTIMENTS_SENTIMENT.value]["data"]
+                )
+                if slots.get(SectionSlug.OPINIONS_SENTIMENTS_SENTIMENT.value, {}).get("data")
+                is not None
+                else None
+            ),
+            subjective_claims=[
+                SubjectiveClaim.model_validate(item)
+                for item in slots.get(SectionSlug.OPINIONS_SENTIMENTS_SUBJECTIVE.value, {}).get(
+                    "data", []
+                )
+            ],
+            flashpoint_matches=[
+                FlashpointMatch.model_validate(item)
+                for item in slots.get(SectionSlug.TONE_DYNAMICS_FLASHPOINT.value, {}).get(
+                    "data", []
+                )
+            ],
+            scd=(
+                SCDReport.model_validate(slots[SectionSlug.TONE_DYNAMICS_SCD.value]["data"])
+                if slots.get(SectionSlug.TONE_DYNAMICS_SCD.value, {}).get("data") is not None
+                else None
+            ),
+            unavailable_inputs=unavailable_inputs,
+        )
+        weather = run_sync(
+            evaluate_weather_fn(
+                weather_inputs,
+                settings=import_module("src.config").get_settings(),
+                job_id=UUID(job_id),
+            )
+        )
+        return {"weather_report": weather.model_dump(mode="json")}
+    except Exception as exc:
+        return {"weather_report": None, "error": str(exc)}
+
+
+@DBOS.step()
+def _run_overall_recommendation(
+    job_id: str,
+    *,
+    safety_result: dict[str, Any] | None,
+    weather_result: dict[str, Any] | None,
+    slot_results: dict[str, Any],
+    extracted_payload: dict[str, Any] | None,
+) -> dict[str, Any]:
+    try:
+        synthesis_module = import_module("src.url_content_scan.analyses.synthesis")
+    except Exception as exc:
+        return {"overall_recommendation": None, "error": str(exc)}
+
+    evaluate_overall_fn = getattr(synthesis_module, "evaluate_overall", None)
+    overall_inputs_type = getattr(synthesis_module, "OverallInputs", None)
+    if evaluate_overall_fn is None or overall_inputs_type is None:
+        return {"overall_recommendation": None, "error": "overall synthesis entrypoint missing"}
+
+    try:
+        from src.url_content_scan.analyses.synthesis.weather_report_schemas import (
+            WeatherReport,
+        )
+        from src.url_content_scan.tone_schemas import FlashpointMatch
+
+        slots = slot_results.get("slots", {})
+        recommendation = (
+            SafetyRecommendation.model_validate((safety_result or {}).get("recommendation"))
+            if (safety_result or {}).get("recommendation") is not None
+            else None
+        )
+        weather_report = (
+            WeatherReport.model_validate((weather_result or {}).get("weather_report"))
+            if (weather_result or {}).get("weather_report") is not None
+            else None
+        )
+        flashpoint_matches = [
+            FlashpointMatch.model_validate(item)
+            for item in slots.get(SectionSlug.TONE_DYNAMICS_FLASHPOINT.value, {}).get("data", [])
+        ]
+        page_title = (extracted_payload or {}).get("page_title")
+        page_kind = PageKind((extracted_payload or {}).get("page_kind", PageKind.OTHER.value))
+        overall_inputs = overall_inputs_type(
+            page_title=page_title,
+            page_kind=page_kind,
+            safety_recommendation=recommendation,
+            flashpoint_matches=flashpoint_matches,
+            weather_report=weather_report,
+        )
+        decision = run_sync(
+            evaluate_overall_fn(
+                overall_inputs,
+                settings=import_module("src.config").get_settings(),
+                job_id=UUID(job_id),
+            )
+        )
+        if decision is None:
+            return {"overall_recommendation": None}
+        return {"overall_recommendation": decision.model_dump(mode="json")}
+    except Exception as exc:
+        return {"overall_recommendation": None, "error": str(exc)}
 
 
 @DBOS.workflow()
@@ -1561,6 +1756,8 @@ def url_scan_orchestration_workflow(
     }
     safety_result: dict[str, Any] | None = None
     headline_result: dict[str, Any] | None = None
+    weather_result: dict[str, Any] | None = None
+    overall_result: dict[str, Any] | None = None
     fatal_error_code: str | None = None
     fatal_error_message: str | None = None
     fatal_error_host: str | None = None
@@ -1600,6 +1797,19 @@ def url_scan_orchestration_workflow(
             slot_results=slot_results,
             safety_result=safety_result,
         )
+        weather_result = _run_weather_report(
+            job_id,
+            slot_results=slot_results,
+            safety_result=safety_result,
+            extracted_payload=extracted_payload,
+        )
+        overall_result = _run_overall_recommendation(
+            job_id,
+            safety_result=safety_result,
+            weather_result=weather_result,
+            slot_results=slot_results,
+            extracted_payload=extracted_payload,
+        )
     except UrlScanWorkflowError as exc:
         fatal_error_code = exc.error_code
         fatal_error_message = str(exc)
@@ -1618,6 +1828,8 @@ def url_scan_orchestration_workflow(
         slot_results=slot_results,
         safety_result=safety_result,
         headline_result=headline_result,
+        weather_result=weather_result,
+        overall_result=overall_result,
         extracted_payload=extracted_payload,
         fatal_error_code=fatal_error_code,
         fatal_error_message=fatal_error_message,

@@ -7,8 +7,12 @@ from enum import StrEnum
 from typing import Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
+from src.url_content_scan.analyses.synthesis.weather_report_schemas import (
+    OverallDecision,
+    WeatherReport,
+)
 from src.url_content_scan.claims_schemas import ClaimsReport, FactCheckMatch
 from src.url_content_scan.opinions_schemas import (
     OpinionsHighlightsReport,
@@ -196,7 +200,33 @@ class SidebarPayload(BaseModel):
     image_moderation: ImageModerationSection = Field(default_factory=ImageModerationSection)
     video_moderation: VideoModerationSection = Field(default_factory=VideoModerationSection)
     headline: HeadlineSummary | None = None
+    weather_report: WeatherReport | None = None
+    overall_recommendation: OverallDecision | None = None
     utterances: list[UtteranceAnchor] = Field(default_factory=list)
+
+    @field_validator("weather_report", mode="before")
+    @classmethod
+    def _coerce_weather_report(cls, v: Any) -> Any:
+        if v is None:
+            return None
+        if isinstance(v, WeatherReport):
+            return v
+        try:
+            return WeatherReport.model_validate(v)
+        except Exception:
+            return None
+
+    @field_validator("overall_recommendation", mode="before")
+    @classmethod
+    def _coerce_overall_recommendation(cls, v: Any) -> Any:
+        if v is None:
+            return None
+        if isinstance(v, OverallDecision):
+            return v
+        try:
+            return OverallDecision.model_validate(v)
+        except Exception:
+            return None
 
 
 class JobState(BaseModel):

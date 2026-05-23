@@ -14,7 +14,12 @@ from src.llm_config.model_factory import build_url_scan_vertex_model
 from src.llm_config.model_id import ModelId
 from src.url_content_scan.claims_schemas import ClaimsReport, FactCheckMatch
 from src.url_content_scan.observability import url_scan_instrumentation
-from src.url_content_scan.opinions_schemas import SentimentStatsReport, SubjectiveClaim
+from src.url_content_scan.opinions_schemas import (
+    OpinionsHighlightsReport,
+    SentimentStatsReport,
+    SubjectiveClaim,
+    TrendsOppositionsReport,
+)
 from src.url_content_scan.safety_schemas import (
     HarmfulContentMatch,
     ImageModerationMatch,
@@ -33,9 +38,9 @@ if TYPE_CHECKING:
 DEFAULT_HEADLINE_MODEL = "google-vertex:gemini-3.1-pro-preview"
 
 HEADLINE_SUMMARY_SYSTEM_PROMPT = """You synthesize a 1-2 sentence narrative lead for one analyzed page.
-Use the inputs (safety verdict, conversation dynamics, claims, and sentiment)
-to describe the page's overall thrust and dynamic - the core story, not an
-inventory of available signals.
+Use the inputs (safety verdict, conversation dynamics, claims, trends, and
+sentiment) to describe the page's overall thrust and dynamic - the core story,
+not an inventory of available signals.
 By default, write one pithy sentence.
 Only add a second sentence when it contributes a distinct high-signal point.
 
@@ -47,6 +52,14 @@ When `unavailable_inputs` is non-empty, coverage was incomplete: your line
 MUST NOT claim everything is clear or that there is nothing of note. Describe
 what the available analyses surfaced, and frame the absence of flags as
 "in what was analyzed" rather than as a global all-clear.
+
+When `trends_oppositions` is available, use the recurring patterns or opposing
+camps to ground the narrative. When `highlights` are available, weight
+high-influence claims more heavily.
+
+Vocabulary palette: prefer concrete verbs and stakes language. Prefer
+"debate", "dispute", "contest", "question", "defend", "challenge",
+"warn", "flag", "amplify", "crowd" over vague qualifiers.
 
 If inputs are minimal, be direct and brief. Output a HeadlineSummary with
 `kind` set to "synthesized" - the caller will overwrite kind anyway, but
@@ -96,6 +109,8 @@ class HeadlineSummaryInputs:
     page_title: str | None
     page_kind: PageKind
     unavailable_inputs: list[str]
+    trends_oppositions: TrendsOppositionsReport | None = None
+    highlights: OpinionsHighlightsReport | None = None
 
 
 headline_summary_agent: Agent[None, HeadlineSummary] = Agent(
@@ -132,6 +147,10 @@ def all_inputs_clear(inputs: HeadlineSummaryInputs) -> bool:
         or bool(inputs.safety_recommendation.top_signals)
         or (level == SafetyLevel.CAUTION and not inputs.unavailable_inputs)
     )
+    trends_oppositions_signal = inputs.trends_oppositions is not None and bool(
+        inputs.trends_oppositions.trends or inputs.trends_oppositions.oppositions
+    )
+    highlights_signal = inputs.highlights is not None and bool(inputs.highlights.highlights)
     return not (
         inputs.harmful_content_matches
         or inputs.web_risk_findings
@@ -144,6 +163,8 @@ def all_inputs_clear(inputs: HeadlineSummaryInputs) -> bool:
         or inputs.subjective_claims
         or sentiment_signal
         or safety_signal
+        or trends_oppositions_signal
+        or highlights_signal
     )
 
 
@@ -188,6 +209,10 @@ def _serialize_inputs(inputs: HeadlineSummaryInputs) -> str:
         "page_title": inputs.page_title,
         "page_kind": inputs.page_kind.value,
         "unavailable_inputs": list(inputs.unavailable_inputs),
+        "trends_oppositions": _model_dump(inputs.trends_oppositions)
+        if inputs.trends_oppositions is not None
+        else None,
+        "highlights": _model_dump(inputs.highlights) if inputs.highlights is not None else None,
     }
     return json.dumps(payload)
 
