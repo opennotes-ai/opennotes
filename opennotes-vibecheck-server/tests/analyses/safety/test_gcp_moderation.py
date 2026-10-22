@@ -227,18 +227,20 @@ class TestAboveThreshold:
 
         transport = httpx.MockTransport(handler)
         async with httpx.AsyncClient(transport=transport) as client:
-            with patch("src.analyses.safety.gcp_moderation.get_access_token", return_value="tok"):
-                with patch(
+            with (
+                patch("src.analyses.safety.gcp_moderation.get_access_token", return_value="tok"),
+                patch(
                     "src.analyses.safety.gcp_moderation.logfire.span",
                     return_value=DummySpan(),
-                ) as span:
-                    await moderate_texts_gcp(
-                        [
-                            make_utterance(utterance_id="utt_1", text="one"),
-                            make_utterance(utterance_id="utt_2", text="two"),
-                        ],
-                        httpx_client=client,
-                    )
+                ) as span,
+            ):
+                await moderate_texts_gcp(
+                    [
+                        make_utterance(utterance_id="utt_1", text="one"),
+                        make_utterance(utterance_id="utt_2", text="two"),
+                    ],
+                    httpx_client=client,
+                )
 
         assert (
             call(
