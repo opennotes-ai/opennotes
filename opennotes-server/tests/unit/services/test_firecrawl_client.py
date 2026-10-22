@@ -1,3 +1,5 @@
+"""Exercise Firecrawl's request, response, and retry contracts without network access."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
