@@ -17,6 +17,20 @@ FROM groonga/pgroonga:${PGROONGA_VERSION}-debian-${PG_MAJOR}
 
 ARG PG_MAJOR
 
+# Refresh the Arrow repository signer bundled by the base image. This is the
+# official package linked by https://arrow.apache.org/install/, pinned so a
+# changed download fails closed. Keep the existing Signed-By scope and keys.
+RUN wget -q https://packages.apache.org/artifactory/arrow/debian/pool/trixie/main/a/apache-arrow-apt-source/apache-arrow-apt-source_26.0.0-1_all.deb \
+        -O /tmp/apache-arrow-apt-source.deb \
+    && echo "3b3afc167b6195211c302d4b1d49ef5fc628d1ff14c4ea50e518d9b8212c67d5  /tmp/apache-arrow-apt-source.deb" | sha256sum -c - \
+    && dpkg-deb -x /tmp/apache-arrow-apt-source.deb /tmp/arrow-source \
+    && mkdir -m 700 /tmp/arrow-keyring \
+    && gpg --homedir /tmp/arrow-keyring --batch --import /tmp/arrow-source/usr/share/keyrings/apache-arrow-apt-source.asc \
+    && gpg --homedir /tmp/arrow-keyring --batch --with-colons --fingerprint 7BD1A9A50E4F701BCBFD90EF9E922B2D60E9FD1C > /tmp/arrow-fingerprint \
+    && grep -qx 'fpr:::::::::7BD1A9A50E4F701BCBFD90EF9E922B2D60E9FD1C:' /tmp/arrow-fingerprint \
+    && gpg --homedir /tmp/arrow-keyring --batch --armor --export 7BD1A9A50E4F701BCBFD90EF9E922B2D60E9FD1C >> /usr/share/keyrings/apache-arrow-apt-source.asc \
+    && rm -rf /tmp/apache-arrow-apt-source.deb /tmp/arrow-source /tmp/arrow-keyring /tmp/arrow-fingerprint
+
 # Install build dependencies for pgvector
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \

@@ -31,15 +31,34 @@ logger = get_logger(__name__)
 VALID_STATUS_TRANSITIONS: dict[BatchJobStatus, set[BatchJobStatus]] = {
     BatchJobStatus.PENDING: {
         BatchJobStatus.IN_PROGRESS,
+        BatchJobStatus.EXTRACTING,
+        BatchJobStatus.ANALYZING,
         BatchJobStatus.CANCELLED,
         BatchJobStatus.FAILED,
     },
     BatchJobStatus.IN_PROGRESS: {
+        BatchJobStatus.EXTRACTING,
+        BatchJobStatus.ANALYZING,
         BatchJobStatus.COMPLETED,
+        BatchJobStatus.PARTIAL,
+        BatchJobStatus.FAILED,
+        BatchJobStatus.CANCELLED,
+    },
+    BatchJobStatus.EXTRACTING: {
+        BatchJobStatus.ANALYZING,
+        BatchJobStatus.COMPLETED,
+        BatchJobStatus.PARTIAL,
+        BatchJobStatus.FAILED,
+        BatchJobStatus.CANCELLED,
+    },
+    BatchJobStatus.ANALYZING: {
+        BatchJobStatus.COMPLETED,
+        BatchJobStatus.PARTIAL,
         BatchJobStatus.FAILED,
         BatchJobStatus.CANCELLED,
     },
     BatchJobStatus.COMPLETED: set(),
+    BatchJobStatus.PARTIAL: set(),
     BatchJobStatus.FAILED: set(),
     BatchJobStatus.CANCELLED: set(),
 }
@@ -146,22 +165,7 @@ class BatchJobService:
         if job is None:
             return None
 
-        current_status = BatchJobStatus(job.status)
-        self._validate_transition(current_status, BatchJobStatus.IN_PROGRESS)
-
-        tracking_started = False
-        try:
-            await self._progress_tracker.start_tracking(job_id)
-            tracking_started = True
-
-            job.status = BatchJobStatus.IN_PROGRESS.value
-            job.started_at = pendulum.now("UTC")
-
-            await self._session.commit()
-        except Exception:
-            if tracking_started:
-                await self._progress_tracker.stop_tracking(job_id)
-            raise
+        job = await self._transition_job_with_lock(job, BatchJobStatus.IN_PROGRESS)
 
         logger.info(
             "Started batch job",
@@ -172,6 +176,26 @@ class BatchJobService:
         )
 
         return job
+
+    async def transition_job_status(
+        self,
+        job_id: UUID,
+        target_status: BatchJobStatus,
+    ) -> BatchJob | None:
+        """
+        Transition a job to another lifecycle status.
+
+        Supports the legacy pending -> in_progress flow and newer staged flows
+        such as pending -> extracting -> analyzing -> terminal.
+        """
+        result = await self._session.execute(
+            select(BatchJob).where(BatchJob.id == job_id).with_for_update()
+        )
+        job = result.scalar_one_or_none()
+        if job is None:
+            return None
+
+        return await self._transition_job_with_lock(job, target_status)
 
     async def update_progress(
         self,
@@ -239,21 +263,12 @@ class BatchJobService:
         if job is None:
             return None
 
-        current_status = BatchJobStatus(job.status)
-        self._validate_transition(current_status, BatchJobStatus.COMPLETED)
-
-        job.status = BatchJobStatus.COMPLETED.value
-        job.completed_at = pendulum.now("UTC")
-
-        if completed_tasks is not None:
-            job.completed_tasks = completed_tasks
-        if failed_tasks is not None:
-            job.failed_tasks = failed_tasks
-
-        try:
-            await self._progress_tracker.stop_tracking(job_id)
-        finally:
-            await self._session.commit()
+        job = await self._finish_job(
+            job,
+            BatchJobStatus.COMPLETED,
+            completed_tasks=completed_tasks,
+            failed_tasks=failed_tasks,
+        )
 
         logger.info(
             "Completed batch job",
@@ -261,6 +276,41 @@ class BatchJobService:
                 "job_id": str(job_id),
                 "completed_tasks": job.completed_tasks,
                 "failed_tasks": job.failed_tasks,
+            },
+        )
+
+        return job
+
+    async def partial_job(
+        self,
+        job_id: UUID,
+        completed_tasks: int | None = None,
+        failed_tasks: int | None = None,
+        error_summary: dict[str, Any] | None = None,
+    ) -> BatchJob | None:
+        """Mark a job as partially completed with terminal cleanup semantics."""
+        result = await self._session.execute(
+            select(BatchJob).where(BatchJob.id == job_id).with_for_update()
+        )
+        job = result.scalar_one_or_none()
+        if job is None:
+            return None
+
+        job = await self._finish_job(
+            job,
+            BatchJobStatus.PARTIAL,
+            completed_tasks=completed_tasks,
+            failed_tasks=failed_tasks,
+            error_summary=error_summary,
+        )
+
+        logger.info(
+            "Partially completed batch job",
+            extra={
+                "job_id": str(job_id),
+                "completed_tasks": job.completed_tasks,
+                "failed_tasks": job.failed_tasks,
+                "error_summary": error_summary,
             },
         )
 
@@ -299,22 +349,13 @@ class BatchJobService:
             )
             return None
 
-        current_status = BatchJobStatus(job.status)
-        self._validate_transition(current_status, BatchJobStatus.FAILED)
-
-        job.status = BatchJobStatus.FAILED.value
-        job.completed_at = pendulum.now("UTC")
-        job.error_summary = error_summary
-
-        if completed_tasks is not None:
-            job.completed_tasks = completed_tasks
-        if failed_tasks is not None:
-            job.failed_tasks = failed_tasks
-
-        try:
-            await self._progress_tracker.stop_tracking(job_id)
-        finally:
-            await self._session.commit()
+        job = await self._finish_job(
+            job,
+            BatchJobStatus.FAILED,
+            completed_tasks=completed_tasks,
+            failed_tasks=failed_tasks,
+            error_summary=error_summary,
+        )
 
         logger.error(
             "Batch job failed",
@@ -348,16 +389,7 @@ class BatchJobService:
         if job is None:
             return None
 
-        current_status = BatchJobStatus(job.status)
-        self._validate_transition(current_status, BatchJobStatus.CANCELLED)
-
-        job.status = BatchJobStatus.CANCELLED.value
-        job.completed_at = pendulum.now("UTC")
-
-        try:
-            await self._progress_tracker.stop_tracking(job_id)
-        finally:
-            await self._session.commit()
+        job = await self._finish_job(job, BatchJobStatus.CANCELLED)
 
         logger.info(
             "Cancelled batch job",
@@ -434,6 +466,73 @@ class BatchJobService:
 
         result = await self._session.execute(query)
         return list(result.scalars().all())
+
+    async def _transition_job_with_lock(
+        self,
+        job: BatchJob,
+        target_status: BatchJobStatus,
+    ) -> BatchJob:
+        """Apply a lifecycle transition to a locked batch job row."""
+        current_status = BatchJobStatus(job.status)
+        self._validate_transition(current_status, target_status)
+
+        if current_status == target_status:
+            return job
+
+        if target_status in {
+            BatchJobStatus.COMPLETED,
+            BatchJobStatus.PARTIAL,
+            BatchJobStatus.FAILED,
+            BatchJobStatus.CANCELLED,
+        }:
+            return await self._finish_job(job, target_status)
+
+        tracking_started = False
+        try:
+            if current_status == BatchJobStatus.PENDING:
+                await self._progress_tracker.start_tracking(job.id)
+                tracking_started = True
+                if job.started_at is None:
+                    job.started_at = pendulum.now("UTC")
+
+            job.status = target_status.value
+            await self._session.commit()
+        except Exception:
+            if tracking_started:
+                await self._progress_tracker.stop_tracking(job.id)
+            raise
+
+        return job
+
+    async def _finish_job(
+        self,
+        job: BatchJob,
+        target_status: BatchJobStatus,
+        *,
+        completed_tasks: int | None = None,
+        failed_tasks: int | None = None,
+        error_summary: dict[str, Any] | None = None,
+    ) -> BatchJob:
+        """Apply terminal status semantics and clean up progress tracking."""
+        current_status = BatchJobStatus(job.status)
+        self._validate_transition(current_status, target_status)
+
+        job.status = target_status.value
+        job.completed_at = pendulum.now("UTC")
+
+        if completed_tasks is not None:
+            job.completed_tasks = completed_tasks
+        if failed_tasks is not None:
+            job.failed_tasks = failed_tasks
+        if error_summary is not None:
+            job.error_summary = error_summary
+
+        try:
+            await self._progress_tracker.stop_tracking(job.id)
+        finally:
+            await self._session.commit()
+
+        return job
 
     def _validate_transition(
         self,

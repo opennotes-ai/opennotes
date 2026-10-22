@@ -55,6 +55,8 @@ dependencies = [
     "ruamel.yaml>=0.18.0",
     "setuptools>=80.9.0",
     "trafilatura>=2.0.0,<3.0.0",
+    "beautifulsoup4>=4.12.0",
+    "markdown-it-py>=3.0.0",
     "redis-rate-limiters>=0.3.1,<0.4.0",
     "dbos[otel]>=2.18.0,<3.0.0",
     "opentelemetry-exporter-gcp-trace>=1.11.0a0,<2.0.0",
@@ -68,6 +70,8 @@ dependencies = [
     "pydantic-ai-slim[openai,google,anthropic,groq,dbos,mcp,retries,evals]>=1.96.0,<2.0.0",
     "sanitary>=0.1.0",
     "pyarrow>=15.0.0",
+    "img2pdf>=0.6.3",
+    "pypdf>=4.0.0",
 ]
 
 [project.optional-dependencies]

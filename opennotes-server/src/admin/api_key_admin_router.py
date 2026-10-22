@@ -108,10 +108,14 @@ async def create_admin_api_key(
 
     target_user = await _find_or_create_user(db, body.user_email, body.user_display_name)
 
-    if "platform:adapter" in body.scopes and target_user.principal_type == "human":
+    convention_reserved = {"platform:adapter", "vibecheck:submit"}.intersection(body.scopes)
+    if convention_reserved and target_user.principal_type == "human":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Convention-reserved: platform:adapter keys are only for agent/system principals",
+            detail=(
+                "Convention-reserved scope(s) are only for agent/system principals: "
+                f"{', '.join(sorted(convention_reserved))}"
+            ),
         )
 
     raw_key, key_prefix = APIKey.generate_key()

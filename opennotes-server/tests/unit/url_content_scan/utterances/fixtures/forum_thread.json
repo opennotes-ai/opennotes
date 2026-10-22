@@ -1,0 +1,20 @@
+{
+  "source_url": "https://forum.example.com/t/123",
+  "scrape": {
+    "markdown": "# Build pipeline thread\n\nOriginal poster: The nightly build failed after the deploy.\n\nreply_one: It looks like the cache key changed.\n\nreply_two: I can reproduce locally.",
+    "html": "<html><body><section data-page-kind=\"forum_thread\"><article data-role=\"post\" data-utterance-id=\"thread-1\"><h1>Build pipeline thread</h1><p data-author>original_poster</p><p>The nightly build failed after the deploy.</p></article><div data-reply-id=\"reply-1\"><p data-author>reply_one</p><p>It looks like the cache key changed.</p><a href=\"/runbooks/cache-key\">Runbook</a></div><div data-reply-id=\"reply-2\"><p data-author>reply_two</p><p>I can reproduce locally.</p></div></section></body></html>",
+    "metadata": {
+      "title": "Build pipeline thread",
+      "sourceURL": "https://forum.example.com/t/123"
+    }
+  },
+  "expected": {
+    "page_kind": "forum_thread",
+    "page_title": "Build pipeline thread",
+    "utterance_count": 3,
+    "kinds": ["post", "reply", "reply"],
+    "parent_ids": [null, "thread-1", "thread-1"],
+    "authors": ["original_poster", "reply_one", "reply_two"],
+    "urls": [[], ["https://forum.example.com/runbooks/cache-key"], []]
+  }
+}

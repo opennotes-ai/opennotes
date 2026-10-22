@@ -13,6 +13,7 @@ from pydantic import (
     AliasChoices,
     BeforeValidator,
     Field,
+    SecretStr,
     computed_field,
     field_validator,
     model_validator,
@@ -142,6 +143,11 @@ class Settings(BaseSettings):
     DISCORD_API_URL: str = Field(default="https://discord.com/api/v10")
     DISCORD_API_TIMEOUT: float = Field(
         default=30.0, description="Timeout for Discord API requests in seconds"
+    )
+    FIRECRAWL_API_KEY: str = Field(default="")
+    FIRECRAWL_API_BASE: str = Field(
+        default="https://api.firecrawl.dev",
+        description="Base URL for the Firecrawl v2 API.",
     )
 
     REQUEST_TIMEOUT: float = Field(
@@ -522,6 +528,17 @@ class Settings(BaseSettings):
         "When empty, GCS upload is disabled (graceful no-op for local dev). "
         "Format: gs://bucket-name/{community_server_id}/{timestamp}.json",
     )
+    URL_SCAN_SCREENSHOT_BUCKET: str = Field(
+        default="",
+        description="GCS bucket name for URL-scan screenshots. When empty, screenshot upload helpers "
+        "must be configured explicitly by the caller.",
+    )
+    URL_SCAN_PDF_UPLOAD_BUCKET: str = Field(
+        default="",
+        description="GCS bucket name for URL-scan PDF and image uploads. When empty, "
+        "PDF/image upload endpoints return a configuration error. "
+        "Reuses the same staging bucket as screenshot storage when appropriate.",
+    )
 
     ENABLE_METRICS: bool = Field(default=True, description="Enable metrics middleware")
     ENABLE_TRACING: bool = Field(default=True, description="Enable OpenTelemetry tracing")
@@ -667,6 +684,113 @@ class Settings(BaseSettings):
         "If absent, Logfire operates in if-token-present mode (no remote export).",
     )
 
+    URL_SCAN_LOGFIRE_CONTENT: bool = Field(
+        default=False,
+        description="When True, url_content_scan Agents emit prompt/completion bodies to Logfire. "
+        "Defaulted False (conservative; opt-in per environment).",
+    )
+    URL_SCAN_EXTRACTOR_SAMPLE_RATE: float = Field(
+        default=0.05,
+        ge=0.0,
+        le=1.0,
+        description="Per-call include_content sampling rate for the url_content_scan extractor agent. "
+        "Float in [0.0, 1.0]. Default 0.05 (5%) to limit Logfire ingestion cost on the hot path.",
+    )
+    URL_SCAN_LOGFIRE_EXTRA_SCRUB_PATTERNS: list[str] | None = Field(
+        default=None,
+        description="Escape hatch for environment-specific scrub patterns appended to the built-in "
+        "url_content_scan token scrubber list. Defaults to None so only built-ins ship.",
+    )
+    URL_SCAN_OPINIONS_HIGHLIGHTS_AUTHOR_DIVISOR: float = Field(
+        default=2.0,
+        description="Denominator for the sqrt-scaled author threshold in opinion highlights. "
+        "Higher value → lower threshold → more clusters surface as highlights.",
+    )
+    URL_SCAN_OPINIONS_HIGHLIGHTS_OCCURRENCE_MULTIPLIER: float = Field(
+        default=1.5,
+        description="Multiplier for the log2-scaled occurrence threshold in opinion highlights. "
+        "Higher value → higher threshold → fewer clusters surface as highlights.",
+    )
+    URL_SCAN_TRENDS_OPPOSITIONS_MAX_CLUSTERS: int = Field(
+        default=50,
+        ge=0,
+        description="Maximum number of opinion clusters sent to the trends/oppositions LLM. "
+        "Clusters are sorted descending by occurrence_count before capping.",
+    )
+    URL_SCAN_PRIVATE_PATH_PREFIX: SecretStr | None = Field(
+        default=None,
+        repr=False,
+        description="Secret path segment that gates the internal unfiltered gallery route. "
+        "When None (unset) the private route is not registered and returns 404. "
+        "Generate with: python -c 'import secrets; print(secrets.token_urlsafe(32))'",
+    )
+    X_API_BEARER_TOKEN: str | None = Field(
+        default=None,
+        repr=False,
+        description="X (Twitter) API bearer token for conversation fetch augmentation. "
+        "When absent, X augmentation is skipped and a structured warning is logged.",
+    )
+    EVIDENCE_MAX_EXTERNAL_CLAIMS: int = Field(
+        default=10,
+        ge=0,
+        description="Maximum number of factual claims to gather external evidence for per scan job. "
+        "Claims beyond this cap are skipped for external evidence lookup.",
+    )
+    EVIDENCE_SYNTHESIS_CANDIDATE_CAP: int = Field(
+        default=60,
+        ge=1,
+        description="Maximum number of candidate external facts fed to the curation step. "
+        "Controls prompt size for the sanity/curate LLM calls.",
+    )
+    EVIDENCE_GROUNDED_FETCH_GROUPS_PER_CALL: int = Field(
+        default=1,
+        ge=1,
+        description="Number of claim groups bundled into a single grounded-fetch LLM call. "
+        "Batching reduces round-trips at the cost of larger prompts.",
+    )
+    PREMISES_MAX_CLAIMS_PER_BATCH: int = Field(
+        default=30,
+        ge=1,
+        description="Maximum number of claims sent to the premises LLM in a single batch call. "
+        "Larger batches reduce round-trips; smaller batches reduce context length.",
+    )
+    URL_SCAN_UTTERANCE_BATCH_THRESHOLD_BYTES: int = Field(
+        default=800_000,
+        ge=0,
+        description="HTML byte length above which the batched utterance extractor is used instead "
+        "of the single-pass extractor. Matches vibecheck VIBECHECK_BATCH_HTML_BYTES default.",
+    )
+    URL_SCAN_UTTERANCE_BATCH_MAX_BATCHES: int = Field(
+        default=10,
+        ge=1,
+        description="Maximum number of HTML sections the batched utterance extractor will create. "
+        "Sections beyond this cap are dropped (oldest-first: only the first MAX_BATCHES cuts "
+        "are used, so the tail of the document is truncated).",
+    )
+    URL_SCAN_UTTERANCE_BATCH_SECTION_TARGET_BYTES: int = Field(
+        default=80_000,
+        ge=1,
+        description="Target byte size per section when partitioning oversized HTML for batched "
+        "utterance extraction. Matches vibecheck VIBECHECK_BATCH_SECTION_TARGET_BYTES default.",
+    )
+    URL_SCAN_UTTERANCE_BATCH_OVERLAP_BYTES: int = Field(
+        default=2_000,
+        ge=0,
+        description="Number of bytes to repeat from the tail of the previous section at the start "
+        "of the next section, so utterances straddling a boundary are still captured.",
+    )
+
+    @field_validator("URL_SCAN_EXTRACTOR_SAMPLE_RATE", mode="before")
+    @classmethod
+    def validate_extractor_sample_rate(cls, v: Any) -> Any:
+        try:
+            fv = float(v)
+        except (TypeError, ValueError):
+            return v
+        if not (0.0 <= fv <= 1.0):
+            raise ValueError("URL_SCAN_EXTRACTOR_SAMPLE_RATE must be in [0.0, 1.0]")
+        return fv
+
     OTEL_SERVICE_NAME: str | None = Field(
         default=None,
         description="Service name for OpenTelemetry. Defaults to PROJECT_NAME if not set.",
@@ -724,6 +848,11 @@ class Settings(BaseSettings):
         default="global",
         description="GCP region for Vertex AI API calls. 'global' required for Gemini 3 preview SKUs.",
         validation_alias=AliasChoices("VERTEXAI_LOCATION", "GOOGLE_CLOUD_LOCATION"),
+    )
+    VERTEXAI_EXTRACTOR_MODEL: str = Field(
+        default="google-vertex:gemini-3.1-flash-lite-preview",
+        description="Vertex AI model for the utterance extractor. Separate from the synthesis and fast "
+        "model tiers so the extractor can be tuned independently.",
     )
 
     SMTP_HOST: str = Field(default="localhost", description="SMTP server hostname")

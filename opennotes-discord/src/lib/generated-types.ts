@@ -3902,6 +3902,250 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/url_scan/analyze": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Analyze */
+        post: operations["analyze_api_v1_url_scan_analyze_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/url_scan/embed/v1/start": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Embed Start */
+        post: operations["embed_start_api_v1_url_scan_embed_v1_start_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/url_scan/jobs/{job_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Poll Job */
+        get: operations["poll_job_api_v1_url_scan_jobs__job_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/url_scan/jobs/{job_id}/retry/{slug}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Retry Section */
+        post: operations["retry_section_api_v1_url_scan_jobs__job_id__retry__slug__post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/url_scan/analyses/recent": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Recent Analyses */
+        get: operations["recent_analyses_api_v1_url_scan_analyses_recent_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/url_scan/frame-compat": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Frame Compat Route */
+        get: operations["frame_compat_route_api_v1_url_scan_frame_compat_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/url_scan/screenshot": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Screenshot Route */
+        get: operations["screenshot_route_api_v1_url_scan_screenshot_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/url_scan/archive-preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Archive Preview Route */
+        get: operations["archive_preview_route_api_v1_url_scan_archive_preview_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/url_scan/upload-pdf": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Upload Pdf */
+        post: operations["upload_pdf_api_v1_url_scan_upload_pdf_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/url_scan/analyze-pdf": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Analyze Pdf */
+        post: operations["analyze_pdf_api_v1_url_scan_analyze_pdf_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/url_scan/upload-images": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Upload Images */
+        post: operations["upload_images_api_v1_url_scan_upload_images_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/url_scan/analyze-images": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Analyze Images */
+        post: operations["analyze_images_api_v1_url_scan_analyze_images_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/url_scan/_schema_anchor": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * URL scan schema anchor
+         * @description Always returns 410 Gone.
+         */
+        get: operations["schema_anchor_api_v1_url_scan__schema_anchor_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/url_scan/_sidebar_schema_anchor": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * URL scan sidebar schema anchor
+         * @description Always returns 410 Gone.
+         */
+        get: operations["sidebar_schema_anchor_api_v1_url_scan__sidebar_schema_anchor_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/token-pools/": {
         parameters: {
             query?: never;
@@ -4773,6 +5017,43 @@ export interface components {
                 [key: string]: string;
             };
         };
+        /** AnalyzeImagesRequest */
+        AnalyzeImagesRequest: {
+            /**
+             * Batch Id
+             * Format: uuid
+             */
+            batch_id: string;
+        };
+        /** AnalyzePDFRequest */
+        AnalyzePDFRequest: {
+            /** Gcs Key */
+            gcs_key: string;
+            /** Filename */
+            filename?: string | null;
+        };
+        /** AnalyzeRequest */
+        AnalyzeRequest: {
+            /**
+             * Url
+             * @description HTTP(S) URL of the page to analyze.
+             */
+            url: string;
+        };
+        /** AnalyzeResponse */
+        AnalyzeResponse: {
+            /**
+             * Job Id
+             * Format: uuid
+             */
+            job_id: string;
+            status: components["schemas"]["JobStatus"];
+            /**
+             * Cached
+             * @default false
+             */
+            cached: boolean;
+        };
         /** AuditLogResponse */
         AuditLogResponse: {
             /**
@@ -4959,7 +5240,7 @@ export interface components {
          * @description Status states for a batch job.
          * @enum {string}
          */
-        BatchJobStatus: "pending" | "in_progress" | "completed" | "failed" | "cancelled";
+        BatchJobStatus: "pending" | "in_progress" | "extracting" | "analyzing" | "completed" | "partial" | "failed" | "cancelled";
         /**
          * BatchProcessingRequest
          * @description Request parameters for batch processing operations without rate limiting (e.g., promote).
@@ -5444,6 +5725,26 @@ export interface components {
          */
         CandidateStatus: "pending" | "scraping" | "scraped" | "scrape_failed" | "promoting" | "promoted";
         /**
+         * ClaimCategory
+         * @description 5-way taxonomy for claim classification.
+         *
+         *     Mirrors vibecheck-server's `ClaimCategory` so downstream premises/evidence
+         *     tooling can use a shared vocabulary (TASK-1657.04 depends on these keys).
+         * @enum {string}
+         */
+        ClaimCategory: "potentially_factual" | "self_claims" | "predictions" | "subjective" | "other";
+        /** ClaimOpposition */
+        ClaimOpposition: {
+            /** Topic */
+            topic: string;
+            /** Supporting Cluster Texts */
+            supporting_cluster_texts: string[];
+            /** Opposing Cluster Texts */
+            opposing_cluster_texts: string[];
+            /** Note */
+            note?: string | null;
+        };
+        /**
          * ClaimRelevanceCheckAttributes
          * @description Attributes for performing a claim relevance check via JSON:API.
          */
@@ -5539,6 +5840,25 @@ export interface components {
             /** Id */
             id: string;
             attributes: components["schemas"]["ClaimRelevanceCheckResultAttributes"];
+        };
+        /** ClaimTrend */
+        ClaimTrend: {
+            /** Label */
+            label: string;
+            /** Cluster Texts */
+            cluster_texts: string[];
+            /** Summary */
+            summary: string;
+        };
+        /** ClaimsReport */
+        ClaimsReport: {
+            /** Deduped Claims */
+            deduped_claims: components["schemas"]["DedupedClaim"][];
+            /** Total Claims */
+            total_claims: number;
+            /** Total Unique */
+            total_unique: number;
+            premises?: components["schemas"]["PremisesRegistry"] | null;
         };
         /**
          * ClearPreviewResponse
@@ -6118,7 +6438,7 @@ export interface components {
              */
             derailment_score: number;
             /** @description Categorical risk assessment level */
-            risk_level: components["schemas"]["RiskLevel"];
+            risk_level: components["schemas"]["src__bulk_content_scan__schemas__RiskLevel"];
             /**
              * Reasoning
              * @description Explanation of detected escalation signals
@@ -6152,6 +6472,30 @@ export interface components {
         /** CopyRequestsPayload */
         CopyRequestsPayload: {
             data: components["schemas"]["CopyRequestsData"];
+        };
+        /** DedupedClaim */
+        DedupedClaim: {
+            /** Canonical Text */
+            canonical_text: string;
+            /** @default potentially_factual */
+            category: components["schemas"]["ClaimCategory"];
+            /** Occurrence Count */
+            occurrence_count: number;
+            /** Author Count */
+            author_count: number;
+            /** Utterance Ids */
+            utterance_ids: string[];
+            /** Representative Authors */
+            representative_authors: string[];
+            /** Supporting Facts */
+            supporting_facts?: components["schemas"]["SupportingFact"][];
+            /** Premise Ids */
+            premise_ids?: string[];
+            /**
+             * Facts To Verify
+             * @default 0
+             */
+            facts_to_verify: number;
         };
         /** DetailedAnalysisMeta */
         DetailedAnalysisMeta: {
@@ -6306,6 +6650,29 @@ export interface components {
              */
             avatar_url?: string | null;
         };
+        /** Divergence */
+        Divergence: {
+            /**
+             * Direction
+             * @enum {string}
+             */
+            direction: "discounted" | "escalated";
+            /**
+             * Signal Source
+             * @description Short display-ready source label, such as Text moderation, Web Risk, Image moderation, Video moderation, or Combined signals.
+             */
+            signal_source: string;
+            /**
+             * Signal Detail
+             * @description Short display-ready description of the adjusted signal.
+             */
+            signal_detail: string;
+            /**
+             * Reason
+             * @description User-readable reason the raw signal was discounted or escalated.
+             */
+            reason: string;
+        };
         /** EnrollmentData */
         EnrollmentData: {
             /** Participantid */
@@ -6317,6 +6684,11 @@ export interface components {
             /** Timestampoflaststatechange */
             timestampOfLastStateChange: number;
         };
+        /**
+         * ErrorCode
+         * @enum {string}
+         */
+        ErrorCode: "invalid_url" | "unsafe_url" | "unsupported_site" | "upstream_error" | "extraction_failed" | "section_failure" | "timeout" | "rate_limited" | "internal";
         /**
          * ExplanationCreateAttributes
          * @description Attributes for generating a scan explanation.
@@ -6402,6 +6774,21 @@ export interface components {
             };
             links?: components["schemas"]["JSONAPILinks"] | null;
         };
+        /** FactCheckMatch */
+        FactCheckMatch: {
+            /** Claim Text */
+            claim_text: string;
+            /** Publisher */
+            publisher: string;
+            /** Review Title */
+            review_title: string;
+            /** Review Url */
+            review_url: string;
+            /** Textual Rating */
+            textual_rating: string;
+            /** Review Date */
+            review_date?: string | null;
+        };
         /**
          * FactCheckMatchResource
          * @description JSON:API-compatible fact-check match in search results.
@@ -6477,6 +6864,12 @@ export interface components {
              * @description Raw cosine similarity score (0.0-1.0), None when no semantic match
              */
             cosine_similarity?: number | null;
+        };
+        /** FactsClaimsSection */
+        FactsClaimsSection: {
+            claims_report: components["schemas"]["ClaimsReport"];
+            /** Known Misinformation */
+            known_misinformation?: components["schemas"]["FactCheckMatch"][];
         };
         /**
          * FlaggedMessageAttributes
@@ -6557,6 +6950,70 @@ export interface components {
              */
             flashpoint_detection_enabled: boolean;
         };
+        /** FlashpointMatch */
+        FlashpointMatch: {
+            /**
+             * Scan Type
+             * @default conversation_flashpoint
+             * @constant
+             */
+            scan_type: "conversation_flashpoint";
+            /**
+             * Utterance Id
+             * @description Platform-agnostic identifier of the scored utterance
+             */
+            utterance_id: string;
+            /**
+             * Derailment Score
+             * @description Derailment risk score (0-100)
+             */
+            derailment_score: number;
+            /** @description Categorical risk assessment level */
+            risk_level: components["schemas"]["src__url_content_scan__tone_schemas__RiskLevel"];
+            /**
+             * Reasoning
+             * @description Explanation of detected escalation signals
+             */
+            reasoning: string;
+            /**
+             * Context Messages
+             * @description Number of context messages analyzed
+             */
+            context_messages: number;
+        };
+        /** FrameCompatResponse */
+        FrameCompatResponse: {
+            /** Can Iframe */
+            can_iframe: boolean;
+            /** Blocking Header */
+            blocking_header?: string | null;
+            /** Csp Frame Ancestors */
+            csp_frame_ancestors?: string | null;
+            /**
+             * Has Archive
+             * @default false
+             */
+            has_archive: boolean;
+        };
+        /** FrameFinding */
+        FrameFinding: {
+            /** Frame Offset Ms */
+            frame_offset_ms: number;
+            /** Adult */
+            adult: number;
+            /** Violence */
+            violence: number;
+            /** Racy */
+            racy: number;
+            /** Medical */
+            medical: number;
+            /** Spoof */
+            spoof: number;
+            /** Flagged */
+            flagged: boolean;
+            /** Max Likelihood */
+            max_likelihood: number;
+        };
         /**
          * FusionWeightResponse
          * @description Response model for fusion weight.
@@ -6599,6 +7056,46 @@ export interface components {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
         };
+        /** HarmfulContentMatch */
+        HarmfulContentMatch: {
+            /** Utterance Id */
+            utterance_id: string;
+            /**
+             * Utterance Text
+             * @default
+             */
+            utterance_text: string;
+            /** Max Score */
+            max_score: number;
+            /** Categories */
+            categories: {
+                [key: string]: boolean;
+            };
+            /** Scores */
+            scores: {
+                [key: string]: number;
+            };
+            /** Flagged Categories */
+            flagged_categories?: string[];
+            /**
+             * Source
+             * @default openai
+             * @enum {string}
+             */
+            source: "openai" | "gcp";
+        };
+        /** HeadlineSummary */
+        HeadlineSummary: {
+            /** Text */
+            text: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "stock" | "synthesized";
+            /** Unavailable Inputs */
+            unavailable_inputs?: string[];
+        };
         /** HealthCheckResponse */
         HealthCheckResponse: {
             /**
@@ -6639,6 +7136,17 @@ export interface components {
          * @enum {string}
          */
         HelpfulnessLevel: "HELPFUL" | "SOMEWHAT_HELPFUL" | "NOT_HELPFUL";
+        /** HighlightsThresholdInfo */
+        HighlightsThresholdInfo: {
+            /** Total Authors */
+            total_authors: number;
+            /** Total Utterances */
+            total_utterances: number;
+            /** Min Authors Required */
+            min_authors_required: number;
+            /** Min Occurrences Required */
+            min_occurrences_required: number;
+        };
         /**
          * HybridSearchCreateAttributes
          * @description Attributes for performing a hybrid search via JSON:API.
@@ -6898,6 +7406,50 @@ export interface components {
             };
             links?: components["schemas"]["JSONAPILinks"] | null;
         };
+        /** ImageModerationMatch */
+        ImageModerationMatch: {
+            /** Utterance Id */
+            utterance_id: string;
+            /** Image Url */
+            image_url: string;
+            /** Adult */
+            adult: number;
+            /** Violence */
+            violence: number;
+            /** Racy */
+            racy: number;
+            /** Medical */
+            medical: number;
+            /** Spoof */
+            spoof: number;
+            /** Flagged */
+            flagged: boolean;
+            /** Max Likelihood */
+            max_likelihood: number;
+        };
+        /** ImageModerationSection */
+        ImageModerationSection: {
+            /** Matches */
+            matches?: components["schemas"]["ImageModerationMatch"][];
+        };
+        /** ImageUploadItem */
+        ImageUploadItem: {
+            /** Filename */
+            filename?: string | null;
+            /** Content Type */
+            content_type: string;
+            /** Size Bytes */
+            size_bytes: number;
+        };
+        /** ImageUploadUrl */
+        ImageUploadUrl: {
+            /** Ordinal */
+            ordinal: number;
+            /** Gcs Key */
+            gcs_key: string;
+            /** Upload Url */
+            upload_url: string;
+        };
         /**
          * ImportFactCheckBureauRequest
          * @description Request parameters for fact-check bureau import.
@@ -6962,6 +7514,77 @@ export interface components {
             /** Offset */
             offset?: number | null;
         };
+        /** JobState */
+        JobState: {
+            /**
+             * Job Id
+             * Format: uuid
+             */
+            job_id: string;
+            /** Url */
+            url: string;
+            status: components["schemas"]["JobStatus"];
+            /**
+             * Attempt Id
+             * Format: uuid
+             */
+            attempt_id: string;
+            error_code?: components["schemas"]["ErrorCode"] | null;
+            /** Error Message */
+            error_message?: string | null;
+            /**
+             * Error Host
+             * @description When ErrorCode.UNSUPPORTED_SITE is returned, the host that triggered the rejection.
+             */
+            error_host?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /** Sections */
+            sections?: {
+                [key: string]: components["schemas"]["SectionSlot"];
+            };
+            sidebar_payload?: components["schemas"]["SidebarPayload"] | null;
+            /**
+             * Sidebar Payload Complete
+             * @default false
+             */
+            sidebar_payload_complete: boolean;
+            /** Activity At */
+            activity_at?: string | null;
+            /** Activity Label */
+            activity_label?: string | null;
+            /**
+             * Cached
+             * @default false
+             */
+            cached: boolean;
+            /**
+             * Next Poll Ms
+             * @default 1500
+             */
+            next_poll_ms: number;
+            /** Page Title */
+            page_title?: string | null;
+            page_kind?: components["schemas"]["PageKind"] | null;
+            /**
+             * Utterance Count
+             * @default 0
+             */
+            utterance_count: number;
+        };
+        /**
+         * JobStatus
+         * @enum {string}
+         */
+        JobStatus: "pending" | "extracting" | "analyzing" | "done" | "partial" | "failed";
         /**
          * LLMConfigCreate
          * @description Schema for creating a new LLM configuration.
@@ -8333,6 +8956,36 @@ export interface components {
              */
             flagged_categories?: string[];
         };
+        /** OpinionsHighlight */
+        OpinionsHighlight: {
+            cluster: components["schemas"]["DedupedClaim"];
+            /** Crossed Scaled Threshold */
+            crossed_scaled_threshold: boolean;
+        };
+        /** OpinionsHighlightsReport */
+        OpinionsHighlightsReport: {
+            /** Highlights */
+            highlights: components["schemas"]["OpinionsHighlight"][];
+            threshold: components["schemas"]["HighlightsThresholdInfo"];
+            /** Fallback Engaged */
+            fallback_engaged: boolean;
+            /** Floor Eligible Count */
+            floor_eligible_count: number;
+            /** Total Input Count */
+            total_input_count: number;
+        };
+        /** OpinionsReport */
+        OpinionsReport: {
+            sentiment_stats: components["schemas"]["SentimentStatsReport"];
+            /** Subjective Claims */
+            subjective_claims: components["schemas"]["SubjectiveClaim"][];
+        };
+        /** OpinionsSection */
+        OpinionsSection: {
+            opinions_report: components["schemas"]["OpinionsReport"];
+            trends_oppositions?: components["schemas"]["TrendsOppositionsReport"] | null;
+            highlights?: components["schemas"]["OpinionsHighlightsReport"] | null;
+        };
         /** OrchestratorAttributes */
         OrchestratorAttributes: {
             /** Name */
@@ -8488,6 +9141,22 @@ export interface components {
         OrchestratorUpdateRequest: {
             data: components["schemas"]["OrchestratorUpdateData"];
         };
+        /** OverallDecision */
+        OverallDecision: {
+            verdict: components["schemas"]["OverallVerdict"];
+            /** Reason */
+            reason: string;
+        };
+        /**
+         * OverallVerdict
+         * @enum {string}
+         */
+        OverallVerdict: "pass" | "flag";
+        /**
+         * PageKind
+         * @enum {string}
+         */
+        PageKind: "blog_post" | "forum_thread" | "hierarchical_thread" | "blog_index" | "article" | "other";
         /**
          * ParticipantStatsAttributes
          * @description Attributes for participant statistics resource.
@@ -8645,6 +9314,26 @@ export interface components {
              */
             jsonapi: {
                 [key: string]: string;
+            };
+        };
+        /**
+         * Premise
+         * @description A premise statement attached to one or more claims.
+         */
+        Premise: {
+            /** Premise Id */
+            premise_id: string;
+            /** Statement */
+            statement: string;
+        };
+        /**
+         * PremisesRegistry
+         * @description Global registry of unique premises discovered across all claims.
+         */
+        PremisesRegistry: {
+            /** Premises */
+            premises?: {
+                [key: string]: components["schemas"]["Premise"];
             };
         };
         /**
@@ -9312,6 +10001,51 @@ export interface components {
         RatingUpdateRequest: {
             data: components["schemas"]["RatingUpdateData"];
         };
+        /** RecentAnalysis */
+        RecentAnalysis: {
+            /**
+             * Job Id
+             * Format: uuid
+             * @description batch_jobs.id for the analysis job.
+             */
+            job_id: string;
+            /** Source Url */
+            source_url: string;
+            /** Page Title */
+            page_title?: string | null;
+            /**
+             * Screenshot Url
+             * @description Signed screenshot URL for the gallery card.
+             */
+            screenshot_url: string;
+            /**
+             * Preview Description
+             * @description Short non-null gallery blurb.
+             */
+            preview_description: string;
+            /**
+             * Og Thumbnail Url
+             * @description X (Twitter) OG thumbnail URL stored during scan; None for non-X URLs.
+             */
+            og_thumbnail_url?: string | null;
+            /**
+             * Headline Preview
+             * @description Truncated headline summary text from sidebar_payload; None when absent.
+             */
+            headline_preview?: string | null;
+            /**
+             * Weather Preview
+             * @description Compact weather-report label string (truth · relevance · sentiment); None when absent.
+             */
+            weather_preview?: string | null;
+            /** @description Minimal safety summary for gallery row; None when no recommendation stored. */
+            safety_row?: components["schemas"]["SafetyRowPreview"] | null;
+            /**
+             * Completed At
+             * Format: date-time
+             */
+            completed_at: string;
+        };
         /**
          * RecentScanAttributes
          * @description Attributes for recent scan check.
@@ -9694,17 +10428,104 @@ export interface components {
         ResumeRequest: {
             data: components["schemas"]["ResumeData"];
         };
+        /** RetryResponse */
+        RetryResponse: {
+            /**
+             * Job Id
+             * Format: uuid
+             */
+            job_id: string;
+            slug: components["schemas"]["SectionSlug"];
+            /**
+             * Attempt Id
+             * Format: uuid
+             */
+            attempt_id: string;
+        };
         /**
          * ReviewGroup
          * @enum {string}
          */
         ReviewGroup: "community" | "trusted" | "staff";
+        /** SCDReport */
+        SCDReport: {
+            /**
+             * Narrative
+             * @description Conversational-register narrative (~80-150 words) describing how the conversation unfolds.
+             * @default
+             */
+            narrative: string;
+            /** Speaker Arcs */
+            speaker_arcs?: components["schemas"]["SpeakerArc"][];
+            /** Summary */
+            summary: string;
+            /** Tone Labels */
+            tone_labels?: string[];
+            /** Per Speaker Notes */
+            per_speaker_notes?: {
+                [key: string]: string;
+            };
+            /**
+             * Insufficient Conversation
+             * @default false
+             */
+            insufficient_conversation: boolean;
+            /**
+             * @description Extractor-provided advisory utterance stream type.
+             * @default unknown
+             */
+            upstream_stream_type: components["schemas"]["UtteranceStreamType"];
+            /**
+             * @description SCD model's own classification of the utterance stream shape.
+             * @default unknown
+             */
+            observed_stream_type: components["schemas"]["UtteranceStreamType"];
+            /**
+             * Observed Confidence
+             * @description Confidence in observed_stream_type, from 0.0 to 1.0.
+             * @default 0
+             */
+            observed_confidence: number;
+            /**
+             * Disagreement Rationale
+             * @description Short rationale when observed_stream_type differs from upstream_stream_type.
+             * @default
+             */
+            disagreement_rationale: string;
+        };
         /**
-         * RiskLevel
-         * @description Categorical risk level for conversation flashpoint detection.
+         * SafetyLevel
          * @enum {string}
          */
-        RiskLevel: "Low Risk" | "Guarded" | "Heated" | "Hostile" | "Dangerous";
+        SafetyLevel: "safe" | "mild" | "caution" | "unsafe";
+        /** SafetyRecommendation */
+        SafetyRecommendation: {
+            level: components["schemas"]["SafetyLevel"];
+            /** Rationale */
+            rationale: string;
+            /** Top Signals */
+            top_signals?: string[];
+            /** Unavailable Inputs */
+            unavailable_inputs?: string[];
+            /** Divergences */
+            divergences?: components["schemas"]["Divergence"][];
+            /**
+             * Display
+             * @default
+             */
+            display: string;
+        };
+        /** SafetyRowPreview */
+        SafetyRowPreview: {
+            /** @description Safety level: safe, caution, or unsafe. */
+            level: components["schemas"]["SafetyLevel"];
+        };
+        /** SafetySection */
+        SafetySection: {
+            /** Harmful Content Matches */
+            harmful_content_matches?: components["schemas"]["HarmfulContentMatch"][];
+            recommendation?: components["schemas"]["SafetyRecommendation"] | null;
+        };
         /**
          * ScanErrorInfoSchema
          * @description Error information for a failed message scan.
@@ -10131,6 +10952,65 @@ export interface components {
              */
             base_delay: number;
         };
+        /** ScreenshotResponse */
+        ScreenshotResponse: {
+            /** Screenshot Url */
+            screenshot_url: string;
+        };
+        /** SectionSlot */
+        SectionSlot: {
+            state: components["schemas"]["SectionState"];
+            /**
+             * Attempt Id
+             * Format: uuid
+             */
+            attempt_id: string;
+            /** Data */
+            data?: {
+                [key: string]: unknown;
+            } | null;
+            /** Error */
+            error?: string | null;
+            /** Started At */
+            started_at?: string | null;
+            /** Finished At */
+            finished_at?: string | null;
+        };
+        /**
+         * SectionSlug
+         * @enum {string}
+         */
+        SectionSlug: "safety__moderation" | "safety__web_risk" | "safety__image_moderation" | "safety__video_moderation" | "tone_dynamics__flashpoint" | "tone_dynamics__scd" | "facts_claims__dedup" | "facts_claims__known_misinfo" | "facts_claims__premises" | "facts_claims__evidence" | "opinions_sentiments__sentiment" | "opinions_sentiments__subjective" | "opinions_sentiments__trends_oppositions" | "opinions_sentiments__highlights";
+        /**
+         * SectionState
+         * @enum {string}
+         */
+        SectionState: "pending" | "running" | "done" | "failed";
+        /** SentimentScore */
+        SentimentScore: {
+            /** Utterance Id */
+            utterance_id: string;
+            /**
+             * Label
+             * @enum {string}
+             */
+            label: "positive" | "negative" | "neutral";
+            /** Valence */
+            valence: number;
+        };
+        /** SentimentStatsReport */
+        SentimentStatsReport: {
+            /** Per Utterance */
+            per_utterance: components["schemas"]["SentimentScore"][];
+            /** Positive Pct */
+            positive_pct: number;
+            /** Negative Pct */
+            negative_pct: number;
+            /** Neutral Pct */
+            neutral_pct: number;
+            /** Mean Valence */
+            mean_valence: number;
+        };
         /** ServiceStatus */
         ServiceStatus: {
             /**
@@ -10215,6 +11095,33 @@ export interface components {
          */
         SetRatingRequest: {
             data: components["schemas"]["SetRatingData"];
+        };
+        /** SidebarPayload */
+        SidebarPayload: {
+            /**
+             * Scraped At
+             * Format: date-time
+             */
+            scraped_at: string;
+            /**
+             * Cached
+             * @default false
+             */
+            cached: boolean;
+            /** Cached At */
+            cached_at?: string | null;
+            safety: components["schemas"]["SafetySection"];
+            tone_dynamics: components["schemas"]["ToneDynamicsSection"];
+            facts_claims: components["schemas"]["FactsClaimsSection"];
+            opinions_sentiments: components["schemas"]["OpinionsSection"];
+            web_risk?: components["schemas"]["WebRiskSection"];
+            image_moderation?: components["schemas"]["ImageModerationSection"];
+            video_moderation?: components["schemas"]["VideoModerationSection"];
+            headline?: components["schemas"]["HeadlineSummary"] | null;
+            weather_report?: components["schemas"]["WeatherReport"] | null;
+            overall_recommendation?: components["schemas"]["OverallDecision"] | null;
+            /** Utterances */
+            utterances?: components["schemas"]["UtteranceAnchor"][];
         };
         /** SimAgentAttributes */
         SimAgentAttributes: {
@@ -10699,6 +11606,53 @@ export interface components {
         SimulationUpdateRequest: {
             data: components["schemas"]["SimulationUpdateData"];
         };
+        /**
+         * SourceKind
+         * @description Origin of a supporting fact used by the evidence slot.
+         * @enum {string}
+         */
+        SourceKind: "utterance" | "external";
+        /** SpeakerArc */
+        SpeakerArc: {
+            /**
+             * Speaker
+             * @description Speaker label as it appears in the formatted transcript (e.g. 'alice', 'Speaker1').
+             */
+            speaker: string;
+            /**
+             * Note
+             * @description 1-2 sentence observation about this speaker's arc: how their tone, intent, or stance evolves across the conversation.
+             */
+            note: string;
+            /**
+             * Utterance Id Range
+             * @description Inclusive [start, end] 1-indexed utterance index range that this arc covers, for timeline-viz alignment. Exactly two integers with start <= end and start >= 1.
+             */
+            utterance_id_range?: number[] | null;
+        };
+        /** SubjectiveClaim */
+        SubjectiveClaim: {
+            /** Claim Text */
+            claim_text: string;
+            /** Utterance Id */
+            utterance_id: string;
+            /**
+             * Stance
+             * @enum {string}
+             */
+            stance: "supports" | "opposes" | "evaluates";
+        };
+        /**
+         * SupportingFact
+         * @description A single supporting statement for a deduped claim.
+         */
+        SupportingFact: {
+            /** Statement */
+            statement: string;
+            source_kind: components["schemas"]["SourceKind"];
+            /** Source Ref */
+            source_ref: string;
+        };
         /** TierInfo */
         TierInfo: {
             /**
@@ -10821,6 +11775,45 @@ export interface components {
             active_hold_count: number;
             /** Utilization Pct */
             utilization_pct: number;
+        };
+        /** ToneDynamicsSection */
+        ToneDynamicsSection: {
+            scd: components["schemas"]["SCDReport"];
+            /** Flashpoint Matches */
+            flashpoint_matches?: components["schemas"]["FlashpointMatch"][];
+        };
+        /** TrendsOppositionsReport */
+        TrendsOppositionsReport: {
+            /** Trends */
+            trends: components["schemas"]["ClaimTrend"][];
+            /** Oppositions */
+            oppositions: components["schemas"]["ClaimOpposition"][];
+            /** Input Cluster Count */
+            input_cluster_count: number;
+            /** Skipped For Cap */
+            skipped_for_cap: number;
+        };
+        /** UploadImagesRequest */
+        UploadImagesRequest: {
+            /** Images */
+            images: components["schemas"]["ImageUploadItem"][];
+        };
+        /** UploadImagesResponse */
+        UploadImagesResponse: {
+            /**
+             * Batch Id
+             * Format: uuid
+             */
+            batch_id: string;
+            /** Images */
+            images: components["schemas"]["ImageUploadUrl"][];
+        };
+        /** UploadPDFResponse */
+        UploadPDFResponse: {
+            /** Gcs Key */
+            gcs_key: string;
+            /** Upload Url */
+            upload_url: string;
         };
         /** UserCreate */
         UserCreate: {
@@ -11073,6 +12066,30 @@ export interface components {
             /** Password */
             password?: string | null;
         };
+        /** UtteranceAnchor */
+        UtteranceAnchor: {
+            /**
+             * Position
+             * @description 1-indexed utterance position in the extracted thread.
+             */
+            position: number;
+            /**
+             * Utterance Id
+             * @description Stable utterance id stored for transcript jumps.
+             */
+            utterance_id: string;
+            /**
+             * Timestamp
+             * @description Wall-clock timestamp for the utterance when the source thread exposed one.
+             */
+            timestamp?: string | null;
+        };
+        /**
+         * UtteranceStreamType
+         * @description Discourse shape observed in the extracted utterance stream.
+         * @enum {string}
+         */
+        UtteranceStreamType: "dialogue" | "comment_section" | "article_or_monologue" | "mixed" | "unknown";
         /** ValidationError */
         ValidationError: {
             /** Location */
@@ -11099,6 +12116,108 @@ export interface components {
              * @description Cloud Run revision name
              */
             revision?: string | null;
+        };
+        /** VideoModerationMatch */
+        VideoModerationMatch: {
+            /** Utterance Id */
+            utterance_id: string;
+            /** Video Url */
+            video_url: string;
+            /** Frame Findings */
+            frame_findings?: components["schemas"]["FrameFinding"][];
+            /** Flagged */
+            flagged: boolean;
+            /** Max Likelihood */
+            max_likelihood: number;
+        };
+        /** VideoModerationSection */
+        VideoModerationSection: {
+            /** Matches */
+            matches?: components["schemas"]["VideoModerationMatch"][];
+        };
+        /** WeatherAxisAlternative[Literal['insightful', 'on_topic', 'chatty', 'drifting', 'off_topic']] */
+        WeatherAxisAlternative_Literal__insightful____on_topic____chatty____drifting____off_topic___: {
+            /**
+             * Label
+             * @enum {string}
+             */
+            label: "insightful" | "on_topic" | "chatty" | "drifting" | "off_topic";
+            /** Logprob */
+            logprob?: number | null;
+        };
+        /** WeatherAxisAlternative[Literal['sourced', 'factual_claims', 'first_person', 'hearsay', 'misleading']] */
+        WeatherAxisAlternative_Literal__sourced____factual_claims____first_person____hearsay____misleading___: {
+            /**
+             * Label
+             * @enum {string}
+             */
+            label: "sourced" | "factual_claims" | "first_person" | "hearsay" | "misleading";
+            /** Logprob */
+            logprob?: number | null;
+        };
+        /** WeatherAxisAlternative[str] */
+        WeatherAxisAlternative_str_: {
+            /** Label */
+            label: string;
+            /** Logprob */
+            logprob?: number | null;
+        };
+        /** WeatherAxis[Literal['insightful', 'on_topic', 'chatty', 'drifting', 'off_topic']] */
+        WeatherAxis_Literal__insightful____on_topic____chatty____drifting____off_topic___: {
+            /**
+             * Label
+             * @enum {string}
+             */
+            label: "insightful" | "on_topic" | "chatty" | "drifting" | "off_topic";
+            /** Logprob */
+            logprob?: number | null;
+            /** Alternatives */
+            alternatives?: components["schemas"]["WeatherAxisAlternative_Literal__insightful____on_topic____chatty____drifting____off_topic___"][];
+        };
+        /** WeatherAxis[Literal['sourced', 'factual_claims', 'first_person', 'hearsay', 'misleading']] */
+        WeatherAxis_Literal__sourced____factual_claims____first_person____hearsay____misleading___: {
+            /**
+             * Label
+             * @enum {string}
+             */
+            label: "sourced" | "factual_claims" | "first_person" | "hearsay" | "misleading";
+            /** Logprob */
+            logprob?: number | null;
+            /** Alternatives */
+            alternatives?: components["schemas"]["WeatherAxisAlternative_Literal__sourced____factual_claims____first_person____hearsay____misleading___"][];
+        };
+        /** WeatherAxis[str] */
+        WeatherAxis_str_: {
+            /** Label */
+            label: string;
+            /** Logprob */
+            logprob?: number | null;
+            /** Alternatives */
+            alternatives?: components["schemas"]["WeatherAxisAlternative_str_"][];
+        };
+        /** WeatherReport */
+        WeatherReport: {
+            truth: components["schemas"]["WeatherAxis_Literal__sourced____factual_claims____first_person____hearsay____misleading___"];
+            relevance: components["schemas"]["WeatherAxis_Literal__insightful____on_topic____chatty____drifting____off_topic___"];
+            sentiment: components["schemas"]["WeatherAxis_str_"];
+        };
+        /** WebRiskFinding */
+        WebRiskFinding: {
+            /** Url */
+            url: string;
+            /** Threat Types */
+            threat_types: ("MALWARE" | "SOCIAL_ENGINEERING" | "UNWANTED_SOFTWARE" | "POTENTIALLY_HARMFUL_APPLICATION")[];
+        };
+        /** WebRiskSection */
+        WebRiskSection: {
+            /** Findings */
+            findings?: components["schemas"]["WebRiskFinding"][];
+            /**
+             * Urls Checked
+             * @description Number of unique URLs evaluated by Web Risk
+             * @default 0
+             */
+            urls_checked: number;
         };
         /** WebhookConfigResponse */
         WebhookConfigResponse: {
@@ -11216,6 +12335,17 @@ export interface components {
              */
             welcome_message_id: string | null;
         };
+        /**
+         * RiskLevel
+         * @description Categorical risk level for conversation flashpoint detection.
+         * @enum {string}
+         */
+        src__bulk_content_scan__schemas__RiskLevel: "Low Risk" | "Guarded" | "Heated" | "Hostile" | "Dangerous";
+        /**
+         * RiskLevel
+         * @enum {string}
+         */
+        src__url_content_scan__tone_schemas__RiskLevel: "Low Risk" | "Guarded" | "Heated" | "Hostile" | "Dangerous";
     };
     responses: never;
     parameters: never;
@@ -18587,6 +19717,469 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
+            };
+        };
+    };
+    analyze_api_v1_url_scan_analyze_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AnalyzeRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AnalyzeResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    embed_start_api_v1_url_scan_embed_v1_start_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AnalyzeRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AnalyzeResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    poll_job_api_v1_url_scan_jobs__job_id__get: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobState"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    retry_section_api_v1_url_scan_jobs__job_id__retry__slug__post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path: {
+                job_id: string;
+                slug: components["schemas"]["SectionSlug"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RetryResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    recent_analyses_api_v1_url_scan_analyses_recent_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RecentAnalysis"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    frame_compat_route_api_v1_url_scan_frame_compat_get: {
+        parameters: {
+            query: {
+                url: string;
+                job_id?: string | null;
+            };
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FrameCompatResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    screenshot_route_api_v1_url_scan_screenshot_get: {
+        parameters: {
+            query: {
+                url: string;
+            };
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScreenshotResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    archive_preview_route_api_v1_url_scan_archive_preview_get: {
+        parameters: {
+            query?: {
+                url?: string | null;
+                job_id?: string | null;
+                generate?: boolean;
+                source_type?: string;
+            };
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description HTML archive preview */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/html": string;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    upload_pdf_api_v1_url_scan_upload_pdf_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UploadPDFResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    analyze_pdf_api_v1_url_scan_analyze_pdf_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AnalyzePDFRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AnalyzeResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    upload_images_api_v1_url_scan_upload_images_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UploadImagesRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UploadImagesResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    analyze_images_api_v1_url_scan_analyze_images_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AnalyzeImagesRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AnalyzeResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    schema_anchor_api_v1_url_scan__schema_anchor_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobState"];
+                };
+            };
+            /** @description Always. Placeholder route for schema generation. */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    sidebar_schema_anchor_api_v1_url_scan__sidebar_schema_anchor_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SidebarPayload"];
+                };
+            };
+            /** @description Always. Placeholder route for schema generation. */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };

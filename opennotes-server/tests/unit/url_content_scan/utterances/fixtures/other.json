@@ -1,0 +1,19 @@
+{
+  "source_url": "https://example.com/misc",
+  "scrape": {
+    "markdown": "A miscellaneous page with one useful paragraph.\n\nAnd a second paragraph that should be folded into the same utterance.",
+    "html": "<html><body><div><p>A miscellaneous page with one useful paragraph.</p><p>And a second paragraph that should be folded into the same utterance.</p></div></body></html>",
+    "metadata": {
+      "title": "Misc page",
+      "sourceURL": "https://example.com/misc"
+    }
+  },
+  "expected": {
+    "page_kind": "other",
+    "page_title": "Misc page",
+    "utterance_count": 1,
+    "kinds": ["post"],
+    "parent_ids": [null],
+    "authors": [null]
+  }
+}

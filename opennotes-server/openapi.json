@@ -13085,6 +13085,884 @@
         }
       }
     },
+    "/api/v1/url_scan/analyze": {
+      "post": {
+        "tags": [
+          "url_scan"
+        ],
+        "summary": "Analyze",
+        "operationId": "analyze_api_v1_url_scan_analyze_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AnalyzeRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnalyzeResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/url_scan/embed/v1/start": {
+      "post": {
+        "tags": [
+          "url_scan"
+        ],
+        "summary": "Embed Start",
+        "operationId": "embed_start_api_v1_url_scan_embed_v1_start_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AnalyzeRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnalyzeResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/url_scan/jobs/{job_id}": {
+      "get": {
+        "tags": [
+          "url_scan"
+        ],
+        "summary": "Poll Job",
+        "operationId": "poll_job_api_v1_url_scan_jobs__job_id__get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Job Id"
+            }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobState"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/url_scan/jobs/{job_id}/retry/{slug}": {
+      "post": {
+        "tags": [
+          "url_scan"
+        ],
+        "summary": "Retry Section",
+        "operationId": "retry_section_api_v1_url_scan_jobs__job_id__retry__slug__post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Job Id"
+            }
+          },
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/SectionSlug"
+            }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RetryResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/url_scan/analyses/recent": {
+      "get": {
+        "tags": [
+          "url_scan"
+        ],
+        "summary": "Recent Analyses",
+        "operationId": "recent_analyses_api_v1_url_scan_analyses_recent_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 50,
+              "minimum": 1,
+              "default": 12,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/RecentAnalysis"
+                  },
+                  "title": "Response Recent Analyses Api V1 Url Scan Analyses Recent Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/url_scan/frame-compat": {
+      "get": {
+        "tags": [
+          "url_scan"
+        ],
+        "summary": "Frame Compat Route",
+        "operationId": "frame_compat_route_api_v1_url_scan_frame_compat_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "url",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Url"
+            }
+          },
+          {
+            "name": "job_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Job Id"
+            }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FrameCompatResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/url_scan/screenshot": {
+      "get": {
+        "tags": [
+          "url_scan"
+        ],
+        "summary": "Screenshot Route",
+        "operationId": "screenshot_route_api_v1_url_scan_screenshot_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "url",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Url"
+            }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScreenshotResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/url_scan/archive-preview": {
+      "get": {
+        "tags": [
+          "url_scan"
+        ],
+        "summary": "Archive Preview Route",
+        "operationId": "archive_preview_route_api_v1_url_scan_archive_preview_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "url",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Url"
+            }
+          },
+          {
+            "name": "job_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Job Id"
+            }
+          },
+          {
+            "name": "generate",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Generate"
+            }
+          },
+          {
+            "name": "source_type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "url",
+              "title": "Source Type"
+            }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "HTML archive preview",
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/url_scan/upload-pdf": {
+      "post": {
+        "tags": [
+          "url_scan"
+        ],
+        "summary": "Upload Pdf",
+        "operationId": "upload_pdf_api_v1_url_scan_upload_pdf_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UploadPDFResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/url_scan/analyze-pdf": {
+      "post": {
+        "tags": [
+          "url_scan"
+        ],
+        "summary": "Analyze Pdf",
+        "operationId": "analyze_pdf_api_v1_url_scan_analyze_pdf_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AnalyzePDFRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnalyzeResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/url_scan/upload-images": {
+      "post": {
+        "tags": [
+          "url_scan"
+        ],
+        "summary": "Upload Images",
+        "operationId": "upload_images_api_v1_url_scan_upload_images_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UploadImagesRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UploadImagesResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/url_scan/analyze-images": {
+      "post": {
+        "tags": [
+          "url_scan"
+        ],
+        "summary": "Analyze Images",
+        "operationId": "analyze_images_api_v1_url_scan_analyze_images_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AnalyzeImagesRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnalyzeResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/url_scan/_schema_anchor": {
+      "get": {
+        "tags": [
+          "url_scan"
+        ],
+        "summary": "URL scan schema anchor",
+        "description": "Always returns 410 Gone.",
+        "operationId": "schema_anchor_api_v1_url_scan__schema_anchor_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobState"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "Always. Placeholder route for schema generation."
+          }
+        }
+      }
+    },
+    "/api/v1/url_scan/_sidebar_schema_anchor": {
+      "get": {
+        "tags": [
+          "url_scan"
+        ],
+        "summary": "URL scan sidebar schema anchor",
+        "description": "Always returns 410 Gone.",
+        "operationId": "sidebar_schema_anchor_api_v1_url_scan__sidebar_schema_anchor_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SidebarPayload"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "Always. Placeholder route for schema generation."
+          }
+        }
+      }
+    },
     "/api/v1/admin/token-pools/": {
       "get": {
         "tags": [
@@ -15477,6 +16355,81 @@
         ],
         "title": "AnalysisResponse"
       },
+      "AnalyzeImagesRequest": {
+        "properties": {
+          "batch_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Batch Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "batch_id"
+        ],
+        "title": "AnalyzeImagesRequest"
+      },
+      "AnalyzePDFRequest": {
+        "properties": {
+          "gcs_key": {
+            "type": "string",
+            "title": "Gcs Key"
+          },
+          "filename": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Filename"
+          }
+        },
+        "type": "object",
+        "required": [
+          "gcs_key"
+        ],
+        "title": "AnalyzePDFRequest"
+      },
+      "AnalyzeRequest": {
+        "properties": {
+          "url": {
+            "type": "string",
+            "title": "Url",
+            "description": "HTTP(S) URL of the page to analyze."
+          }
+        },
+        "type": "object",
+        "required": [
+          "url"
+        ],
+        "title": "AnalyzeRequest"
+      },
+      "AnalyzeResponse": {
+        "properties": {
+          "job_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Job Id"
+          },
+          "status": {
+            "$ref": "#/components/schemas/JobStatus"
+          },
+          "cached": {
+            "type": "boolean",
+            "title": "Cached",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "job_id",
+          "status"
+        ],
+        "title": "AnalyzeResponse"
+      },
       "AuditLogResponse": {
         "properties": {
           "id": {
@@ -15880,7 +16833,10 @@
         "enum": [
           "pending",
           "in_progress",
+          "extracting",
+          "analyzing",
           "completed",
+          "partial",
           "failed",
           "cancelled"
         ],
@@ -16801,6 +17757,58 @@
         "title": "CandidateStatus",
         "description": "Status values for fact-checked item candidates."
       },
+      "ClaimCategory": {
+        "type": "string",
+        "enum": [
+          "potentially_factual",
+          "self_claims",
+          "predictions",
+          "subjective",
+          "other"
+        ],
+        "title": "ClaimCategory",
+        "description": "5-way taxonomy for claim classification.\n\nMirrors vibecheck-server's `ClaimCategory` so downstream premises/evidence\ntooling can use a shared vocabulary (TASK-1657.04 depends on these keys)."
+      },
+      "ClaimOpposition": {
+        "properties": {
+          "topic": {
+            "type": "string",
+            "title": "Topic"
+          },
+          "supporting_cluster_texts": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Supporting Cluster Texts"
+          },
+          "opposing_cluster_texts": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Opposing Cluster Texts"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          }
+        },
+        "type": "object",
+        "required": [
+          "topic",
+          "supporting_cluster_texts",
+          "opposing_cluster_texts"
+        ],
+        "title": "ClaimOpposition"
+      },
       "ClaimRelevanceCheckAttributes": {
         "properties": {
           "original_message": {
@@ -16947,6 +17955,68 @@
         ],
         "title": "ClaimRelevanceCheckResultResource",
         "description": "JSON:API resource object for claim relevance check results."
+      },
+      "ClaimTrend": {
+        "properties": {
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "cluster_texts": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Cluster Texts"
+          },
+          "summary": {
+            "type": "string",
+            "title": "Summary"
+          }
+        },
+        "type": "object",
+        "required": [
+          "label",
+          "cluster_texts",
+          "summary"
+        ],
+        "title": "ClaimTrend"
+      },
+      "ClaimsReport": {
+        "properties": {
+          "deduped_claims": {
+            "items": {
+              "$ref": "#/components/schemas/DedupedClaim"
+            },
+            "type": "array",
+            "title": "Deduped Claims"
+          },
+          "total_claims": {
+            "type": "integer",
+            "title": "Total Claims"
+          },
+          "total_unique": {
+            "type": "integer",
+            "title": "Total Unique"
+          },
+          "premises": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PremisesRegistry"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "deduped_claims",
+          "total_claims",
+          "total_unique"
+        ],
+        "title": "ClaimsReport"
       },
       "ClearPreviewResponse": {
         "properties": {
@@ -17953,7 +19023,7 @@
             "description": "Derailment risk score (0-100)"
           },
           "risk_level": {
-            "$ref": "#/components/schemas/RiskLevel",
+            "$ref": "#/components/schemas/src__bulk_content_scan__schemas__RiskLevel",
             "description": "Categorical risk assessment level"
           },
           "reasoning": {
@@ -18026,6 +19096,71 @@
           "data"
         ],
         "title": "CopyRequestsPayload"
+      },
+      "DedupedClaim": {
+        "properties": {
+          "canonical_text": {
+            "type": "string",
+            "title": "Canonical Text"
+          },
+          "category": {
+            "$ref": "#/components/schemas/ClaimCategory",
+            "default": "potentially_factual"
+          },
+          "occurrence_count": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Occurrence Count"
+          },
+          "author_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Author Count"
+          },
+          "utterance_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Utterance Ids"
+          },
+          "representative_authors": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Representative Authors"
+          },
+          "supporting_facts": {
+            "items": {
+              "$ref": "#/components/schemas/SupportingFact"
+            },
+            "type": "array",
+            "title": "Supporting Facts"
+          },
+          "premise_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Premise Ids"
+          },
+          "facts_to_verify": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Facts To Verify",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "required": [
+          "canonical_text",
+          "occurrence_count",
+          "author_count",
+          "utterance_ids",
+          "representative_authors"
+        ],
+        "title": "DedupedClaim"
       },
       "DetailedAnalysisMeta": {
         "properties": {
@@ -18373,6 +19508,41 @@
         "title": "DiscordOAuthRegisterRequest",
         "description": "Request schema for Discord OAuth2 registration."
       },
+      "Divergence": {
+        "properties": {
+          "direction": {
+            "type": "string",
+            "enum": [
+              "discounted",
+              "escalated"
+            ],
+            "title": "Direction"
+          },
+          "signal_source": {
+            "type": "string",
+            "title": "Signal Source",
+            "description": "Short display-ready source label, such as Text moderation, Web Risk, Image moderation, Video moderation, or Combined signals."
+          },
+          "signal_detail": {
+            "type": "string",
+            "title": "Signal Detail",
+            "description": "Short display-ready description of the adjusted signal."
+          },
+          "reason": {
+            "type": "string",
+            "title": "Reason",
+            "description": "User-readable reason the raw signal was discounted or escalated."
+          }
+        },
+        "type": "object",
+        "required": [
+          "direction",
+          "signal_source",
+          "signal_detail",
+          "reason"
+        ],
+        "title": "Divergence"
+      },
       "EnrollmentData": {
         "properties": {
           "participantId": {
@@ -18400,6 +19570,21 @@
           "timestampOfLastStateChange"
         ],
         "title": "EnrollmentData"
+      },
+      "ErrorCode": {
+        "type": "string",
+        "enum": [
+          "invalid_url",
+          "unsafe_url",
+          "unsupported_site",
+          "upstream_error",
+          "extraction_failed",
+          "section_failure",
+          "timeout",
+          "rate_limited",
+          "internal"
+        ],
+        "title": "ErrorCode"
       },
       "ExplanationCreateAttributes": {
         "properties": {
@@ -18536,6 +19721,51 @@
         ],
         "title": "ExplanationResultResponse",
         "description": "JSON:API response for explanation generation."
+      },
+      "FactCheckMatch": {
+        "properties": {
+          "claim_text": {
+            "type": "string",
+            "title": "Claim Text"
+          },
+          "publisher": {
+            "type": "string",
+            "title": "Publisher"
+          },
+          "review_title": {
+            "type": "string",
+            "title": "Review Title"
+          },
+          "review_url": {
+            "type": "string",
+            "title": "Review Url"
+          },
+          "textual_rating": {
+            "type": "string",
+            "title": "Textual Rating"
+          },
+          "review_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Review Date"
+          }
+        },
+        "type": "object",
+        "required": [
+          "claim_text",
+          "publisher",
+          "review_title",
+          "review_url",
+          "textual_rating"
+        ],
+        "title": "FactCheckMatch"
       },
       "FactCheckMatchResource": {
         "properties": {
@@ -18686,6 +19916,25 @@
         "title": "FactCheckMatchResource",
         "description": "JSON:API-compatible fact-check match in search results."
       },
+      "FactsClaimsSection": {
+        "properties": {
+          "claims_report": {
+            "$ref": "#/components/schemas/ClaimsReport"
+          },
+          "known_misinformation": {
+            "items": {
+              "$ref": "#/components/schemas/FactCheckMatch"
+            },
+            "type": "array",
+            "title": "Known Misinformation"
+          }
+        },
+        "type": "object",
+        "required": [
+          "claims_report"
+        ],
+        "title": "FactsClaimsSection"
+      },
       "FlaggedMessageAttributes": {
         "properties": {
           "channel_id": {
@@ -18817,6 +20066,140 @@
         "title": "FlashpointDetectionUpdateResponse",
         "description": "Response model for flashpoint detection update."
       },
+      "FlashpointMatch": {
+        "properties": {
+          "scan_type": {
+            "type": "string",
+            "const": "conversation_flashpoint",
+            "title": "Scan Type",
+            "default": "conversation_flashpoint"
+          },
+          "utterance_id": {
+            "type": "string",
+            "title": "Utterance Id",
+            "description": "Platform-agnostic identifier of the scored utterance"
+          },
+          "derailment_score": {
+            "type": "integer",
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "Derailment Score",
+            "description": "Derailment risk score (0-100)"
+          },
+          "risk_level": {
+            "$ref": "#/components/schemas/src__url_content_scan__tone_schemas__RiskLevel",
+            "description": "Categorical risk assessment level"
+          },
+          "reasoning": {
+            "type": "string",
+            "title": "Reasoning",
+            "description": "Explanation of detected escalation signals"
+          },
+          "context_messages": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Context Messages",
+            "description": "Number of context messages analyzed"
+          }
+        },
+        "type": "object",
+        "required": [
+          "utterance_id",
+          "derailment_score",
+          "risk_level",
+          "reasoning",
+          "context_messages"
+        ],
+        "title": "FlashpointMatch"
+      },
+      "FrameCompatResponse": {
+        "properties": {
+          "can_iframe": {
+            "type": "boolean",
+            "title": "Can Iframe"
+          },
+          "blocking_header": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Blocking Header"
+          },
+          "csp_frame_ancestors": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Csp Frame Ancestors"
+          },
+          "has_archive": {
+            "type": "boolean",
+            "title": "Has Archive",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "can_iframe"
+        ],
+        "title": "FrameCompatResponse"
+      },
+      "FrameFinding": {
+        "properties": {
+          "frame_offset_ms": {
+            "type": "integer",
+            "title": "Frame Offset Ms"
+          },
+          "adult": {
+            "type": "number",
+            "title": "Adult"
+          },
+          "violence": {
+            "type": "number",
+            "title": "Violence"
+          },
+          "racy": {
+            "type": "number",
+            "title": "Racy"
+          },
+          "medical": {
+            "type": "number",
+            "title": "Medical"
+          },
+          "spoof": {
+            "type": "number",
+            "title": "Spoof"
+          },
+          "flagged": {
+            "type": "boolean",
+            "title": "Flagged"
+          },
+          "max_likelihood": {
+            "type": "number",
+            "title": "Max Likelihood"
+          }
+        },
+        "type": "object",
+        "required": [
+          "frame_offset_ms",
+          "adult",
+          "violence",
+          "racy",
+          "medical",
+          "spoof",
+          "flagged",
+          "max_likelihood"
+        ],
+        "title": "FrameFinding"
+      },
       "FusionWeightResponse": {
         "properties": {
           "alpha": {
@@ -18893,6 +20276,90 @@
         "type": "object",
         "title": "HTTPValidationError"
       },
+      "HarmfulContentMatch": {
+        "properties": {
+          "utterance_id": {
+            "type": "string",
+            "title": "Utterance Id"
+          },
+          "utterance_text": {
+            "type": "string",
+            "title": "Utterance Text",
+            "default": ""
+          },
+          "max_score": {
+            "type": "number",
+            "title": "Max Score"
+          },
+          "categories": {
+            "additionalProperties": {
+              "type": "boolean"
+            },
+            "type": "object",
+            "title": "Categories"
+          },
+          "scores": {
+            "additionalProperties": {
+              "type": "number"
+            },
+            "type": "object",
+            "title": "Scores"
+          },
+          "flagged_categories": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Flagged Categories"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "openai",
+              "gcp"
+            ],
+            "title": "Source",
+            "default": "openai"
+          }
+        },
+        "type": "object",
+        "required": [
+          "utterance_id",
+          "max_score",
+          "categories",
+          "scores"
+        ],
+        "title": "HarmfulContentMatch"
+      },
+      "HeadlineSummary": {
+        "properties": {
+          "text": {
+            "type": "string",
+            "title": "Text"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "stock",
+              "synthesized"
+            ],
+            "title": "Kind"
+          },
+          "unavailable_inputs": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Unavailable Inputs"
+          }
+        },
+        "type": "object",
+        "required": [
+          "text",
+          "kind"
+        ],
+        "title": "HeadlineSummary"
+      },
       "HealthCheckResponse": {
         "properties": {
           "status": {
@@ -18958,6 +20425,34 @@
           "NOT_HELPFUL"
         ],
         "title": "HelpfulnessLevel"
+      },
+      "HighlightsThresholdInfo": {
+        "properties": {
+          "total_authors": {
+            "type": "integer",
+            "title": "Total Authors"
+          },
+          "total_utterances": {
+            "type": "integer",
+            "title": "Total Utterances"
+          },
+          "min_authors_required": {
+            "type": "integer",
+            "title": "Min Authors Required"
+          },
+          "min_occurrences_required": {
+            "type": "integer",
+            "title": "Min Occurrences Required"
+          }
+        },
+        "type": "object",
+        "required": [
+          "total_authors",
+          "total_utterances",
+          "min_authors_required",
+          "min_occurrences_required"
+        ],
+        "title": "HighlightsThresholdInfo"
       },
       "HybridSearchCreateAttributes": {
         "properties": {
@@ -19441,6 +20936,125 @@
         "title": "IdentitySingleResponse",
         "description": "JSON:API response for a single identity resource."
       },
+      "ImageModerationMatch": {
+        "properties": {
+          "utterance_id": {
+            "type": "string",
+            "title": "Utterance Id"
+          },
+          "image_url": {
+            "type": "string",
+            "title": "Image Url"
+          },
+          "adult": {
+            "type": "number",
+            "title": "Adult"
+          },
+          "violence": {
+            "type": "number",
+            "title": "Violence"
+          },
+          "racy": {
+            "type": "number",
+            "title": "Racy"
+          },
+          "medical": {
+            "type": "number",
+            "title": "Medical"
+          },
+          "spoof": {
+            "type": "number",
+            "title": "Spoof"
+          },
+          "flagged": {
+            "type": "boolean",
+            "title": "Flagged"
+          },
+          "max_likelihood": {
+            "type": "number",
+            "title": "Max Likelihood"
+          }
+        },
+        "type": "object",
+        "required": [
+          "utterance_id",
+          "image_url",
+          "adult",
+          "violence",
+          "racy",
+          "medical",
+          "spoof",
+          "flagged",
+          "max_likelihood"
+        ],
+        "title": "ImageModerationMatch"
+      },
+      "ImageModerationSection": {
+        "properties": {
+          "matches": {
+            "items": {
+              "$ref": "#/components/schemas/ImageModerationMatch"
+            },
+            "type": "array",
+            "title": "Matches"
+          }
+        },
+        "type": "object",
+        "title": "ImageModerationSection"
+      },
+      "ImageUploadItem": {
+        "properties": {
+          "filename": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Filename"
+          },
+          "content_type": {
+            "type": "string",
+            "title": "Content Type"
+          },
+          "size_bytes": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Size Bytes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "content_type",
+          "size_bytes"
+        ],
+        "title": "ImageUploadItem"
+      },
+      "ImageUploadUrl": {
+        "properties": {
+          "ordinal": {
+            "type": "integer",
+            "title": "Ordinal"
+          },
+          "gcs_key": {
+            "type": "string",
+            "title": "Gcs Key"
+          },
+          "upload_url": {
+            "type": "string",
+            "title": "Upload Url"
+          }
+        },
+        "type": "object",
+        "required": [
+          "ordinal",
+          "gcs_key",
+          "upload_url"
+        ],
+        "title": "ImageUploadUrl"
+      },
       "ImportFactCheckBureauRequest": {
         "properties": {
           "batch_size": {
@@ -19604,6 +21218,176 @@
         "type": "object",
         "title": "JSONAPIMeta",
         "description": "JSON:API meta object for pagination and collection metadata."
+      },
+      "JobState": {
+        "properties": {
+          "job_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Job Id"
+          },
+          "url": {
+            "type": "string",
+            "title": "Url"
+          },
+          "status": {
+            "$ref": "#/components/schemas/JobStatus"
+          },
+          "attempt_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Attempt Id"
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorCode"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "error_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Message"
+          },
+          "error_host": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Host",
+            "description": "When ErrorCode.UNSUPPORTED_SITE is returned, the host that triggered the rejection."
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          },
+          "sections": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/SectionSlot"
+            },
+            "propertyNames": {
+              "$ref": "#/components/schemas/SectionSlug"
+            },
+            "type": "object",
+            "title": "Sections"
+          },
+          "sidebar_payload": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SidebarPayload"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "sidebar_payload_complete": {
+            "type": "boolean",
+            "title": "Sidebar Payload Complete",
+            "default": false
+          },
+          "activity_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Activity At"
+          },
+          "activity_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Activity Label"
+          },
+          "cached": {
+            "type": "boolean",
+            "title": "Cached",
+            "default": false
+          },
+          "next_poll_ms": {
+            "type": "integer",
+            "title": "Next Poll Ms",
+            "default": 1500
+          },
+          "page_title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Page Title"
+          },
+          "page_kind": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PageKind"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "utterance_count": {
+            "type": "integer",
+            "title": "Utterance Count",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "required": [
+          "job_id",
+          "url",
+          "status",
+          "attempt_id",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "JobState"
+      },
+      "JobStatus": {
+        "type": "string",
+        "enum": [
+          "pending",
+          "extracting",
+          "analyzing",
+          "done",
+          "partial",
+          "failed"
+        ],
+        "title": "JobStatus"
       },
       "LLMConfigCreate": {
         "properties": {
@@ -22551,6 +24335,110 @@
         "title": "OpenAIModerationMatch",
         "description": "Match result from OpenAI moderation scan."
       },
+      "OpinionsHighlight": {
+        "properties": {
+          "cluster": {
+            "$ref": "#/components/schemas/DedupedClaim"
+          },
+          "crossed_scaled_threshold": {
+            "type": "boolean",
+            "title": "Crossed Scaled Threshold"
+          }
+        },
+        "type": "object",
+        "required": [
+          "cluster",
+          "crossed_scaled_threshold"
+        ],
+        "title": "OpinionsHighlight"
+      },
+      "OpinionsHighlightsReport": {
+        "properties": {
+          "highlights": {
+            "items": {
+              "$ref": "#/components/schemas/OpinionsHighlight"
+            },
+            "type": "array",
+            "title": "Highlights"
+          },
+          "threshold": {
+            "$ref": "#/components/schemas/HighlightsThresholdInfo"
+          },
+          "fallback_engaged": {
+            "type": "boolean",
+            "title": "Fallback Engaged"
+          },
+          "floor_eligible_count": {
+            "type": "integer",
+            "title": "Floor Eligible Count"
+          },
+          "total_input_count": {
+            "type": "integer",
+            "title": "Total Input Count"
+          }
+        },
+        "type": "object",
+        "required": [
+          "highlights",
+          "threshold",
+          "fallback_engaged",
+          "floor_eligible_count",
+          "total_input_count"
+        ],
+        "title": "OpinionsHighlightsReport"
+      },
+      "OpinionsReport": {
+        "properties": {
+          "sentiment_stats": {
+            "$ref": "#/components/schemas/SentimentStatsReport"
+          },
+          "subjective_claims": {
+            "items": {
+              "$ref": "#/components/schemas/SubjectiveClaim"
+            },
+            "type": "array",
+            "title": "Subjective Claims"
+          }
+        },
+        "type": "object",
+        "required": [
+          "sentiment_stats",
+          "subjective_claims"
+        ],
+        "title": "OpinionsReport"
+      },
+      "OpinionsSection": {
+        "properties": {
+          "opinions_report": {
+            "$ref": "#/components/schemas/OpinionsReport"
+          },
+          "trends_oppositions": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TrendsOppositionsReport"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "highlights": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OpinionsHighlightsReport"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "opinions_report"
+        ],
+        "title": "OpinionsSection"
+      },
       "OrchestratorAttributes": {
         "properties": {
           "name": {
@@ -23063,6 +24951,43 @@
         ],
         "title": "OrchestratorUpdateRequest"
       },
+      "OverallDecision": {
+        "properties": {
+          "verdict": {
+            "$ref": "#/components/schemas/OverallVerdict"
+          },
+          "reason": {
+            "type": "string",
+            "title": "Reason"
+          }
+        },
+        "type": "object",
+        "required": [
+          "verdict",
+          "reason"
+        ],
+        "title": "OverallDecision"
+      },
+      "OverallVerdict": {
+        "type": "string",
+        "enum": [
+          "pass",
+          "flag"
+        ],
+        "title": "OverallVerdict"
+      },
+      "PageKind": {
+        "type": "string",
+        "enum": [
+          "blog_post",
+          "forum_thread",
+          "hierarchical_thread",
+          "blog_index",
+          "article",
+          "other"
+        ],
+        "title": "PageKind"
+      },
       "ParticipantStatsAttributes": {
         "properties": {
           "notes_created": {
@@ -23388,6 +25313,39 @@
           "data"
         ],
         "title": "PlaygroundNoteRequestJobResponse"
+      },
+      "Premise": {
+        "properties": {
+          "premise_id": {
+            "type": "string",
+            "title": "Premise Id"
+          },
+          "statement": {
+            "type": "string",
+            "title": "Statement"
+          }
+        },
+        "type": "object",
+        "required": [
+          "premise_id",
+          "statement"
+        ],
+        "title": "Premise",
+        "description": "A premise statement attached to one or more claims."
+      },
+      "PremisesRegistry": {
+        "properties": {
+          "premises": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/Premise"
+            },
+            "type": "object",
+            "title": "Premises"
+          }
+        },
+        "type": "object",
+        "title": "PremisesRegistry",
+        "description": "Global registry of unique premises discovered across all claims."
       },
       "PreviouslySeenCheckAttributes": {
         "properties": {
@@ -24736,6 +26694,102 @@
         "title": "RatingUpdateRequest",
         "description": "JSON:API request body for updating a rating."
       },
+      "RecentAnalysis": {
+        "properties": {
+          "job_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Job Id",
+            "description": "batch_jobs.id for the analysis job."
+          },
+          "source_url": {
+            "type": "string",
+            "title": "Source Url"
+          },
+          "page_title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Page Title"
+          },
+          "screenshot_url": {
+            "type": "string",
+            "title": "Screenshot Url",
+            "description": "Signed screenshot URL for the gallery card."
+          },
+          "preview_description": {
+            "type": "string",
+            "title": "Preview Description",
+            "description": "Short non-null gallery blurb."
+          },
+          "og_thumbnail_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Og Thumbnail Url",
+            "description": "X (Twitter) OG thumbnail URL stored during scan; None for non-X URLs."
+          },
+          "headline_preview": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Headline Preview",
+            "description": "Truncated headline summary text from sidebar_payload; None when absent."
+          },
+          "weather_preview": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Weather Preview",
+            "description": "Compact weather-report label string (truth \u00b7 relevance \u00b7 sentiment); None when absent."
+          },
+          "safety_row": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SafetyRowPreview"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Minimal safety summary for gallery row; None when no recommendation stored."
+          },
+          "completed_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Completed At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "job_id",
+          "source_url",
+          "screenshot_url",
+          "preview_description",
+          "completed_at"
+        ],
+        "title": "RecentAnalysis"
+      },
       "RecentScanAttributes": {
         "properties": {
           "has_recent_scan": {
@@ -25567,6 +27621,30 @@
         ],
         "title": "ResumeRequest"
       },
+      "RetryResponse": {
+        "properties": {
+          "job_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Job Id"
+          },
+          "slug": {
+            "$ref": "#/components/schemas/SectionSlug"
+          },
+          "attempt_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Attempt Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "job_id",
+          "slug",
+          "attempt_id"
+        ],
+        "title": "RetryResponse"
+      },
       "ReviewGroup": {
         "type": "string",
         "enum": [
@@ -25576,17 +27654,163 @@
         ],
         "title": "ReviewGroup"
       },
-      "RiskLevel": {
+      "SCDReport": {
+        "properties": {
+          "narrative": {
+            "type": "string",
+            "title": "Narrative",
+            "description": "Conversational-register narrative (~80-150 words) describing how the conversation unfolds.",
+            "default": ""
+          },
+          "speaker_arcs": {
+            "items": {
+              "$ref": "#/components/schemas/SpeakerArc"
+            },
+            "type": "array",
+            "title": "Speaker Arcs"
+          },
+          "summary": {
+            "type": "string",
+            "title": "Summary"
+          },
+          "tone_labels": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Tone Labels"
+          },
+          "per_speaker_notes": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Per Speaker Notes"
+          },
+          "insufficient_conversation": {
+            "type": "boolean",
+            "title": "Insufficient Conversation",
+            "default": false
+          },
+          "upstream_stream_type": {
+            "$ref": "#/components/schemas/UtteranceStreamType",
+            "description": "Extractor-provided advisory utterance stream type.",
+            "default": "unknown"
+          },
+          "observed_stream_type": {
+            "$ref": "#/components/schemas/UtteranceStreamType",
+            "description": "SCD model's own classification of the utterance stream shape.",
+            "default": "unknown"
+          },
+          "observed_confidence": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Observed Confidence",
+            "description": "Confidence in observed_stream_type, from 0.0 to 1.0.",
+            "default": 0.0
+          },
+          "disagreement_rationale": {
+            "type": "string",
+            "title": "Disagreement Rationale",
+            "description": "Short rationale when observed_stream_type differs from upstream_stream_type.",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "summary"
+        ],
+        "title": "SCDReport"
+      },
+      "SafetyLevel": {
         "type": "string",
         "enum": [
-          "Low Risk",
-          "Guarded",
-          "Heated",
-          "Hostile",
-          "Dangerous"
+          "safe",
+          "mild",
+          "caution",
+          "unsafe"
         ],
-        "title": "RiskLevel",
-        "description": "Categorical risk level for conversation flashpoint detection."
+        "title": "SafetyLevel"
+      },
+      "SafetyRecommendation": {
+        "properties": {
+          "level": {
+            "$ref": "#/components/schemas/SafetyLevel"
+          },
+          "rationale": {
+            "type": "string",
+            "title": "Rationale"
+          },
+          "top_signals": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Top Signals"
+          },
+          "unavailable_inputs": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Unavailable Inputs"
+          },
+          "divergences": {
+            "items": {
+              "$ref": "#/components/schemas/Divergence"
+            },
+            "type": "array",
+            "title": "Divergences"
+          },
+          "display": {
+            "type": "string",
+            "title": "Display",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "level",
+          "rationale"
+        ],
+        "title": "SafetyRecommendation"
+      },
+      "SafetyRowPreview": {
+        "properties": {
+          "level": {
+            "$ref": "#/components/schemas/SafetyLevel",
+            "description": "Safety level: safe, caution, or unsafe."
+          }
+        },
+        "type": "object",
+        "required": [
+          "level"
+        ],
+        "title": "SafetyRowPreview"
+      },
+      "SafetySection": {
+        "properties": {
+          "harmful_content_matches": {
+            "items": {
+              "$ref": "#/components/schemas/HarmfulContentMatch"
+            },
+            "type": "array",
+            "title": "Harmful Content Matches"
+          },
+          "recommendation": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SafetyRecommendation"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "title": "SafetySection"
       },
       "ScanErrorInfoSchema": {
         "properties": {
@@ -26338,6 +28562,188 @@
         "title": "ScrapeProcessingRequest",
         "description": "Request parameters for scraping operations with rate limiting support."
       },
+      "ScreenshotResponse": {
+        "properties": {
+          "screenshot_url": {
+            "type": "string",
+            "title": "Screenshot Url"
+          }
+        },
+        "type": "object",
+        "required": [
+          "screenshot_url"
+        ],
+        "title": "ScreenshotResponse"
+      },
+      "SectionSlot": {
+        "properties": {
+          "state": {
+            "$ref": "#/components/schemas/SectionState"
+          },
+          "attempt_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Attempt Id"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Data"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "state",
+          "attempt_id"
+        ],
+        "title": "SectionSlot"
+      },
+      "SectionSlug": {
+        "type": "string",
+        "enum": [
+          "safety__moderation",
+          "safety__web_risk",
+          "safety__image_moderation",
+          "safety__video_moderation",
+          "tone_dynamics__flashpoint",
+          "tone_dynamics__scd",
+          "facts_claims__dedup",
+          "facts_claims__known_misinfo",
+          "facts_claims__premises",
+          "facts_claims__evidence",
+          "opinions_sentiments__sentiment",
+          "opinions_sentiments__subjective",
+          "opinions_sentiments__trends_oppositions",
+          "opinions_sentiments__highlights"
+        ],
+        "title": "SectionSlug"
+      },
+      "SectionState": {
+        "type": "string",
+        "enum": [
+          "pending",
+          "running",
+          "done",
+          "failed"
+        ],
+        "title": "SectionState"
+      },
+      "SentimentScore": {
+        "properties": {
+          "utterance_id": {
+            "type": "string",
+            "title": "Utterance Id"
+          },
+          "label": {
+            "type": "string",
+            "enum": [
+              "positive",
+              "negative",
+              "neutral"
+            ],
+            "title": "Label"
+          },
+          "valence": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": -1.0,
+            "title": "Valence"
+          }
+        },
+        "type": "object",
+        "required": [
+          "utterance_id",
+          "label",
+          "valence"
+        ],
+        "title": "SentimentScore"
+      },
+      "SentimentStatsReport": {
+        "properties": {
+          "per_utterance": {
+            "items": {
+              "$ref": "#/components/schemas/SentimentScore"
+            },
+            "type": "array",
+            "title": "Per Utterance"
+          },
+          "positive_pct": {
+            "type": "number",
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "Positive Pct"
+          },
+          "negative_pct": {
+            "type": "number",
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "Negative Pct"
+          },
+          "neutral_pct": {
+            "type": "number",
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "Neutral Pct"
+          },
+          "mean_valence": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": -1.0,
+            "title": "Mean Valence"
+          }
+        },
+        "type": "object",
+        "required": [
+          "per_utterance",
+          "positive_pct",
+          "negative_pct",
+          "neutral_pct",
+          "mean_valence"
+        ],
+        "title": "SentimentStatsReport"
+      },
       "ServiceStatus": {
         "properties": {
           "status": {
@@ -26495,6 +28901,99 @@
         ],
         "title": "SetRatingRequest",
         "description": "JSON:API request body for setting rating on a candidate."
+      },
+      "SidebarPayload": {
+        "properties": {
+          "scraped_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Scraped At"
+          },
+          "cached": {
+            "type": "boolean",
+            "title": "Cached",
+            "default": false
+          },
+          "cached_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cached At"
+          },
+          "safety": {
+            "$ref": "#/components/schemas/SafetySection"
+          },
+          "tone_dynamics": {
+            "$ref": "#/components/schemas/ToneDynamicsSection"
+          },
+          "facts_claims": {
+            "$ref": "#/components/schemas/FactsClaimsSection"
+          },
+          "opinions_sentiments": {
+            "$ref": "#/components/schemas/OpinionsSection"
+          },
+          "web_risk": {
+            "$ref": "#/components/schemas/WebRiskSection"
+          },
+          "image_moderation": {
+            "$ref": "#/components/schemas/ImageModerationSection"
+          },
+          "video_moderation": {
+            "$ref": "#/components/schemas/VideoModerationSection"
+          },
+          "headline": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/HeadlineSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "weather_report": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WeatherReport"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "overall_recommendation": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OverallDecision"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "utterances": {
+            "items": {
+              "$ref": "#/components/schemas/UtteranceAnchor"
+            },
+            "type": "array",
+            "title": "Utterances"
+          }
+        },
+        "type": "object",
+        "required": [
+          "scraped_at",
+          "safety",
+          "tone_dynamics",
+          "facts_claims",
+          "opinions_sentiments"
+        ],
+        "title": "SidebarPayload"
       },
       "SimAgentAttributes": {
         "properties": {
@@ -27660,6 +30159,104 @@
         ],
         "title": "SimulationUpdateRequest"
       },
+      "SourceKind": {
+        "type": "string",
+        "enum": [
+          "utterance",
+          "external"
+        ],
+        "title": "SourceKind",
+        "description": "Origin of a supporting fact used by the evidence slot."
+      },
+      "SpeakerArc": {
+        "properties": {
+          "speaker": {
+            "type": "string",
+            "title": "Speaker",
+            "description": "Speaker label as it appears in the formatted transcript (e.g. 'alice', 'Speaker1')."
+          },
+          "note": {
+            "type": "string",
+            "title": "Note",
+            "description": "1-2 sentence observation about this speaker's arc: how their tone, intent, or stance evolves across the conversation."
+          },
+          "utterance_id_range": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "integer",
+                  "minimum": 1.0
+                },
+                "type": "array",
+                "maxItems": 2,
+                "minItems": 2
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Utterance Id Range",
+            "description": "Inclusive [start, end] 1-indexed utterance index range that this arc covers, for timeline-viz alignment. Exactly two integers with start <= end and start >= 1."
+          }
+        },
+        "type": "object",
+        "required": [
+          "speaker",
+          "note"
+        ],
+        "title": "SpeakerArc"
+      },
+      "SubjectiveClaim": {
+        "properties": {
+          "claim_text": {
+            "type": "string",
+            "title": "Claim Text"
+          },
+          "utterance_id": {
+            "type": "string",
+            "title": "Utterance Id"
+          },
+          "stance": {
+            "type": "string",
+            "enum": [
+              "supports",
+              "opposes",
+              "evaluates"
+            ],
+            "title": "Stance"
+          }
+        },
+        "type": "object",
+        "required": [
+          "claim_text",
+          "utterance_id",
+          "stance"
+        ],
+        "title": "SubjectiveClaim"
+      },
+      "SupportingFact": {
+        "properties": {
+          "statement": {
+            "type": "string",
+            "title": "Statement"
+          },
+          "source_kind": {
+            "$ref": "#/components/schemas/SourceKind"
+          },
+          "source_ref": {
+            "type": "string",
+            "title": "Source Ref"
+          }
+        },
+        "type": "object",
+        "required": [
+          "statement",
+          "source_kind",
+          "source_ref"
+        ],
+        "title": "SupportingFact",
+        "description": "A single supporting statement for a deduped claim."
+      },
       "TierInfo": {
         "properties": {
           "level": {
@@ -27914,6 +30511,116 @@
           "utilization_pct"
         ],
         "title": "TokenPoolStatus"
+      },
+      "ToneDynamicsSection": {
+        "properties": {
+          "scd": {
+            "$ref": "#/components/schemas/SCDReport"
+          },
+          "flashpoint_matches": {
+            "items": {
+              "$ref": "#/components/schemas/FlashpointMatch"
+            },
+            "type": "array",
+            "title": "Flashpoint Matches"
+          }
+        },
+        "type": "object",
+        "required": [
+          "scd"
+        ],
+        "title": "ToneDynamicsSection"
+      },
+      "TrendsOppositionsReport": {
+        "properties": {
+          "trends": {
+            "items": {
+              "$ref": "#/components/schemas/ClaimTrend"
+            },
+            "type": "array",
+            "title": "Trends"
+          },
+          "oppositions": {
+            "items": {
+              "$ref": "#/components/schemas/ClaimOpposition"
+            },
+            "type": "array",
+            "title": "Oppositions"
+          },
+          "input_cluster_count": {
+            "type": "integer",
+            "title": "Input Cluster Count"
+          },
+          "skipped_for_cap": {
+            "type": "integer",
+            "title": "Skipped For Cap"
+          }
+        },
+        "type": "object",
+        "required": [
+          "trends",
+          "oppositions",
+          "input_cluster_count",
+          "skipped_for_cap"
+        ],
+        "title": "TrendsOppositionsReport"
+      },
+      "UploadImagesRequest": {
+        "properties": {
+          "images": {
+            "items": {
+              "$ref": "#/components/schemas/ImageUploadItem"
+            },
+            "type": "array",
+            "minItems": 1,
+            "title": "Images"
+          }
+        },
+        "type": "object",
+        "required": [
+          "images"
+        ],
+        "title": "UploadImagesRequest"
+      },
+      "UploadImagesResponse": {
+        "properties": {
+          "batch_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Batch Id"
+          },
+          "images": {
+            "items": {
+              "$ref": "#/components/schemas/ImageUploadUrl"
+            },
+            "type": "array",
+            "title": "Images"
+          }
+        },
+        "type": "object",
+        "required": [
+          "batch_id",
+          "images"
+        ],
+        "title": "UploadImagesResponse"
+      },
+      "UploadPDFResponse": {
+        "properties": {
+          "gcs_key": {
+            "type": "string",
+            "title": "Gcs Key"
+          },
+          "upload_url": {
+            "type": "string",
+            "title": "Upload Url"
+          }
+        },
+        "type": "object",
+        "required": [
+          "gcs_key",
+          "upload_url"
+        ],
+        "title": "UploadPDFResponse"
       },
       "UserCreate": {
         "properties": {
@@ -28410,6 +31117,51 @@
         "type": "object",
         "title": "UserUpdate"
       },
+      "UtteranceAnchor": {
+        "properties": {
+          "position": {
+            "type": "integer",
+            "title": "Position",
+            "description": "1-indexed utterance position in the extracted thread."
+          },
+          "utterance_id": {
+            "type": "string",
+            "title": "Utterance Id",
+            "description": "Stable utterance id stored for transcript jumps."
+          },
+          "timestamp": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Timestamp",
+            "description": "Wall-clock timestamp for the utterance when the source thread exposed one."
+          }
+        },
+        "type": "object",
+        "required": [
+          "position",
+          "utterance_id"
+        ],
+        "title": "UtteranceAnchor"
+      },
+      "UtteranceStreamType": {
+        "type": "string",
+        "enum": [
+          "dialogue",
+          "comment_section",
+          "article_or_monologue",
+          "mixed",
+          "unknown"
+        ],
+        "title": "UtteranceStreamType",
+        "description": "Discourse shape observed in the extracted utterance stream."
+      },
       "ValidationError": {
         "properties": {
           "loc": {
@@ -28484,6 +31236,314 @@
         },
         "type": "object",
         "title": "VersionResponse"
+      },
+      "VideoModerationMatch": {
+        "properties": {
+          "utterance_id": {
+            "type": "string",
+            "title": "Utterance Id"
+          },
+          "video_url": {
+            "type": "string",
+            "title": "Video Url"
+          },
+          "frame_findings": {
+            "items": {
+              "$ref": "#/components/schemas/FrameFinding"
+            },
+            "type": "array",
+            "title": "Frame Findings"
+          },
+          "flagged": {
+            "type": "boolean",
+            "title": "Flagged"
+          },
+          "max_likelihood": {
+            "type": "number",
+            "title": "Max Likelihood"
+          }
+        },
+        "type": "object",
+        "required": [
+          "utterance_id",
+          "video_url",
+          "flagged",
+          "max_likelihood"
+        ],
+        "title": "VideoModerationMatch"
+      },
+      "VideoModerationSection": {
+        "properties": {
+          "matches": {
+            "items": {
+              "$ref": "#/components/schemas/VideoModerationMatch"
+            },
+            "type": "array",
+            "title": "Matches"
+          }
+        },
+        "type": "object",
+        "title": "VideoModerationSection"
+      },
+      "WeatherAxisAlternative_Literal__insightful____on_topic____chatty____drifting____off_topic___": {
+        "properties": {
+          "label": {
+            "type": "string",
+            "enum": [
+              "insightful",
+              "on_topic",
+              "chatty",
+              "drifting",
+              "off_topic"
+            ],
+            "title": "Label"
+          },
+          "logprob": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Logprob"
+          }
+        },
+        "type": "object",
+        "required": [
+          "label"
+        ],
+        "title": "WeatherAxisAlternative[Literal['insightful', 'on_topic', 'chatty', 'drifting', 'off_topic']]"
+      },
+      "WeatherAxisAlternative_Literal__sourced____factual_claims____first_person____hearsay____misleading___": {
+        "properties": {
+          "label": {
+            "type": "string",
+            "enum": [
+              "sourced",
+              "factual_claims",
+              "first_person",
+              "hearsay",
+              "misleading"
+            ],
+            "title": "Label"
+          },
+          "logprob": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Logprob"
+          }
+        },
+        "type": "object",
+        "required": [
+          "label"
+        ],
+        "title": "WeatherAxisAlternative[Literal['sourced', 'factual_claims', 'first_person', 'hearsay', 'misleading']]"
+      },
+      "WeatherAxisAlternative_str_": {
+        "properties": {
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "logprob": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Logprob"
+          }
+        },
+        "type": "object",
+        "required": [
+          "label"
+        ],
+        "title": "WeatherAxisAlternative[str]"
+      },
+      "WeatherAxis_Literal__insightful____on_topic____chatty____drifting____off_topic___": {
+        "properties": {
+          "label": {
+            "type": "string",
+            "enum": [
+              "insightful",
+              "on_topic",
+              "chatty",
+              "drifting",
+              "off_topic"
+            ],
+            "title": "Label"
+          },
+          "logprob": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Logprob"
+          },
+          "alternatives": {
+            "items": {
+              "$ref": "#/components/schemas/WeatherAxisAlternative_Literal__insightful____on_topic____chatty____drifting____off_topic___"
+            },
+            "type": "array",
+            "title": "Alternatives"
+          }
+        },
+        "type": "object",
+        "required": [
+          "label"
+        ],
+        "title": "WeatherAxis[Literal['insightful', 'on_topic', 'chatty', 'drifting', 'off_topic']]"
+      },
+      "WeatherAxis_Literal__sourced____factual_claims____first_person____hearsay____misleading___": {
+        "properties": {
+          "label": {
+            "type": "string",
+            "enum": [
+              "sourced",
+              "factual_claims",
+              "first_person",
+              "hearsay",
+              "misleading"
+            ],
+            "title": "Label"
+          },
+          "logprob": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Logprob"
+          },
+          "alternatives": {
+            "items": {
+              "$ref": "#/components/schemas/WeatherAxisAlternative_Literal__sourced____factual_claims____first_person____hearsay____misleading___"
+            },
+            "type": "array",
+            "title": "Alternatives"
+          }
+        },
+        "type": "object",
+        "required": [
+          "label"
+        ],
+        "title": "WeatherAxis[Literal['sourced', 'factual_claims', 'first_person', 'hearsay', 'misleading']]"
+      },
+      "WeatherAxis_str_": {
+        "properties": {
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "logprob": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Logprob"
+          },
+          "alternatives": {
+            "items": {
+              "$ref": "#/components/schemas/WeatherAxisAlternative_str_"
+            },
+            "type": "array",
+            "title": "Alternatives"
+          }
+        },
+        "type": "object",
+        "required": [
+          "label"
+        ],
+        "title": "WeatherAxis[str]"
+      },
+      "WeatherReport": {
+        "properties": {
+          "truth": {
+            "$ref": "#/components/schemas/WeatherAxis_Literal__sourced____factual_claims____first_person____hearsay____misleading___"
+          },
+          "relevance": {
+            "$ref": "#/components/schemas/WeatherAxis_Literal__insightful____on_topic____chatty____drifting____off_topic___"
+          },
+          "sentiment": {
+            "$ref": "#/components/schemas/WeatherAxis_str_"
+          }
+        },
+        "type": "object",
+        "required": [
+          "truth",
+          "relevance",
+          "sentiment"
+        ],
+        "title": "WeatherReport"
+      },
+      "WebRiskFinding": {
+        "properties": {
+          "url": {
+            "type": "string",
+            "title": "Url"
+          },
+          "threat_types": {
+            "items": {
+              "type": "string",
+              "enum": [
+                "MALWARE",
+                "SOCIAL_ENGINEERING",
+                "UNWANTED_SOFTWARE",
+                "POTENTIALLY_HARMFUL_APPLICATION"
+              ]
+            },
+            "type": "array",
+            "title": "Threat Types"
+          }
+        },
+        "type": "object",
+        "required": [
+          "url",
+          "threat_types"
+        ],
+        "title": "WebRiskFinding"
+      },
+      "WebRiskSection": {
+        "properties": {
+          "findings": {
+            "items": {
+              "$ref": "#/components/schemas/WebRiskFinding"
+            },
+            "type": "array",
+            "title": "Findings"
+          },
+          "urls_checked": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Urls Checked",
+            "description": "Number of unique URLs evaluated by Web Risk",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "title": "WebRiskSection"
       },
       "WebhookConfigResponse": {
         "properties": {
@@ -28763,6 +31823,29 @@
         ],
         "title": "WelcomeMessageUpdateResponse",
         "description": "Response model for welcome message update."
+      },
+      "src__bulk_content_scan__schemas__RiskLevel": {
+        "type": "string",
+        "enum": [
+          "Low Risk",
+          "Guarded",
+          "Heated",
+          "Hostile",
+          "Dangerous"
+        ],
+        "title": "RiskLevel",
+        "description": "Categorical risk level for conversation flashpoint detection."
+      },
+      "src__url_content_scan__tone_schemas__RiskLevel": {
+        "type": "string",
+        "enum": [
+          "Low Risk",
+          "Guarded",
+          "Heated",
+          "Hostile",
+          "Dangerous"
+        ],
+        "title": "RiskLevel"
       }
     },
     "securitySchemes": {

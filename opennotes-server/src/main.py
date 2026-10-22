@@ -20,6 +20,13 @@ _otel_settings = get_settings()
 
 if _otel_settings.ENABLE_TRACING and _otel_settings.LOGFIRE_ENABLED and not _otel_settings.TESTING:
     from src.monitoring.observability import setup_observability
+    from src.url_content_scan.observability import augment_logfire
+
+    def _url_scan_post_configure_hook(_logfire: Any) -> None:
+        augment_logfire(
+            extra_patterns=_otel_settings.URL_SCAN_LOGFIRE_EXTRA_SCRUB_PATTERNS,
+            enable_content=_otel_settings.URL_SCAN_LOGFIRE_CONTENT,
+        )
 
     setup_observability(
         service_name=_otel_settings.OTEL_SERVICE_NAME or _otel_settings.PROJECT_NAME,
@@ -33,6 +40,8 @@ if _otel_settings.ENABLE_TRACING and _otel_settings.LOGFIRE_ENABLED and not _ote
         enable_console_export=_otel_settings.ENABLE_CONSOLE_TRACING,
         tail_level_threshold=_otel_settings.LOGFIRE_TAIL_LEVEL_THRESHOLD,
         tail_duration_threshold=_otel_settings.LOGFIRE_TAIL_DURATION_THRESHOLD,
+        post_configure_hook=_url_scan_post_configure_hook,
+        extra_scrub_patterns=_otel_settings.URL_SCAN_LOGFIRE_EXTRA_SCRUB_PATTERNS,
     )
 
 from src.admin.api_key_admin_router import router as api_key_admin_router
@@ -125,6 +134,9 @@ from src.simulation.sim_channel_messages_jsonapi_router import (
 from src.simulation.simulations_jsonapi_router import router as simulations_jsonapi_router
 from src.startup_migrations import run_startup_migrations
 from src.startup_validation import run_startup_checks
+from src.url_content_scan.auth import UrlScanAuthError
+from src.url_content_scan.router import register_private_url_scan_routes
+from src.url_content_scan.router import router as url_scan_router
 from src.users.admin_router import router as admin_router
 from src.users.communities_jsonapi_router import router as communities_jsonapi_router
 from src.users.profile_router import router as profile_auth_router
@@ -742,6 +754,20 @@ app.add_exception_handler(
 
 app.add_exception_handler(RequestValidationError, sanitized_validation_exception_handler)
 
+
+async def url_scan_auth_exception_handler(
+    request: Any,
+    exc: UrlScanAuthError,
+) -> JSONResponse:
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"error_code": exc.error_code, "message": exc.message},
+        headers=exc.headers,
+    )
+
+
+app.add_exception_handler(UrlScanAuthError, url_scan_auth_exception_handler)  # pyright: ignore[reportArgumentType]
+
 if settings.ENABLE_METRICS:
     app.add_middleware(MetricsMiddleware)
 
@@ -899,6 +925,8 @@ app.include_router(chunk_router, prefix=settings.API_V1_PREFIX)
 app.include_router(fact_check_import_router, prefix=settings.API_V1_PREFIX)
 app.include_router(candidates_jsonapi_router, prefix=settings.API_V1_PREFIX)
 app.include_router(batch_jobs_router, prefix=settings.API_V1_PREFIX)
+app.include_router(url_scan_router)
+register_private_url_scan_routes(app)
 app.include_router(token_pool_router, prefix=settings.API_V1_PREFIX)
 app.include_router(
     simulations_jsonapi_router,

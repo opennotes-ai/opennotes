@@ -1,0 +1,19 @@
+{
+  "source_url": "https://example.com/help/install",
+  "scrape": {
+    "markdown": "# Installation Help\n\nFollow these setup steps.",
+    "html": "<html><body><main><h1>Installation Help</h1><p>Follow these setup steps.</p></main></body></html>",
+    "metadata": {
+      "title": "Installation Help",
+      "sourceURL": "https://example.com/help/install"
+    }
+  },
+  "expected": {
+    "page_kind": "other",
+    "page_title": "Installation Help",
+    "utterance_count": 1,
+    "kinds": ["post"],
+    "parent_ids": [null],
+    "authors": [null]
+  }
+}

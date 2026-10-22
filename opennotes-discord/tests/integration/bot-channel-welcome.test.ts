@@ -8,9 +8,17 @@ import {
 } from '../factories/index.js';
 
 const mockLogger = loggerFactory.build();
+const mockApiClient = {
+  getCommunityServerByPlatformId: jest.fn<(...args: any[]) => Promise<any>>(),
+  updateWelcomeMessageId: jest.fn<(...args: any[]) => Promise<void>>(),
+};
 
 jest.unstable_mockModule('../../src/logger.js', () => ({
   logger: mockLogger,
+}));
+
+jest.unstable_mockModule('../../src/api-client.js', () => ({
+  apiClient: mockApiClient,
 }));
 
 const { BotChannelService } = await import('../../src/services/BotChannelService.js');
@@ -39,6 +47,14 @@ describe('Bot Channel Welcome Flow Integration', () => {
   let mockGuildConfigService: any;
 
   beforeEach(() => {
+    mockApiClient.getCommunityServerByPlatformId.mockResolvedValue({
+      data: {
+        type: 'community-servers',
+        id: 'server-123',
+        attributes: { welcome_message_id: null },
+      },
+    });
+    mockApiClient.updateWelcomeMessageId.mockResolvedValue(undefined);
     botChannelService = new BotChannelService();
     guildOnboardingService = new GuildOnboardingService();
 
@@ -110,6 +126,21 @@ describe('Bot Channel Welcome Flow Integration', () => {
   });
 
   describe('Guild Join Flow', () => {
+    it('should keep welcome flow inside mocked API boundaries', async () => {
+      const fetchSpy = jest.spyOn(globalThis, 'fetch').mockImplementation(async () =>
+        new Response(JSON.stringify({
+          data: { type: 'community-servers', id: 'server-123', attributes: {} },
+        }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+      );
+
+      await guildOnboardingService.postWelcomeToChannel(mockChannel);
+
+      expect(mockChannel.send).toHaveBeenCalledTimes(1);
+      expect(mockApiClient.getCommunityServerByPlatformId).toHaveBeenCalledWith('guild-123');
+      expect(mockApiClient.updateWelcomeMessageId).toHaveBeenCalledTimes(1);
+      expect(fetchSpy).not.toHaveBeenCalled();
+    });
+
     it('should create bot channel on guild join', async () => {
       const result = await botChannelService.ensureChannelExists(
         mockGuild,

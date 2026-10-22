@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import random as _random
 
 from dbos import DBOS
 
@@ -10,6 +11,23 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_POLL_INTERVAL = 2.0
 DEFAULT_MAX_WAIT = 300.0
+
+DEFAULT_SATURATION_RETRY_BASE_MS: float = 500.0
+DEFAULT_SATURATION_RETRY_MAX_MS: float = 4000.0
+DEFAULT_SATURATION_RETRY_JITTER_MS: float = 250.0
+
+
+def _saturation_sleep_ms(
+    retry_index: int,
+    base_ms: float,
+    max_ms: float,
+    jitter_ms: float,
+    rng: _random.Random | None = None,
+) -> float:
+    exponential_ms = base_ms * (2 ** (retry_index - 1))
+    capped_ms = min(exponential_ms, max_ms)
+    jitter = _random.uniform(0.0, jitter_ms) if rng is None else rng.uniform(0.0, jitter_ms)
+    return capped_ms + jitter
 
 
 class TokenGate:
@@ -30,19 +48,34 @@ class TokenGate:
         weight: int = 1,
         poll_interval: float = DEFAULT_POLL_INTERVAL,
         max_wait_seconds: float = DEFAULT_MAX_WAIT,
+        parent_holds_token: bool = False,
+        saturation_retry_base_ms: float = DEFAULT_SATURATION_RETRY_BASE_MS,
+        saturation_retry_max_ms: float = DEFAULT_SATURATION_RETRY_MAX_MS,
+        saturation_retry_jitter_ms: float = DEFAULT_SATURATION_RETRY_JITTER_MS,
     ):
         self.pool = pool
         self.weight = weight
         self.poll_interval = poll_interval
         self.max_wait_seconds = max_wait_seconds
+        self.parent_holds_token = parent_holds_token
+        self.saturation_retry_base_ms = saturation_retry_base_ms
+        self.saturation_retry_max_ms = saturation_retry_max_ms
+        self.saturation_retry_jitter_ms = saturation_retry_jitter_ms
         self._workflow_id: str | None = None
 
     def acquire(self) -> None:
         """Block until tokens are acquired. Must be called inside a DBOS workflow."""
+        if self.parent_holds_token:
+            logger.info(
+                "TokenGate acquire skipped because parent workflow holds token",
+                extra={"pool": self.pool, "weight": self.weight},
+            )
+            return
         wf_id = DBOS.workflow_id
         if wf_id is None:
             raise RuntimeError("TokenGate.acquire() must be called inside a DBOS workflow")
         elapsed = 0.0
+        retry_index = 0
         while True:
             try:
                 acquired = try_acquire_tokens(self.pool, self.weight, wf_id)
@@ -70,10 +103,20 @@ class TokenGate:
                     f"Token acquire timed out after {elapsed}s "
                     f"for pool={self.pool} weight={self.weight}"
                 )
-            DBOS.sleep(self.poll_interval)
-            elapsed += self.poll_interval
+            retry_index += 1
+            sleep_ms = _saturation_sleep_ms(
+                retry_index,
+                base_ms=self.saturation_retry_base_ms,
+                max_ms=self.saturation_retry_max_ms,
+                jitter_ms=self.saturation_retry_jitter_ms,
+            )
+            sleep_seconds = sleep_ms / 1000.0
+            DBOS.sleep(sleep_seconds)
+            elapsed += sleep_seconds
 
     def release(self) -> None:
         """Release held tokens. Safe to call even if acquire was never called."""
+        if self.parent_holds_token:
+            return
         if self._workflow_id:
             release_tokens(self.pool, self._workflow_id)
