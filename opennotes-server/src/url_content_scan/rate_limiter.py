@@ -72,8 +72,7 @@ class UrlScanRateLimiter:
 
         if self.redis_client is None:
             logger.error(
-                "URL scan rate limiting is fail-open because Redis is unavailable for bucket %s",
-                bucket,
+                "URL scan rate limiting is fail-open because Redis is unavailable",
             )
             return self._fail_open_status(
                 bucket=bucket,
@@ -106,9 +105,8 @@ class UrlScanRateLimiter:
                 failed_open=False,
             )
         except Exception:
-            logger.exception(
-                "URL scan rate limiting is fail-open because Redis errored for bucket %s",
-                bucket,
+            logger.error(
+                "URL scan rate limiting is fail-open because Redis errored",
             )
             return self._fail_open_status(
                 bucket=bucket,

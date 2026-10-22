@@ -86,3 +86,24 @@ async def test_rate_limiter_rejects_unpersisted_api_key_identifier() -> None:
 
     with pytest.raises(ValueError, match="persisted APIKey identifier"):
         await limiter.check_api_key_limit(api_key)
+
+
+@pytest.mark.parametrize("redis_fails", [False, True])
+async def test_fail_open_logs_do_not_expose_bucket_or_exception(redis_fails, caplog):
+    from src.url_content_scan.rate_limiter import UrlScanRateLimiter
+
+    synthetic_password = "synthetic-password-marker"
+    redis = AsyncMock() if redis_fails else None
+    if redis is not None:
+        redis.incr.side_effect = RuntimeError(synthetic_password)
+    limiter = UrlScanRateLimiter(redis_client=redis)
+
+    result = await limiter.check_ip_url_limit(
+        "203.0.113.9", f"https://user:{synthetic_password}@example.com/private"
+    )
+
+    assert result.failed_open is True
+    assert "fail-open" in caplog.text
+    assert synthetic_password not in caplog.text
+    assert "203.0.113.9" not in caplog.text
+    assert all(record.exc_info is None for record in caplog.records)

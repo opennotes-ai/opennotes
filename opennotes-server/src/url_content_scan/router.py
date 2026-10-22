@@ -84,7 +84,7 @@ def _rate_limit_response(result: RateLimitStatus) -> JSONResponse:
 
 def _http_exception_response(exc: HTTPException) -> JSONResponse:
     error_code = "internal"
-    message = str(exc.detail)
+    message = "Upstream service unavailable" if exc.status_code >= 500 else str(exc.detail)
     if exc.status_code == status.HTTP_404_NOT_FOUND:
         error_code = "not_found"
     elif exc.status_code == status.HTTP_400_BAD_REQUEST:
@@ -308,10 +308,10 @@ async def frame_compat_route(
         return _error_response(status.HTTP_400_BAD_REQUEST, "invalid_url", exc.reason)
     except HTTPException as exc:
         return _http_exception_response(exc)
-    except httpx.HTTPError as exc:
-        return _error_response(status.HTTP_502_BAD_GATEWAY, "upstream_error", str(exc))
-    except Exception as exc:
-        return _error_response(status.HTTP_502_BAD_GATEWAY, "upstream_error", str(exc))
+    except httpx.HTTPError:
+        return _error_response(status.HTTP_502_BAD_GATEWAY, "upstream_error", "Frame lookup failed")
+    except Exception:
+        return _error_response(status.HTTP_502_BAD_GATEWAY, "upstream_error", "Frame lookup failed")
     return FrameCompatResponse.model_validate(result.model_dump())
 
 
@@ -331,8 +331,10 @@ async def screenshot_route(
         return _error_response(status.HTTP_400_BAD_REQUEST, "invalid_url", exc.reason)
     except HTTPException as exc:
         return _http_exception_response(exc)
-    except Exception as exc:
-        return _error_response(status.HTTP_502_BAD_GATEWAY, "upstream_error", str(exc))
+    except Exception:
+        return _error_response(
+            status.HTTP_502_BAD_GATEWAY, "upstream_error", "Screenshot lookup failed"
+        )
     if result is None:
         return _error_response(status.HTTP_404_NOT_FOUND, "not_found", "Screenshot unavailable")
     return ScreenshotResponse.model_validate(result)
@@ -395,10 +397,14 @@ async def archive_preview_route(  # noqa: PLR0911
         return _error_response(status.HTTP_400_BAD_REQUEST, "invalid_url", exc.reason)
     except HTTPException as exc:
         return _http_exception_response(exc)
-    except FirecrawlError as exc:
-        return _error_response(status.HTTP_502_BAD_GATEWAY, "upstream_error", str(exc))
-    except Exception as exc:
-        return _error_response(status.HTTP_502_BAD_GATEWAY, "upstream_error", str(exc))
+    except FirecrawlError:
+        return _error_response(
+            status.HTTP_502_BAD_GATEWAY, "upstream_error", "Archive lookup failed"
+        )
+    except Exception:
+        return _error_response(
+            status.HTTP_502_BAD_GATEWAY, "upstream_error", "Archive lookup failed"
+        )
     if html is None:
         return _error_response(status.HTTP_404_NOT_FOUND, "not_found", "Archive unavailable")
     return Response(

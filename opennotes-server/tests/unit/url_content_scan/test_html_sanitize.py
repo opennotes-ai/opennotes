@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from src.url_content_scan.html_sanitize import (
     enrich_display_with_raw_styles,
     extract_archive_main_content,
@@ -32,6 +34,13 @@ def test_strip_noise_removes_script_style_link_and_comments() -> None:
 def test_strip_noise_preserves_none_and_empty_string() -> None:
     assert strip_noise(None) is None
     assert strip_noise("") == ""
+
+
+@pytest.mark.parametrize("end_tag", ["</script\t\n bar>", "</ScRiPt ignored>", "</script >"])
+def test_strip_noise_removes_browser_lenient_script_end_tags(end_tag: str) -> None:
+    html = f"<p>before</p><script>synthetic_script_payload{end_tag}<p>after</p>"
+
+    assert strip_noise(html) == "<p>before</p><p>after</p>"
 
 
 def test_strip_for_display_removes_script_preserves_style() -> None:
