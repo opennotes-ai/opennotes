@@ -360,6 +360,7 @@ class TestWorkerWorkflowRegistration:
                 "url_scan_purge_expired_data_workflow",
                 "url_scan_purge_orphan_screenshots_workflow",
                 "url_scan_video_poll_workflow",
+                "image_conversion_workflow",
             }
             assert workflow_names == expected
 

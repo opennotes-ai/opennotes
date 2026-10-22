@@ -3,6 +3,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 import pytest
+from pydantic_ai.models.test import TestModel
 
 from src.url_content_scan.utterances.schema import Utterance
 
@@ -11,10 +12,17 @@ from src.url_content_scan.utterances.schema import Utterance
 async def test_extract_claims_returns_structured_claims_from_default_agent(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    from src.config import get_settings
     from src.url_content_scan.analyses.claims.extract import (
         ExtractedClaim,
         _ClaimExtractionResponse,
         extract_claims,
+    )
+
+    monkeypatch.setattr(
+        type(get_settings().DEFAULT_MINI_MODEL),
+        "to_pydantic_ai_model",
+        lambda self: TestModel(),
     )
 
     utterance = Utterance(

@@ -9,7 +9,10 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from src.bulk_content_scan.openai_moderation_service import ModerationResult
+from src.bulk_content_scan.openai_moderation_service import (
+    ModerationResult,
+    OpenAIModerationService,
+)
 from src.url_content_scan.models import UrlScanWebRiskLookup
 from src.url_content_scan.safety_schemas import SafetyLevel, SafetyRecommendation
 from src.url_content_scan.utterances.schema import Utterance
@@ -87,7 +90,7 @@ async def test_run_safety_moderation_returns_empty_section_for_empty_input() -> 
 async def test_run_safety_moderation_maps_flagged_openai_results() -> None:
     from src.url_content_scan.analyses.safety import run_safety_moderation
 
-    moderation_service = AsyncMock()
+    moderation_service = AsyncMock(spec=OpenAIModerationService)
     moderation_service.moderate_text.side_effect = [
         ModerationResult(
             flagged=True,
@@ -124,7 +127,7 @@ async def test_run_safety_moderation_bounds_openai_concurrency() -> None:
     active = 0
     peak = 0
     lock = asyncio.Lock()
-    moderation_service = AsyncMock()
+    moderation_service = AsyncMock(spec=OpenAIModerationService)
 
     async def fake_moderate(_text: str) -> ModerationResult:
         nonlocal active, peak

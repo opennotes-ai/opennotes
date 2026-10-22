@@ -482,9 +482,6 @@ class TestSidebarPayloadAssembly:
         }
 
         payload = _build_sidebar_payload(
-            source_url="https://example.com/post",
-            page_title="Example",
-            page_kind=PageKind.FORUM_THREAD,
             utterances=utterances,
             scraped_at="2026-05-04T12:00:00+00:00",
             slot_payloads=slot_payloads,
@@ -493,7 +490,6 @@ class TestSidebarPayloadAssembly:
         )
 
         assert payload is not None
-        assert payload.source_url == "https://example.com/post"
         assert payload.safety.recommendation == _safety_recommendation()
         assert payload.tone_dynamics.scd == _scd_report()
         assert payload.facts_claims.claims_report == _claims_report()
@@ -507,9 +503,6 @@ class TestSidebarPayloadAssembly:
 
     def test_returns_none_when_required_slot_payload_is_missing(self) -> None:
         payload = _build_sidebar_payload(
-            source_url="https://example.com/post",
-            page_title=None,
-            page_kind=PageKind.OTHER,
             utterances=[_utterance()],
             scraped_at="2026-05-04T12:00:00+00:00",
             slot_payloads={
@@ -527,9 +520,9 @@ class TestTerminalBatchStatus:
     @pytest.mark.parametrize(
         ("done_count", "failed_count", "expected_status"),
         [
-            (10, 0, "completed"),
-            (7, 3, "partial"),
-            (0, 10, "failed"),
+            (len(SectionSlug), 0, "completed"),
+            (len(SectionSlug) - 3, 3, "partial"),
+            (0, len(SectionSlug), "failed"),
         ],
     )
     def test_maps_slot_results_to_terminal_batch_status(

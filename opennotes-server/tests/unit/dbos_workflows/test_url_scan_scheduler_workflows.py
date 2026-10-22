@@ -146,6 +146,8 @@ class TestUrlScanPurgeExpiredDataWorkflow:
                 "expired_scrapes_count": 1,
                 "expired_web_risk_count": 2,
                 "expired_sidebar_cache_count": 3,
+                "expired_image_cache_count": 0,
+                "expired_video_cache_count": 0,
                 "purged_terminal_jobs_count": 4,
                 "terminal_job_retention_days": 30,
                 "executed_at": now.isoformat(),

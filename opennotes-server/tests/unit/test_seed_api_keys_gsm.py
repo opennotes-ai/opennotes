@@ -384,6 +384,7 @@ async def test_prod_main_sets_tracebacklimit_to_zero(seed_module, monkeypatch):
     monkeypatch.setattr(seed_module, "_seed_and_save_prod_playground_key", record_tracebacklimit)
     monkeypatch.setattr(seed_module, "_seed_and_save_prod_platform_key", record_tracebacklimit)
     monkeypatch.setattr(seed_module, "_seed_and_save_prod_discourse_key", record_tracebacklimit)
+    monkeypatch.setattr(seed_module, "_seed_and_save_prod_vibecheck_key", record_tracebacklimit)
 
     class DummyResult:
         def scalar_one(self):
