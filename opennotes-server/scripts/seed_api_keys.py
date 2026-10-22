@@ -233,7 +233,7 @@ async def seed_api_key(
                     "scopes": scopes_json,
                 },
             )
-            print(f"✓ Reactivated API key '{key_name}'")
+            print("✓ Reactivated API key")
             return KeySeedResult(
                 status=KeySeedStatus.REACTIVATED,
                 hash_written=True,
@@ -252,7 +252,7 @@ async def seed_api_key(
                     "scopes": scopes_json,
                 },
             )
-            print(f"✓ Rotated active API key '{key_name}' (hash+prefix rewritten)")
+            print("✓ Rotated active API key (hash+prefix rewritten)")
             return KeySeedResult(
                 status=KeySeedStatus.ACTIVE_ROTATED,
                 hash_written=True,
@@ -264,14 +264,14 @@ async def seed_api_key(
                 text("UPDATE api_keys SET scopes = CAST(:scopes AS jsonb) WHERE id = :id"),
                 {"id": api_key_id, "scopes": scopes_json},
             )
-            print(f"✓ Updated scopes on API key '{key_name}'")
+            print("✓ Updated scopes on API key")
             return KeySeedResult(
                 status=KeySeedStatus.SCOPE_ONLY_UPDATED,
                 hash_written=False,
                 should_publish_plaintext=False,
             )
 
-        print(f"✓ API key '{key_name}' already exists and is active")
+        print("✓ API key already exists and is active")
         return KeySeedResult(
             status=KeySeedStatus.NO_OP,
             hash_written=False,
@@ -293,9 +293,9 @@ async def seed_api_key(
             "scopes": scopes_json,
         },
     )
-    api_key_id = result.scalar_one()
+    result.scalar_one()
 
-    print(f"✓ Created API key '{key_name}' (ID: {api_key_id})")
+    print("✓ Created API key")
     print(f"  User ID: {user_id}")
     print("  Never expires: True")
     if scopes:

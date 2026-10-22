@@ -609,3 +609,44 @@ async def test_gsm_push_raises_after_commit_does_not_rollback_db(seed_module, mo
         await seed_module._seed_and_save_prod_platform_key(db=session)
 
     assert session.commit_calls == 1, "commit must have landed before the GSM push failed"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("existing", "active", "rotate", "existing_scopes", "status", "diagnostic"),
+    [
+        (False, False, False, None, "CREATED", "Created API key"),
+        (True, False, False, None, "REACTIVATED", "Reactivated API key"),
+        (True, True, True, None, "ACTIVE_ROTATED", "Rotated active API key"),
+        (True, True, False, ["old-scope"], "SCOPE_ONLY_UPDATED", "Updated scopes on API key"),
+        (True, True, False, None, "NO_OP", "already exists and is active"),
+    ],
+)
+async def test_seed_status_output_does_not_echo_key_name(
+    seed_module, capsys, existing, active, rotate, existing_scopes, status, diagnostic
+):
+    session = _SeedDBFakeSession()
+    if existing:
+        session.prime_existing_row(
+            api_key_id="synthetic-id", is_active=active, scopes=existing_scopes
+        )
+    name = "synthetic-private-key-name-marker"
+
+    result = await seed_module.seed_api_key(
+        session,
+        key_hash="synthetic-hash",
+        key_name=name,
+        key_prefix="synthetic-prefix",
+        user_id="synthetic-user",
+        force_rotate_active=rotate,
+    )
+
+    output = capsys.readouterr()
+    assert diagnostic in output.out
+    assert name not in output.out
+    assert name not in output.err
+    assert result.status == getattr(seed_module.KeySeedStatus, status)
+    assert session.executed[0][1]["name"] == name
+    assert result.hash_written is (status in {"CREATED", "REACTIVATED", "ACTIVE_ROTATED"})
+    assert result.should_publish_plaintext is result.hash_written
+    assert session.commit_calls == 0
