@@ -155,3 +155,23 @@ class TestImageVisionReviewFlag:
         s = Settings()
 
         assert s.VIBECHECK_SAFETY_IMAGE_VISION_REVIEW_ENABLED is True
+
+
+class TestChunkSettings:
+    def test_chunk_max_must_not_exceed_threshold(self) -> None:
+        with pytest.raises(ValidationError, match="VIBECHECK_CHUNK_MAX_TOKENS"):
+            Settings(
+                VIBECHECK_CHUNK_THRESHOLD_TOKENS=100,
+                VIBECHECK_CHUNK_MAX_TOKENS=200,
+            )
+
+    def test_chunk_max_equal_to_threshold_is_allowed(self) -> None:
+        s = Settings(
+            VIBECHECK_CHUNK_THRESHOLD_TOKENS=200,
+            VIBECHECK_CHUNK_MAX_TOKENS=200,
+        )
+        assert s.VIBECHECK_CHUNK_MAX_TOKENS == 200
+
+    def test_chunk_defaults_validate(self) -> None:
+        s = Settings()
+        assert s.VIBECHECK_CHUNK_MAX_TOKENS <= s.VIBECHECK_CHUNK_THRESHOLD_TOKENS

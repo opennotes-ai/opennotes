@@ -1,7 +1,7 @@
 """Unit tests for the harmful-content moderation capability."""
 
 import logging
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -11,6 +11,7 @@ from src.analyses.safety.moderation import (
     check_content_moderation,
     check_content_moderation_bulk,
 )
+from src.config import Settings
 from src.services.openai_moderation import ModerationResult
 from src.utterances.schema import Utterance
 
@@ -62,7 +63,9 @@ class TestCheckContentModeration:
 
     async def test_returns_none_when_not_flagged(self):
         mock_service = AsyncMock()
-        mock_service.moderate_text = AsyncMock(return_value=make_moderation_result(flagged=False))
+        mock_service.moderate_texts = AsyncMock(
+            return_value=[make_moderation_result(flagged=False)]
+        )
 
         utterance = make_utterance(text="harmless message")
         result = await check_content_moderation(
@@ -75,7 +78,9 @@ class TestCheckContentModeration:
     async def test_does_not_expose_multimodal_path(self):
         """POC is text-only — moderate_multimodal must never be called."""
         mock_service = AsyncMock()
-        mock_service.moderate_text = AsyncMock(return_value=make_moderation_result(flagged=False))
+        mock_service.moderate_texts = AsyncMock(
+            return_value=[make_moderation_result(flagged=False)]
+        )
         mock_service.moderate_multimodal = AsyncMock()
 
         utterance = make_utterance(text="hello")
@@ -86,17 +91,16 @@ class TestCheckContentModeration:
 
         mock_service.moderate_multimodal.assert_not_called()
 
-    async def test_returns_none_on_exception(self):
+    async def test_raises_transient_error_on_exception(self):
         mock_service = AsyncMock()
-        mock_service.moderate_text = AsyncMock(side_effect=Exception("API error"))
+        mock_service.moderate_texts = AsyncMock(side_effect=Exception("API error"))
 
         utterance = make_utterance()
-        result = await check_content_moderation(
-            utterance=utterance,
-            moderation_service=mock_service,
-        )
-
-        assert result is None
+        with pytest.raises(OpenAIModerationTransientError):
+            await check_content_moderation(
+                utterance=utterance,
+                moderation_service=mock_service,
+            )
 
 
 class TestModerationResultSchema:
@@ -176,7 +180,7 @@ class TestBulkModeration:
 
         results = await check_content_moderation_bulk([utt_flagged, utt_clean], mock_service)
 
-        assert len(results) == 2
+        assert len(results) == 1
         match = results[0]
         assert isinstance(match, HarmfulContentMatch)
         assert match.utterance_id == "utt_a"
@@ -184,7 +188,126 @@ class TestBulkModeration:
         assert match.scores == {"hate": 0.91, "violence": 0.03}
         assert match.flagged_categories == ["hate"]
         assert match.max_score == pytest.approx(0.91)
-        assert results[1] is None
+
+    async def test_long_utterance_emits_chunk_match_and_aggregate(self):
+        mock_service = AsyncMock()
+        long_text = "first chunk sentence. " * 500
+        utterance = make_utterance(utterance_id="utt_long", text=long_text)
+
+        def response_for_texts(texts: list[str]) -> list[ModerationResult]:
+            assert len(texts) > 1
+            return [
+                make_moderation_result(
+                    flagged=index == 0,
+                    max_score=0.94 if index == 0 else 0.01,
+                    categories={"hate": index == 0},
+                    scores={"hate": 0.94 if index == 0 else 0.01},
+                    flagged_categories=["hate"] if index == 0 else [],
+                )
+                for index, _text in enumerate(texts)
+            ]
+
+        mock_service.moderate_texts = AsyncMock(side_effect=response_for_texts)
+
+        results = await check_content_moderation_bulk([utterance], mock_service)
+
+        assert len(results) == 2
+        chunk_match = results[0]
+        aggregate = results[1]
+        assert chunk_match.utterance_id == "utt_long"
+        assert chunk_match.chunk_idx == 0
+        assert chunk_match.chunk_count is not None
+        assert chunk_match.chunk_count > 1
+        assert chunk_match.utterance_text != long_text
+        assert aggregate.chunk_idx is None
+        assert aggregate.chunk_count == chunk_match.chunk_count
+        assert aggregate.utterance_text == long_text
+
+    async def test_chunking_disabled_sends_one_text_per_utterance(self):
+        mock_service = AsyncMock()
+        long_text = "first chunk sentence. " * 500
+        mock_service.moderate_texts = AsyncMock(
+            return_value=[
+                make_moderation_result(
+                    flagged=True,
+                    max_score=0.94,
+                    categories={"hate": True},
+                    scores={"hate": 0.94},
+                    flagged_categories=["hate"],
+                )
+            ]
+        )
+
+        with patch(
+            "src.analyses.safety.moderation.get_settings",
+            return_value=Settings(VIBECHECK_MODERATION_CHUNK_ENABLED=False),
+        ):
+            results = await check_content_moderation_bulk(
+                [make_utterance(utterance_id="utt_long", text=long_text)],
+                mock_service,
+            )
+
+        mock_service.moderate_texts.assert_awaited_once_with([long_text])
+        assert len(results) == 1
+
+    async def test_chunking_disabled_returns_single_chunk_match(self):
+        mock_service = AsyncMock()
+        mock_service.moderate_texts = AsyncMock(
+            return_value=[
+                make_moderation_result(
+                    flagged=True,
+                    max_score=0.94,
+                    categories={"hate": True},
+                    scores={"hate": 0.94},
+                    flagged_categories=["hate"],
+                )
+            ]
+        )
+
+        with patch(
+            "src.analyses.safety.moderation.get_settings",
+            return_value=Settings(VIBECHECK_MODERATION_CHUNK_ENABLED=False),
+        ):
+            results = await check_content_moderation_bulk(
+                [
+                    make_utterance(
+                        utterance_id="utt_long",
+                        text="first chunk sentence. " * 500,
+                    )
+                ],
+                mock_service,
+            )
+
+        assert results[0].chunk_idx is None
+        assert results[0].chunk_count == 1
+
+    async def test_aggregate_chunk_count_matches_total_chunks_not_flagged_count(self):
+        mock_service = AsyncMock()
+        long_text = "first chunk sentence. " * 500
+        utterance = make_utterance(utterance_id="utt_long", text=long_text)
+
+        def response_for_texts(texts: list[str]) -> list[ModerationResult]:
+            assert len(texts) > 2
+            return [
+                make_moderation_result(
+                    flagged=index in {0, len(texts) - 1},
+                    max_score=0.94 if index in {0, len(texts) - 1} else 0.01,
+                    categories={"hate": index in {0, len(texts) - 1}},
+                    scores={"hate": 0.94 if index in {0, len(texts) - 1} else 0.01},
+                    flagged_categories=["hate"] if index in {0, len(texts) - 1} else [],
+                )
+                for index, _text in enumerate(texts)
+            ]
+
+        mock_service.moderate_texts = AsyncMock(side_effect=response_for_texts)
+
+        results = await check_content_moderation_bulk([utterance], mock_service)
+
+        chunk_matches = [match for match in results if match.chunk_idx is not None]
+        aggregate = next(match for match in results if match.chunk_idx is None)
+        assert len(chunk_matches) == 2
+        assert aggregate.chunk_count is not None
+        assert aggregate.chunk_count > len(chunk_matches)
 
     async def test_single_moderate_texts_call_multimodal_never_invoked(self):
         mock_service = AsyncMock()

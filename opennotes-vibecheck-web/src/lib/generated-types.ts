@@ -622,6 +622,15 @@ export interface components {
             /** Cached */
             cached: boolean;
         };
+        /** ChunkRef */
+        ChunkRef: {
+            /** Utterance Id */
+            utterance_id: string;
+            /** Chunk Idx */
+            chunk_idx?: number | null;
+            /** Chunk Count */
+            chunk_count?: number | null;
+        };
         /**
          * ClaimCategory
          * @enum {string}
@@ -675,6 +684,8 @@ export interface components {
             author_count: number;
             /** Utterance Ids */
             utterance_ids: string[];
+            /** Chunk Refs */
+            chunk_refs?: components["schemas"]["ChunkRef"][];
             /** Representative Authors */
             representative_authors: string[];
             /** Supporting Facts */
@@ -939,6 +950,10 @@ export interface components {
              * @enum {string}
              */
             source: "openai" | "gcp";
+            /** Chunk Idx */
+            chunk_idx?: number | null;
+            /** Chunk Count */
+            chunk_count?: number | null;
         };
         /**
          * HeadlineSummary
@@ -1647,6 +1662,10 @@ export interface components {
              * @enum {string}
              */
             stance: "supports" | "opposes" | "evaluates";
+            /** Chunk Idx */
+            chunk_idx?: number | null;
+            /** Chunk Count */
+            chunk_count?: number | null;
         };
         /**
          * SupportingFact

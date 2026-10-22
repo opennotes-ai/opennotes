@@ -81,6 +81,27 @@ describe("utteranceLabel", () => {
     expect(utteranceLabel("post-0-aaa", [])).toBe("item #?");
   });
 
+  it("appends one-based chunk references for multi-chunk matches", () => {
+    const anchors = [
+      anchor("post-0-aaa", 1),
+      anchor("comment-1-bbb", 2),
+    ];
+
+    expect(utteranceLabel("post-0-aaa", anchors, 0, 3)).toBe("main post §1");
+    expect(utteranceLabel("comment-1-bbb", anchors, 2, 3)).toBe(
+      "comment #1 §3",
+    );
+  });
+
+  it("omits chunk references for whole-utterance and single-chunk matches", () => {
+    const anchors = [anchor("comment-1-bbb", 1)];
+
+    expect(utteranceLabel("comment-1-bbb", anchors, null, 3)).toBe(
+      "comment #1",
+    );
+    expect(utteranceLabel("comment-1-bbb", anchors, 0, 1)).toBe("comment #1");
+  });
+
   it("never exposes opaque legacy terms in labels", () => {
     const anchors = [
       anchor("post-0-aaa", 1),
