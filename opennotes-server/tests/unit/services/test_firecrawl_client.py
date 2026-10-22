@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import httpx
 import pytest
+from pydantic import BaseModel
 
 from src.services.firecrawl_client import (
     FIRECRAWL_API_BASE,
@@ -20,7 +22,18 @@ from src.services.firecrawl_client import (
 
 SCRAPE_URL = f"{FIRECRAWL_API_BASE}/v2/scrape"
 TARGET_URL = "https://example.com/article"
+EXTRACT_URL = f"{FIRECRAWL_API_BASE}/v2/extract"
 pytestmark = pytest.mark.unit
+
+
+class _Author(BaseModel):
+    name: str
+
+
+class _Document(BaseModel):
+    title: str
+    author: _Author
+    published_at: datetime | None = None
 
 
 @dataclass
@@ -39,7 +52,13 @@ class _ResponseSpec:
 @pytest.fixture
 def firecrawl_http_stub():
     requests: list[dict[str, Any]] = []
-    response_specs: list[_ResponseSpec] = []
+    response_specs: list[tuple[str, str, _ResponseSpec]] = []
+
+    def next_response(method: str, url: str, body: dict[str, Any] | None) -> httpx.Response:
+        assert response_specs, f"No stubbed response left for {method} request"
+        expected_method, expected_url, spec = response_specs.pop(0)
+        assert (method, url) == (expected_method, expected_url)
+        return spec.build(method, url, body)
 
     class _StubAsyncClient:
         def __init__(self, *args: Any, **kwargs: Any) -> None:
@@ -59,9 +78,7 @@ def firecrawl_http_stub():
             json: dict[str, Any] | None = None,
         ) -> httpx.Response:
             requests.append({"method": "POST", "url": url, "headers": headers, "json": json})
-            if not response_specs:
-                raise AssertionError("No stubbed response left for POST request")
-            return response_specs.pop(0).build("POST", url, json)
+            return next_response("POST", url, json)
 
         async def get(
             self,
@@ -70,9 +87,7 @@ def firecrawl_http_stub():
             headers: dict[str, str] | None = None,
         ) -> httpx.Response:
             requests.append({"method": "GET", "url": url, "headers": headers, "json": None})
-            if not response_specs:
-                raise AssertionError("No stubbed response left for GET request")
-            return response_specs.pop(0).build("GET", url, None)
+            return next_response("GET", url, None)
 
     def add_response(
         *,
@@ -82,10 +97,8 @@ def firecrawl_http_stub():
         json_data: Any | None = None,
         text: str | None = None,
     ) -> None:
-        assert url == SCRAPE_URL
-        assert method == "POST"
         response_specs.append(
-            _ResponseSpec(status_code=status_code, json_data=json_data, text=text)
+            (method, url, _ResponseSpec(status_code=status_code, json_data=json_data, text=text))
         )
 
     def get_requests(*, url: str, method: str = "POST") -> list[dict[str, Any]]:
@@ -379,3 +392,130 @@ async def test_scrape_result_coerces_language_list_from_realistic_envelope(
 
     assert result.metadata is not None
     assert result.metadata.language == "en-us"
+
+
+async def test_extract_inlines_nested_schema_and_validates_direct_data(client, firecrawl_http_stub):
+    firecrawl_http_stub["add_response"](
+        url=EXTRACT_URL,
+        json_data={
+            "success": True,
+            "data": {"title": "Synthetic page", "author": {"name": "Synthetic author"}},
+        },
+    )
+
+    result = await client.extract(TARGET_URL, _Document)
+
+    assert result == _Document(title="Synthetic page", author=_Author(name="Synthetic author"))
+    request = firecrawl_http_stub["get_requests"](url=EXTRACT_URL)[0]
+    assert request["json"]["urls"] == [TARGET_URL]
+    schema = request["json"]["schema"]
+    assert "$defs" not in schema
+    assert schema["properties"]["author"]["properties"]["name"]["type"] == "string"
+    assert "format" not in schema["properties"]["published_at"]["anyOf"][0]
+
+
+async def test_extract_polls_until_completed_and_preserves_poll_interval(
+    client, firecrawl_http_stub
+):
+    poll_url = f"{EXTRACT_URL}/synthetic-job"
+    firecrawl_http_stub["add_response"](url=EXTRACT_URL, json_data={"id": "synthetic-job"})
+    firecrawl_http_stub["add_response"](
+        url=poll_url, method="GET", json_data={"status": "processing"}
+    )
+    firecrawl_http_stub["add_response"](
+        url=poll_url,
+        method="GET",
+        json_data={
+            "status": "completed",
+            "data": {"title": "Finished", "author": {"name": "Author"}},
+        },
+    )
+
+    with patch("src.services.firecrawl_client.asyncio.sleep", new_callable=AsyncMock) as sleep:
+        result = await client.extract(TARGET_URL, _Document, poll_interval=0.25)
+
+    assert result.title == "Finished"
+    assert len(firecrawl_http_stub["get_requests"](url=poll_url, method="GET")) == 2
+    sleep.assert_awaited_once_with(0.25)
+
+
+@pytest.mark.parametrize("terminal_status", ["failed", "cancelled"])
+async def test_extract_rejects_terminal_poll_failures(client, firecrawl_http_stub, terminal_status):
+    firecrawl_http_stub["add_response"](url=EXTRACT_URL, json_data={"id": "synthetic-job"})
+    firecrawl_http_stub["add_response"](
+        url=f"{EXTRACT_URL}/synthetic-job",
+        method="GET",
+        json_data={"status": terminal_status, "error": "synthetic provider error"},
+    )
+
+    with pytest.raises(FirecrawlError, match=f"status={terminal_status}"):
+        await client.extract(TARGET_URL, _Document)
+
+
+async def test_extract_rejects_completed_poll_without_data(client, firecrawl_http_stub):
+    firecrawl_http_stub["add_response"](url=EXTRACT_URL, json_data={"id": "synthetic-job"})
+    firecrawl_http_stub["add_response"](
+        url=f"{EXTRACT_URL}/synthetic-job", method="GET", json_data={"status": "completed"}
+    )
+
+    with pytest.raises(FirecrawlError, match="completed with no data"):
+        await client.extract(TARGET_URL, _Document)
+
+
+async def test_extract_poll_http_failure_preserves_status_code(client, firecrawl_http_stub):
+    firecrawl_http_stub["add_response"](url=EXTRACT_URL, json_data={"id": "synthetic-job"})
+    firecrawl_http_stub["add_response"](
+        url=f"{EXTRACT_URL}/synthetic-job", method="GET", status_code=404, text="not found"
+    )
+
+    with pytest.raises(FirecrawlError, match="status poll failed") as error:
+        await client.extract(TARGET_URL, _Document)
+    assert error.value.status_code == 404
+
+
+async def test_extract_stops_polling_when_deadline_expires(client, firecrawl_http_stub):
+    firecrawl_http_stub["add_response"](url=EXTRACT_URL, json_data={"id": "synthetic-job"})
+    firecrawl_http_stub["add_response"](
+        url=f"{EXTRACT_URL}/synthetic-job", method="GET", json_data={"status": "processing"}
+    )
+
+    with (
+        patch("src.services.firecrawl_client.asyncio.sleep", new_callable=AsyncMock) as sleep,
+        pytest.raises(FirecrawlError, match="polling timed out"),
+    ):
+        await client.extract(TARGET_URL, _Document, poll_timeout=0)
+
+    sleep.assert_not_awaited()
+
+
+async def test_extract_rejects_response_without_data_or_job_id(client, firecrawl_http_stub):
+    firecrawl_http_stub["add_response"](url=EXTRACT_URL, json_data={"success": True})
+
+    with pytest.raises(FirecrawlError, match="no job id and no data"):
+        await client.extract(TARGET_URL, _Document)
+
+
+async def test_scrape_non_refusal_http_error_preserves_status(client, firecrawl_http_stub):
+    firecrawl_http_stub["add_response"](url=SCRAPE_URL, status_code=401, text="synthetic rejection")
+
+    with pytest.raises(FirecrawlError) as error:
+        await client.scrape(TARGET_URL, formats=["html"])
+
+    assert error.value.status_code == 401
+    assert not isinstance(error.value, FirecrawlBlocked)
+
+
+@pytest.mark.parametrize("operation", ["scrape", "interact"])
+@pytest.mark.parametrize("data", [None, []])
+async def test_scrape_operations_reject_non_object_data(
+    client, firecrawl_http_stub, operation, data
+):
+    firecrawl_http_stub["add_response"](url=SCRAPE_URL, json_data={"success": True, "data": data})
+    request = (
+        client.scrape(TARGET_URL, formats=["html"])
+        if operation == "scrape"
+        else client.interact(TARGET_URL, actions=[])
+    )
+
+    with pytest.raises(FirecrawlError, match="returned no data object"):
+        await request

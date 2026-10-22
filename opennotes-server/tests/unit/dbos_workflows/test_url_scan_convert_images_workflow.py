@@ -94,16 +94,15 @@ class TestDownloadImagesStep:
             "src.dbos_workflows.url_scan_convert_images_workflow._get_pdf_store",
             return_value=_FakeStore(),
         ):
-            from src.utils.async_compat import run_sync
+            from src.dbos_workflows.url_scan_convert_images_workflow import download_images_step
 
-            async def _inner():
-                store = _FakeStore()
-                sorted_images = sorted(images, key=lambda img: int(img["ordinal"]))
-                return [await store.read_bytes(str(img["gcs_key"])) for img in sorted_images]
-
-            result = run_sync(_inner())
+            result = download_images_step(images, "synthetic-image-bucket")
 
         assert len(result) == 2
+        assert downloaded_order == [
+            "image-uploads/batch/source/000-a",
+            "image-uploads/batch/source/001-b",
+        ]
         assert b"000-a" in result[0]
         assert b"001-b" in result[1]
 
