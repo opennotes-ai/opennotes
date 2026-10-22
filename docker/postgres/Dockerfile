@@ -20,7 +20,7 @@ ARG PG_MAJOR
 # Refresh the Arrow repository signer bundled by the base image. This is the
 # official package linked by https://arrow.apache.org/install/, pinned so a
 # changed download fails closed. Keep the existing Signed-By scope and keys.
-RUN wget -q https://packages.apache.org/artifactory/arrow/debian/apache-arrow-apt-source-latest-trixie.deb \
+RUN wget -q https://packages.apache.org/artifactory/arrow/debian/pool/trixie/main/a/apache-arrow-apt-source/apache-arrow-apt-source_26.0.0-1_all.deb \
         -O /tmp/apache-arrow-apt-source.deb \
     && echo "3b3afc167b6195211c302d4b1d49ef5fc628d1ff14c4ea50e518d9b8212c67d5  /tmp/apache-arrow-apt-source.deb" | sha256sum -c - \
     && dpkg-deb -x /tmp/apache-arrow-apt-source.deb /tmp/arrow-source \
