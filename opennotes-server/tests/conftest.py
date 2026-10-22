@@ -347,14 +347,14 @@ def test_services():
 
     This allows tests to run in any environment:
     - CI/CD with GitHub Actions services (external, pre-provisioned)
-    - Local development with OpenTofu services (external, pre-provisioned)
+    - Local development with Docker Compose services (external, pre-provisioned)
     - Isolated testing with testcontainers (when no external services)
     """
 
     import time
 
     # Check for pre-provisioned external services FIRST
-    # This handles CI (GitHub Actions services) and local development (OpenTofu)
+    # This handles CI (GitHub Actions services) and local development (Docker Compose)
     skip_testcontainers = os.environ.get("SKIP_TESTCONTAINERS", "").lower() in ("1", "true", "yes")
     local_database_url = os.environ.get("DATABASE_URL")
     local_redis_url = os.environ.get("REDIS_URL")
@@ -425,7 +425,7 @@ def test_services():
             )
             print("")
             print("   Note: Ensure local services are running before executing tests:")
-            print("   $ mise run tofu:local:apply")
+            print("   $ mise run dev:up")
             print("")
 
             # Skip testcontainers setup, use existing environment
@@ -444,8 +444,7 @@ def test_services():
                 "   - Start Docker daemon\n"
                 "   - Tests will automatically use testcontainers\n"
                 "\n2. LOCAL SERVICES (Recommended for local development):\n"
-                "   - Deploy local infrastructure: mise run tofu:local:apply\n"
-                "   - Get connection details: mise run tofu:local:output\n"
+                "   - Start services: mise run dev:up\n"
                 "   - Export environment variables:\n"
                 "     export DATABASE_URL='postgresql+asyncpg://opennotes:testpass@localhost:5432/opennotes'\n"
                 "     export REDIS_URL='redis://localhost:6379/0'\n"

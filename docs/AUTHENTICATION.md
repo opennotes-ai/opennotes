@@ -116,9 +116,9 @@ if (this.apiKey) {
 **Expires**: 2026-10-23 (1 year from creation)
 
 **Environment Configuration:**
-```yaml
-# opennotes/.env.yaml
-OPENNOTES_API_KEY: XcvlCe7ewY4z4VzbWeogvkJZA-5hxY_xJn5PJmZJN0c
+```bash
+# opennotes/.env
+OPENNOTES_API_KEY=XcvlCe7ewY4z4VzbWeogvkJZA-5hxY_xJn5PJmZJN0c
 ```
 
 ## API Key Rotation Procedure
@@ -162,9 +162,9 @@ curl -X POST http://localhost:8000/api/v1/users/me/api-keys \
 #### 2. Update Environment Configuration
 
 ```bash
-# Update .env.yaml
+# Update .env
 cd /Users/mike/code/opennotes-ai/multiverse/opennotes
-# Edit .env.yaml and update OPENNOTES_API_KEY with new key
+# Edit .env and update OPENNOTES_API_KEY with new key
 
 # For Docker deployments
 docker compose restart opennotes-discord
@@ -204,7 +204,7 @@ curl -X DELETE http://localhost:8000/api/v1/users/me/api-keys/OLD_KEY_ID \
 
 #### 5. Update Documentation
 
-Update this file and `.env.yaml` comments with:
+Update this file and `.env.md` reference with:
 - New expiration date
 - Rotation date
 - Any changes to the procedure

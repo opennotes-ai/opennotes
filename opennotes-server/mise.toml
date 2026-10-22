@@ -11,7 +11,7 @@ uv = "latest"
 [env]
 ENVIRONMENT = "development"
 PYTHONPATH = "."
-_.file = "../.env.yaml"
+_.file = "../.env"
 
 [vars]
 src_dir = "src"

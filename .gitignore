@@ -167,8 +167,10 @@ venv.bak/
 .env.prod
 .env.prod.yaml
 
-# Exception: Allow .env.ci.yaml for CI configuration
-!.env.ci.yaml
+# Exception: Allow tracked env files for CI and examples
+!.env.ci
+!.env.example
+!.env.md
 
 # Open Notes environment files (in opennotes/ directory)
 opennotes/.env

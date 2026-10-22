@@ -8,7 +8,7 @@
 node = "20"
 
 [env]
-_.file = ".env.yaml"
+_.file = "../.env"
 NODE_ENV = "development"
 
 [vars]
